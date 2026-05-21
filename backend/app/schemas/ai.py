@@ -1,0 +1,175 @@
+"""Pydantic schemas for AI assistance (Ollama) endpoints."""
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GrammarCheckRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to check for grammar and spelling errors")
+    language: str = Field(default="en", max_length=5, description="Language code (e.g. en, fr, de)")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"text": "She dont like to goes there.", "language": "en"}
+    })
+
+
+class Suggestion(BaseModel):
+    offset: int = Field(description="Character offset in the original text")
+    length: int = Field(description="Length of the flagged text")
+    original: str = Field(description="The flagged text")
+    suggestion: str = Field(description="Suggested replacement")
+    rule_id: str = Field(description="Identifier for the grammar rule")
+    message: str = Field(description="Human-readable explanation")
+
+
+class GrammarCheckResponse(BaseModel):
+    original_text: str
+    corrected_text: str
+    suggestions: list[Suggestion]
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "original_text": "She dont like it.",
+            "corrected_text": "She doesn't like it.",
+            "suggestions": [{"offset": 4, "length": 4, "original": "dont", "suggestion": "doesn't", "rule_id": "MORFOLOGIK_RULE", "message": "Possible spelling mistake"}]
+        }
+    })
+
+
+class SpellCheckRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to spell-check")
+    language: str = Field(default="en", max_length=5, description="Language code")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"text": "The qwick brown foxx jumps.", "language": "en"}
+    })
+
+
+class SpellCheckResponse(BaseModel):
+    original_text: str
+    corrected_text: str
+    misspellings: list[Suggestion]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RewriteRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to rewrite")
+    style: str = Field(description="Rewrite style: formal, casual, concise, elaborate, creative")
+    instructions: str | None = Field(default=None, max_length=500, description="Additional rewrite instructions")
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"text": "Hey wanna grab food?", "style": "formal", "instructions": "Make it a lunch invitation"}
+    })
+
+
+class RewriteResponse(BaseModel):
+    original_text: str
+    rewritten_text: str
+    style: str
+
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"original_text": "Hey wanna grab food?", "rewritten_text": "Would you be available to join me for lunch?", "style": "formal"}
+    })
+
+
+class AIStatusResponse(BaseModel):
+    ollama_available: bool
+    model_name: str
+    model_loaded: bool
+    embed_model_available: bool = False
+    error: str | None = None
+
+
+# ── Tag suggestions ────────────────────────────────────────────────────
+
+class TagSuggestionRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Entry text to suggest tags for")
+
+
+class TagSuggestionResponse(BaseModel):
+    tags: list[str]
+
+
+# ── Entry analysis (combined) ──────────────────────────────────────────
+
+class SentimentData(BaseModel):
+    primary_emotion: str
+    secondary_emotion: str | None = None
+    intensity: int = Field(ge=1, le=10)
+    valence: float = Field(ge=-1.0, le=1.0)
+
+
+class EntryAnalysisResponse(BaseModel):
+    entry_id: int
+    sentiment: SentimentData | None = None
+    summary: str | None = None
+    reflection_prompts: list[str] = []
+
+
+# ── Similar entries ────────────────────────────────────────────────────
+
+class SimilarEntry(BaseModel):
+    id: int
+    entry_date: date
+    title: str | None
+    similarity_score: float
+
+
+class SimilarEntriesResponse(BaseModel):
+    entry_id: int
+    similar: list[SimilarEntry]
+
+
+# ── Writer's block ─────────────────────────────────────────────────────
+
+class ContinueWritingRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000)
+
+
+class ContinueWritingResponse(BaseModel):
+    continuation: str
+
+
+# ── On this day ────────────────────────────────────────────────────────
+
+class OnThisDayPastEntry(BaseModel):
+    years_ago: int
+    date: str
+    title: str | None = None
+    snippet: str | None = None
+
+
+class OnThisDayResponse(BaseModel):
+    years_ago: int
+    entries_count: int
+    reflection: str
+    past_entries: list[OnThisDayPastEntry]
+
+
+# ── Theme detection ────────────────────────────────────────────────────
+
+class ThemeInsight(BaseModel):
+    theme: str
+    frequency: str
+    months_mentioned: list[str]
+    insight: str
+
+
+class ThemesResponse(BaseModel):
+    themes: list[ThemeInsight]
+
+
+# ── Weekly digest ──────────────────────────────────────────────────────
+
+class DigestResponse(BaseModel):
+    id: int
+    week_start: date
+    week_end: date
+    themes: list[str]
+    emotional_trajectory: str
+    notable_moments: list[str]
+    summary_text: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

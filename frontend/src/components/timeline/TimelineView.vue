@@ -1,0 +1,171 @@
+<script setup lang="ts">
+import { ref, onMounted, watch, reactive } from 'vue'
+import { entriesApi } from '../../api/entries'
+import { mediaApi } from '../../api/media'
+import { useUiStore } from '../../stores/ui'
+import { useEntriesStore } from '../../stores/entries'
+import { useTagsStore } from '../../stores/tags'
+import { usePagination } from '../../composables/usePagination'
+import { formatEntryDate } from '../../composables/useFormat'
+import { ChevronLeft, ChevronRight, Tag, X } from 'lucide-vue-next'
+import type { EntryResponse } from '../../types'
+
+const ui = useUiStore()
+const store = useEntriesStore()
+const tagsStore = useTagsStore()
+const pagination = usePagination(20)
+const entries = ref<EntryResponse[]>([])
+const filterTagId = ref<number | null>(null)
+const showTagMenu = ref(false)
+
+// Lazy media thumbnail cache: entryId → first media URL
+const thumbnailMap = reactive<Record<number, string>>({})
+
+async function load() {
+  const res = await entriesApi.list({ offset: pagination.offset.value, limit: pagination.limit.value })
+  entries.value = res.items
+  pagination.total.value = res.total
+  // Lazy-load thumbnails for entries with media
+  for (const e of res.items) {
+    if (e.media_count > 0 && !thumbnailMap[e.id]) {
+      loadThumbnail(e.id)
+    }
+  }
+}
+
+async function loadThumbnail(entryId: number) {
+  try {
+    const media = await mediaApi.listByEntry(entryId)
+    const img = media.find(m => m.media_type === 'image' || m.media_type.startsWith('image/'))
+    if (img) thumbnailMap[entryId] = mediaApi.fileUrl(img.id)
+  } catch { /* ignore */ }
+}
+
+onMounted(() => { load(); tagsStore.fetchTree() })
+watch(() => store.lastUpdated, load)
+
+function openEntry(entry: EntryResponse) {
+  ui.requestEdit(entry.id)
+}
+
+const activeTagName = () => {
+  if (filterTagId.value === null) return null
+  return tagsStore.tags.find(t => t.id === filterTagId.value)?.name ?? null
+}
+
+const shortDateOpts: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
+
+function bodyPreview(body: string): string {
+  const lines = body.split('\n').filter(l => l.trim())
+  const first2 = lines.slice(0, 2).join(' / ')
+  return first2.length > 140 ? first2.slice(0, 140) + '...' : first2
+}
+</script>
+
+<template>
+  <div class="flex flex-col h-full">
+    <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+      <h2 class="text-lg font-semibold text-text-primary">Timeline</h2>
+      <!-- Tag filter -->
+      <div v-if="tagsStore.tags.length" class="flex items-center gap-1.5 relative ml-auto">
+        <button
+          class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
+          :class="filterTagId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
+          @click="showTagMenu = !showTagMenu"
+        >
+          <Tag :size="11" />
+          <span v-if="activeTagName()">#{{ activeTagName() }}</span>
+          <span v-else>Filter</span>
+        </button>
+        <button
+          v-if="filterTagId !== null"
+          class="text-text-muted hover:text-text-primary cursor-pointer"
+          @click="filterTagId = null"
+          title="Clear filter"
+        >
+          <X :size="12" />
+        </button>
+        <!-- Tag dropdown -->
+        <div
+          v-if="showTagMenu"
+          class="absolute top-full right-0 mt-1 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[140px] max-h-[200px] overflow-y-auto z-50"
+        >
+          <button
+            v-for="tag in tagsStore.tags"
+            :key="tag.id"
+            class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
+            :class="filterTagId === tag.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
+            @click="filterTagId = tag.id; showTagMenu = false"
+          >
+            #{{ tag.name }}
+          </button>
+          <div class="border-t border-border my-0.5" />
+          <button
+            class="w-full text-left px-3 py-1 text-[11px] text-text-muted hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+            @click="filterTagId = null; showTagMenu = false"
+          >
+            Show all
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+      <div
+        v-for="entry in entries.filter(e => filterTagId === null || e.tags.some(t => t.id === filterTagId))"
+        :key="entry.id"
+        class="px-4 py-3 border-b border-border/50 hover:bg-surface-hover cursor-pointer transition-colors"
+        @click="openEntry(entry)"
+      >
+        <div class="flex gap-3">
+          <!-- Entry content (left) -->
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-sm font-medium text-text-primary">{{ formatEntryDate(entry.entry_date, shortDateOpts) }}</span>
+            </div>
+            <p v-if="entry.title" class="text-xs font-medium text-text-primary mb-0.5">{{ entry.title }}</p>
+            <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">
+              {{ entry.is_encrypted ? 'Encrypted' : bodyPreview(entry.body) }}
+            </p>
+            <div v-if="entry.tags.length" class="flex flex-wrap gap-1 mt-1">
+              <span v-for="tag in entry.tags" :key="tag.id" class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent">#{{ tag.name }}</span>
+            </div>
+          </div>
+          <!-- Media thumbnail (right) -->
+          <div v-if="thumbnailMap[entry.id]" class="shrink-0 self-center">
+            <img
+              :src="thumbnailMap[entry.id]"
+              class="w-14 h-14 rounded object-cover border border-border/50"
+              loading="lazy"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div v-if="entries.length === 0" class="p-8 text-center text-text-muted text-sm">
+        No entries yet.
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="pagination.totalPages.value > 1" class="flex items-center justify-between px-4 py-2 border-t border-border">
+      <span class="text-xs text-text-muted">Page {{ pagination.page.value }} of {{ pagination.totalPages.value }}</span>
+      <div class="flex gap-1">
+        <button
+          :disabled="!pagination.hasPrev.value"
+          class="p-1 rounded hover:bg-surface-hover text-text-secondary disabled:opacity-30 cursor-pointer transition-colors"
+          @click="pagination.prevPage(); load()"
+        >
+          <ChevronLeft :size="16" />
+        </button>
+        <button
+          :disabled="!pagination.hasNext.value"
+          class="p-1 rounded hover:bg-surface-hover text-text-secondary disabled:opacity-30 cursor-pointer transition-colors"
+          @click="pagination.nextPage(); load()"
+        >
+          <ChevronRight :size="16" />
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
