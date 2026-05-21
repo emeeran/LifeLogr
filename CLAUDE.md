@@ -1,7 +1,7 @@
-# diary — Claude Context
+# Diarilinux — Claude Context
 
 ## Project Purpose
-> [Edit this: one paragraph describing what this project does and for whom.]
+> Diarilinux is a privacy-first, offline-first daily journaling application for Linux. It provides a rich writing experience with markdown support, media attachments, voice recording with local transcription, AI-assisted grammar checking via Ollama, end-to-end encrypted cloud sync, and a plugin architecture — all while keeping user data local and private.
 
 ## Tech Stack
 | Layer     | Technology                          |

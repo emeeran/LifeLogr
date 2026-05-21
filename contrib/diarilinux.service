@@ -1,0 +1,15 @@
+[Unit]
+Description=Diarilinux Journal
+After=network.target
+
+[Service]
+Type=simple
+User=diarilinux
+WorkingDirectory=/opt/diarilinux/backend
+ExecStart=/opt/diarilinux/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+Environment=APP_ENV=production
+
+[Install]
+WantedBy=multi-user.target

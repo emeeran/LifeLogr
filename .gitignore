@@ -1,9 +1,12 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.pyo
 .venv/
+venv/
 *.egg-info/
+*.egg
 dist/
 build/
 
@@ -27,6 +30,29 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# DB
+# uv
+.python-version
+
+# DB & data
 *.db
 *.sqlite3
+*.diary
+media/
+
+# Build artifacts
+.vite/
+package-lock.json
+
+# Packaging / distribution
+*.AppImage
+*.deb
+*.rpm
+
+# Tauri / desktop build
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/
+desktop/build/
+desktop/dist/
+
+# Root-level node_modules (no root package.json)
+node_modules/

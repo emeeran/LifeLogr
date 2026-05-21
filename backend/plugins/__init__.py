@@ -1,0 +1,1 @@
+"""Diarilinux plugin package."""
