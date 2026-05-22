@@ -23,6 +23,9 @@ export const suggestTags = (text: string) =>
 export const getEntryAnalysis = (entryId: number) =>
   request<EntryAnalysisResponse>(`/ai/entry-analysis/${entryId}`)
 
+export const runEntryAnalysis = (entryId: number) =>
+  request<EntryAnalysisResponse>(`/ai/entry-analysis/${entryId}/run`, { method: 'POST' })
+
 export const findSimilar = (entryId: number, topK: number = 5) =>
   request<SimilarEntriesResponse>(`/ai/similar/${entryId}?top_k=${topK}`)
 
