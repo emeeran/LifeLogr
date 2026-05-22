@@ -6,6 +6,7 @@ import { entriesApi } from '../../api/entries'
 import { getThemes, pullModel } from '../../api/ai'
 import type { ThemeInsight } from '../../types'
 import { useSyncStore } from '../../stores/sync'
+import { useEntriesStore } from '../../stores/entries'
 import { usePluginsStore } from '../../stores/plugins'
 import { exportHtml, getExportPdfUrl } from '../../api/export'
 import { useLocalStorage } from '@vueuse/core'
@@ -20,6 +21,7 @@ import { useTemplatesStore } from '../../stores/templates'
 
 const backup = useBackupStore()
 const syncStore = useSyncStore()
+const entriesStore = useEntriesStore()
 const pluginsStore = usePluginsStore()
 const templatesStore = useTemplatesStore()
 
@@ -82,6 +84,7 @@ async function handleFileImport(e: Event) {
   fileImporting.value = true
   try {
     const r = await entriesApi.importFile(file)
+    entriesStore.refreshAll()
     showToast('success', `Imported ${r.imported} entries`)
   } catch (e: unknown) { showToast('error', `Import failed: ${errMsg(e)}`) }
   finally { fileImporting.value = false; if (fileImportInput.value) fileImportInput.value.value = '' }
@@ -91,7 +94,7 @@ async function handleImport(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   importing.value = true
-  try { const r = await backupApi.importLocal(file); showToast('success', `Restored — ${r.restored.join(', ')}`) }
+  try { const r = await backupApi.importLocal(file); entriesStore.refreshAll(); showToast('success', `Restored — ${r.restored.join(', ')}`) }
   catch (e: unknown) { showToast('error', `Import failed: ${errMsg(e)}`) }
   finally { importing.value = false; if (importFileInput.value) importFileInput.value.value = '' }
 }
@@ -279,7 +282,7 @@ const resetting = ref(false)
 
 async function handleReset() {
   resetting.value = true
-  try { await entriesApi.resetDatabase(); showToast('success', 'Database cleared'); showResetConfirm.value = false; resetConfirmText.value = '' }
+  try { await entriesApi.resetDatabase(); entriesStore.refreshAll(); showToast('success', 'Database cleared'); showResetConfirm.value = false; resetConfirmText.value = '' }
   catch (e: unknown) { showToast('error', `Reset failed: ${errMsg(e)}`) }
   finally { resetting.value = false }
 }

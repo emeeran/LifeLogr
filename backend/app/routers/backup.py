@@ -112,10 +112,12 @@ async def export_local_backup(db: AsyncSession = Depends(get_db)) -> FileRespons
 
 
 @router.post("/import")
-async def import_local_backup(file: UploadFile, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def import_local_backup(file: UploadFile) -> dict[str, Any]:
     """Import a .tar.gz archive to restore database and media files."""
     import io
     import tarfile
+
+    from app.core.database import init_db, reinit_engine
 
     content = await file.read()
     db_file_path: str = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
@@ -123,30 +125,29 @@ async def import_local_backup(file: UploadFile, db: AsyncSession = Depends(get_d
 
     restored: list[str] = []
 
-    with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
-        for member in tar.getmembers():
-            if member.name == "dev.db" or member.name.endswith("/dev.db"):
-                # Extract database file
-                source = tar.extractfile(member)
-                if source:
-                    Path(db_file_path).parent.mkdir(parents=True, exist_ok=True)
-                    Path(db_file_path).write_bytes(source.read())
-                    restored.append("database")
-            elif member.name.startswith("media"):
-                # Extract media files
-                source = tar.extractfile(member)
-                if source and member.isfile():
-                    # Strip leading "media/" to get relative path
-                    rel = member.name
-                    if rel.startswith("media/"):
-                        rel = rel[len("media/"):]
-                    elif rel.startswith("media\\"):
-                        rel = rel[len("media\\"):]
-                    target = media_dir / rel
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(source.read())
-                    if "media" not in restored:
-                        restored.append("media")
+    # 1. Extract backup to temp dir first (validate before touching anything)
+    tmpdir = tempfile.mkdtemp()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
+            tar.extractall(tmpdir)
+
+        # 2. If archive contains a database, swap it in
+        extracted_db = Path(tmpdir) / "dev.db"
+        if extracted_db.exists():
+            await reinit_engine()  # disposes old engine, creates fresh one
+            shutil.copy2(str(extracted_db), db_file_path)
+            await init_db()  # re-create FTS triggers, seed templates
+            restored.append("database")
+
+        # 3. Extract media files
+        extracted_media = Path(tmpdir) / "media"
+        if extracted_media.exists():
+            if media_dir.exists():
+                shutil.rmtree(str(media_dir))
+            shutil.copytree(str(extracted_media), str(media_dir))
+            restored.append("media")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     return {"success": True, "restored": restored}
 

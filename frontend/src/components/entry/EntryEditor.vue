@@ -492,7 +492,7 @@ async function save() {
 }
 
 function close() {
-  entries.fetchCalendarMonth(new Date().getFullYear(), new Date().getMonth())
+  entries.refreshAll()
   ui.startEditing(null)
 }
 
@@ -601,7 +601,7 @@ async function handleDelete() {
   } catch {
     // Entry already gone — just close
   }
-  entries.fetchCalendarMonth(new Date().getFullYear(), new Date().getMonth())
+  entries.refreshAll()
   ui.startEditing(null)
 }
 

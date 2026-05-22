@@ -100,18 +100,6 @@ async def rate_limiter(request: Request, call_next):
 if _ASSETS_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(_ASSETS_DIR)), name="static")
 
-# Serve built frontend in production
-if settings.is_production and _FRONTEND_DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend-assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        """Serve frontend SPA — fall back to index.html for client-side routing."""
-        file_path = _FRONTEND_DIST / full_path
-        if file_path.is_file():
-            return FileResponse(str(file_path))
-        return FileResponse(str(_FRONTEND_DIST / "index.html"))
-
 # Exception handlers — map domain exceptions to HTTP responses
 app.add_exception_handler(NotFoundError, lambda r, e: JSONResponse(status_code=404, content={"detail": str(e)}))
 app.add_exception_handler(ConflictError, lambda r, e: JSONResponse(status_code=409, content={"detail": str(e)}))
@@ -175,6 +163,20 @@ async def brand_logo() -> FileResponse:
     """Return the Diarilinux logo SVG."""
     logo_path = _ASSETS_DIR / "diarilinux-logo.svg"
     return FileResponse(path=str(logo_path), media_type="image/svg+xml")
+
+
+# Serve built frontend in production — MUST be registered AFTER all API routes
+# so that API GET requests are matched before this catch-all.
+if settings.is_production and _FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend-assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve frontend SPA — fall back to index.html for client-side routing."""
+        file_path = _FRONTEND_DIST / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(_FRONTEND_DIST / "index.html"))
 
 
 if __name__ == "__main__":
