@@ -9,7 +9,7 @@ import {
   Undo2, Redo2, Maximize2, Minimize2, Search, Type, AlignLeft,
   Table, CheckSquare, Clock, ChevronUp, ChevronDown,
   Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, Film, Music, FileText, LayoutTemplate,
-  BarChart3, Search as SearchIcon, Lightbulb, Loader
+  BarChart3, Search as SearchIcon, Lightbulb, Loader, RefreshCw
 } from 'lucide-vue-next'
 import AiPanel from './AiPanel.vue'
 import RevisionPanel from './RevisionPanel.vue'
@@ -20,7 +20,7 @@ import RecordingPanel from '../recordings/RecordingPanel.vue'
 import MediaViewer from '../media/MediaViewer.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
 import { setGeotag } from '../../api/geotagging'
-import { aiStatus, suggestTags, getEntryAnalysis, findSimilar } from '../../api/ai'
+import { aiStatus, suggestTags, runEntryAnalysis, findSimilar } from '../../api/ai'
 import { ttsApi } from '../../api/tts'
 import { mediaApi } from '../../api/media'
 import { formatFileSize } from '../../composables/useFormat'
@@ -57,7 +57,6 @@ const showTagDropdown = ref(false)
 const aiAvailable = ref<boolean | null>(null)
 const suggestedTags = ref<string[]>([])
 const suggestingTags = ref(false)
-const showAnalysis = ref(false)
 const analysis = ref<EntryAnalysisResponse | null>(null)
 const analysisLoading = ref(false)
 const similarEntries = ref<SimilarEntry[]>([])
@@ -438,7 +437,6 @@ function onGlobalKeydown(e: KeyboardEvent) {
   if (showFind.value) { showFind.value = false; return }
   if (showAi.value) { showAi.value = false; return }
   if (showRevisions.value) { showRevisions.value = false; return }
-  if (showAnalysis.value) { showAnalysis.value = false; return }
   if (showRecording.value) { showRecording.value = false; return }
   if (showAttachments.value) { showAttachments.value = false; return }
   if (fullscreen.value) { fullscreen.value = false; return }
@@ -644,15 +642,13 @@ async function applySuggestedTag(name: string) {
 }
 
 // ── Entry Analysis ──
-async function toggleAnalysis() {
-  if (showAnalysis.value) { showAnalysis.value = false; return }
+async function runAnalysis() {
   if (!hasEntry.value) return
-  showAnalysis.value = true
   analysisLoading.value = true
   analysis.value = null
   similarEntries.value = []
   try {
-    analysis.value = await getEntryAnalysis(ui.editingEntryId!)
+    analysis.value = await runEntryAnalysis(ui.editingEntryId!)
   } catch { /* ignore */ }
   finally { analysisLoading.value = false }
 }
@@ -902,74 +898,85 @@ const activeFormats = computed(() => {
         </template>
       </div>
 
-      <!-- AI Panel -->
-      <div v-if="showAi && body" class="border-t border-border p-3 max-h-[40vh] overflow-y-auto">
-        <AiPanel :text="body" @apply="(t) => { body = t; onInput() }" />
+      <!-- AI Panel (unified: tools + analysis) -->
+      <div v-if="showAi" class="border-t border-border p-3 max-h-[50vh] overflow-y-auto space-y-3">
+        <!-- AI Tools section -->
+        <div v-if="body">
+          <AiPanel :text="body" @apply="(t) => { body = t; onInput() }" />
+        </div>
+
+        <!-- Analysis section (only for saved entries) -->
+        <template v-if="hasEntry">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-text-primary flex items-center gap-1"><BarChart3 :size="14" /> Analysis</span>
+            <div class="flex items-center gap-1">
+              <button @click="runAnalysis" :disabled="analysisLoading" :title="analysis ? 'Re-analyze' : 'Run analysis'"
+                class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer">
+                <Loader v-if="analysisLoading" :size="10" class="animate-spin" />
+                <RefreshCw v-else :size="10" />
+                {{ analysisLoading ? 'Analyzing...' : analysis ? 'Re-analyze' : 'Run Analysis' }}
+              </button>
+              <button @click="showAi = false" class="text-text-muted hover:text-text-primary cursor-pointer"><X :size="12" /></button>
+            </div>
+          </div>
+          <div v-if="analysisLoading" class="text-xs text-text-secondary flex items-center gap-1"><Loader :size="12" class="animate-spin" /> Analyzing...</div>
+          <template v-else-if="analysis">
+            <!-- Sentiment -->
+            <div v-if="analysis.sentiment" class="space-y-1">
+              <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide">Sentiment</div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-text-primary capitalize">{{ analysis.sentiment.primary_emotion }}</span>
+                <span v-if="analysis.sentiment.secondary_emotion" class="text-[10px] text-text-muted">+ {{ analysis.sentiment.secondary_emotion }}</span>
+                <div class="flex-1 h-1.5 bg-surface-hover rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all"
+                    :class="analysis.sentiment.valence >= 0 ? 'bg-green-400' : 'bg-red-400'"
+                    :style="{ width: Math.abs(analysis.sentiment.valence) * 100 + '%' }" />
+                </div>
+                <span class="text-[10px] text-text-muted">Intensity {{ analysis.sentiment.intensity }}/10</span>
+              </div>
+            </div>
+            <!-- Summary -->
+            <div v-if="analysis.summary">
+              <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide mb-0.5">Summary</div>
+              <div class="text-xs text-text-primary bg-surface-hover rounded p-2">{{ analysis.summary }}</div>
+            </div>
+            <!-- Reflection Prompts -->
+            <div v-if="analysis.reflection_prompts.length">
+              <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide mb-0.5">Reflection Prompts</div>
+              <ul class="space-y-1">
+                <li v-for="(p, i) in analysis.reflection_prompts" :key="i" class="text-xs text-text-secondary flex items-start gap-1">
+                  <Lightbulb :size="10" class="text-accent shrink-0 mt-0.5" /> {{ p }}
+                </li>
+              </ul>
+            </div>
+            <!-- Similar Entries -->
+            <div class="pt-2 border-t border-border">
+              <button @click="fetchSimilar" :disabled="similarLoading"
+                class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer mb-2">
+                <Loader v-if="similarLoading" :size="10" class="animate-spin" />
+                <SearchIcon v-else :size="10" />
+                {{ similarLoading ? 'Searching...' : 'Find similar entries' }}
+              </button>
+              <div v-if="similarEntries.length" class="space-y-1">
+                <div v-for="s in similarEntries" :key="s.id"
+                  class="flex items-center justify-between p-1.5 bg-surface-hover rounded cursor-pointer hover:bg-surface-hover/80"
+                  @click="gotoEntry(s.id)">
+                  <div>
+                    <div class="text-xs text-text-primary">{{ s.title || 'Untitled' }}</div>
+                    <div class="text-[10px] text-text-muted">{{ s.entry_date }}</div>
+                  </div>
+                  <span class="text-[10px] text-accent">{{ (s.similarity_score * 100).toFixed(0) }}%</span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <div v-else-if="!analysisLoading" class="text-xs text-text-muted py-1">Click "Run Analysis" to generate sentiment, summary, and prompts.</div>
+        </template>
       </div>
 
       <!-- Revision Panel -->
       <div v-if="showRevisions && hasEntry" class="border-t border-border p-3 max-h-[40vh] overflow-y-auto">
         <RevisionPanel :entryId="ui.editingEntryId!" @restored="() => { showRevisions = false }" />
-      </div>
-
-      <!-- Analysis Panel -->
-      <div v-if="showAnalysis && hasEntry" class="border-t border-border p-3 max-h-[40vh] overflow-y-auto space-y-3">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-medium text-text-primary flex items-center gap-1"><BarChart3 :size="14" /> AI Analysis</span>
-          <button @click="showAnalysis = false" class="text-text-muted hover:text-text-primary"><X :size="12" /></button>
-        </div>
-        <div v-if="analysisLoading" class="text-xs text-text-secondary flex items-center gap-1"><Loader :size="12" class="animate-spin" /> Analyzing...</div>
-        <template v-else-if="analysis">
-          <!-- Sentiment -->
-          <div v-if="analysis.sentiment" class="space-y-1">
-            <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide">Sentiment</div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-text-primary capitalize">{{ analysis.sentiment.primary_emotion }}</span>
-              <span v-if="analysis.sentiment.secondary_emotion" class="text-[10px] text-text-muted">+ {{ analysis.sentiment.secondary_emotion }}</span>
-              <div class="flex-1 h-1.5 bg-surface-hover rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all"
-                  :class="analysis.sentiment.valence >= 0 ? 'bg-green-400' : 'bg-red-400'"
-                  :style="{ width: Math.abs(analysis.sentiment.valence) * 100 + '%' }" />
-              </div>
-              <span class="text-[10px] text-text-muted">Intensity {{ analysis.sentiment.intensity }}/10</span>
-            </div>
-          </div>
-          <!-- Summary -->
-          <div v-if="analysis.summary">
-            <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide mb-0.5">Summary</div>
-            <div class="text-xs text-text-primary bg-surface-hover rounded p-2">{{ analysis.summary }}</div>
-          </div>
-          <!-- Reflection Prompts -->
-          <div v-if="analysis.reflection_prompts.length">
-            <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide mb-0.5">Reflection Prompts</div>
-            <ul class="space-y-1">
-              <li v-for="(p, i) in analysis.reflection_prompts" :key="i" class="text-xs text-text-secondary flex items-start gap-1">
-                <Lightbulb :size="10" class="text-accent shrink-0 mt-0.5" /> {{ p }}
-              </li>
-            </ul>
-          </div>
-          <!-- Similar Entries -->
-          <div class="pt-2 border-t border-border">
-            <button @click="fetchSimilar" :disabled="similarLoading"
-              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer mb-2">
-              <Loader v-if="similarLoading" :size="10" class="animate-spin" />
-              <SearchIcon v-else :size="10" />
-              {{ similarLoading ? 'Searching...' : 'Find similar entries' }}
-            </button>
-            <div v-if="similarEntries.length" class="space-y-1">
-              <div v-for="s in similarEntries" :key="s.id"
-                class="flex items-center justify-between p-1.5 bg-surface-hover rounded cursor-pointer hover:bg-surface-hover/80"
-                @click="gotoEntry(s.id)">
-                <div>
-                  <div class="text-xs text-text-primary">{{ s.title || 'Untitled' }}</div>
-                  <div class="text-[10px] text-text-muted">{{ s.entry_date }}</div>
-                </div>
-                <span class="text-[10px] text-accent">{{ (s.similarity_score * 100).toFixed(0) }}%</span>
-              </div>
-            </div>
-          </div>
-        </template>
-        <div v-else class="text-xs text-text-muted">No analysis available. Make sure Ollama is running.</div>
       </div>
 
       <!-- Recording Panel -->
@@ -1079,9 +1086,10 @@ const activeFormats = computed(() => {
 
         <span class="w-px h-4 bg-border mx-0.5" />
         <button
+          class="p-1 rounded cursor-pointer transition-colors"
           :class="showAi ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
           @click="showAi = !showAi"
-          title="AI Tools"
+          title="AI Tools & Analysis"
         ><Sparkles :size="13" /></button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
@@ -1089,13 +1097,6 @@ const activeFormats = computed(() => {
           @click="showRevisions = !showRevisions"
           title="Version History"
         ><History :size="13" /></button>
-        <button
-          v-if="aiAvailable && hasEntry"
-          class="p-1 rounded cursor-pointer transition-colors"
-          :class="showAnalysis ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
-          @click="toggleAnalysis"
-          title="AI Analysis"
-        ><BarChart3 :size="13" /></button>
         <button
           class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
           @click="showGeotag = true"

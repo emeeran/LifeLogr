@@ -102,14 +102,42 @@ async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(ge
 
 # ── Entry analysis ─────────────────────────────────────────────────────
 
-@router.get("/entry-analysis/{entry_id}", response_model=EntryAnalysisResponse)
-async def get_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
-    """Get the AI analysis (sentiment, summary, prompts) for an entry."""
+@router.post("/entry-analysis/{entry_id}/run", response_model=EntryAnalysisResponse)
+async def run_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Trigger AI analysis on demand for a specific entry, then return results."""
+    from fastapi import HTTPException
+
+    result = await db.execute(select(Entry).where(Entry.id == entry_id, ~Entry.is_deleted))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    await _run_enrichment_sync(entry_id, entry.title, entry.body)
+    return await _load_analysis(entry_id, db)
+
+
+async def _run_enrichment_sync(entry_id: int, title: str | None, body: str) -> None:
+    """Run enrichment synchronously (awaited) so results are available immediately."""
+    ollama = OllamaService()
+    status = await ollama.status()
+    if not status.ollama_available:
+        return
+
+    text = f"{title or ''}\n\n{body}".strip()
+    if not text.strip():
+        return
+
+    if settings.AI_ENABLE_SENTIMENT or settings.AI_ENABLE_SUMMARIZATION or settings.AI_ENABLE_REFLECTION_PROMPTS:
+        from app.services.enrichment_service import _analyze_entry
+        await _analyze_entry(entry_id, text, ollama)
+
+
+async def _load_analysis(entry_id: int, db: AsyncSession) -> EntryAnalysisResponse:
+    """Load existing analysis data for an entry."""
     sentiment = None
     summary = None
     prompts = []
 
-    # Load sentiment
     sent_result = await db.execute(
         select(EntrySentiment).where(EntrySentiment.entry_id == entry_id)
     )
@@ -122,13 +150,11 @@ async def get_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) 
             valence=sent.valence,
         )
 
-    # Load summary
     entry_result = await db.execute(
         select(Entry.summary).where(Entry.id == entry_id)
     )
     summary = entry_result.scalar_one_or_none()
 
-    # Load prompts
     prompts_result = await db.execute(
         select(EntryPrompt.prompt_text).where(EntryPrompt.entry_id == entry_id)
     )
@@ -140,6 +166,12 @@ async def get_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) 
         summary=summary,
         reflection_prompts=prompts,
     )
+
+
+@router.get("/entry-analysis/{entry_id}", response_model=EntryAnalysisResponse)
+async def get_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Get the AI analysis (sentiment, summary, prompts) for an entry."""
+    return await _load_analysis(entry_id, db)
 
 
 # ── Similar entries ────────────────────────────────────────────────────
@@ -321,9 +353,14 @@ async def latest_digest(db: AsyncSession = Depends(get_db)) -> Any:
 @router.post("/digests/generate", response_model=DigestResponse)
 async def generate_digest(db: AsyncSession = Depends(get_db)) -> Any:
     """Generate a digest for the current week on demand."""
+    from fastapi import HTTPException
+
     from app.services.digest_service import DigestService
     svc = DigestService(db)
-    digest = await svc.generate_for_week(date.today() - timedelta(days=date.today().weekday()))
+    try:
+        digest = await svc.generate_for_week(date.today() - timedelta(days=date.today().weekday()))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return DigestResponse(
         id=digest.id,
         week_start=digest.week_start,
