@@ -30,6 +30,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def reinit_engine() -> None:
+    """Dispose current engine and create a fresh one (for backup restore)."""
+    global engine, async_session
+    await engine.dispose()
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_pre_ping=True,
+    )
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
 async def init_db() -> None:
     """Create all tables (for dev/bootstrap; use Alembic in production)."""
     # Skip production validation for desktop/Tauri sidecar (local-only access)
