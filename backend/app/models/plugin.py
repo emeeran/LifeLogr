@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -27,7 +27,7 @@ class PluginHook(Base):
     __tablename__ = "plugin_hooks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    plugin_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    plugin_id: Mapped[int] = mapped_column(ForeignKey("plugins.id", ondelete="CASCADE"), nullable=False)
     hook_name: Mapped[str] = mapped_column(String(100), nullable=False)
     handler_fn: Mapped[str] = mapped_column(String, nullable=False)  # dotted path to callable
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

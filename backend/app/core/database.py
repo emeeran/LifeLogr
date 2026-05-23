@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import event, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -11,14 +11,30 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+_is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_size=1 if _is_sqlite else settings.DB_POOL_SIZE,
+    max_overflow=0 if _is_sqlite else settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
+    connect_args={"check_same_thread": False} if _is_sqlite else {},
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
+    """Enable WAL mode and foreign key enforcement for SQLite."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
+
+
+if _is_sqlite:
+    event.listen(engine.sync_engine, "connect", _set_sqlite_pragma)
 
 
 class Base(DeclarativeBase):
@@ -169,8 +185,13 @@ async def _seed_builtin_templates() -> None:
     from app.models.template import Template
 
     async with async_session() as session:
-        result = await session.execute(select(Template).where(Template.is_builtin.is_(True)).limit(1))
-        if result.scalar():
+        # Use lightweight COUNT instead of loading ORM objects
+        count = (
+            await session.execute(
+                select(func.count()).select_from(Template).where(Template.is_builtin.is_(True))
+            )
+        ).scalar() or 0
+        if count > 0:
             return  # already seeded
 
         logger.info("Seeding built-in templates...")

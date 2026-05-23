@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import re
 import zipfile
@@ -22,6 +23,8 @@ from app.schemas.entry import EntryCreate, EntryListResponse, EntryResponse, Ent
 from app.schemas.geotagging import GeotagResponse, GeotagUpdate, NearbyEntry, NearbyResponse
 from app.schemas.tag import TagBrief
 from app.services.entry_service import EntryService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/entries", tags=["entries"])
 
@@ -326,7 +329,7 @@ async def reset_database(db: AsyncSession = Depends(get_db)) -> Any:
     try:
         await db.execute(text("DELETE FROM sqlite_sequence"))
     except Exception:
-        pass
+        logger.debug("sqlite_sequence cleanup skipped (may not exist)")
     await db.commit()
     return {"status": "ok", "message": "Database cleared."}
 
@@ -358,9 +361,8 @@ async def import_entries(
         try:
             await svc.create(data)
             imported += 1
-        except Exception:
-            pass
-            # Skip duplicates (same date) or other errors
+        except Exception as e:
+            logger.warning("Failed to import entry (date=%s): %s", entry_date, e)
             skipped += 1
     return {"imported": imported, "skipped": skipped}
 
@@ -417,6 +419,7 @@ async def import_file(
                     entry_dt = dt_mod.fromtimestamp(us / 1_000_000, tz=dt_pkg.timezone.utc)
                     entry_date_str = entry_dt.strftime("%Y-%m-%d")
                 except Exception:
+                    logger.warning("Failed to parse Diarium date (ticks=%s)", ticks)
                     continue
 
                 heading = re.sub(r"<[^>]+>", "", row["Heading"] or "").strip() or None
@@ -468,7 +471,7 @@ async def import_file(
                             entry = json.loads(z.read(jf))
                             entries_data.append(_parse_diarium_json_entry(entry))
                         except Exception:
-                            pass
+                            logger.warning("Failed to parse JSON entry from %s", jf)
 
                 if not json_files:
                     for n in names:
@@ -479,7 +482,7 @@ async def import_file(
                                     for entry in data:
                                         entries_data.append(_parse_diarium_json_entry(entry))
                             except Exception:
-                                pass
+                                logger.warning("Failed to parse bulk JSON from %s", n)
 
                 md_files = sorted([n for n in names if n.endswith(".md")])
                 for mf in md_files:
@@ -504,6 +507,10 @@ async def import_file(
                 entries_data.append(parsed)
 
     # Import all parsed entries
+    # Pre-load all existing tags to avoid N+1 lookups
+    existing_tags_result = await db.execute(select(Tag))
+    tag_cache: dict[str, Tag] = {t.name: t for t in existing_tags_result.scalars().all()}
+
     imported = 0
     skipped = 0
     for entry in entries_data:
@@ -517,17 +524,19 @@ async def import_file(
 
             # Resolve tag names to IDs (create tags if needed)
             tag_ids: list[int] = []
+            has_new_tags = False
             for tag_name in entry.get("tags", []):
                 if not tag_name:
                     continue
-                result = await db.execute(select(Tag).where(Tag.name == tag_name))
-                tag = result.scalar_one_or_none()
+                tag = tag_cache.get(tag_name)
                 if not tag:
                     tag = Tag(name=tag_name)
+                    tag_cache[tag_name] = tag
                     db.add(tag)
-                    await db.flush()
-                    await db.refresh(tag)
-                tag_ids.append(tag.id)
+                    has_new_tags = True
+            if has_new_tags:
+                await db.flush()
+            tag_ids = [tag_cache[tn].id for tn in entry.get("tags", []) if tn and tag_cache.get(tn)]
 
             data = EntryCreate(
                 entry_date=ed,
@@ -538,8 +547,8 @@ async def import_file(
             )
             await svc.create(data)
             imported += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to import entry (date=%s): %s", entry.get("entry_date"), e)
             skipped += 1
 
     return {"imported": imported, "skipped": skipped}

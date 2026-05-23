@@ -9,7 +9,7 @@ from app.schemas.tag import TagBrief
 class EntryCreate(BaseModel):
     entry_date: date
     title: str | None = Field(default=None, max_length=255, description="Entry title")
-    body: str = Field(min_length=1, description="Markdown body")
+    body: str = Field(min_length=1, max_length=1_000_000, description="Markdown body")
     mood: str | None = Field(default=None, max_length=50, description="Mood label")
     tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to associate")
 

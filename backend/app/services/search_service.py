@@ -104,15 +104,22 @@ class SearchService:
         except Exception:
             return [], 0
 
-        # Load all embeddings
+        # Only load embeddings for non-deleted entries
         result = await self.db.execute(
             select(EntryEmbedding.entry_id, EntryEmbedding.embedding)
+            .join(Entry, Entry.id == EntryEmbedding.entry_id)
+            .where(~Entry.is_deleted)
         )
+        rows = result.fetchall()
+        if not rows:
+            return [], 0
+
         similarities: list[tuple[int, float]] = []
-        for row in result:
+        for row in rows:
             vec = json.loads(row.embedding)
             score = cosine_similarity(query_vec, vec)
-            similarities.append((row.entry_id, score))
+            if score > 0.1:  # Skip very low-similarity matches early
+                similarities.append((row.entry_id, score))
 
         similarities.sort(key=lambda x: x[1], reverse=True)
         total = len(similarities)
@@ -124,7 +131,7 @@ class SearchService:
         # Load entry details for the page
         entry_ids = [e[0] for e in page]
         entries_result = await self.db.execute(
-            select(Entry).where(Entry.id.in_(entry_ids), ~Entry.is_deleted)
+            select(Entry).where(Entry.id.in_(entry_ids))
         )
         entry_map = {e.id: e for e in entries_result.scalars().all()}
 
@@ -148,34 +155,12 @@ class SearchService:
         date_from: date | None, date_to: date | None, offset: int, limit: int,
     ) -> tuple[list[SearchResultEntry], int]:
         """Hybrid search combining FTS5 BM25 and cosine similarity via RRF."""
-        import asyncio
+        # Run sequentially to avoid concurrent access on same AsyncSession
+        keyword_result = await self._keyword_search(query, mood, tag_ids, date_from, date_to, 0, 100)
+        semantic_result = await self._semantic_search(query, 0, 100)
 
-        # Run both searches in parallel
-        keyword_task = asyncio.create_task(
-            self._keyword_search(query, mood, tag_ids, date_from, date_to, 0, 100)
-        )
-        semantic_task = asyncio.create_task(
-            self._semantic_search(query, 0, 100)
-        )
-
-        gather_results = await asyncio.gather(
-            keyword_task, semantic_task, return_exceptions=True
-        )
-
-        keyword_result = gather_results[0]
-        semantic_result = gather_results[1]
-
-        if isinstance(keyword_result, BaseException):
-            keyword_items: list[SearchResultEntry] = []
-            keyword_total: int = 0
-        else:
-            keyword_items, keyword_total = keyword_result
-
-        if isinstance(semantic_result, BaseException):
-            semantic_items: list[SearchResultEntry] = []
-            semantic_total: int = 0
-        else:
-            semantic_items, semantic_total = semantic_result
+        keyword_items, keyword_total = keyword_result
+        semantic_items, semantic_total = semantic_result
 
         # If no semantic results, fall back to keyword-only
         if not semantic_items:

@@ -27,7 +27,7 @@ class BackupSnapshot(Base):
     __tablename__ = "backup_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    config_id: Mapped[int] = mapped_column(ForeignKey("backup_config.id"), nullable=False)
+    config_id: Mapped[int] = mapped_column(ForeignKey("backup_config.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     entries_synced: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     media_synced: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

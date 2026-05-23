@@ -118,10 +118,12 @@ class AnalyticsService:
         )
 
     async def tag_stats(self) -> list[TagStatsResponse]:
-        """Tag usage counts."""
+        """Tag usage counts (excludes soft-deleted entries)."""
         result = await self.db.execute(
             select(Tag.id, Tag.name, func.count(EntryTag.entry_id).label("cnt"))
             .join(EntryTag, Tag.id == EntryTag.tag_id)
+            .join(Entry, Entry.id == EntryTag.entry_id)
+            .where(Entry.is_deleted == False)  # noqa: E712
             .group_by(Tag.id)
             .order_by(func.count(EntryTag.entry_id).desc())
         )

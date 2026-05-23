@@ -121,6 +121,7 @@ class OllamaService:
                     ollama_available=True,
                     model_name=self.model,
                     model_loaded=model_loaded,
+                    model_names=models,
                     error=None if model_loaded else f"Model '{self.model}' not found. Available: {models}",
                 )
         except Exception as exc:
@@ -128,6 +129,7 @@ class OllamaService:
                 ollama_available=False,
                 model_name=self.model,
                 model_loaded=False,
+                model_names=[],
                 error=f"Cannot connect to Ollama: {exc}",
             )
 
@@ -242,10 +244,8 @@ class OllamaService:
     def _parse_json_response(self, raw: str) -> dict[str, Any] | list[Any] | None:
         """Extract and parse JSON from LLM response text."""
         text = raw.strip()
-        # Try direct parse first
         try:
-            parsed: dict[str, Any] | list[Any] = json.loads(text)
-            return parsed
+            return json.loads(text)  # type: ignore[no-any-return]
         except json.JSONDecodeError:
             pass
         # Find JSON boundaries
@@ -255,8 +255,7 @@ class OllamaService:
         end = max(text.rfind("}"), text.rfind("]")) + 1
         if start >= 0 and end > start:
             try:
-                parsed2: dict[str, Any] | list[Any] = json.loads(text[start:end])
-                return parsed2
+                return json.loads(text[start:end])  # type: ignore[no-any-return]
             except json.JSONDecodeError:
                 pass
         logger.warning("Failed to parse JSON from LLM response: %s", text[:200])

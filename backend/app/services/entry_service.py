@@ -83,10 +83,23 @@ class EntryService:
         return entry
 
     async def soft_delete(self, entry_id: int) -> None:
-        """Mark entry as deleted; cascade-remove media files."""
+        """Mark entry as deleted; remove associated media files."""
         entry = await self.get(entry_id)
         entry.is_deleted = True
         entry.deleted_at = datetime.now()
+
+        # Clean up media files for the soft-deleted entry
+        from app.models.media import Media
+        from app.services.media_service import MediaService
+        media_result = await self.db.execute(
+            select(Media).where(Media.entry_id == entry_id)
+        )
+        media_list = media_result.scalars().all()
+        if media_list:
+            media_svc = MediaService(self.db)
+            for media in media_list:
+                await media_svc.delete(media.id)
+
         await self.db.commit()
 
     async def get_calendar_month(self, year: int, month: int) -> list[Entry]:

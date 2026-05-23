@@ -18,8 +18,8 @@ class VoiceRecording(Base):
     __tablename__ = "voice_recordings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    entry_id: Mapped[int] = mapped_column(ForeignKey("entries.id"), nullable=False)
-    media_id: Mapped[int] = mapped_column(ForeignKey("media.id"), nullable=False)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("entries.id", ondelete="CASCADE"), nullable=False)
+    media_id: Mapped[int] = mapped_column(ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
     duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     audio_format: Mapped[str] = mapped_column(String(10), nullable=False)
     transcription: Mapped[str | None] = mapped_column(String, nullable=True)

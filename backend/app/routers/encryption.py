@@ -69,5 +69,5 @@ async def decrypt_text(data: DecryptTextRequest, db: AsyncSession = Depends(get_
         key = svc._derive_key(data.passphrase)
         decrypted = svc._decrypt(data.encrypted_text, key).decode()
         return {"decrypted": decrypted}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Decryption failed: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Decryption failed. Check your passphrase and try again.")
