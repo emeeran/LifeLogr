@@ -13,6 +13,9 @@ from app.services.ollama_service import OllamaService
 
 logger = logging.getLogger(__name__)
 
+# Track pending enrichment tasks for graceful shutdown
+_pending_tasks: set[asyncio.Task[None]] = set()
+
 
 class EnrichmentService:
     """Orchestrates background AI tasks after an entry is saved."""
@@ -20,7 +23,18 @@ class EnrichmentService:
     @staticmethod
     def schedule(entry_id: int, title: str | None, body: str) -> None:
         """Fire-and-forget enrichment. Does not block the save response."""
-        asyncio.create_task(_run_enrichment(entry_id, title, body))
+        task = asyncio.create_task(_run_enrichment(entry_id, title, body))
+        _pending_tasks.add(task)
+        task.add_done_callback(_pending_tasks.discard)
+
+
+async def cancel_pending_tasks() -> None:
+    """Cancel all outstanding enrichment tasks (for graceful shutdown)."""
+    for task in _pending_tasks:
+        task.cancel()
+    if _pending_tasks:
+        await asyncio.gather(*_pending_tasks, return_exceptions=True)
+    _pending_tasks.clear()
 
 
 async def _run_enrichment(entry_id: int, title: str | None, body: str) -> None:

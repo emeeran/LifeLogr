@@ -93,7 +93,6 @@ async def export_local_backup(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_path = Path(tmpdir) / f"diarium-backup-{timestamp}.tar.gz"
 
-    # Build the tar.gz from db file + media dir
     db_url: str = settings.DATABASE_URL
     db_file = db_url.replace("sqlite+aiosqlite:///", "")
     media_dir = settings.MEDIA_DIR
@@ -102,6 +101,11 @@ async def export_local_backup(
 
     with tarfile.open(archive_path, "w:gz") as tar:
         if Path(db_file).exists():
+            # Checkpoint WAL before copying to ensure consistency
+            from app.core.database import engine
+            async with engine.begin() as conn:
+                from sqlalchemy import text
+                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
             tar.add(db_file, arcname="dev.db")
         if media_dir.exists():
             tar.add(str(media_dir), arcname="media")
@@ -129,21 +133,41 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
 
     restored: list[str] = []
 
-    # 1. Extract backup to temp dir first (validate before touching anything)
     tmpdir = tempfile.mkdtemp()
     try:
+        # Extract with path traversal protection
         with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
+            # Validate members before extraction
+            for member in tar.getmembers():
+                if member.name.startswith("/") or ".." in member.name:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=400, detail=f"Invalid archive: path traversal in '{member.name}'")
             tar.extractall(tmpdir)
 
-        # 2. If archive contains a database, swap it in
+        # If archive contains a database, swap it in atomically
         extracted_db = Path(tmpdir) / "dev.db"
         if extracted_db.exists():
-            await reinit_engine()  # disposes old engine, creates fresh one
-            shutil.copy2(str(extracted_db), db_file_path)
-            await init_db()  # re-create FTS triggers, seed templates
-            restored.append("database")
+            await reinit_engine()
 
-        # 3. Extract media files
+            # Backup the current DB before overwriting
+            backup_path = db_file_path + ".pre-restore.bak"
+            if Path(db_file_path).exists():
+                shutil.copy2(db_file_path, backup_path)
+
+            try:
+                shutil.copy2(str(extracted_db), db_file_path)
+                await init_db()
+                restored.append("database")
+                # Restore succeeded — remove backup
+                Path(backup_path).unlink(missing_ok=True)
+            except Exception:
+                # Restore failed — rollback to backup
+                if Path(backup_path).exists():
+                    shutil.copy2(backup_path, db_file_path)
+                Path(backup_path).unlink(missing_ok=True)
+                raise
+
+        # Extract media files
         extracted_media = Path(tmpdir) / "media"
         if extracted_media.exists():
             if media_dir.exists():

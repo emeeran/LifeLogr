@@ -55,8 +55,7 @@ class HookManager:
         else:
             module_path, fn_name = dotted_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
-        handler: Callable[..., Any] = getattr(module, fn_name)
-        return handler
+        return getattr(module, fn_name)  # type: ignore[no-any-return]
 
 
 # Global hook manager

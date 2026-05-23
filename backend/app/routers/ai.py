@@ -68,17 +68,10 @@ async def rewrite_text(data: RewriteRequest, db: AsyncSession = Depends(get_db))
 async def ai_status(db: AsyncSession = Depends(get_db)) -> Any:
     svc = OllamaService()
     status = await svc.status()
-    # Check if embedding model is available
-    embed_available = False
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
-            if r.status_code == 200:
-                models = [m.get("name", "") for m in r.json().get("models", [])]
-                embed_available = any(settings.OLLAMA_EMBED_MODEL in m for m in models)
-    except Exception:
-        pass
+    # Check if embedding model is available using same status call
+    embed_available = any(
+        settings.OLLAMA_EMBED_MODEL in m for m in status.model_names
+    ) if status.ollama_available else False
     return AIStatusResponse(
         ollama_available=status.ollama_available,
         model_name=status.model_name,
@@ -223,17 +216,21 @@ async def continue_writing(data: ContinueWritingRequest, db: AsyncSession = Depe
 async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
     """Generate an AI reflection on entries from this date in past years."""
     today = date.today()
-    past_entries: list[dict[str, Any]] = []
+    past_dates = [today.replace(year=today.year - y) for y in range(1, 6)]
 
-    for years_ago in range(1, 6):
-        past_date = today.replace(year=today.year - years_ago)
-        result = await db.execute(
-            select(Entry).where(
-                ~Entry.is_deleted,
-                Entry.entry_date == past_date,
-            )
+    # Single query for all past dates instead of 5 separate queries
+    result = await db.execute(
+        select(Entry).where(
+            ~Entry.is_deleted,
+            Entry.entry_date.in_(past_dates),
         )
-        entries = list(result.scalars().all())
+    )
+    all_entries = result.scalars().all()
+
+    # Group entries by year offset
+    past_entries: list[dict[str, Any]] = []
+    for years_ago, past_date in zip(range(1, 6), past_dates):
+        entries = [e for e in all_entries if e.entry_date == past_date]
         if entries:
             text = "\n\n".join(f"**{e.title or 'Untitled'}** ({years_ago} years ago)\n{e.body[:500]}" for e in entries)
             first = entries[0]
@@ -259,15 +256,15 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
     reflection = await svc.reflect_on_past(combined, closest["years_ago"])
 
     return OnThisDayResponse(
-        years_ago=int(closest["years_ago"]),
+        years_ago=closest["years_ago"],
         entries_count=len(past_entries),
         reflection=reflection,
         past_entries=[
             OnThisDayPastEntry(
-                years_ago=int(p["years_ago"]),
+                years_ago=p["years_ago"],
                 date=str(p["date"]),
-                title=p["title"] if isinstance(p["title"], str) else None,
-                snippet=p["snippet"] if isinstance(p["snippet"], str) else None,
+                title=p["title"],
+                snippet=p["snippet"],
             )
             for p in past_entries
         ],
@@ -310,6 +307,21 @@ async def detect_themes(
 
 # ── Weekly digest ──────────────────────────────────────────────────────
 
+
+def _digest_to_response(d: Digest) -> DigestResponse:
+    """Convert a Digest ORM object to a DigestResponse schema."""
+    return DigestResponse(
+        id=d.id,
+        week_start=d.week_start,
+        week_end=d.week_end,
+        themes=json.loads(d.themes) if d.themes else [],
+        emotional_trajectory=d.emotional_trajectory,
+        notable_moments=json.loads(d.notable_moments) if d.notable_moments else [],
+        summary_text=d.summary_text,
+        created_at=d.created_at,
+    )
+
+
 @router.get("/digests", response_model=list[DigestResponse])
 async def list_digests(
     limit: int = Query(10, ge=1, le=50),
@@ -320,19 +332,7 @@ async def list_digests(
         select(Digest).order_by(Digest.week_start.desc()).limit(limit)
     )
     digests = list(result.scalars().all())
-    return [
-        DigestResponse(
-            id=d.id,
-            week_start=d.week_start,
-            week_end=d.week_end,
-            themes=json.loads(d.themes) if d.themes else [],
-            emotional_trajectory=d.emotional_trajectory,
-            notable_moments=json.loads(d.notable_moments) if d.notable_moments else [],
-            summary_text=d.summary_text,
-            created_at=d.created_at,
-        )
-        for d in digests
-    ]
+    return [_digest_to_response(d) for d in digests]
 
 
 @router.get("/digests/latest", response_model=DigestResponse | None)
@@ -344,16 +344,7 @@ async def latest_digest(db: AsyncSession = Depends(get_db)) -> Any:
     d = result.scalar_one_or_none()
     if not d:
         return None
-    return DigestResponse(
-        id=d.id,
-        week_start=d.week_start,
-        week_end=d.week_end,
-        themes=json.loads(d.themes) if d.themes else [],
-        emotional_trajectory=d.emotional_trajectory,
-        notable_moments=json.loads(d.notable_moments) if d.notable_moments else [],
-        summary_text=d.summary_text,
-        created_at=d.created_at,
-    )
+    return _digest_to_response(d)
 
 
 @router.post("/digests/generate", response_model=DigestResponse)
@@ -367,16 +358,7 @@ async def generate_digest(db: AsyncSession = Depends(get_db)) -> Any:
         digest = await svc.generate_for_week(date.today() - timedelta(days=date.today().weekday()))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return DigestResponse(
-        id=digest.id,
-        week_start=digest.week_start,
-        week_end=digest.week_end,
-        themes=json.loads(digest.themes) if digest.themes else [],
-        emotional_trajectory=digest.emotional_trajectory,
-        notable_moments=json.loads(digest.notable_moments) if digest.notable_moments else [],
-        summary_text=digest.summary_text,
-        created_at=digest.created_at,
-    )
+    return _digest_to_response(digest)
 
 
 # ── Model management ───────────────────────────────────────────────────
@@ -385,6 +367,12 @@ async def generate_digest(db: AsyncSession = Depends(get_db)) -> Any:
 async def pull_model(model: str = Query(..., description="Model name to pull (e.g. nomic-embed-text)")) -> Any:
     """Trigger pulling an Ollama model. Returns immediately; pull runs in background."""
     import asyncio
+    import re
+
+    # Validate model name to prevent command injection
+    if not re.match(r'^[a-zA-Z0-9._:/-]+$', model):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid model name. Use alphanumeric characters, dots, hyphens, colons, and slashes only.")
 
     async def _pull() -> None:
         try:

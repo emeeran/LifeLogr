@@ -80,8 +80,12 @@ class TagService:
         await self.db.flush()
 
     async def get_entry_count(self, tag_id: int) -> int:
-        """Return count of entries associated with a tag."""
+        """Return count of non-deleted entries associated with a tag."""
+        from app.models.entry import Entry
         result = await self.db.execute(
-            select(func.count()).select_from(EntryTag).where(EntryTag.tag_id == tag_id)
+            select(func.count())
+            .select_from(EntryTag)
+            .join(Entry, Entry.id == EntryTag.entry_id)
+            .where(EntryTag.tag_id == tag_id, Entry.is_deleted == False)  # noqa: E712
         )
         return result.scalar_one()

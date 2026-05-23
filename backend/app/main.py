@@ -35,11 +35,24 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Initialize database tables on startup."""
+    """Initialize database tables on startup, clean up on shutdown."""
     logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
     await init_db()
     yield
-    logger.info("Shutting down")
+    logger.info("Shutting down...")
+    # Cancel outstanding background enrichment tasks
+    try:
+        from app.services.enrichment_service import cancel_pending_tasks
+        await cancel_pending_tasks()
+    except Exception:
+        pass
+    # Dispose database engine
+    try:
+        from app.core.database import engine
+        await engine.dispose()
+        logger.info("Database engine disposed")
+    except Exception:
+        pass
 
 
 app = FastAPI(
@@ -82,22 +95,22 @@ RATE_WINDOW = 60.0
 async def rate_limiter(request: Request, call_next: Any) -> Response:
     # Skip rate limiting for static assets, health, and tests
     if request.url.path.startswith(("/static", "/health", "/favicon")):
-        result: Response = await call_next(request)
-        return result
+        return await call_next(request)  # type: ignore[no-any-return]
     if settings.APP_ENV == "test":
-        result2: Response = await call_next(request)
-        return result2
+        return await call_next(request)  # type: ignore[no-any-return]
 
     client_ip = request.client.host if request.client else "unknown"
     now = time.time()
     timestamps = _rate_store[client_ip]
     # Remove entries older than window
-    _rate_store[client_ip] = timestamps = [t for t in timestamps if now - t < RATE_WINDOW]
+    pruned = [t for t in timestamps if now - t < RATE_WINDOW]
+    if not pruned:
+        _rate_store.pop(client_ip, None)  # prevent memory leak from stale IPs
+    _rate_store[client_ip] = timestamps = pruned
     if len(timestamps) >= RATE_LIMIT:
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
     timestamps.append(now)
-    result3: Response = await call_next(request)
-    return result3
+    return await call_next(request)  # type: ignore[no-any-return]
 
 
 # Serve static assets (logo, etc.)
@@ -161,7 +174,16 @@ app.include_router(settings_router)
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
+async def health_check() -> Any:
+    """Health check — verifies database connectivity."""
+    try:
+        from app.core.database import engine
+        from sqlalchemy import text
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.error("Health check failed: %s", e)
+        return JSONResponse(status_code=503, content={"status": "error", "detail": "Database unavailable"})
     return {"status": "ok"}
 
 

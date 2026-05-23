@@ -78,6 +78,7 @@ class AIStatusResponse(BaseModel):
     model_name: str
     model_loaded: bool
     embed_model_available: bool = False
+    model_names: list[str] = []
     error: str | None = None
 
 

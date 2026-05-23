@@ -8,7 +8,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="0.1.0"
+VERSION="$(grep '^version' "$ROOT/backend/pyproject.toml" | head -1 | sed 's/.*=.*\"\(.*\)\".*/\1/')"
+VERSION="${VERSION:-0.1.0}"
 ARCH="amd64"
 PKG_NAME="diarilinux-web"
 STAGE="$ROOT/dist/deb-stage"
@@ -45,7 +46,8 @@ cd "$ROOT/backend"
 # Use system Python so venv works on any target machine
 SYSTEM_PYTHON="$(which python3)"
 echo "  Using system Python: $SYSTEM_PYTHON ($(python3 --version))"
-uv venv --python "$SYSTEM_PYTHON" .venv-web --quiet 2>/dev/null || true
+rm -rf .venv  # Clean any existing venv
+uv venv --python "$SYSTEM_PYTHON" .venv --quiet 2>/dev/null || true
 uv sync --frozen --no-dev --python "$SYSTEM_PYTHON" --quiet
 # Ensure venv python points to system python, not uv cache
 ln -sf "$SYSTEM_PYTHON" .venv/bin/python 2>/dev/null || true
@@ -76,13 +78,14 @@ mkdir -p "$STAGE/var/lib/diarilinux/media"
 # Config directory
 mkdir -p "$STAGE/etc/diarilinux"
 
-# Create default .env
-cat > "$STAGE/etc/diarilinux/.env" << 'ENVEOF'
+# Create default .env with auto-generated SECRET_KEY
+GENERATED_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+cat > "$STAGE/etc/diarilinux/.env" << ENVEOF
 APP_ENV=production
 DATABASE_URL=sqlite+aiosqlite:////var/lib/diarilinux/diarilinux.db
 MEDIA_DIR=/var/lib/diarilinux/media
 DATA_DIR=/var/lib/diarilinux
-SECRET_KEY=change-me-before-production
+SECRET_KEY=${GENERATED_SECRET}
 CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 ENVEOF
 
@@ -166,10 +169,12 @@ fi
 chown -R diarilinux:diarilinux /var/lib/diarilinux
 chown -R diarilinux:diarilinux /opt/diarilinux
 
-# Make venv relocatable — fix shebangs and paths to match install location
-BUILD_DIR="/home/em/code/wip/diary/backend"
+# Make venv relocatable — fix shebangs to match install location
 INSTALL_DIR="/opt/diarilinux/backend"
-find /opt/diarilinux/backend/.venv/bin -type f -exec sed -i "s|${BUILD_DIR}|${INSTALL_DIR}|g" {} + 2>/dev/null || true
+# Fix any absolute paths in venv bin scripts to point to install location
+find /opt/diarilinux/backend/.venv/bin -type f -exec sed -i "s|^#!.*python|#!/usr/bin/python3|g" {} + 2>/dev/null || true
+# Update pyvenv.cfg to point to system python
+sed -i "s|^home = .*|home = /usr/bin|g" /opt/diarilinux/backend/.venv/pyvenv.cfg 2>/dev/null || true
 
 # Enable and start service
 systemctl daemon-reload
