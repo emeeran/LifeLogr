@@ -25,8 +25,13 @@ export const useUiStore = defineStore('ui', () => {
   // Global search palette
   const searchPaletteOpen = ref(false)
 
+  // AI drawer (side panel)
+  const aiDrawerOpen = ref(false)
+
   function openSearchPalette() { searchPaletteOpen.value = true }
   function closeSearchPalette() { searchPaletteOpen.value = false }
+
+  function toggleAiDrawer() { aiDrawerOpen.value = !aiDrawerOpen.value }
 
   function setView(view: ViewType) {
     activeView.value = view
@@ -117,9 +122,9 @@ export const useUiStore = defineStore('ui', () => {
   return {
     activeView, sidebarCollapsed, detailPanelOpen, editingEntryId, newEntryDate,
     darkMode, fontFamily, fontSize, rightPanelWidth, showEditor,
-    showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen,
+    showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, aiDrawerOpen,
     setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
-    openSearchPalette, closeSearchPalette,
+    openSearchPalette, closeSearchPalette, toggleAiDrawer,
   }
 })

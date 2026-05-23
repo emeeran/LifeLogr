@@ -38,3 +38,15 @@ class EntryDecryptedResponse(BaseModel):
     mood: str | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EncryptTextRequest(BaseModel):
+    """Request to encrypt arbitrary text."""
+    text: str = Field(min_length=1)
+    passphrase: str = Field(min_length=1)
+
+
+class DecryptTextRequest(BaseModel):
+    """Request to decrypt arbitrary text."""
+    encrypted_text: str = Field(min_length=1)
+    passphrase: str = Field(min_length=1)

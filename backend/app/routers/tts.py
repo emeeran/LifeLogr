@@ -33,11 +33,11 @@ def _clean_markdown(text: str) -> str:
     return text.strip()
 
 
-async def _generate_audio(text: str, voice: str) -> bytes:
+async def _generate_audio(text: str, voice: str, rate: str = "+0%", volume: str = "+0%") -> bytes:
     """Generate MP3 audio bytes from text using Edge TTS."""
     import edge_tts
 
-    communicate = edge_tts.Communicate(text, voice)
+    communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     buf = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -57,10 +57,25 @@ async def list_voices() -> Any:
     ]
 
 
+def _rate_str(speed: float) -> str:
+    """Convert speed multiplier (0.5-2.0) to Edge TTS rate string."""
+    pct = int((speed - 1.0) * 100)
+    return f"{pct:+d}%"
+
+
+def _volume_str(volume_pct: int) -> str:
+    """Convert volume percentage (0-100) to Edge TTS volume string."""
+    # Map 0-100 to -100% to +100%
+    adj = int((volume_pct - 50) * 2)
+    return f"{adj:+d}%"
+
+
 @router.get("/entry/{entry_id}")
 async def speak_entry(
     entry_id: int,
     voice: str = Query(DEFAULT_VOICE),
+    rate: float = Query(1.0, ge=0.5, le=2.0),
+    volume: int = Query(100, ge=0, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Generate speech audio for an entry and stream it back as MP3."""
@@ -76,13 +91,15 @@ async def speak_entry(
     if not text:
         return Response(content=b"", media_type="audio/mpeg")
 
-    audio = await _generate_audio(text, voice)
+    audio = await _generate_audio(text, voice, _rate_str(rate), _volume_str(volume))
     return StreamingResponse(io.BytesIO(audio), media_type="audio/mpeg")
 
 
 class SpeakRequest(BaseModel):
     text: str
     voice: str = DEFAULT_VOICE
+    rate: float = 1.0
+    volume: int = 100
 
 
 @router.post("/speak")
@@ -93,5 +110,5 @@ async def speak_text(req: SpeakRequest) -> StreamingResponse:
     if not text:
         return Response(content=b"", media_type="audio/mpeg")
 
-    audio = await _generate_audio(text, req.voice)
+    audio = await _generate_audio(text, req.voice, _rate_str(req.rate), _volume_str(req.volume))
     return StreamingResponse(io.BytesIO(audio), media_type="audio/mpeg")

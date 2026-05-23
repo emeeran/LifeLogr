@@ -4,10 +4,11 @@ import Sidebar from './Sidebar.vue'
 import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
 import EntryEditor from '../entry/EntryEditor.vue'
+import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
 import SearchPalette from '../search/SearchPalette.vue'
 import { useEntriesStore } from '../../stores/entries'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { AlertTriangle, Save, Trash2, X } from 'lucide-vue-next'
+import { AlertTriangle, Save, Trash2, X, Sparkles } from 'lucide-vue-next'
 
 const ui = useUiStore()
 const entries = useEntriesStore()
@@ -15,6 +16,7 @@ const editorRef = ref<InstanceType<typeof EntryEditor> | null>(null)
 
 const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && !ui.showEditor)
 const showEditor = computed(() => ui.showEditor)
+const showAiDrawer = computed(() => ui.aiDrawerOpen && showEditor.value)
 
 // ── Global Ctrl+K for search palette ──
 function onGlobalKeydown(e: KeyboardEvent) {
@@ -89,6 +91,25 @@ function handleCancel() {
       </Transition>
     </main>
 
+    <!-- AI Drawer (side panel between calendar and editor) -->
+    <Transition name="ai-drawer">
+      <div
+        v-if="showAiDrawer"
+        class="shrink-0 w-80 bg-surface border-l border-r border-border overflow-y-auto flex flex-col"
+      >
+        <div class="flex items-center justify-between px-3 py-2 border-b border-border">
+          <span class="text-xs font-medium text-text-primary flex items-center gap-1"><Sparkles :size="14" /> AI Assistant</span>
+          <button @click="ui.aiDrawerOpen = false" class="text-text-muted hover:text-text-primary cursor-pointer"><X :size="14" /></button>
+        </div>
+        <AiDrawerPanel
+          :get-selection="() => editorRef?.body ?? ''"
+          :apply-text="(t: string) => { if (editorRef) { editorRef.body = t; editorRef.onInput() } }"
+          :has-entry="!!editorRef?.hasEntry"
+          :entry-id="editorRef?.entryId ?? null"
+        />
+      </div>
+    </Transition>
+
     <!-- Panel splitter -->
     <PanelSplitter v-if="showDetail || showEditor" />
 
@@ -115,5 +136,14 @@ function handleCancel() {
 .prompt-enter-from,
 .prompt-leave-to {
   opacity: 0;
+}
+.ai-drawer-enter-active,
+.ai-drawer-leave-active {
+  transition: all 0.2s ease;
+}
+.ai-drawer-enter-from,
+.ai-drawer-leave-to {
+  opacity: 0;
+  width: 0;
 }
 </style>

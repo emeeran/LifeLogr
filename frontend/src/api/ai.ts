@@ -47,5 +47,8 @@ export const getLatestDigest = () =>
 export const generateDigest = () =>
   request<DigestResponse>('/ai/digests/generate', { method: 'POST' })
 
+export const runOCR = (mediaId: number, language: string = 'eng') =>
+  request<{ media_id: number; extracted_text: string; confidence: number; language: string }>(`/media/${mediaId}/ocr?language=${language}`, { method: 'POST' })
+
 export const pullModel = (model: string) =>
   request<{ status: string; model: string }>(`/ai/pull-model?model=${encodeURIComponent(model)}`, { method: 'POST' })
