@@ -150,3 +150,34 @@ mark {
   --color-border: #404040;
   --color-tag-chip: #5875F7;
 }
+
+/* ── Custom scrollbar (shared) ── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ── Shared animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInFromBottom {
+  from { transform: translateY(8px); }
+  to { transform: translateY(0); }
+}
+.animate-in {
+  animation-duration: 0.3s;
+  animation-fill-mode: both;
+}
+.fade-in { animation-name: fadeIn; }
+.slide-in-from-bottom-2 { animation-name: slideInFromBottom; }
