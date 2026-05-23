@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
 export type ViewType = 'calendar' | 'timeline' | 'search' | 'on-this-day' | 'analytics' | 'map' | 'reminders' | 'settings' | 'digest'
+export type DrawerPanel = 'ai' | 'revisions' | 'recording' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {
   const activeView = useLocalStorage<ViewType>('diarium-view', 'calendar')
@@ -25,13 +26,16 @@ export const useUiStore = defineStore('ui', () => {
   // Global search palette
   const searchPaletteOpen = ref(false)
 
-  // AI drawer (side panel)
-  const aiDrawerOpen = ref(false)
+  // Tool drawer (side panel — only one panel open at a time)
+  const activeDrawer = ref<DrawerPanel | null>(null)
 
   function openSearchPalette() { searchPaletteOpen.value = true }
   function closeSearchPalette() { searchPaletteOpen.value = false }
 
-  function toggleAiDrawer() { aiDrawerOpen.value = !aiDrawerOpen.value }
+  function toggleDrawer(panel: DrawerPanel) {
+    activeDrawer.value = activeDrawer.value === panel ? null : panel
+  }
+  function closeDrawer() { activeDrawer.value = null }
 
   function setView(view: ViewType) {
     activeView.value = view
@@ -122,9 +126,9 @@ export const useUiStore = defineStore('ui', () => {
   return {
     activeView, sidebarCollapsed, detailPanelOpen, editingEntryId, newEntryDate,
     darkMode, fontFamily, fontSize, rightPanelWidth, showEditor,
-    showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, aiDrawerOpen,
+    showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, activeDrawer,
     setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
-    openSearchPalette, closeSearchPalette, toggleAiDrawer,
+    openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer,
   }
 })

@@ -31,6 +31,9 @@ export interface EntryResponse {
   tags: TagBrief[]
   media_count: number
   has_recording: boolean
+  latitude: number | null
+  longitude: number | null
+  location_name: string | null
   created_at: string
   updated_at: string
 }

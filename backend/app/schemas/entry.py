@@ -39,6 +39,9 @@ class EntryResponse(BaseModel):
     tags: list[TagBrief]
     media_count: int
     has_recording: bool
+    latitude: float | None = None
+    longitude: float | None = None
+    location_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

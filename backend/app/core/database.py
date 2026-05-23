@@ -53,12 +53,29 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _migrate_schema(conn)
 
     # Ensure FTS5 virtual table and sync triggers exist
     await _setup_fts()
 
     # Seed built-in templates (idempotent)
     await _seed_builtin_templates()
+
+
+# Lightweight column migrations for desktop (no Alembic).
+# Each entry: (table, column, sql). Safe to run on every startup — skipped if column exists.
+_COLUMN_MIGRATIONS = [
+    ("entries", "summary", "ALTER TABLE entries ADD COLUMN summary VARCHAR(500)"),
+]
+
+
+async def _migrate_schema(conn) -> None:
+    """Add missing columns to existing tables (idempotent)."""
+    for table, column, sql in _COLUMN_MIGRATIONS:
+        existing = {row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()}
+        if column not in existing:
+            logger.info("Adding column %s.%s ...", table, column)
+            await conn.execute(text(sql))
 
 
 async def _setup_fts() -> None:
