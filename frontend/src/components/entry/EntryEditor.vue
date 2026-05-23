@@ -8,15 +8,12 @@ import {
   List, ListOrdered, Quote, Code, Link, Image, Minus,
   Undo2, Redo2, Maximize2, Minimize2, Search, Type, AlignLeft, AlignCenter, AlignRight, AlignJustify, Highlighter, Smile,
   Table, CheckSquare, Clock, ChevronUp, ChevronDown,
-  Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, Film, Music, FileText, LayoutTemplate,
+  Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
   Loader, Pause, Focus, Layout, Copy, Scissors
 } from 'lucide-vue-next'
-import AiDrawerPanel from './AiDrawerPanel.vue'
-import RevisionPanel from './RevisionPanel.vue'
 import EncryptionBadge from './EncryptionBadge.vue'
 import GeotagModal from './GeotagModal.vue'
 import TagList from '../tags/TagList.vue'
-import RecordingPanel from '../recordings/RecordingPanel.vue'
 import MediaViewer from '../media/MediaViewer.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
 import EmojiPicker from '../common/EmojiPicker.vue'
@@ -25,7 +22,6 @@ import { aiStatus, suggestTags, runOCR } from '../../api/ai'
 import { encryptText, decryptText } from '../../api/encryption'
 import { ttsApi } from '../../api/tts'
 import { mediaApi } from '../../api/media'
-import { formatFileSize } from '../../composables/useFormat'
 import { useLocalStorage } from '@vueuse/core'
 import { marked } from 'marked'
 
@@ -42,16 +38,15 @@ const title = ref('')
 const body = ref('')
 const tagIds = ref<number[]>([])
 const entryDate = ref('')
+const entryLat = ref<number | null>(null)
+const entryLon = ref<number | null>(null)
+const entryLocationName = ref<string | null>(null)
 const showPreview = ref(false)
 const fullscreen = ref(false)
 const textarea = ref<HTMLTextAreaElement | null>(null)
-const showRevisions = ref(false)
 const showGeotag = ref(false)
-const showRecording = ref(false)
-const showAttachments = ref(false)
 const showTemplates = ref(false)
 const showEmoji = ref(false)
-const showAiDrawer = ref(false)
 const aiProcessing = ref(false)
 const attachments = ref<MediaResponse[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -291,6 +286,9 @@ async function loadEntry() {
   body.value = ''
   title.value = ''
   tagIds.value = []
+  entryLat.value = null
+  entryLon.value = null
+  entryLocationName.value = null
 
   if (isNew.value) {
     if (ui.newEntryDate) {
@@ -324,6 +322,9 @@ async function loadEntry() {
       }
       tagIds.value = entry.tags.map(t => t.id)
       entryDate.value = entry.entry_date
+      entryLat.value = entry.latitude ?? null
+      entryLon.value = entry.longitude ?? null
+      entryLocationName.value = entry.location_name ?? null
     }
   }
   pushHistory()
@@ -363,6 +364,25 @@ aiStatus().then(s => { aiAvailable.value = s.ollama_available && s.model_loaded 
 async function onEncryptionChange(encrypted: boolean) {
   isEncrypted.value = encrypted
   await loadEntry()
+}
+
+async function onGeotagSaved() {
+  showGeotag.value = false
+  if (hasEntry.value) {
+    try {
+      const entry = await entries.fetchEntry(ui.editingEntryId!)
+      if (entry) {
+        entryLat.value = entry.latitude ?? null
+        entryLon.value = entry.longitude ?? null
+        entryLocationName.value = entry.location_name ?? null
+      }
+    } catch {
+      // Entry may have been deleted or DB reset — clear stale refs
+      entryLat.value = null
+      entryLon.value = null
+      entryLocationName.value = null
+    }
+  }
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -510,15 +530,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
   // Close active overlays in priority order
   if (showTemplates.value) { showTemplates.value = false; return }
   if (showContextMenu.value) { showContextMenu.value = false; return }
-  if (showAiDrawer.value) { showAiDrawer.value = false; return }
+  if (ui.activeDrawer) { ui.closeDrawer(); return }
   if (showEmoji.value) { showEmoji.value = false; return }
   if (showGeotag.value) { showGeotag.value = false; return }
   if (viewerOpen.value) { viewerOpen.value = false; return }
   if (showTagDropdown.value) { showTagDropdown.value = false; return }
   if (showFind.value) { showFind.value = false; return }
-  if (showRevisions.value) { showRevisions.value = false; return }
-  if (showRecording.value) { showRecording.value = false; return }
-  if (showAttachments.value) { showAttachments.value = false; return }
   if (fullscreen.value) { fullscreen.value = false; return }
 
   // Close editor panel entirely
@@ -528,7 +545,12 @@ function onGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => document.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
 
-defineExpose({ isDirty, save, body, onInput, hasEntry, entryId: computed(() => ui.editingEntryId) })
+defineExpose({
+  isDirty, save, body, onInput, hasEntry, entryId: computed(() => ui.editingEntryId),
+  attachments, handleFileUpload, removeAttachment, runOcrTool, loadAttachments,
+  triggerFileInput: () => fileInput.value?.click(),
+  openViewer: (index: number) => { viewerIndex.value = index; viewerOpen.value = true },
+})
 
 // ── Save ──
 async function save() {
@@ -574,11 +596,6 @@ function close() {
   ui.startEditing(null)
 }
 
-function onTranscribed(text: string) {
-  body.value += `\n\n[Transcription]\n${text}`
-  onInput()
-}
-
 function onEmojiSelect(emoji: string) {
   insertAtCursor(emoji)
   showEmoji.value = false
@@ -619,12 +636,12 @@ function applyToSelection(newText: string) {
 }
 
 async function openRecording() {
-  if (showRecording.value) { showRecording.value = false; return }
+  if (ui.activeDrawer === 'recording') { ui.closeDrawer(); return }
   if (!hasEntry.value) {
     await save()
-    if (!hasEntry.value) return // save failed or cancelled
+    if (!hasEntry.value) return
   }
-  showRecording.value = true
+  ui.activeDrawer = 'recording'
 }
 
 // ── Attachments ──
@@ -636,14 +653,14 @@ async function loadAttachments() {
 }
 
 async function openAttachDialog() {
-  if (showAttachments.value) { showAttachments.value = false; return }
+  if (ui.activeDrawer === 'attachments') { ui.closeDrawer(); return }
   if (!hasEntry.value) {
     await save()
     if (!hasEntry.value) return
   }
   await loadAttachments()
-  showAttachments.value = true
-  fileInput.value?.click()
+  ui.activeDrawer = 'attachments'
+  nextTick(() => fileInput.value?.click())
 }
 
 async function handleFileUpload(files: FileList | null) {
@@ -704,13 +721,6 @@ async function encryptSelection() {
   } catch (e: unknown) {
     alert(`Encryption failed: ${errMsg(e)}`)
   }
-}
-
-function mediaIcon(type: string) {
-  if (type === 'image' || type.startsWith('image/')) return Image
-  if (type === 'video' || type.startsWith('video/')) return Film
-  if (type === 'audio' || type.startsWith('audio/')) return Music
-  return FileText
 }
 
 async function toggleTTS() {
@@ -1043,20 +1053,6 @@ const activeFormats = computed(() => {
 
     <!-- Body + Panels -->
     <div class="flex-1 flex min-h-0 relative overflow-hidden">
-      <!-- AI Sidebar -->
-      <div
-        v-if="showAiDrawer"
-        class="w-80 border-r border-border bg-surface flex flex-col shrink-0 transition-all duration-300 z-10"
-      >
-        <AiDrawerPanel
-          :hasEntry="hasEntry"
-          :entryId="ui.editingEntryId"
-          :getSelection="getSelection"
-          :applyText="applyToSelection"
-          @close="showAiDrawer = false"
-        />
-      </div>
-
       <!-- Main Editor Area -->
       <div class="flex-1 flex flex-col min-h-0">
         <!-- Textarea / Preview -->
@@ -1087,54 +1083,6 @@ const activeFormats = computed(() => {
             v-html="renderedPreview"
           />
         </template>
-      </div>
-
-      <!-- Revision Panel -->
-      <div v-if="showRevisions && hasEntry" class="border-t border-border p-3 max-h-[40vh] overflow-y-auto">
-        <RevisionPanel :entryId="ui.editingEntryId!" @restored="() => { showRevisions = false }" />
-      </div>
-
-      <!-- Recording Panel -->
-      <div v-if="showRecording && hasEntry" class="border-t border-border p-3">
-        <RecordingPanel :entryId="ui.editingEntryId!" @transcribed="onTranscribed" />
-      </div>
-
-      <!-- Attachments Panel -->
-      <div v-if="showAttachments && hasEntry" class="border-t border-border p-3 max-h-[40vh] overflow-y-auto">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-xs font-medium text-text-secondary">Attachments ({{ attachments.length }})</span>
-          <button class="text-xs text-accent hover:text-accent-hover cursor-pointer" @click="fileInput?.click()">+ Add more</button>
-        </div>
-        <div v-if="!attachments.length" class="text-xs text-text-muted text-center py-3">
-          No attachments yet. Click the paperclip button to add files.
-        </div>
-        <div v-else class="space-y-1.5">
-          <div
-            v-for="(m, idx) in attachments"
-            :key="m.id"
-            class="flex items-center gap-2 px-2 py-1.5 rounded bg-surface-hover cursor-pointer hover:bg-surface-hover/80"
-            @click="viewerIndex = idx; viewerOpen = true"
-          >
-            <!-- Thumbnail for images -->
-            <img v-if="m.media_type === 'image' || m.media_type.startsWith('image/')" :src="mediaApi.fileUrl(m.id)" class="w-8 h-8 rounded object-cover shrink-0" />
-            <component v-else :is="mediaIcon(m.media_type)" :size="16" class="text-accent shrink-0" />
-            <span class="text-xs text-text-primary truncate flex-1">{{ m.filename }}</span>
-            <span class="text-[10px] text-text-muted shrink-0">{{ formatFileSize(m.file_size) }}</span>
-            <button
-              v-if="m.media_type === 'image' || m.media_type.startsWith('image/')"
-              class="p-0.5 text-accent hover:text-accent-hover cursor-pointer"
-              title="Extract text (OCR)"
-              @click.stop="runOcrTool(m.id)"
-              :disabled="aiProcessing"
-            >
-              <Loader v-if="aiProcessing" :size="12" class="animate-spin" />
-              <SearchIcon v-else :size="12" />
-            </button>
-            <button class="p-0.5 text-text-muted hover:text-red-400 cursor-pointer" @click.stop="removeAttachment(m.id)" title="Remove">
-              <Trash2 :size="12" />
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -1213,32 +1161,36 @@ const activeFormats = computed(() => {
         <span class="w-px h-4 bg-border mx-0.5" />
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="showAiDrawer ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          :class="ui.activeDrawer === 'ai' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
           title="AI Smart Actions"
-          @click="showAiDrawer = !showAiDrawer"
+          @click="ui.toggleDrawer('ai')"
         >
           <Sparkles :size="13" />
         </button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="showRevisions ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
-          @click="showRevisions = !showRevisions"
+          :class="ui.activeDrawer === 'revisions' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          @click="hasEntry && ui.toggleDrawer('revisions')"
           title="Version History"
         ><History :size="13" /></button>
-        <button
-          class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
-          @click="showGeotag = true"
-          title="Set Location"
-        ><MapPin :size="13" /></button>
+        <div class="relative group">
+          <button
+            class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+            @click="showGeotag = true"
+          ><MapPin :size="13" /></button>
+          <div v-if="entryLocationName"
+            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded text-[10px] text-white bg-gray-800 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50"
+          >{{ entryLocationName }}</div>
+        </div>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="showRecording ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          :class="ui.activeDrawer === 'recording' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
           @click="openRecording"
           title="Voice Recording"
         ><Mic :size="13" /></button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="attachments.length ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          :class="ui.activeDrawer === 'attachments' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
           @click="openAttachDialog"
           title="Attach files"
         >
@@ -1287,8 +1239,11 @@ const activeFormats = computed(() => {
     <GeotagModal
       v-if="showGeotag && (ui.editingEntryId || isNew)"
       :entryId="ui.editingEntryId ?? -1"
+      :lat="entryLat"
+      :lon="entryLon"
+      :name="entryLocationName"
       @close="showGeotag = false"
-      @saved="showGeotag = false"
+      @saved="onGeotagSaved"
       @pending="(data) => { pendingGeotag = data; showGeotag = false }"
     />
 
@@ -1336,7 +1291,7 @@ const activeFormats = computed(() => {
         <Lock :size="12" /> Encrypt Selection
       </button>
       <div class="h-px bg-border my-1" />
-      <button @click="showAiDrawer = true" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-accent">
+      <button @click="ui.toggleDrawer('ai')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-accent">
         <Sparkles :size="12" /> AI Smart Actions
       </button>
     </div>

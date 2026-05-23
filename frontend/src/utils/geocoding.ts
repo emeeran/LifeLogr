@@ -18,3 +18,30 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string> 
     return ''
   }
 }
+
+export interface GeocodeResult {
+  lat: number
+  lon: number
+  display_name: string
+}
+
+/**
+ * Forward-geocode a place name using Nominatim search.
+ * Returns up to 5 matching results.
+ */
+export async function forwardGeocode(query: string): Promise<GeocodeResult[]> {
+  if (!query.trim()) return []
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`
+    )
+    const data = await res.json()
+    return data.map((r: any) => ({
+      lat: parseFloat(r.lat),
+      lon: parseFloat(r.lon),
+      display_name: r.display_name,
+    }))
+  } catch {
+    return []
+  }
+}

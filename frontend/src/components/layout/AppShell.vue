@@ -5,10 +5,14 @@ import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
 import EntryEditor from '../entry/EntryEditor.vue'
 import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
+import RevisionPanel from '../entry/RevisionPanel.vue'
+import RecordingPanel from '../recordings/RecordingPanel.vue'
+import AttachmentsPanel from '../entry/AttachmentsPanel.vue'
 import SearchPalette from '../search/SearchPalette.vue'
 import { useEntriesStore } from '../../stores/entries'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { AlertTriangle, Save, Trash2, X, Sparkles } from 'lucide-vue-next'
+import { AlertTriangle, Save, Trash2, X, Sparkles, History, Mic, Paperclip } from 'lucide-vue-next'
+import type { Component } from 'vue'
 
 const ui = useUiStore()
 const entries = useEntriesStore()
@@ -16,7 +20,27 @@ const editorRef = ref<InstanceType<typeof EntryEditor> | null>(null)
 
 const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && !ui.showEditor)
 const showEditor = computed(() => ui.showEditor)
-const showAiDrawer = computed(() => ui.aiDrawerOpen && showEditor.value)
+const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
+
+const drawerTitle = computed(() => {
+  switch (ui.activeDrawer) {
+    case 'ai': return 'AI Assistant'
+    case 'revisions': return 'Version History'
+    case 'recording': return 'Voice Recording'
+    case 'attachments': return 'Attachments'
+    default: return ''
+  }
+})
+
+const drawerIcon = computed<Component>(() => {
+  switch (ui.activeDrawer) {
+    case 'ai': return Sparkles
+    case 'revisions': return History
+    case 'recording': return Mic
+    case 'attachments': return Paperclip
+    default: return Sparkles
+  }
+})
 
 // ── Global Ctrl+K for search palette ──
 function onGlobalKeydown(e: KeyboardEvent) {
@@ -42,6 +66,24 @@ function handleDiscard() {
 
 function handleCancel() {
   ui.cancelSwitch()
+}
+
+// ── Drawer panel callbacks ──
+function onRevisionRestored() {
+  ui.closeDrawer()
+  editorRef.value?.loadAttachments?.()
+  entries.refreshAll()
+}
+
+function onTranscribed(text: string) {
+  if (editorRef.value) {
+    editorRef.value.body += `\n\n[Transcription]\n${text}`
+    editorRef.value.onInput()
+  }
+}
+
+function onAttachmentView(index: number) {
+  editorRef.value?.openViewer?.(index)
 }
 </script>
 
@@ -91,21 +133,46 @@ function handleCancel() {
       </Transition>
     </main>
 
-    <!-- AI Drawer (side panel between calendar and editor) -->
+    <!-- Tool Drawer (side panel between calendar and editor) -->
     <Transition name="ai-drawer">
       <div
-        v-if="showAiDrawer"
+        v-if="showDrawer"
         class="shrink-0 w-80 bg-surface border-l border-r border-border overflow-y-auto flex flex-col"
       >
         <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-          <span class="text-xs font-medium text-text-primary flex items-center gap-1"><Sparkles :size="14" /> AI Assistant</span>
-          <button @click="ui.aiDrawerOpen = false" class="text-text-muted hover:text-text-primary cursor-pointer"><X :size="14" /></button>
+          <span class="text-xs font-medium text-text-primary flex items-center gap-1">
+            <component :is="drawerIcon" :size="14" /> {{ drawerTitle }}
+          </span>
+          <button @click="ui.closeDrawer()" class="text-text-muted hover:text-text-primary cursor-pointer">
+            <X :size="14" />
+          </button>
         </div>
+        <!-- Dynamic panel content -->
         <AiDrawerPanel
+          v-if="ui.activeDrawer === 'ai'"
           :get-selection="() => editorRef?.body ?? ''"
           :apply-text="(t: string) => { if (editorRef) { editorRef.body = t; editorRef.onInput() } }"
           :has-entry="!!editorRef?.hasEntry"
           :entry-id="editorRef?.entryId ?? null"
+        />
+        <RevisionPanel
+          v-if="ui.activeDrawer === 'revisions'"
+          :entry-id="editorRef?.entryId ?? 0"
+          @restored="onRevisionRestored"
+        />
+        <RecordingPanel
+          v-if="ui.activeDrawer === 'recording'"
+          :entry-id="editorRef?.entryId ?? 0"
+          @transcribed="onTranscribed"
+        />
+        <AttachmentsPanel
+          v-if="ui.activeDrawer === 'attachments'"
+          :attachments="editorRef?.attachments ?? []"
+          :ai-processing="false"
+          @add="editorRef?.triggerFileInput?.()"
+          @remove="(id: number) => editorRef?.removeAttachment?.(id)"
+          @ocr="(id: number) => editorRef?.runOcrTool?.(id)"
+          @view="onAttachmentView"
         />
       </div>
     </Transition>

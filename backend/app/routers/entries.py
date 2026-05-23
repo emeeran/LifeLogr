@@ -39,6 +39,9 @@ def _to_response(entry: Entry) -> EntryResponse:
         tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in entry.tag_associations if a.tag],
         media_count=len(entry.media),
         has_recording=len(entry.recordings) > 0,
+        latitude=entry.latitude,
+        longitude=entry.longitude,
+        location_name=entry.location_name,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
     )
