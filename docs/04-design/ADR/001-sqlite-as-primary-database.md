@@ -21,7 +21,8 @@ Use SQLite exclusively for both development and production.
 - **Single-file portability** — the entire database is one file the user can copy, back up, or move (NFR-007).
 - **Offline-first guaranteed** — SQLite has no network dependency; the app works with zero connectivity (NFR-001).
 - **Performance** — SQLite handles single-user read/write workloads with sub-millisecond latency on local SSD, well under the 200 ms NFR-002 target.
-- **Concurrency** — SQLite supports one writer at a time. For this single-user app, concurrent writes from the backup background task are the only overlap — handled via WAL mode and short transactions.
+- **Concurrency** — SQLite supports one writer at a time. For this single-user app, concurrent writes from the backup background task are the only overlap — handled via WAL mode and short transactions. WAL mode is enabled automatically on every connection (`PRAGMA journal_mode=WAL`) along with foreign key enforcement (`PRAGMA foreign_keys=ON`) and a 5-second busy timeout.
+- **Connection pool** — SQLite connection pool is set to `pool_size=1` automatically (no overflow) since only one writer is supported. PostgreSQL deployments can use the configured `DB_POOL_SIZE` and `DB_MAX_OVERFLOW`.
 - **Limitations** — No built-in full-text search (FTS5 extension must be enabled). No native JSON queries. These are acceptable trade-offs.
 
 ## Alternatives Considered

@@ -9,6 +9,7 @@ const props = defineProps<{
   isCurrentMonth: boolean
   entries: EntryResponse[]
   isToday: boolean
+  isSelected: boolean
 }>()
 
 const emit = defineEmits<{
@@ -45,6 +46,7 @@ function handleNewEntry(dateStr: string) {
     :class="[
       isCurrentMonth ? (entries.length ? 'bg-accent/5' : 'bg-surface') : (entries.length ? 'bg-accent/5' : 'bg-sidebar/50'),
       isToday ? 'ring-2 ring-accent bg-accent/10' : '',
+      isSelected ? 'ring-2 ring-accent/60 bg-accent/10' : '',
       'hover:bg-surface-hover'
     ]"
     @click="handleClick"

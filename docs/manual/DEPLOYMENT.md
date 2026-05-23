@@ -513,8 +513,8 @@ git push origin main --tags
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_POOL_SIZE` | `5` | Connection pool size |
-| `DB_MAX_OVERFLOW` | `10` | Max overflow connections |
+| `DB_POOL_SIZE` | `5` | Connection pool size (PostgreSQL only; SQLite uses 1) |
+| `DB_MAX_OVERFLOW` | `10` | Max overflow connections (PostgreSQL only; SQLite uses 0) |
 | `RATE_LIMIT` | `60/minute` | Rate limit per IP |
 
 ### Tauri Sidecar
@@ -560,9 +560,13 @@ git push origin main --tags
 
 - **Engine:** SQLite with aiosqlite (async)
 - **Location:** `{DATA_DIR}/diarilinux.db`
-- **FTS:** Full-text search via FTS5 virtual table
-- **Migrations:** Auto-creates tables on startup (`Base.metadata.create_all`)
-- **Backup:** Copy the `.db` file or use the export endpoint
+- **WAL mode:** Enabled automatically — allows concurrent reads during writes
+- **Foreign keys:** Enforced (`PRAGMA foreign_keys=ON`) — cascading deletes active
+- **Busy timeout:** 5 seconds — prevents immediate "database is locked" errors
+- **Connection pool:** `pool_size=1` for SQLite (single writer), configurable for PostgreSQL
+- **FTS:** Full-text search via FTS5 virtual table, auto-rebuilt on startup if stale
+- **Migrations:** Auto-creates tables on startup (`Base.metadata.create_all`) + lightweight column migrations via `_COLUMN_MIGRATIONS`
+- **Backup:** WAL checkpoint before export; atomic restore with rollback on failure
 
 ### Media Storage
 
@@ -592,13 +596,19 @@ git push origin main --tags
 | Feature | Implementation |
 |---------|---------------|
 | CORS | Configurable origins, credentials supported |
-| Rate Limiting | In-memory per-IP, 60 req/min |
+| Rate Limiting | In-memory per-IP, 60 req/min with memory leak protection |
 | File Validation | Magic number check, MIME whitelist |
 | Blocked Files | Executables, scripts, HTML blocked |
 | Path Traversal | `..` sequences rejected in filenames |
+| Archive Safety | Tar members validated before extraction (path traversal blocked) |
+| Plugin Validation | entry_point restricted to safe dotted paths; stdlib modules blocked |
+| Model Validation | Ollama model names validated before subprocess execution |
 | XSS | DOMPurify sanitization on rendered HTML |
 | Encryption | AES-256-GCM for entry-level encryption |
+| Backup Atomicity | Restore backs up current DB first, rolls back on failure |
 | Request Logging | UUID-based tracking with timing |
+| Health Check | `/health` verifies database connectivity |
+| Graceful Shutdown | Engine disposed, background enrichment tasks cancelled |
 
 ### Docker Security
 

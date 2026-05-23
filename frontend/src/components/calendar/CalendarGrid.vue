@@ -14,6 +14,7 @@ const ui = useUiStore()
 const tagsStore = useTagsStore()
 const filterTagId = ref<number | null>(null)
 const showTagMenu = ref(false)
+const selectedDate = ref<string | null>(null)
 
 onMounted(() => tagsStore.fetchTree())
 
@@ -48,10 +49,12 @@ watch(() => [cal.year.value, cal.month.value], loadMonth)
 watch(() => entries.lastUpdated, loadMonth)
 
 function selectDate(dateStr: string) {
+  selectedDate.value = dateStr
   ui.requestEdit(-1, dateStr)
 }
 
 function openEntry(entryId: number) {
+  selectedDate.value = null // entry selected, not date
   ui.requestEdit(entryId)
 }
 </script>
@@ -132,6 +135,7 @@ function openEntry(entryId: number) {
           :is-current-month="day.isCurrentMonth"
           :entries="entryMap[day.dateStr] ?? []"
           :is-today="day.dateStr === todayStr"
+          :is-selected="day.dateStr === selectedDate"
           @select-date="selectDate"
           @open-entry="openEntry"
         />

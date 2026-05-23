@@ -1,4 +1,5 @@
 """Business logic for media attachments."""
+import io
 import logging
 import uuid
 from pathlib import Path
@@ -24,6 +25,12 @@ _BLOCKED_SIGNATURES: dict[bytes, str] = {
 
 # Allowed MIME type prefixes
 _ALLOWED_MIME_PREFIXES = {"image/", "video/", "audio/", "application/pdf", "text/"}
+
+# Image types that can be converted to WebP
+_CONVERTIBLE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp", "image/tiff"}
+
+# Max dimension for image resizing
+_MAX_IMAGE_DIMENSION = 2048
 
 
 class MediaService:
@@ -63,18 +70,26 @@ class MediaService:
             raise NotFoundError(f"Entry {entry_id} not found")
 
         media_type = self._classify_media(content_type)
-        ext = Path(safe_name).suffix or ".bin"
-        stored_name = f"{uuid.uuid4()}{ext}"
+
+        # Compress and convert images to WebP
+        final_data = file_data
+        final_ext = Path(safe_name).suffix or ".bin"
+        if content_type in _CONVERTIBLE_IMAGE_TYPES:
+            final_data, converted = self._compress_to_webp(file_data)
+            if converted:
+                final_ext = ".webp"
+
+        stored_name = f"{uuid.uuid4()}{final_ext}"
         rel_path = f"{media_type}s/{stored_name}"
         full_path = settings.MEDIA_DIR / f"{media_type}s" / stored_name
         full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_bytes(file_data)
+        full_path.write_bytes(final_data)
 
         media = Media(
             entry_id=entry_id,
             filename=safe_name,
             media_type=media_type,
-            file_size=len(file_data),
+            file_size=len(final_data),
             storage_path=rel_path,
             caption=caption,
         )
@@ -82,6 +97,47 @@ class MediaService:
         await self.db.commit()
         await self.db.refresh(media)
         return media
+
+    @staticmethod
+    def _compress_to_webp(file_data: bytes) -> tuple[bytes, bool]:
+        """Compress image and convert to WebP. Returns (data, was_converted)."""
+        try:
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(file_data))
+
+            # Strip EXIF orientation and convert to RGB if needed
+            if hasattr(img, "transpose"):
+                from PIL import ImageOps
+                img = ImageOps.exif_transpose(img)
+
+            # Resize if larger than max dimension
+            if max(img.size) > _MAX_IMAGE_DIMENSION:
+                img.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), Image.LANANCZOS)
+
+            # Convert to RGB for WebP (handles RGBA, palette, etc.)
+            if img.mode in ("RGBA", "LA", "P"):
+                img = img.convert("RGBA")
+            else:
+                img = img.convert("RGB")
+
+            buf = io.BytesIO()
+            img.save(buf, format="WEBP", quality=80, method=4)
+            compressed = buf.getvalue()
+
+            # Only use WebP if it's actually smaller
+            if len(compressed) < len(file_data):
+                logger.info(
+                    "Image compressed to WebP: %d -> %d bytes (%.1f%% reduction)",
+                    len(file_data), len(compressed),
+                    (1 - len(compressed) / len(file_data)) * 100,
+                )
+                return compressed, True
+            return file_data, False
+
+        except Exception:
+            logger.warning("Image compression failed, storing original", exc_info=True)
+            return file_data, False
 
     async def get(self, media_id: int) -> Media:
         """Return media metadata."""
@@ -95,7 +151,11 @@ class MediaService:
         """Return (file_bytes, content_type, filename) from disk."""
         media = await self.get(media_id)
         full_path = settings.MEDIA_DIR / media.storage_path
-        return full_path.read_bytes(), self._media_content_type(media.media_type), media.filename
+        content_type = self._media_content_type(media.media_type)
+        # Serve WebP content type for converted images
+        if media.storage_path.endswith(".webp"):
+            content_type = "image/webp"
+        return full_path.read_bytes(), content_type, media.filename
 
     async def delete(self, media_id: int) -> None:
         """Delete media record and remove file from disk."""

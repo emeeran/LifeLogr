@@ -103,6 +103,168 @@ class NextcloudProvider:
             resp.raise_for_status()
 
 
+class GoogleDriveProvider:
+    """Google Drive async sync provider implementing the SyncProvider protocol."""
+
+    def __init__(
+        self,
+        credentials: dict[str, str],
+        on_token_refresh: callable | None = None
+    ) -> None:
+        self._client_id = credentials.get("client_id") or "diarilinux-client-id.apps.googleusercontent.com"
+        self._client_secret = credentials.get("client_secret") or "GOCSPX-diarilinux-secret"
+        self._refresh_token = credentials.get("refresh_token")
+        self._access_token = credentials.get("access_token")
+        self._token_expiry = credentials.get("token_expiry")  # timestamp as str/float
+        self._on_token_refresh = on_token_refresh
+
+    async def _ensure_valid_token(self) -> str:
+        """Refreshes the access token if expired or missing."""
+        import time
+        import httpx
+
+        now = time.time()
+        # If we have an access token and it's not expired (buffer of 60 seconds)
+        if self._access_token and self._token_expiry and float(self._token_expiry) > now + 60:
+            return self._access_token
+
+        if not self._refresh_token:
+            raise ValueError("Refresh token missing from Google Drive credentials")
+
+        # Perform token refresh
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "refresh_token": self._refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            
+            self._access_token = data["access_token"]
+            self._token_expiry = str(now + data["expires_in"])
+            
+            if self._on_token_refresh:
+                await self._on_token_refresh(self._access_token, self._token_expiry)
+
+            return self._access_token
+
+    async def _find_file_id(self, path: str) -> str | None:
+        """Find the unique Google Drive file ID matching the file path/name."""
+        import httpx
+        from urllib.parse import quote
+
+        token = await self._ensure_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # Escape path for query safely
+        query = f"name = '{path}' and 'appDataFolder' in parents and trashed = false"
+        url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, timeout=10.0)
+            resp.raise_for_status()
+            files = resp.json().get("files", [])
+            return files[0]["id"] if files else None
+
+    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+        import json
+        import httpx
+        token = await self._ensure_valid_token()
+        
+        file_id = await self._find_file_id(path)
+        
+        if file_id:
+            # Update existing file content
+            url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/octet-stream",
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.patch(url, headers=headers, content=data, timeout=15.0)
+                resp.raise_for_status()
+                return path
+        else:
+            # Create new file using multipart upload
+            url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+            boundary = b"diarilinux_upload_boundary"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": f"multipart/related; boundary={boundary.decode()}",
+            }
+            
+            metadata = {
+                "name": path,
+                "parents": ["appDataFolder"]
+            }
+            
+            body = (
+                b"--" + boundary + b"\r\n"
+                b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                + json.dumps(metadata).encode("utf-8") + b"\r\n"
+                b"--" + boundary + b"\r\n"
+                b"Content-Type: application/octet-stream\r\n\r\n"
+                + data + b"\r\n"
+                b"--" + boundary + b"--\r\n"
+            )
+            
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, content=body, timeout=15.0)
+                resp.raise_for_status()
+                return path
+
+    async def download(self, path: str) -> bytes:
+        import httpx
+        token = await self._ensure_valid_token()
+        file_id = await self._find_file_id(path)
+        if not file_id:
+            raise FileNotFoundError(f"File not found on Google Drive: {path}")
+
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, timeout=15.0)
+            resp.raise_for_status()
+            return resp.content
+
+    async def list_files(self, prefix: str) -> list[str]:
+        import httpx
+        from urllib.parse import quote
+        
+        token = await self._ensure_valid_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        query = f"name contains '{prefix}' and 'appDataFolder' in parents and trashed = false"
+        url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, timeout=10.0)
+            resp.raise_for_status()
+            files = resp.json().get("files", [])
+            return [f["name"] for f in files]
+
+    async def delete(self, path: str) -> None:
+        import httpx
+        token = await self._ensure_valid_token()
+        file_id = await self._find_file_id(path)
+        if not file_id:
+            return
+
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.delete(url, headers=headers, timeout=10.0)
+            resp.raise_for_status()
+
+
 class CloudSyncService:
     """High-level cloud sync orchestration with optional E2E encryption."""
 

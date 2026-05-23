@@ -34,8 +34,7 @@ onMounted(() => {
 onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
 
 function openEntry(item: SearchResultEntry) {
-  entriesStore.fetchEntry(item.id)
-  ui.detailPanelOpen = true
+  ui.startEditing(item.id)
   ui.closeSearchPalette()
 }
 

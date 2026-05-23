@@ -305,9 +305,13 @@ async function loadEntry() {
         const tmpl = store.templates.find(t => t.id === defaultTemplateId.value)
         if (tmpl) {
           body.value = tmpl.body
-          title.value = tmpl.name
+          if (!title.value) title.value = tmpl.name
         }
       } catch { /* ignore */ }
+    }
+    // Apply default title if no template set one
+    if (!title.value && ui.defaultTitle) {
+      title.value = ui.defaultTitle
     }
   } else if (ui.editingEntryId) {
     const entry = await entries.fetchEntry(ui.editingEntryId!)

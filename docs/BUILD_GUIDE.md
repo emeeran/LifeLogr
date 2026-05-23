@@ -395,6 +395,7 @@ ollama pull nomic-embed-text
 |----------|---------|-------------|
 | `DIARI_DATA_DIR` | Platform-specific (see above) | Data directory (DB, media) |
 | `APP_ENV` | `development` | Set to `production` in packaged apps |
+| `SECRET_KEY` | `change-me-before-production` | **Must be changed in production** |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API URL |
 | `OLLAMA_MODEL` | `llama3.2:3b` | AI model name |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model for semantic search |
@@ -407,6 +408,8 @@ ollama pull nomic-embed-text
 | `AI_ENABLE_WRITER_BLOCK_HELPER` | `true` | Enable writer's block continuation |
 | `WHISPER_MODEL` | `base` | Whisper STT model size |
 | `WHISPER_DEVICE` | `cpu` | Set to `cuda` for GPU acceleration |
+
+> **Note:** SQLite connection pool is automatically set to `pool_size=1` with no overflow. `DB_POOL_SIZE` and `DB_MAX_OVERFLOW` settings only apply to PostgreSQL.
 
 ### Custom data directory
 

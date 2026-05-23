@@ -15,6 +15,7 @@ export const useUiStore = defineStore('ui', () => {
   const fontFamily = useLocalStorage<string>('diarium-font', 'system-ui')
   const fontSize = useLocalStorage<number>('diarium-font-size', 14)
   const rightPanelWidth = useLocalStorage<number>('diarium-right-panel-width', 480)
+  const defaultTitle = useLocalStorage<string>('diarium-default-title', '')
 
   // Pending switch (used by save-prompt dialog)
   const pendingSwitch = ref<{ entryId: number; date?: string } | null>(null)
@@ -125,7 +126,7 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     activeView, sidebarCollapsed, detailPanelOpen, editingEntryId, newEntryDate,
-    darkMode, fontFamily, fontSize, rightPanelWidth, showEditor,
+    darkMode, fontFamily, fontSize, rightPanelWidth, defaultTitle, showEditor,
     showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, activeDrawer,
     setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
