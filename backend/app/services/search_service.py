@@ -51,7 +51,7 @@ class SearchService:
               AND e.is_deleted = 0
         """)
 
-        params: dict = {"query": query}
+        params: dict[str, object] = {"query": query}
 
         conditions = []
         if mood:
@@ -124,7 +124,7 @@ class SearchService:
         # Load entry details for the page
         entry_ids = [e[0] for e in page]
         entries_result = await self.db.execute(
-            select(Entry).where(Entry.id.in_(entry_ids), not Entry.is_deleted)
+            select(Entry).where(Entry.id.in_(entry_ids), ~Entry.is_deleted)
         )
         entry_map = {e.id: e for e in entries_result.scalars().all()}
 
@@ -158,15 +158,24 @@ class SearchService:
             self._semantic_search(query, 0, 100)
         )
 
-        (keyword_items, _), (semantic_items, _) = await asyncio.gather(
+        gather_results = await asyncio.gather(
             keyword_task, semantic_task, return_exceptions=True
         )
 
-        # Handle exceptions from gather
-        if isinstance(keyword_items, Exception):
-            keyword_items = []
-        if isinstance(semantic_items, Exception):
-            semantic_items = []
+        keyword_result = gather_results[0]
+        semantic_result = gather_results[1]
+
+        if isinstance(keyword_result, BaseException):
+            keyword_items: list[SearchResultEntry] = []
+            keyword_total: int = 0
+        else:
+            keyword_items, keyword_total = keyword_result
+
+        if isinstance(semantic_result, BaseException):
+            semantic_items: list[SearchResultEntry] = []
+            semantic_total: int = 0
+        else:
+            semantic_items, semantic_total = semantic_result
 
         # If no semantic results, fall back to keyword-only
         if not semantic_items:
@@ -197,15 +206,15 @@ class SearchService:
 
         items = []
         for entry_id, rrf_score in page:
-            item = all_items.get(entry_id)
-            if item:
+            found = all_items.get(entry_id)
+            if found:
                 items.append(SearchResultEntry(
-                    id=item.id,
-                    entry_date=item.entry_date,
-                    title=item.title,
-                    snippet=item.snippet,
+                    id=found.id,
+                    entry_date=found.entry_date,
+                    title=found.title,
+                    snippet=found.snippet,
                     rank=rrf_score,
-                    similarity_score=item.similarity_score,
+                    similarity_score=found.similarity_score,
                 ))
 
         return items, total

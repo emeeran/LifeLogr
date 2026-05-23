@@ -111,7 +111,7 @@ class CloudSyncService:
         self.provider = provider
         self._sync_svc = SyncService(db)
 
-    async def push(self, passphrase: str | None = None) -> dict:
+    async def push(self, passphrase: str | None = None) -> dict[str, int]:
         """Push pending changes to cloud provider."""
         pending = await self._sync_svc.get_pending()
         pushed = 0
@@ -132,7 +132,7 @@ class CloudSyncService:
 
         return {"pushed": pushed}
 
-    async def pull(self, passphrase: str | None = None) -> dict:
+    async def pull(self, passphrase: str | None = None) -> dict[str, int]:
         """Pull changes from cloud provider."""
         files = await self.provider.list_files("diarilinux/")
         pulled = 0

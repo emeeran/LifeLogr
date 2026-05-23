@@ -73,7 +73,7 @@ class EntryService:
             entry.mood = data.mood
         if data.tag_ids is not None:
             await self.db.execute(
-                EntryTag.__table__.delete().where(EntryTag.entry_id == entry_id)
+                EntryTag.__table__.delete().where(EntryTag.entry_id == entry_id)  # type: ignore[attr-defined]
             )
             for tag_id in data.tag_ids:
                 self.db.add(EntryTag(entry_id=entry_id, tag_id=tag_id))

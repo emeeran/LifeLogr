@@ -69,11 +69,11 @@ class VideoService:
         """Transcribe video audio using Whisper and save transcription."""
         note = await self.get(video_id)
 
-        from app.services.recording_service import RecordingService
-        recording_svc = RecordingService(self.db)
+        from app.services.recording_service import VoiceRecordingService
+        recording_svc = VoiceRecordingService(self.db)
 
         file_path = self._media_dir / note.storage_path
-        text = await recording_svc._run_stt(file_path.read_bytes(), "video_temp")
+        text = recording_svc._run_stt(file_path.read_bytes())
 
         note.transcription = text
         await self.db.commit()

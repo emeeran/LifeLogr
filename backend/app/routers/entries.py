@@ -227,6 +227,8 @@ async def nearby_entries(
     # Exact Haversine filtering
     nearby = []
     for e in candidates:
+        if e.latitude is None or e.longitude is None:
+            continue
         dlat = math.radians(e.latitude - lat)
         dlon = math.radians(e.longitude - lon)
         a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat)) * math.cos(math.radians(e.latitude)) * math.sin(dlon / 2) ** 2

@@ -7,11 +7,12 @@ from collections import defaultdict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
@@ -61,11 +62,11 @@ app.add_middleware(
 
 # ── Request logging middleware ──
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def log_requests(request: Request, call_next: Any) -> Response:
     req_id = uuid4().hex[:8]
     start = time.time()
     logger.info("[%s] %s %s", req_id, request.method, request.url.path)
-    response = await call_next(request)
+    response: Response = await call_next(request)
     elapsed = (time.time() - start) * 1000
     logger.info("[%s] %s %s → %d (%.1fms)", req_id, request.method, request.url.path, response.status_code, elapsed)
     return response
@@ -78,12 +79,14 @@ RATE_WINDOW = 60.0
 
 
 @app.middleware("http")
-async def rate_limiter(request: Request, call_next):
+async def rate_limiter(request: Request, call_next: Any) -> Response:
     # Skip rate limiting for static assets, health, and tests
     if request.url.path.startswith(("/static", "/health", "/favicon")):
-        return await call_next(request)
+        result: Response = await call_next(request)
+        return result
     if settings.APP_ENV == "test":
-        return await call_next(request)
+        result2: Response = await call_next(request)
+        return result2
 
     client_ip = request.client.host if request.client else "unknown"
     now = time.time()
@@ -93,7 +96,8 @@ async def rate_limiter(request: Request, call_next):
     if len(timestamps) >= RATE_LIMIT:
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
     timestamps.append(now)
-    return await call_next(request)
+    result3: Response = await call_next(request)
+    return result3
 
 
 # Serve static assets (logo, etc.)
@@ -108,7 +112,7 @@ app.add_exception_handler(MediaSizeError, lambda r, e: JSONResponse(status_code=
 
 # Global exception handler for unhandled errors
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
@@ -174,7 +178,7 @@ if settings.is_production and _FRONTEND_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend-assets")
 
     @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
+    async def serve_frontend(full_path: str) -> FileResponse:
         """Serve frontend SPA — fall back to index.html for client-side routing."""
         file_path = _FRONTEND_DIST / full_path
         if file_path.is_file():

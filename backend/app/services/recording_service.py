@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,11 +21,11 @@ logger = logging.getLogger(__name__)
 _whisper_model = None
 
 
-def _get_whisper_model():
+def _get_whisper_model() -> Any:
     """Lazy-load the faster-whisper model on first transcription call."""
     global _whisper_model
     if _whisper_model is None:
-        from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+        from faster_whisper import WhisperModel
 
         logger.info("Loading Whisper model '%s' on device '%s'...", settings.WHISPER_MODEL, settings.WHISPER_DEVICE)
         _whisper_model = WhisperModel(settings.WHISPER_MODEL, device=settings.WHISPER_DEVICE, compute_type="int8")

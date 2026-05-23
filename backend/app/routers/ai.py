@@ -24,6 +24,7 @@ from app.schemas.ai import (
     EntryAnalysisResponse,
     GrammarCheckRequest,
     GrammarCheckResponse,
+    OnThisDayPastEntry,
     OnThisDayResponse,
     RewriteRequest,
     RewriteResponse,
@@ -73,7 +74,7 @@ async def ai_status(db: AsyncSession = Depends(get_db)) -> Any:
         import httpx
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
-            if r.ok:
+            if r.status_code == 200:
                 models = [m.get("name", "") for m in r.json().get("models", [])]
                 embed_available = any(settings.OLLAMA_EMBED_MODEL in m for m in models)
     except Exception:
@@ -222,13 +223,13 @@ async def continue_writing(data: ContinueWritingRequest, db: AsyncSession = Depe
 async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
     """Generate an AI reflection on entries from this date in past years."""
     today = date.today()
-    past_entries = []
+    past_entries: list[dict[str, Any]] = []
 
     for years_ago in range(1, 6):
         past_date = today.replace(year=today.year - years_ago)
         result = await db.execute(
             select(Entry).where(
-                not Entry.is_deleted,
+                ~Entry.is_deleted,
                 Entry.entry_date == past_date,
             )
         )
@@ -258,11 +259,16 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
     reflection = await svc.reflect_on_past(combined, closest["years_ago"])
 
     return OnThisDayResponse(
-        years_ago=closest["years_ago"],
+        years_ago=int(closest["years_ago"]),
         entries_count=len(past_entries),
         reflection=reflection,
         past_entries=[
-            {"years_ago": p["years_ago"], "date": p["date"], "title": p["title"], "snippet": p["snippet"]}
+            OnThisDayPastEntry(
+                years_ago=int(p["years_ago"]),
+                date=str(p["date"]),
+                title=p["title"] if isinstance(p["title"], str) else None,
+                snippet=p["snippet"] if isinstance(p["snippet"], str) else None,
+            )
             for p in past_entries
         ],
     )
@@ -283,7 +289,7 @@ async def detect_themes(
             func.strftime("%Y-%m", Entry.entry_date).label("month"),
             Entry.summary,
         )
-        .where(not Entry.is_deleted, Entry.summary.is_not(None), Entry.entry_date >= cutoff)
+        .where(~Entry.is_deleted, Entry.summary.is_not(None), Entry.entry_date >= cutoff)
         .order_by(Entry.entry_date)
     )
 
@@ -380,7 +386,7 @@ async def pull_model(model: str = Query(..., description="Model name to pull (e.
     """Trigger pulling an Ollama model. Returns immediately; pull runs in background."""
     import asyncio
 
-    async def _pull():
+    async def _pull() -> None:
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ollama", "pull", model,

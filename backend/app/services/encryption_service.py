@@ -90,7 +90,7 @@ class EncryptionService:
         await self.db.refresh(entry)
         return entry
 
-    async def get_encryption_status(self, entry_id: int) -> dict:
+    async def get_encryption_status(self, entry_id: int) -> dict[str, object]:
         """Return encryption status for an entry."""
         entry = await self._get_entry(entry_id)
         return {

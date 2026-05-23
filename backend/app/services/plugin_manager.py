@@ -13,14 +13,14 @@ class HookManager:
     """Manages plugin hooks with priority-ordered dispatch."""
 
     def __init__(self) -> None:
-        self._hooks: dict[str, list[tuple[int, Callable]]] = defaultdict(list)
+        self._hooks: dict[str, list[tuple[int, Callable[..., Any]]]] = defaultdict(list)
 
-    def register(self, hook_name: str, handler: Callable, priority: int = 0) -> None:
+    def register(self, hook_name: str, handler: Callable[..., Any], priority: int = 0) -> None:
         """Register a handler for a hook with given priority (lower = runs first)."""
         self._hooks[hook_name].append((priority, handler))
         self._hooks[hook_name].sort(key=lambda x: x[0])
 
-    def unregister(self, hook_name: str, handler: Callable) -> None:
+    def unregister(self, hook_name: str, handler: Callable[..., Any]) -> None:
         """Remove a handler from a hook."""
         self._hooks[hook_name] = [
             (p, h) for p, h in self._hooks[hook_name] if h != handler
@@ -48,14 +48,15 @@ class HookManager:
         }
 
     @staticmethod
-    def load_handler(dotted_path: str) -> Callable:
+    def load_handler(dotted_path: str) -> Callable[..., Any]:
         """Import and return a callable from a dotted path like 'module.path:function'."""
         if ":" in dotted_path:
             module_path, fn_name = dotted_path.rsplit(":", 1)
         else:
             module_path, fn_name = dotted_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
-        return getattr(module, fn_name)
+        handler: Callable[..., Any] = getattr(module, fn_name)
+        return handler
 
 
 # Global hook manager

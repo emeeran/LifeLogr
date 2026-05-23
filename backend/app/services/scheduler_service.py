@@ -49,7 +49,7 @@ class SchedulerService:
             sched.shutdown()
             logger.info("Backup scheduler stopped")
 
-    async def schedule_backup(self, cron_expr: str, backup_path: str) -> dict:
+    async def schedule_backup(self, cron_expr: str, backup_path: str) -> dict[str, str]:
         """Schedule an automated backup job.
 
         Args:
@@ -86,7 +86,7 @@ class SchedulerService:
             "next_run": str(sched.get_job("auto_backup").next_run_time),
         }
 
-    async def get_status(self) -> dict:
+    async def get_status(self) -> dict[str, bool | str | None]:
         """Return current scheduler status."""
         sched = self.get_scheduler()
         job = sched.get_job("auto_backup")
@@ -96,7 +96,7 @@ class SchedulerService:
             "next_run": str(job.next_run_time) if job else None,
         }
 
-    async def unschedule_backup(self) -> dict:
+    async def unschedule_backup(self) -> dict[str, bool]:
         """Remove the automated backup job."""
         sched = self.get_scheduler()
         if sched.get_job("auto_backup"):

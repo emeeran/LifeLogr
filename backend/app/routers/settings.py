@@ -154,7 +154,7 @@ async def list_ollama_models() -> list[dict[str, Any]]:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
-            if r.ok:
+            if r.status_code == 200:
                 for m in r.json().get("models", []):
                     models.append({
                         "name": m.get("name", ""),

@@ -21,7 +21,7 @@ class EmbeddingService:
         )
         row = result.scalar_one_or_none()
         if row:
-            return json.loads(row)
+            return list(json.loads(row))
         return None
 
     async def find_similar(self, entry_id: int, top_k: int = 5) -> list[tuple[int, float]]:
