@@ -14,7 +14,7 @@ class SyncService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def enqueue(self, operation: str, entity_type: str, entity_id: int, payload: dict) -> SyncQueue:
+    async def enqueue(self, operation: str, entity_type: str, entity_id: int, payload: dict[str, object]) -> SyncQueue:
         """Queue an operation for later sync."""
         item = SyncQueue(
             operation=operation,
@@ -45,7 +45,7 @@ class SyncService:
         )
         return result.scalar_one()
 
-    async def flush(self, provider: str = "local") -> dict:
+    async def flush(self, provider: str = "local") -> dict[str, int | str]:
         """Mark all pending operations as synced."""
         pending = await self.get_pending()
         now = datetime.now()

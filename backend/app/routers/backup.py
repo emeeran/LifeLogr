@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,7 +79,10 @@ async def restore_backup(request: RestoreRequest, db: AsyncSession = Depends(get
 
 
 @router.get("/export")
-async def export_local_backup(db: AsyncSession = Depends(get_db)) -> FileResponse:
+async def export_local_backup(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> FileResponse:
     """Export the SQLite database and media files as a .tar.gz archive."""
     from datetime import datetime
 
@@ -103,11 +106,12 @@ async def export_local_backup(db: AsyncSession = Depends(get_db)) -> FileRespons
         if media_dir.exists():
             tar.add(str(media_dir), arcname="media")
 
+    background_tasks.add_task(shutil.rmtree, tmpdir, ignore_errors=True)
+
     return FileResponse(
         path=str(archive_path),
         media_type="application/gzip",
         filename=f"diarium-backup-{timestamp}.tar.gz",
-        background=lambda: shutil.rmtree(tmpdir, ignore_errors=True),
     )
 
 

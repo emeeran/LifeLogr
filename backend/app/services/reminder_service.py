@@ -64,7 +64,7 @@ class ReminderService:
         await self.db.delete(reminder)
         await self.db.commit()
 
-    async def test_notification(self, reminder_id: int) -> dict:
+    async def test_notification(self, reminder_id: int) -> dict[str, bool | str]:
         """Send a test desktop notification for the reminder."""
         reminder = await self.get(reminder_id)
         self._send_notification(reminder.title, reminder.message or "This is a test reminder")

@@ -4,8 +4,8 @@ from __future__ import annotations
 import io
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Response
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,7 +77,7 @@ async def speak_entry(
     rate: float = Query(1.0, ge=0.5, le=2.0),
     volume: int = Query(100, ge=0, le=100),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
+) -> Response:
     """Generate speech audio for an entry and stream it back as MP3."""
     result = await db.execute(select(Entry).where(Entry.id == entry_id))
     entry = result.scalar_one_or_none()
@@ -103,7 +103,7 @@ class SpeakRequest(BaseModel):
 
 
 @router.post("/speak")
-async def speak_text(req: SpeakRequest) -> StreamingResponse:
+async def speak_text(req: SpeakRequest) -> Response:
     """Generate speech audio from arbitrary text and stream it back as MP3."""
     text = _clean_markdown(req.text)
 

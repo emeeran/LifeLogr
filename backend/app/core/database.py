@@ -1,6 +1,7 @@
 """SQLAlchemy async engine, session factory, and Base declarative model."""
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -69,7 +70,7 @@ _COLUMN_MIGRATIONS = [
 ]
 
 
-async def _migrate_schema(conn) -> None:
+async def _migrate_schema(conn: Any) -> None:
     """Add missing columns to existing tables (idempotent)."""
     for table, column, sql in _COLUMN_MIGRATIONS:
         existing = {row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()}
@@ -101,10 +102,11 @@ async def _setup_fts() -> None:
         else:
             # Verify integrity — try a simple query
             try:
-                count = (await conn.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar()
-                entry_count = (
-                    await conn.execute(text("SELECT COUNT(*) FROM entries WHERE is_deleted = 0"))
-                ).scalar()
+                count = int((await conn.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar() or 0)
+                entry_count = int(
+                    (await conn.execute(text("SELECT COUNT(*) FROM entries WHERE is_deleted = 0")))
+                    .scalar() or 0
+                )
                 if count < entry_count:
                     logger.info("FTS index stale (%d/%d rows), rebuilding...", count, entry_count)
                     await conn.execute(text("DELETE FROM entries_fts"))

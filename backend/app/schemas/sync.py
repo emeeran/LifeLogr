@@ -9,7 +9,7 @@ class SyncQueueRequest(BaseModel):
     operation: str = Field(pattern=r"^(create|update|delete)$")
     entity_type: str = Field(max_length=50)
     entity_id: int
-    payload: dict
+    payload: dict[str, object]
 
 
 class SyncQueueResponse(BaseModel):

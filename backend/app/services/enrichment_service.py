@@ -61,7 +61,7 @@ async def _generate_embedding(entry_id: int, text: str, ollama: OllamaService) -
         async with async_session() as session:
             # Upsert: delete existing, insert new
             await session.execute(
-                EntryEmbedding.__table__.delete().where(EntryEmbedding.entry_id == entry_id)
+                EntryEmbedding.__table__.delete().where(EntryEmbedding.entry_id == entry_id)  # type: ignore[attr-defined]
             )
             session.add(EntryEmbedding(
                 entry_id=entry_id,
@@ -89,7 +89,7 @@ async def _analyze_entry(entry_id: int, text: str, ollama: OllamaService) -> Non
 
                 sent = analysis["sentiment"]
                 await session.execute(
-                    EntrySentiment.__table__.delete().where(EntrySentiment.entry_id == entry_id)
+                    EntrySentiment.__table__.delete().where(EntrySentiment.entry_id == entry_id)  # type: ignore[attr-defined]
                 )
                 session.add(EntrySentiment(
                     entry_id=entry_id,
@@ -105,7 +105,7 @@ async def _analyze_entry(entry_id: int, text: str, ollama: OllamaService) -> Non
 
                 summary = analysis["summary"][:500] if analysis["summary"] else None
                 await session.execute(
-                    Entry.__table__.update()
+                    Entry.__table__.update()  # type: ignore[attr-defined]
                     .where(Entry.id == entry_id)
                     .values(summary=summary)
                 )
@@ -115,7 +115,7 @@ async def _analyze_entry(entry_id: int, text: str, ollama: OllamaService) -> Non
                 from app.models.reflection_prompt import EntryPrompt
 
                 await session.execute(
-                    EntryPrompt.__table__.delete().where(EntryPrompt.entry_id == entry_id)
+                    EntryPrompt.__table__.delete().where(EntryPrompt.entry_id == entry_id)  # type: ignore[attr-defined]
                 )
                 for prompt_text in analysis.get("reflection_prompts", [])[:5]:
                     if prompt_text and prompt_text.strip():

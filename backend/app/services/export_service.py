@@ -96,5 +96,4 @@ class ExportService:
         from weasyprint import HTML
 
         html_content = await self.export_html(start_date, end_date)
-        pdf = HTML(string=html_content).write_pdf()
-        return pdf
+        return bytes(HTML(string=html_content).write_pdf())

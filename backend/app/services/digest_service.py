@@ -27,7 +27,7 @@ class DigestService:
         # Load entries for the week
         result = await self.db.execute(
             select(Entry).where(
-                not Entry.is_deleted,
+                ~Entry.is_deleted,
                 Entry.entry_date >= week_start,
                 Entry.entry_date <= week_end,
             ).order_by(Entry.entry_date)
@@ -65,7 +65,8 @@ class DigestService:
         )
 
         raw = await ollama._generate(prompt, temperature=0.6)
-        analysis = ollama._parse_json_response(raw)
+        parsed = ollama._parse_json_response(raw)
+        analysis = parsed if isinstance(parsed, dict) else None
 
         themes = json.dumps(analysis.get("themes", [])) if analysis else "[]"
         trajectory = analysis.get("emotional_trajectory", "No trajectory data") if analysis else "No data"

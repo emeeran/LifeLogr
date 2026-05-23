@@ -147,7 +147,7 @@ class OllamaService:
                 json={"model": settings.OLLAMA_EMBED_MODEL, "prompt": text},
             )
             response.raise_for_status()
-            return response.json()["embedding"]
+            return list(response.json()["embedding"])
 
     # ── Combined analysis (sentiment + summary + prompts) ──────────────
 
@@ -169,7 +169,10 @@ class OllamaService:
             f'Entry:\n{text[:3000]}'
         )
         raw = await self._generate(prompt, temperature=0.3)
-        return self._parse_json_response(raw)
+        result = self._parse_json_response(raw)
+        if isinstance(result, dict):
+            return result
+        return None
 
     # ── Tag suggestions ────────────────────────────────────────────────
 
@@ -241,7 +244,8 @@ class OllamaService:
         text = raw.strip()
         # Try direct parse first
         try:
-            return json.loads(text)
+            parsed: dict[str, Any] | list[Any] = json.loads(text)
+            return parsed
         except json.JSONDecodeError:
             pass
         # Find JSON boundaries
@@ -251,7 +255,8 @@ class OllamaService:
         end = max(text.rfind("}"), text.rfind("]")) + 1
         if start >= 0 and end > start:
             try:
-                return json.loads(text[start:end])
+                parsed2: dict[str, Any] | list[Any] = json.loads(text[start:end])
+                return parsed2
             except json.JSONDecodeError:
                 pass
         logger.warning("Failed to parse JSON from LLM response: %s", text[:200])

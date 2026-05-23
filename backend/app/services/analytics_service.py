@@ -186,7 +186,7 @@ class AnalyticsService:
             total_size_bytes=total_size,
         )
 
-    async def sentiment_timeline(self, year: int, month: int) -> list[dict]:
+    async def sentiment_timeline(self, year: int, month: int) -> list[dict[str, object]]:
         """Valence over time for AI-analyzed entries within a given month."""
         result = await self.db.execute(
             select(
