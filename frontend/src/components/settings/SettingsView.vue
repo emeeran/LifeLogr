@@ -262,8 +262,24 @@ function resetNewCredentials() {
   newCredentials.value = creds
 }
 
+const showManualGoogleFields = ref(false)
+
+async function startGoogleDriveAuth() {
+  try {
+    const res = await backupApi.getGoogleDriveAuthUrl()
+    window.open(res.auth_url, '_blank')
+    showToast('info', 'Opening Google Authentication in browser...')
+    showCreate.value = false
+    setTimeout(async () => {
+      await backup.fetchConfigs()
+    }, 6000)
+  } catch (e: unknown) {
+    showToast('error', `Google auth initiation failed: ${errMsg(e)}`)
+  }
+}
+
 function openCreateForm() {
-  newProvider.value = 'webdav'; resetNewCredentials(); newSchedule.value = ''; showCreate.value = true
+  newProvider.value = 'webdav'; showManualGoogleFields.value = false; resetNewCredentials(); newSchedule.value = ''; showCreate.value = true
 }
 
 async function createConfig() {
@@ -579,6 +595,13 @@ onMounted(() => {
               <option v-for="l in ocrLanguages" :key="l.value" :value="l.value">{{ l.label }}</option>
             </select>
           </div>
+          <div class="flex items-center gap-2">
+            <Type :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Default title</span>
+            <input v-model="ui.defaultTitle"
+              placeholder="e.g. Daily Journal"
+              class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none w-32 hover:border-accent transition-colors" />
+          </div>
         </div>
       </section>
 
@@ -846,10 +869,22 @@ onMounted(() => {
               <option value="dropbox">Dropbox</option>
               <option value="nas">NAS</option>
             </select>
-            <template v-for="field in currentFields" :key="field.label">
-              <span class="text-[10px] text-text-secondary">{{ field.label }}</span>
-              <input v-model="newCredentials[field.label.toLowerCase().replace(/\s+/g, '_')]"
-                class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary" :placeholder="field.placeholder" />
+            <div v-if="newProvider === 'google_drive'" class="col-span-2 flex flex-col gap-1.5 py-1">
+              <button @click="startGoogleDriveAuth" class="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-accent text-white text-[11px] font-semibold cursor-pointer hover:bg-accent-hover transition-colors">
+                Sign in with Google
+              </button>
+              <div class="text-center">
+                <a href="#" @click.prevent="showManualGoogleFields = !showManualGoogleFields" class="text-[9px] text-text-muted hover:text-accent underline">
+                  {{ showManualGoogleFields ? 'Hide manual settings' : 'Or configure manually (Advanced)' }}
+                </a>
+              </div>
+            </div>
+            <template v-if="newProvider !== 'google_drive' || showManualGoogleFields">
+              <template v-for="field in currentFields" :key="field.label">
+                <span class="text-[10px] text-text-secondary">{{ field.label }}</span>
+                <input v-model="newCredentials[field.label.toLowerCase().replace(/\s+/g, '_')]"
+                  class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary" :placeholder="field.placeholder" />
+              </template>
             </template>
             <span class="text-[10px] text-text-secondary">Cron</span>
             <input v-model="newSchedule" class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary" placeholder="0 3 * * *" />

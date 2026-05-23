@@ -67,14 +67,56 @@ async def flush_sync(
     return await svc.flush(provider)
 
 
+async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
+    """Load and configure the sync provider dynamically from the database."""
+    import json
+    from sqlalchemy import select
+    from app.models.backup import BackupConfig
+    from app.core.security import decrypt, encrypt
+    from app.core.exceptions import NotFoundError
+    from app.services.cloud_sync_service import LocalFileProvider
+
+    if provider_name in ("local", "local_file"):
+        return LocalFileProvider()
+
+    res = await db.execute(select(BackupConfig).where(BackupConfig.provider == provider_name))
+    config = res.scalar_one_or_none()
+    if not config:
+        raise NotFoundError(f"Backup configuration for provider {provider_name} not found")
+
+    creds = json.loads(decrypt(config.credentials_encrypted))
+    
+    if provider_name == "google_drive":
+        from app.services.cloud_sync_service import GoogleDriveProvider
+        
+        async def on_refresh(new_access_token: str, new_expiry: str) -> None:
+            creds["access_token"] = new_access_token
+            creds["token_expiry"] = new_expiry
+            config.credentials_encrypted = encrypt(json.dumps(creds))
+            await db.flush()
+
+        return GoogleDriveProvider(creds, on_token_refresh=on_refresh)
+    elif provider_name == "webdav":
+        from app.services.cloud_sync_service import NextcloudProvider
+        return NextcloudProvider(
+            base_url=creds.get("url", ""),
+            username=creds.get("username", ""),
+            password=creds.get("password", ""),
+        )
+    else:
+        raise ValueError(f"Unsupported cloud sync provider: {provider_name}")
+
+
 @router.post("/cloud/push", response_model=CloudSyncResponse)
 async def cloud_push(
     data: CloudSyncRequest, db: AsyncSession = Depends(get_db)
 ) -> Any:
     """Push pending changes to cloud provider."""
-    provider = LocalFileProvider()
+    provider = await _get_provider(db, data.provider)
     svc = CloudSyncService(db, provider)
     result = await svc.push(data.passphrase)
+    # Ensure any updated credentials from provider are saved
+    await db.commit()
     return CloudSyncResponse(pushed=result["pushed"], provider=data.provider)
 
 
@@ -83,7 +125,9 @@ async def cloud_pull(
     data: CloudSyncRequest, db: AsyncSession = Depends(get_db)
 ) -> Any:
     """Pull changes from cloud provider."""
-    provider = LocalFileProvider()
+    provider = await _get_provider(db, data.provider)
     svc = CloudSyncService(db, provider)
     result = await svc.pull(data.passphrase)
+    # Ensure any updated credentials from provider are saved
+    await db.commit()
     return CloudSyncResponse(pulled=result["pulled"], provider=data.provider)

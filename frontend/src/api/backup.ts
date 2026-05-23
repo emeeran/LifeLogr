@@ -58,4 +58,8 @@ export const backupApi = {
   unscheduleBackup(): Promise<{ removed: boolean }> {
     return request('/backup/schedule', { method: 'DELETE' })
   },
+
+  getGoogleDriveAuthUrl(): Promise<{ auth_url: string }> {
+    return request('/backup/google-drive/auth-url')
+  },
 }

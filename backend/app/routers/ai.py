@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 from typing import Any
 
@@ -42,6 +43,7 @@ from app.services.embedding_service import EmbeddingService
 from app.services.ollama_service import OllamaService
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
+logger = logging.getLogger(__name__)
 
 
 # ── Existing features ──────────────────────────────────────────────────
@@ -252,8 +254,14 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
     # Combine all past entries and generate reflection
     combined = "\n\n---\n\n".join(p["text"] for p in past_entries)
     closest = past_entries[0]
-    svc = OllamaService()
-    reflection = await svc.reflect_on_past(combined, closest["years_ago"])
+    reflection = "No AI reflection available."
+    try:
+        svc = OllamaService()
+        status = await svc.status()
+        if status.ollama_available:
+            reflection = await svc.reflect_on_past(combined, closest["years_ago"])
+    except Exception:
+        logger.warning("Ollama unavailable for on-this-day reflection", exc_info=True)
 
     return OnThisDayResponse(
         years_ago=closest["years_ago"],
@@ -349,16 +357,20 @@ async def latest_digest(db: AsyncSession = Depends(get_db)) -> Any:
 
 @router.post("/digests/generate", response_model=DigestResponse)
 async def generate_digest(db: AsyncSession = Depends(get_db)) -> Any:
-    """Generate a digest for the current week on demand."""
+    """Generate a digest for the current week (or most recent week with entries)."""
     from fastapi import HTTPException
 
     from app.services.digest_service import DigestService
     svc = DigestService(db)
-    try:
-        digest = await svc.generate_for_week(date.today() - timedelta(days=date.today().weekday()))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return _digest_to_response(digest)
+    # Try current week first, then walk back up to 4 weeks
+    for weeks_ago in range(5):
+        start = date.today() - timedelta(days=date.today().weekday() + weeks_ago * 7)
+        try:
+            digest = await svc.generate_for_week(start)
+            return _digest_to_response(digest)
+        except ValueError:
+            continue
+    raise HTTPException(status_code=422, detail="No entries found in the last 5 weeks")
 
 
 # ── Model management ───────────────────────────────────────────────────

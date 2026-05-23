@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,tauri://localhost,https://tauri.localhost,http://127.0.0.1:18765"
     MAX_MEDIA_SIZE_BYTES: int = 26_214_400  # 25 MB
 
+    # Google OAuth 2.0 Credentials
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+
     # Ollama (AI assistance)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.2:3b"

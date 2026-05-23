@@ -134,6 +134,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
+from app.routers.google_drive import router as google_drive_router  # noqa: E402
 from app.routers.encryption import router as encryption_router, global_router as encryption_global_router  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
@@ -159,6 +160,7 @@ app.include_router(tts_router)
 app.include_router(media_router)
 app.include_router(recordings_router)
 app.include_router(backup_router)
+app.include_router(google_drive_router)
 app.include_router(prompts_router)
 app.include_router(encryption_router)
 app.include_router(encryption_global_router)

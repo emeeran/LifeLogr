@@ -35,10 +35,54 @@ class BackupService:
     async def test_connection(self, config_id: int) -> bool:
         """Validate stored credentials by connecting to the provider."""
         config = await self._get_config(config_id)
-        # Provider-specific connection test is deferred to integration phase
-        # For now, verify we can decrypt the credentials
-        decrypt(config.credentials_encrypted)
-        return True
+        creds = json.loads(decrypt(config.credentials_encrypted))
+
+        if config.provider == "google_drive":
+            from app.services.cloud_sync_service import GoogleDriveProvider
+            provider = GoogleDriveProvider(creds)
+            # Try to get valid token to ensure client ID, client secret, and refresh token work
+            await provider._ensure_valid_token()
+            return True
+        elif config.provider == "webdav":
+            from app.services.cloud_sync_service import NextcloudProvider
+            provider = NextcloudProvider(
+                base_url=creds.get("url", ""),
+                username=creds.get("username", ""),
+                password=creds.get("password", ""),
+            )
+            # Just do a simple listing to verify connection
+            await provider.list_files("diarilinux-backup-")
+            return True
+        else:
+            raise ValueError(f"Unsupported backup provider: {config.provider}")
+
+    async def _create_backup_archive(self) -> bytes:
+        """Create a temporary .tar.gz backup archive in memory."""
+        import io
+        import tarfile
+        from pathlib import Path
+        from app.core.config import settings
+        from app.core.database import engine
+        from sqlalchemy import text
+
+        db_file = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
+        media_dir = settings.MEDIA_DIR
+
+        # Checkpoint WAL to make sure database is flushed to disk
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        except Exception:
+            pass
+
+        archive_io = io.BytesIO()
+        with tarfile.open(fileobj=archive_io, mode="w:gz") as tar:
+            if Path(db_file).exists():
+                tar.add(db_file, arcname="dev.db")
+            if media_dir.exists():
+                tar.add(str(media_dir), arcname="media")
+        
+        return archive_io.getvalue()
 
     async def run_backup(self, config_id: int) -> BackupSnapshot:
         """Perform incremental backup; transfer new/modified data since last sync."""
@@ -57,18 +101,138 @@ class BackupService:
         await self.db.flush()
 
         try:
-            json.loads(decrypt(config.credentials_encrypted))
+            creds = json.loads(decrypt(config.credentials_encrypted))
+            archive_data = await self._create_backup_archive()
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            filename = f"diarilinux-backup-{timestamp}.tar.gz"
+
+            if config.provider == "google_drive":
+                from app.services.cloud_sync_service import GoogleDriveProvider
+                
+                async def on_refresh(new_access_token: str, new_expiry: str) -> None:
+                    creds["access_token"] = new_access_token
+                    creds["token_expiry"] = new_expiry
+                    config.credentials_encrypted = encrypt(json.dumps(creds))
+                
+                provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
+                await provider.upload(filename, archive_data, encrypted=False)
+            elif config.provider == "webdav":
+                from app.services.cloud_sync_service import NextcloudProvider
+                provider = NextcloudProvider(
+                    base_url=creds.get("url", ""),
+                    username=creds.get("username", ""),
+                    password=creds.get("password", ""),
+                )
+                await provider.upload(filename, archive_data, encrypted=False)
+            else:
+                raise ValueError(f"Unsupported backup provider: {config.provider}")
+
+            # Counts for synced items
+            counts = await self.count_all()
+            snapshot.entries_synced = counts["entries"]
+            snapshot.media_synced = counts["media"]
+            snapshot.status = "completed"
+            config.last_sync_at = datetime.now()
         except Exception as e:
             snapshot.status = "failed"
             snapshot.error_message = str(e)
-        else:
-            snapshot.status = "completed"
-            config.last_sync_at = datetime.now()
 
         snapshot.completed_at = datetime.now()
         await self.db.commit()
         await self.db.refresh(snapshot)
         return snapshot
+
+    async def restore(self, config_id: int) -> dict[str, int]:
+        """Atomically replace local data with cloud backup; rollback on failure."""
+        config = await self._get_config(config_id)
+        creds = json.loads(decrypt(config.credentials_encrypted))
+
+        import io
+        import tarfile
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from app.core.database import init_db, reinit_engine
+        from app.core.config import settings
+
+        try:
+            if config.provider == "google_drive":
+                from app.services.cloud_sync_service import GoogleDriveProvider
+                
+                async def on_refresh(new_access_token: str, new_expiry: str) -> None:
+                    creds["access_token"] = new_access_token
+                    creds["token_expiry"] = new_expiry
+                    config.credentials_encrypted = encrypt(json.dumps(creds))
+                
+                provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
+                files = await provider.list_files("diarilinux-backup-")
+                if not files:
+                    raise ConflictError("No backups found in Google Drive App Data")
+                latest_backup = sorted(files)[-1]
+                archive_data = await provider.download(latest_backup)
+            elif config.provider == "webdav":
+                from app.services.cloud_sync_service import NextcloudProvider
+                provider = NextcloudProvider(
+                    base_url=creds.get("url", ""),
+                    username=creds.get("username", ""),
+                    password=creds.get("password", ""),
+                )
+                files = await provider.list_files("diarilinux-backup-")
+                if not files:
+                    raise ConflictError("No backups found in WebDAV")
+                latest_backup = sorted(files)[-1]
+                archive_data = await provider.download(latest_backup)
+            else:
+                raise ValueError(f"Unsupported backup provider: {config.provider}")
+
+            # Swap local database and media directories atomically
+            db_file_path = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
+            media_dir = settings.MEDIA_DIR
+            
+            restored_entries = 0
+            restored_media = 0
+
+            tmpdir = tempfile.mkdtemp()
+            try:
+                with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as tar:
+                    for member in tar.getmembers():
+                        if member.name.startswith("/") or ".." in member.name:
+                            raise ValueError(f"Invalid archive: path traversal in '{member.name}'")
+                    tar.extractall(tmpdir)
+
+                extracted_db = Path(tmpdir) / "dev.db"
+                if extracted_db.exists():
+                    await reinit_engine()
+                    backup_path = db_file_path + ".pre-restore.bak"
+                    if Path(db_file_path).exists():
+                        shutil.copy2(db_file_path, backup_path)
+                    
+                    try:
+                        shutil.copy2(str(extracted_db), db_file_path)
+                        await init_db()
+                        counts = await self.count_all()
+                        restored_entries = counts["entries"]
+                        Path(backup_path).unlink(missing_ok=True)
+                    except Exception:
+                        if Path(backup_path).exists():
+                            shutil.copy2(backup_path, db_file_path)
+                        Path(backup_path).unlink(missing_ok=True)
+                        raise
+
+                extracted_media = Path(tmpdir) / "media"
+                if extracted_media.exists():
+                    if media_dir.exists():
+                        shutil.rmtree(str(media_dir))
+                    shutil.copytree(str(extracted_media), str(media_dir))
+                    counts = await self.count_all()
+                    restored_media = counts["media"]
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+
+            return {"entries_restored": restored_entries, "media_restored": restored_media}
+        except Exception as e:
+            await self.db.rollback()
+            raise ConflictError(f"Restore failed: {str(e)}")
 
     async def list_snapshots(
         self, config_id: int | None, offset: int, limit: int
@@ -82,12 +246,6 @@ class BackupService:
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(q.order_by(BackupSnapshot.started_at.desc()).offset(offset).limit(limit))
         return list(result.scalars().all()), total
-
-    async def restore(self, config_id: int) -> dict[str, int]:
-        """Atomically replace local data with cloud backup; rollback on failure."""
-        await self._get_config(config_id)
-        # Actual restore logic deferred to integration phase
-        return {"entries_restored": 0, "media_restored": 0}
 
     async def delete_config(self, config_id: int) -> None:
         """Delete a backup configuration and its snapshots."""

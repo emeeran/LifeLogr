@@ -7,7 +7,7 @@
 | Layer     | Technology                          |
 |-----------|-------------------------------------|
 | Backend   | Python 3.11+, FastAPI, Pydantic v2  |
-| Database  | SQLite (dev) / PostgreSQL (prod)    |
+| Database  | SQLite (WAL mode, FK enforced)      |
 | Packaging | `uv` (never use pip directly)       |
 | Testing   | pytest, httpx, pytest-asyncio       |
 | Linting   | ruff, mypy (strict)                 |
@@ -63,3 +63,10 @@ diary/
 - `uv add <pkg>` to add dependencies; `uv run pytest` to run tests.
 - Commit docs artefacts (DOMAIN.md, SPEC.md, etc.) alongside code.
 - Each PR must include updated tests and passing lint.
+- SQLite uses WAL mode + FK enforcement automatically (see `database.py` event listener).
+- Plugin `entry_point` must be validated (regex + stdlib blocklist in `schemas/plugin.py`).
+- Never use silent `except: pass` — always log with context (`logger.warning`).
+- Backup import validates tar members for path traversal before extraction.
+- Soft delete must clean up associated media files (see `entry_service.py`).
+- Body size limit: `max_length=1_000_000` on `EntryCreate.body`.
+- `.deb` build script reads version from `pyproject.toml` and auto-generates SECRET_KEY.
