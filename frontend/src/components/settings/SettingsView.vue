@@ -10,11 +10,18 @@ import { useEntriesStore } from '../../stores/entries'
 import { usePluginsStore } from '../../stores/plugins'
 import { exportHtml, getExportPdfUrl } from '../../api/export'
 import { useLocalStorage } from '@vueuse/core'
+import { useUiStore } from '../../stores/ui'
+import { useSearchStore } from '../../stores/search'
+import { useRemindersStore } from '../../stores/reminders'
+import { getSettings, updateSettings, getOllamaModels } from '../../api/settings'
+import type { AppSettings, AIModelInfo } from '../../api/settings'
 import {
   Cloud, RefreshCw, RotateCcw, Plus, Trash2,
   Download, Upload, AlertTriangle, CheckCircle2, X, Info,
-  ArrowUp, ArrowDown, Puzzle, Power, PowerOff, Loader, FileUp, MapPin, Database, Copy, Volume2, LayoutTemplate,
-  Wrench, MonitorCheck, Sparkles, Brain, Download as DownloadIcon
+  ArrowUp, ArrowDown, Power, PowerOff, Loader, FileUp, MapPin, Database, Copy, Volume2, LayoutTemplate,
+  Wrench, MonitorCheck, Sparkles, Brain, Download as DownloadIcon,
+  Sun, Moon, Type, Search, Bell, Keyboard, Info as InfoIcon, Package,
+  HardDrive, Sliders, Eye
 } from 'lucide-vue-next'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
 import { useTemplatesStore } from '../../stores/templates'
@@ -24,6 +31,9 @@ const syncStore = useSyncStore()
 const entriesStore = useEntriesStore()
 const pluginsStore = usePluginsStore()
 const templatesStore = useTemplatesStore()
+const ui = useUiStore()
+const searchStore = useSearchStore()
+const remindersStore = useRemindersStore()
 
 function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
@@ -62,6 +72,69 @@ async function runSystemSetup() {
 const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
 const ttsVoice = useLocalStorage<string>('tts-voice', 'en-US-AvaNeural')
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
+
+// ── 1. Appearance ──
+const fontOptions = [
+  { value: 'system-ui', label: 'System UI' },
+  { value: 'Georgia, serif', label: 'Georgia (Serif)' },
+  { value: "'Merriweather', serif", label: 'Merriweather' },
+  { value: "'Noto Serif', serif", label: 'Noto Serif' },
+  { value: "monospace", label: 'Monospace' },
+]
+
+// ── 3. Editor ──
+const autosaveInterval = useLocalStorage<number>('diarium-autosave-interval', 2)
+const ocrLanguage = useLocalStorage<string>('diarium-ocr-language', 'eng')
+const ocrLanguages = [
+  { value: 'eng', label: 'English' },
+  { value: 'fra', label: 'French' },
+  { value: 'deu', label: 'German' },
+  { value: 'spa', label: 'Spanish' },
+  { value: 'por', label: 'Portuguese' },
+  { value: 'ita', label: 'Italian' },
+  { value: 'nld', label: 'Dutch' },
+  { value: 'pol', label: 'Polish' },
+  { value: 'rus', label: 'Russian' },
+  { value: 'jpn', label: 'Japanese' },
+  { value: 'chi_sim', label: 'Chinese (Simplified)' },
+  { value: 'ara', label: 'Arabic' },
+  { value: 'hin', label: 'Hindi' },
+]
+
+// ── 6. TTS speed/volume ──
+const ttsSpeed = useLocalStorage<number>('diarium-tts-speed', 1.0)
+const ttsVolume = useLocalStorage<number>('diarium-tts-volume', 100)
+
+// ── 2. AI Configuration ──
+const appSettings = ref<AppSettings | null>(null)
+const ollamaModels = ref<AIModelInfo[]>([])
+const settingsLoading = ref(false)
+const aiSaving = ref(false)
+
+async function loadAppSettings() {
+  settingsLoading.value = true
+  try {
+    appSettings.value = await getSettings()
+  } catch { /* ignore */ }
+  finally { settingsLoading.value = false }
+}
+
+async function loadOllamaModels() {
+  try { ollamaModels.value = await getOllamaModels() } catch { /* ignore */ }
+}
+
+async function saveAISettings() {
+  if (!appSettings.value) return
+  aiSaving.value = true
+  try {
+    await updateSettings({ ai: appSettings.value.ai })
+    showToast('success', 'AI settings saved')
+  } catch (e: unknown) {
+    showToast('error', `Save failed: ${errMsg(e)}`)
+  } finally {
+    aiSaving.value = false
+  }
+}
 
 // ── Toast ──
 const toast = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
@@ -334,7 +407,57 @@ async function handlePullModel() {
   }
 }
 
-onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetchStatus(); pluginsStore.fetchAll(); templatesStore.fetchAll(); loadVoices(); checkSystemDeps() })
+// ── 9. Reminders ──
+const reminderForm = ref({ title: '', message: '', reminder_time: '', days_of_week: 'mon,tue,wed,thu,fri,sat,sun' })
+const reminderSaving = ref(false)
+
+async function createReminder() {
+  if (!reminderForm.value.title || !reminderForm.value.reminder_time) return
+  reminderSaving.value = true
+  try {
+    await remindersStore.create({
+      title: reminderForm.value.title,
+      message: reminderForm.value.message || undefined,
+      reminder_time: reminderForm.value.reminder_time,
+      days_of_week: reminderForm.value.days_of_week,
+    })
+    reminderForm.value = { title: '', message: '', reminder_time: '', days_of_week: 'mon,tue,wed,thu,fri,sat,sun' }
+    showToast('success', 'Reminder created')
+  } catch (e: unknown) { showToast('error', `Create failed: ${errMsg(e)}`) }
+  finally { reminderSaving.value = false }
+}
+
+async function testReminder(id: number) {
+  try {
+    await remindersStore.testNotification(id)
+    showToast('success', 'Notification sent')
+  } catch (e: unknown) { showToast('error', `Test failed: ${errMsg(e)}`) }
+}
+
+async function deleteReminder(id: number) {
+  try {
+    await remindersStore.remove(id)
+    showToast('info', 'Reminder deleted')
+  } catch (e: unknown) { showToast('error', errMsg(e)) }
+}
+
+// ── Helpers ──
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+const dayLabels: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' }
+
+onMounted(() => {
+  backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetchStatus()
+  pluginsStore.fetchAll(); templatesStore.fetchAll(); loadVoices()
+  checkSystemDeps(); loadAppSettings(); loadOllamaModels()
+  remindersStore.fetchAll()
+})
 </script>
 
 <template>
@@ -345,23 +468,190 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
 
     <div class="flex-1 overflow-y-auto px-3 py-2 space-y-2">
 
-      <!-- Preferences -->
+      <!-- ============================================================ -->
+      <!-- 1. Appearance -->
+      <!-- ============================================================ -->
       <section>
-        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-1">Preferences</h3>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Sun :size="11" /> Appearance
+        </h3>
         <div class="bg-surface rounded p-2 border border-border space-y-1.5">
           <label class="flex items-center gap-2 cursor-pointer">
-            <MapPin :size="11" class="text-text-muted" />
-            <span class="text-[11px] text-text-secondary flex-1">Auto-tag location</span>
-            <input type="checkbox" v-model="autoGeotag" class="accent-accent" />
+            <component :is="ui.darkMode ? Moon : Sun" :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Dark mode</span>
+            <input type="checkbox" :checked="ui.darkMode" @change="ui.toggleTheme()" class="accent-accent" />
           </label>
           <div class="flex items-center gap-2">
-            <Volume2 :size="11" class="text-text-muted" />
-            <span class="text-[11px] text-text-secondary flex-1">Read Aloud voice</span>
+            <Type :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Font family</span>
             <select
-              v-model="ttsVoice"
+              :value="ui.fontFamily"
+              @change="ui.setFontFamily(($event.target as HTMLSelectElement).value)"
               class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]"
-              :disabled="ttsVoicesLoading"
             >
+              <option v-for="f in fontOptions" :key="f.value" :value="f.value">{{ f.label }}</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <Type :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Font size ({{ ui.fontSize }}px)</span>
+            <input type="range" :value="ui.fontSize" @input="ui.setFontSize(+($event.target as HTMLInputElement).value)"
+              min="12" max="20" step="1" class="w-20 accent-accent" />
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 2. AI Configuration -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Brain :size="11" /> AI Configuration
+        </h3>
+        <div class="bg-surface rounded p-2 border border-border space-y-2">
+          <div v-if="settingsLoading" class="text-[10px] text-text-muted">Loading...</div>
+          <template v-else-if="appSettings">
+            <!-- Model selector -->
+            <div class="flex items-center gap-2">
+              <Sparkles :size="11" class="text-text-muted" />
+              <span class="text-[11px] text-text-secondary flex-1">Ollama model</span>
+              <select v-model="appSettings.ai.ollama_model"
+                class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]">
+                <option v-for="m in ollamaModels" :key="m.name" :value="m.name">{{ m.name }}</option>
+                <option :value="appSettings.ai.ollama_model">{{ appSettings.ai.ollama_model }} (current)</option>
+              </select>
+            </div>
+            <!-- Feature toggles -->
+            <div class="space-y-1 border-t border-border pt-1.5">
+              <div class="text-[10px] text-text-muted uppercase tracking-wide mb-1">Features</div>
+              <label v-for="(label, key) in ({
+                enable_embeddings: 'Embeddings (semantic search)',
+                enable_tag_suggestions: 'Tag suggestions',
+                enable_sentiment: 'Sentiment analysis',
+                enable_summarization: 'Entry summarization',
+                enable_reflection_prompts: 'Reflection prompts',
+                enable_writer_block_helper: 'Writer\'s block helper',
+              } as Record<string, string>)" :key="key"
+                class="flex items-center gap-2 cursor-pointer">
+                <span class="text-[11px] text-text-secondary flex-1">{{ label }}</span>
+                <input type="checkbox" v-model="(appSettings.ai as any)[key]" class="accent-accent" />
+              </label>
+            </div>
+            <button @click="saveAISettings" :disabled="aiSaving"
+              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
+              <Loader v-if="aiSaving" :size="10" class="animate-spin" />
+              Save AI Settings
+            </button>
+          </template>
+          <!-- Pull model -->
+          <div class="flex items-center gap-2 pt-1.5 border-t border-border">
+            <DownloadIcon :size="11" class="text-text-muted shrink-0" />
+            <span class="text-[11px] text-text-secondary flex-1">Pull model</span>
+            <input v-model="pullModelName" placeholder="e.g. llama3.2:3b"
+              class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none w-32 hover:border-accent transition-colors" />
+            <button @click="handlePullModel" :disabled="pulling || !pullModelName.trim()"
+              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
+              <Loader v-if="pulling" :size="10" class="animate-spin" /> Pull
+            </button>
+          </div>
+          <div v-if="pullStatus" class="text-[9px] text-text-muted">{{ pullStatus }}</div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 3. Editor -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Sliders :size="11" /> Editor
+        </h3>
+        <div class="bg-surface rounded p-2 border border-border space-y-1.5">
+          <div class="flex items-center gap-2">
+            <Clock :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Auto-save ({{ autosaveInterval }}s)</span>
+            <input type="range" v-model.number="autosaveInterval" min="1" max="10" step="1" class="w-20 accent-accent" />
+          </div>
+          <div class="flex items-center gap-2">
+            <Eye :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">OCR language</span>
+            <select v-model="ocrLanguage"
+              class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[140px]">
+              <option v-for="l in ocrLanguages" :key="l.value" :value="l.value">{{ l.label }}</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 4. Search -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Search :size="11" /> Search
+        </h3>
+        <div class="bg-surface rounded p-2 border border-border">
+          <div class="flex items-center gap-2">
+            <Search :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Search mode</span>
+            <select v-model="searchStore.searchMode"
+              class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[120px]">
+              <option value="hybrid">Hybrid</option>
+              <option value="keyword">Keyword</option>
+              <option value="semantic">Semantic</option>
+            </select>
+          </div>
+          <div class="text-[9px] text-text-muted mt-1">
+            <span v-if="searchStore.searchMode === 'hybrid'">Combines keyword and semantic search for best results.</span>
+            <span v-else-if="searchStore.searchMode === 'keyword'">Fast text matching. Works without AI models.</span>
+            <span v-else>Finds entries by meaning, not just words. Requires embedding model.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 5. Storage -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <HardDrive :size="11" /> Storage
+        </h3>
+        <div class="bg-surface rounded p-2 border border-border space-y-1">
+          <div v-if="appSettings?.storage" class="space-y-1">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-text-secondary">Database</span>
+              <span class="text-text-primary">{{ formatBytes(appSettings.storage.db_size_bytes) }}</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-text-secondary">Entries</span>
+              <span class="text-text-primary">{{ appSettings.storage.entry_count }}</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-text-secondary">Media files</span>
+              <span class="text-text-primary">{{ appSettings.storage.media_count }} ({{ formatBytes(appSettings.storage.media_size_bytes) }})</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="text-text-secondary">Total</span>
+              <span class="text-text-primary font-medium">{{ formatBytes(appSettings.storage.db_size_bytes + appSettings.storage.media_size_bytes) }}</span>
+            </div>
+          </div>
+          <div v-else class="text-[10px] text-text-muted">Loading...</div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 6. Read Aloud (TTS) -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Volume2 :size="11" /> Read Aloud
+        </h3>
+        <div class="bg-surface rounded p-2 border border-border space-y-1.5">
+          <div class="flex items-center gap-2">
+            <Volume2 :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Voice</span>
+            <select v-model="ttsVoice"
+              class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]"
+              :disabled="ttsVoicesLoading">
               <option v-for="v in ttsVoices.filter(v => v.locale.startsWith('en'))" :key="v.short_name" :value="v.short_name">
                 {{ v.short_name.replace('en-', '').replace('Neural', '') }}
               </option>
@@ -373,12 +663,32 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
             </select>
           </div>
           <div class="flex items-center gap-2">
+            <span class="text-[11px] text-text-secondary flex-1">Speed ({{ ttsSpeed.toFixed(1) }}x)</span>
+            <input type="range" v-model.number="ttsSpeed" min="0.5" max="2.0" step="0.1" class="w-20 accent-accent" />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-text-secondary flex-1">Volume ({{ ttsVolume }}%)</span>
+            <input type="range" v-model.number="ttsVolume" min="0" max="100" step="5" class="w-20 accent-accent" />
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Preferences (existing, kept) -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-1">Preferences</h3>
+        <div class="bg-surface rounded p-2 border border-border space-y-1.5">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <MapPin :size="11" class="text-text-muted" />
+            <span class="text-[11px] text-text-secondary flex-1">Auto-tag location</span>
+            <input type="checkbox" v-model="autoGeotag" class="accent-accent" />
+          </label>
+          <div class="flex items-center gap-2">
             <LayoutTemplate :size="11" class="text-text-muted" />
             <span class="text-[11px] text-text-secondary flex-1">Default template</span>
-            <select
-              v-model.number="defaultTemplateId"
-              class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]"
-            >
+            <select v-model.number="defaultTemplateId"
+              class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]">
               <option :value="null">None</option>
               <option v-for="t in templatesStore.templates" :key="t.id" :value="t.id">{{ t.name }}</option>
             </select>
@@ -392,7 +702,6 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
           <Wrench :size="11" /> System Setup
         </h3>
         <div class="bg-surface rounded p-2 border border-border space-y-1.5">
-          <!-- Deps status -->
           <div v-if="depsStatus === null" class="text-[10px] text-text-muted">Checking dependencies...</div>
           <div v-else-if="depsStatus.all_installed" class="flex items-center gap-1 text-[10px] text-green-400">
             <MonitorCheck :size="11" /> All system dependencies installed
@@ -402,40 +711,24 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
               :class="depsStatus.tesseract ? 'text-green-400' : 'text-red-400'">
               <CheckCircle2 v-if="depsStatus.tesseract" :size="10" />
               <AlertTriangle v-else :size="10" />
-              Tesseract OCR {{ depsStatus.tesseract ? '(installed)' : '(missing — needed for image text extraction)' }}
+              Tesseract OCR {{ depsStatus.tesseract ? '(installed)' : '(missing)' }}
             </div>
             <div class="flex items-center gap-1 text-[10px]"
               :class="depsStatus.ollama ? 'text-green-400' : 'text-red-400'">
               <CheckCircle2 v-if="depsStatus.ollama" :size="10" />
               <AlertTriangle v-else :size="10" />
-              Ollama AI {{ depsStatus.ollama ? '(installed)' : '(missing — needed for grammar check & AI features)' }}
+              Ollama AI {{ depsStatus.ollama ? '(installed)' : '(missing)' }}
             </div>
-            <button
-              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50 mt-1"
+            <button class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50 mt-1"
               :disabled="setupRunning" @click="runSystemSetup">
               <Loader v-if="setupRunning" :size="10" class="animate-spin" />
               <Wrench v-else :size="10" />
               {{ setupRunning ? 'Installing...' : 'Install Missing Dependencies' }}
             </button>
-            <p class="text-[9px] text-text-muted">Installs Tesseract OCR, Ollama AI (with llama3.2 model), and PDF export libraries.</p>
           </div>
-          <!-- Setup output -->
           <div v-if="setupOutput" class="mt-1 p-1.5 rounded bg-black/30 text-[9px] font-mono text-green-300 max-h-32 overflow-y-auto whitespace-pre-wrap">
             {{ setupOutput }}
           </div>
-          <!-- Pull AI Model -->
-          <div class="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-border">
-            <DownloadIcon :size="11" class="text-text-muted shrink-0" />
-            <span class="text-[11px] text-text-secondary flex-1">Pull AI model</span>
-            <input v-model="pullModelName" placeholder="e.g. llama3.2:3b"
-              class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none w-32 hover:border-accent transition-colors" />
-            <button @click="handlePullModel" :disabled="pulling || !pullModelName.trim()"
-              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
-              <Loader v-if="pulling" :size="10" class="animate-spin" />
-              Pull
-            </button>
-          </div>
-          <div v-if="pullStatus" class="text-[9px] text-text-muted mt-0.5">{{ pullStatus }}</div>
         </div>
       </section>
 
@@ -454,8 +747,7 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
             <button @click="fetchThemes" :disabled="themesLoading"
               class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
               <Loader v-if="themesLoading" :size="10" class="animate-spin" />
-              <Sparkles v-else :size="10" />
-              Analyze
+              <Sparkles v-else :size="10" /> Analyze
             </button>
           </div>
           <div v-if="themes.length" class="space-y-1.5 max-h-60 overflow-y-auto">
@@ -474,23 +766,20 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
         </div>
       </section>
 
-      <!-- Import / Export -->
+      <!-- Data (Import/Export) -->
       <section>
         <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-1">Data</h3>
         <div class="bg-surface rounded border border-border divide-y divide-border">
-          <!-- Import -->
           <div class="p-2 flex items-center gap-2">
             <FileUp :size="12" class="text-text-muted shrink-0" />
             <span class="text-[11px] text-text-secondary flex-1">Import</span>
             <button class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50"
               :disabled="fileImporting" @click="fileImportInput?.click()">
               <Loader v-if="fileImporting" :size="10" class="animate-spin" />
-              <Upload v-else :size="10" />
-              {{ fileImporting ? 'Importing...' : 'Import file' }}
+              <Upload v-else :size="10" /> {{ fileImporting ? 'Importing...' : 'Import file' }}
             </button>
             <input ref="fileImportInput" type="file" accept=".zip,.json,.diary" class="hidden" @change="handleFileImport" />
           </div>
-          <!-- Deduplicate -->
           <div class="p-2 flex items-center gap-2">
             <Copy :size="12" class="text-text-muted shrink-0" />
             <span class="text-[11px] text-text-secondary flex-1">Remove duplicates</span>
@@ -500,7 +789,6 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
               {{ deduplicating ? 'Scanning...' : 'Deduplicate' }}
             </button>
           </div>
-          <!-- Export buttons -->
           <div class="p-2 flex items-center gap-2 flex-wrap">
             <div class="flex items-center gap-1.5 flex-1 min-w-0">
               <Download :size="12" class="text-text-muted shrink-0" />
@@ -526,7 +814,6 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
                 @click="downloadPdfExport">PDF</button>
             </div>
           </div>
-          <!-- Local archive -->
           <div class="p-2 flex items-center gap-2">
             <Database :size="12" class="text-text-muted shrink-0" />
             <span class="text-[11px] text-text-secondary flex-1">Local archive</span>
@@ -549,7 +836,6 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
           <button class="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-white text-[10px] cursor-pointer hover:bg-accent-hover"
             @click="openCreateForm"><Plus :size="10" /> Add</button>
         </div>
-
         <div v-if="showCreate" class="bg-surface rounded p-2 mb-1 border border-accent/30 space-y-1">
           <div class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
             <span class="text-[10px] text-text-secondary">Provider</span>
@@ -573,7 +859,6 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
             <button class="px-2 py-0.5 rounded text-[10px] text-text-secondary cursor-pointer" @click="showCreate = false">Cancel</button>
           </div>
         </div>
-
         <div v-for="config in backup.configs" :key="config.id" class="bg-surface rounded p-1.5 mb-0.5 border border-border">
           <div class="flex items-center gap-1.5 mb-1">
             <span class="text-[11px] font-medium text-text-primary capitalize">{{ config.provider.replace('_', ' ') }}</span>
@@ -597,8 +882,6 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
           </div>
         </div>
         <div v-if="!backup.configs.length && !showCreate" class="text-[10px] text-text-muted py-1">No cloud backups configured.</div>
-
-        <!-- Snapshot history (collapsible) -->
         <details v-if="backup.snapshots.length" class="mt-1">
           <summary class="text-[10px] text-text-muted cursor-pointer hover:text-text-primary">{{ backup.snapshots.length }} backups</summary>
           <div class="mt-0.5 space-y-0.5">
@@ -637,37 +920,148 @@ onMounted(() => { backup.fetchConfigs(); backup.fetchSnapshots(); syncStore.fetc
         </div>
       </section>
 
-      <!-- Plugins -->
+      <!-- ============================================================ -->
+      <!-- 9. Notifications -->
+      <!-- ============================================================ -->
       <section>
         <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
-          <Puzzle :size="11" /> Plugins
+          <Bell :size="11" /> Notifications
         </h3>
-        <div class="bg-surface rounded p-2 border border-border space-y-1">
-          <div class="grid grid-cols-2 gap-1">
-            <input v-model="pluginForm.name" placeholder="Name *" class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
-            <input v-model="pluginForm.entry_point" placeholder="module:function *" class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
+        <div class="bg-surface rounded p-2 border border-border space-y-2">
+          <!-- Quick add -->
+          <div class="space-y-1">
+            <input v-model="reminderForm.title" placeholder="Reminder title *"
+              class="w-full bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
+            <div class="flex gap-1">
+              <input v-model="reminderForm.message" placeholder="Message (optional)"
+                class="flex-1 bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
+              <input v-model="reminderForm.reminder_time" type="time"
+                class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary w-[70px]" />
+            </div>
+            <div class="flex items-center gap-1">
+              <select v-model="reminderForm.days_of_week"
+                class="flex-1 bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary">
+                <option value="mon,tue,wed,thu,fri,sat,sun">Every day</option>
+                <option value="mon,tue,wed,thu,fri">Weekdays</option>
+                <option value="sat,sun">Weekends</option>
+              </select>
+              <button @click="createReminder" :disabled="reminderSaving || !reminderForm.title || !reminderForm.reminder_time"
+                class="flex items-center gap-1 px-2 py-0.5 rounded bg-accent text-white text-[10px] cursor-pointer hover:bg-accent-hover disabled:opacity-50">
+                <Loader v-if="reminderSaving" :size="9" class="animate-spin" /> Add
+              </button>
+            </div>
           </div>
-          <div class="flex items-center gap-1">
-            <input v-model="pluginForm.version" placeholder="Version" class="flex-1 bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
-            <button class="flex items-center gap-0.5 px-2 py-0.5 rounded bg-accent text-white text-[10px] cursor-pointer hover:bg-accent-hover disabled:opacity-50"
-              :disabled="pluginInstalling || !pluginForm.name || !pluginForm.entry_point" @click="installPlugin">
-              <Loader v-if="pluginInstalling" :size="9" class="animate-spin" /><Plus v-else :size="9" /> Install
+          <!-- Existing reminders -->
+          <div v-if="remindersStore.reminders.length" class="space-y-0.5 border-t border-border pt-1.5">
+            <div v-for="r in remindersStore.reminders" :key="r.id"
+              class="flex items-center gap-1.5 px-1.5 py-1 rounded bg-surface-hover">
+              <Bell :size="9" :class="r.is_active ? 'text-accent' : 'text-text-muted'" />
+              <div class="flex-1 min-w-0">
+                <div class="text-[11px] text-text-primary truncate">{{ r.title }}</div>
+                <div class="text-[9px] text-text-muted">{{ r.reminder_time.slice(0,5) }} — {{ r.days_of_week.split(',').map(d => dayLabels[d] || d).join(', ') }}</div>
+              </div>
+              <button @click="testReminder(r.id)" class="p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-accent cursor-pointer" title="Test">
+                <Volume2 :size="10" />
+              </button>
+              <button @click="deleteReminder(r.id)" class="p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-danger cursor-pointer" title="Delete">
+                <Trash2 :size="10" />
+              </button>
+            </div>
+          </div>
+          <div v-else class="text-[10px] text-text-muted text-center py-1">No reminders set.</div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 10. Plugins (marketplace + installed) -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Package :size="11" /> Plugins
+        </h3>
+        <div class="bg-surface rounded p-2 border border-border space-y-2">
+          <!-- Marketplace placeholder -->
+          <div class="text-center py-3 border border-dashed border-border rounded">
+            <Package :size="20" class="mx-auto text-text-muted mb-1" />
+            <div class="text-[11px] text-text-secondary font-medium">Plugin Marketplace</div>
+            <div class="text-[9px] text-text-muted mt-0.5">Browse and install community plugins — coming soon.</div>
+          </div>
+          <!-- Manual install -->
+          <div class="space-y-1 border-t border-border pt-1.5">
+            <div class="text-[10px] text-text-muted">Install manually</div>
+            <div class="grid grid-cols-2 gap-1">
+              <input v-model="pluginForm.name" placeholder="Name *" class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
+              <input v-model="pluginForm.entry_point" placeholder="module:function *" class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
+            </div>
+            <div class="flex items-center gap-1">
+              <input v-model="pluginForm.version" placeholder="Version" class="flex-1 bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary" />
+              <button class="flex items-center gap-0.5 px-2 py-0.5 rounded bg-accent text-white text-[10px] cursor-pointer hover:bg-accent-hover disabled:opacity-50"
+                :disabled="pluginInstalling || !pluginForm.name || !pluginForm.entry_point" @click="installPlugin">
+                <Loader v-if="pluginInstalling" :size="9" class="animate-spin" /><Plus v-else :size="9" /> Install
+              </button>
+            </div>
+          </div>
+          <div v-for="p in pluginsStore.plugins" :key="p.id"
+            class="bg-surface-hover rounded px-2 py-1 border border-border flex items-center gap-2">
+            <span class="text-[11px] font-medium text-text-primary flex-1">{{ p.name }}
+              <span v-if="p.version" class="text-[9px] text-text-muted">v{{ p.version }}</span></span>
+            <button class="p-0.5 rounded hover:bg-surface-hover cursor-pointer" :class="p.is_enabled ? 'text-green-400' : 'text-text-muted'"
+              @click="togglePlugin(p.id, !p.is_enabled)">
+              <PowerOff v-if="p.is_enabled" :size="11" /><Power v-else :size="11" />
+            </button>
+            <button class="p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-danger cursor-pointer" @click="removePlugin(p.id)">
+              <Trash2 :size="11" />
             </button>
           </div>
+          <div v-if="!pluginsStore.plugins.length" class="text-[10px] text-text-muted text-center">No plugins installed.</div>
         </div>
-        <div v-for="p in pluginsStore.plugins" :key="p.id"
-          class="bg-surface rounded px-2 py-1 mt-0.5 border border-border flex items-center gap-2">
-          <span class="text-[11px] font-medium text-text-primary flex-1">{{ p.name }}
-            <span v-if="p.version" class="text-[9px] text-text-muted">v{{ p.version }}</span></span>
-          <button class="p-0.5 rounded hover:bg-surface-hover cursor-pointer" :class="p.is_enabled ? 'text-green-400' : 'text-text-muted'"
-            @click="togglePlugin(p.id, !p.is_enabled)">
-            <PowerOff v-if="p.is_enabled" :size="11" /><Power v-else :size="11" />
-          </button>
-          <button class="p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-danger cursor-pointer" @click="removePlugin(p.id)">
-            <Trash2 :size="11" />
-          </button>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 8. Keyboard Shortcuts -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <Keyboard :size="11" /> Keyboard Shortcuts
+        </h3>
+        <div class="bg-surface rounded border border-border overflow-hidden">
+          <div class="divide-y divide-border">
+            <div v-for="s in [
+              { keys: 'Ctrl + K', desc: 'Open search palette' },
+              { keys: 'Ctrl + S', desc: 'Save entry' },
+              { keys: 'Ctrl + B', desc: 'Bold text' },
+              { keys: 'Ctrl + I', desc: 'Italic text' },
+              { keys: 'Ctrl + Shift + X', desc: 'Strikethrough' },
+              { keys: 'Ctrl + \\', desc: 'Remove formatting' },
+              { keys: 'Ctrl + Z', desc: 'Undo' },
+              { keys: 'Ctrl + Shift + Z', desc: 'Redo' },
+              { keys: 'Ctrl + F', desc: 'Find in entry' },
+              { keys: 'Escape', desc: 'Close panel / dialog' },
+            ]" :key="s.keys" class="flex items-center justify-between px-2 py-1">
+              <span class="text-[11px] text-text-secondary">{{ s.desc }}</span>
+              <kbd class="px-1.5 py-0.5 bg-surface-hover rounded text-[9px] font-mono text-text-muted border border-border">{{ s.keys }}</kbd>
+            </div>
+          </div>
         </div>
-        <div v-if="!pluginsStore.plugins.length" class="text-[10px] text-text-muted mt-1">No plugins.</div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 7. About -->
+      <!-- ============================================================ -->
+      <section>
+        <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
+          <InfoIcon :size="11" /> About
+        </h3>
+        <div class="bg-surface rounded p-3 border border-border space-y-1.5 text-center">
+          <div class="text-sm font-semibold text-text-primary">{{ appSettings?.app_name ?? 'Diarilinux' }}</div>
+          <div class="text-[10px] text-text-muted">Version {{ appSettings?.version ?? '0.1.0' }}</div>
+          <div class="text-[10px] text-text-secondary">Privacy-first, offline-first journaling for Linux</div>
+          <div class="flex justify-center gap-3 pt-1">
+            <a href="https://github.com/diarilinux/diarilinux" target="_blank" class="text-[10px] text-accent hover:underline">GitHub</a>
+            <a href="https://github.com/diarilinux/diarilinux/issues" target="_blank" class="text-[10px] text-accent hover:underline">Report Issue</a>
+            <a href="https://github.com/diarilinux/diarilinux/blob/main/LICENSE" target="_blank" class="text-[10px] text-accent hover:underline">License</a>
+          </div>
+        </div>
       </section>
 
       <!-- Danger Zone -->

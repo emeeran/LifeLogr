@@ -5,15 +5,28 @@ export const ttsApi = {
     return localStorage.getItem('tts-voice') || 'en-US-AvaNeural'
   },
 
+  getSpeed(): number {
+    return parseFloat(localStorage.getItem('diarium-tts-speed') || '1.0')
+  },
+
+  getVolume(): number {
+    return parseInt(localStorage.getItem('diarium-tts-volume') || '100')
+  },
+
   entryUrl(entryId: number): string {
-    return `${API_ORIGIN}/api/v1/tts/entry/${entryId}?voice=${encodeURIComponent(this.getVoice())}`
+    return `${API_ORIGIN}/api/v1/tts/entry/${entryId}?voice=${encodeURIComponent(this.getVoice())}&rate=${this.getSpeed()}&volume=${this.getVolume()}`
   },
 
   async speakBlob(text: string): Promise<Blob> {
     const res = await fetch(`${API_ORIGIN}/api/v1/tts/speak`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: this.getVoice() }),
+      body: JSON.stringify({
+        text,
+        voice: this.getVoice(),
+        rate: this.getSpeed(),
+        volume: this.getVolume(),
+      }),
     })
     if (!res.ok) {
       const detail = await res.text()

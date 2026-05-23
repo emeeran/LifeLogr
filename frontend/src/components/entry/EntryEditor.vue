@@ -6,12 +6,12 @@ import { useUiStore } from '../../stores/ui'
 import {
   X, Eye, Edit3, Bold, Italic, Strikethrough, Heading1, Heading2,
   List, ListOrdered, Quote, Code, Link, Image, Minus,
-  Undo2, Redo2, Maximize2, Minimize2, Search, Type, AlignLeft,
+  Undo2, Redo2, Maximize2, Minimize2, Search, Type, AlignLeft, AlignCenter, AlignRight, AlignJustify, Highlighter, Smile,
   Table, CheckSquare, Clock, ChevronUp, ChevronDown,
   Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, Film, Music, FileText, LayoutTemplate,
-  BarChart3, Search as SearchIcon, Lightbulb, Loader, RefreshCw
+  Loader, Pause, Focus, Layout, Copy, Scissors
 } from 'lucide-vue-next'
-import AiPanel from './AiPanel.vue'
+import AiDrawerPanel from './AiDrawerPanel.vue'
 import RevisionPanel from './RevisionPanel.vue'
 import EncryptionBadge from './EncryptionBadge.vue'
 import GeotagModal from './GeotagModal.vue'
@@ -19,8 +19,10 @@ import TagList from '../tags/TagList.vue'
 import RecordingPanel from '../recordings/RecordingPanel.vue'
 import MediaViewer from '../media/MediaViewer.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
+import EmojiPicker from '../common/EmojiPicker.vue'
 import { setGeotag } from '../../api/geotagging'
-import { aiStatus, suggestTags, runEntryAnalysis, findSimilar } from '../../api/ai'
+import { aiStatus, suggestTags, runOCR } from '../../api/ai'
+import { encryptText, decryptText } from '../../api/encryption'
 import { ttsApi } from '../../api/tts'
 import { mediaApi } from '../../api/media'
 import { formatFileSize } from '../../composables/useFormat'
@@ -29,7 +31,7 @@ import { marked } from 'marked'
 
 marked.use({ gfm: true, breaks: true })
 import DOMPurify from 'dompurify'
-import type { MediaResponse, EntryAnalysisResponse, SimilarEntry } from '../../types'
+import type { MediaResponse } from '../../types'
 
 const entries = useEntriesStore()
 const ui = useUiStore()
@@ -43,12 +45,14 @@ const entryDate = ref('')
 const showPreview = ref(false)
 const fullscreen = ref(false)
 const textarea = ref<HTMLTextAreaElement | null>(null)
-const showAi = ref(false)
 const showRevisions = ref(false)
 const showGeotag = ref(false)
 const showRecording = ref(false)
 const showAttachments = ref(false)
 const showTemplates = ref(false)
+const showEmoji = ref(false)
+const showAiDrawer = ref(false)
+const aiProcessing = ref(false)
 const attachments = ref<MediaResponse[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const viewerOpen = ref(false)
@@ -57,14 +61,14 @@ const showTagDropdown = ref(false)
 const aiAvailable = ref<boolean | null>(null)
 const suggestedTags = ref<string[]>([])
 const suggestingTags = ref(false)
-const analysis = ref<EntryAnalysisResponse | null>(null)
-const analysisLoading = ref(false)
-const similarEntries = ref<SimilarEntry[]>([])
-const similarLoading = ref(false)
 const ttsPlaying = ref(false)
 const ttsLoading = ref(false)
 let ttsAudio: HTMLAudioElement | null = null
 const isEncrypted = ref(false)
+const focusMode = ref(false)
+const typewriterMode = ref(false)
+const showContextMenu = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
 const pendingGeotag = ref<{ latitude: number; longitude: number; location_name: string | null } | null>(null)
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
 
@@ -263,9 +267,24 @@ const fmt = {
   checkbox: insertCheckbox,
   undo: doUndo,
   redo: doRedo,
+  alignLeft: () => wrap('<div style="text-align: left">\n', '\n</div>', 'left aligned text'),
+  alignCenter: () => wrap('<div style="text-align: center">\n', '\n</div>', 'centered text'),
+  alignRight: () => wrap('<div style="text-align: right">\n', '\n</div>', 'right aligned text'),
+  alignJustify: () => wrap('<div style="text-align: justify">\n', '\n</div>', 'justified text'),
+  highlight: () => wrap('<mark>', '</mark>', 'highlighted text'),
 }
 
-const renderedPreview = computed(() => DOMPurify.sanitize(marked(body.value) as string))
+const renderedPreview = computed(() => {
+  let html = marked(body.value) as string
+  html = html.replace(/&lt;!--ENC\{([^}]+)\}--&gt;/g, (_, enc) => {
+    return `<span class="enc-block cursor-pointer bg-accent/10 text-accent px-1.5 py-0.5 rounded border border-accent/20 text-[11px] font-medium" data-enc="${enc}">🔒 Decrypt selection</span>`
+  })
+  // Also handle raw HTML if marked didn't escape it (unlikely with default settings but just in case)
+  html = html.replace(/<!--ENC\{([^}]+)\}-->/g, (_, enc) => {
+    return `<span class="enc-block cursor-pointer bg-accent/10 text-accent px-1.5 py-0.5 rounded border border-accent/20 text-[11px] font-medium" data-enc="${enc}">🔒 Decrypt selection</span>`
+  })
+  return DOMPurify.sanitize(html, { ADD_ATTR: ['data-enc'] })
+})
 
 // ── Load entry data ──
 async function loadEntry() {
@@ -312,7 +331,30 @@ async function loadEntry() {
   loadAttachments()
 }
 
-onMounted(loadEntry)
+onMounted(() => {
+  loadEntry()
+  window.addEventListener('click', async (e) => {
+    showContextMenu.value = false
+    const target = e.target as HTMLElement
+    if (target.classList.contains('enc-block')) {
+      const enc = target.getAttribute('data-enc')
+      if (!enc) return
+      const passphrase = prompt('Enter passphrase to decrypt:')
+      if (!passphrase) return
+      try {
+        const res = await decryptText(enc, passphrase)
+        target.textContent = res.decrypted
+        target.classList.remove('bg-accent/10', 'text-accent')
+        target.classList.add('bg-surface-hover', 'text-text-primary')
+      } catch (e: unknown) {
+        alert('Decryption failed: wrong passphrase?')
+      }
+    }
+  })
+})
+onUnmounted(() => {
+  window.removeEventListener('click', () => { showContextMenu.value = false })
+})
 watch([() => ui.editingEntryId, () => ui.newEntryDate], () => { loadEntry(); loadAttachments() })
 
 // Check AI availability once
@@ -324,16 +366,46 @@ async function onEncryptionChange(encrypted: boolean) {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+const autosaveMs = computed(() => {
+  const secs = parseInt(localStorage.getItem('diarium-autosave-interval') || '2')
+  return (isNaN(secs) ? 2 : secs) * 1000
+})
 
 function onInput() {
   pushHistory()
   markDirty()
-  if (isNew.value) return
+
+  if (typewriterMode.value) {
+    nextTick(() => {
+      const el = textarea.value
+      if (!el) return
+      const { selectionStart } = el
+      const lines = body.value.slice(0, selectionStart).split('\n').length
+      const lineHeight = 24 // approximate px
+      const targetScroll = (lines * lineHeight) - (el.clientHeight / 2)
+      el.scrollTo({ top: targetScroll, behavior: 'smooth' })
+    })
+  }
+
   if (saveTimer) clearTimeout(saveTimer)
   if (!body.value.trim()) return
-  saveTimer = setTimeout(() => {
-    entries.updateEntry(ui.editingEntryId!, { title: title.value || null, body: body.value, tag_ids: tagIds.value })
-  }, 2000)
+
+  saveTimer = setTimeout(async () => {
+    if (isNew.value) {
+      try {
+        const entry = await entries.createEntry({
+          entry_date: entryDate.value,
+          title: title.value || null,
+          body: body.value,
+          tag_ids: tagIds.value
+        })
+        ui.editingEntryId = entry.id
+        snapshot()
+      } catch (e: unknown) { /* ignore auto-save failures */ }
+    } else {
+      entries.updateEntry(ui.editingEntryId!, { title: title.value || null, body: body.value, tag_ids: tagIds.value })
+    }
+  }, autosaveMs.value)
 }
 
 // ── Keyboard shortcuts ──
@@ -426,16 +498,24 @@ function onTextareaKeydown(e: KeyboardEvent) {
 }
 
 // ── Fullscreen escape ──
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  contextMenuPos.value = { x: e.clientX, y: e.y }
+  showContextMenu.value = true
+}
+
 function onGlobalKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
 
   // Close active overlays in priority order
   if (showTemplates.value) { showTemplates.value = false; return }
+  if (showContextMenu.value) { showContextMenu.value = false; return }
+  if (showAiDrawer.value) { showAiDrawer.value = false; return }
+  if (showEmoji.value) { showEmoji.value = false; return }
   if (showGeotag.value) { showGeotag.value = false; return }
   if (viewerOpen.value) { viewerOpen.value = false; return }
   if (showTagDropdown.value) { showTagDropdown.value = false; return }
   if (showFind.value) { showFind.value = false; return }
-  if (showAi.value) { showAi.value = false; return }
   if (showRevisions.value) { showRevisions.value = false; return }
   if (showRecording.value) { showRecording.value = false; return }
   if (showAttachments.value) { showAttachments.value = false; return }
@@ -448,7 +528,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => document.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
 
-defineExpose({ isDirty, save })
+defineExpose({ isDirty, save, body, onInput, hasEntry, entryId: computed(() => ui.editingEntryId) })
 
 // ── Save ──
 async function save() {
@@ -499,6 +579,45 @@ function onTranscribed(text: string) {
   onInput()
 }
 
+function onEmojiSelect(emoji: string) {
+  insertAtCursor(emoji)
+  showEmoji.value = false
+}
+
+function copyToClipboard() {
+  const text = getSelection()
+  if (text) navigator.clipboard.writeText(text)
+}
+
+function cutToClipboard() {
+  const text = getSelection()
+  if (text) {
+    navigator.clipboard.writeText(text)
+    applyToSelection('')
+  }
+}
+
+function getSelection() {
+  const el = textarea.value
+  if (!el) return ''
+  return body.value.slice(el.selectionStart, el.selectionEnd).trim()
+}
+
+function applyToSelection(newText: string) {
+  const el = textarea.value
+  if (!el) return
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  body.value = body.value.slice(0, start) + newText + body.value.slice(end)
+  pushHistory()
+  markDirty()
+  nextTick(() => {
+    el.focus()
+    el.selectionStart = start
+    el.selectionEnd = start + newText.length
+  })
+}
+
 async function openRecording() {
   if (showRecording.value) { showRecording.value = false; return }
   if (!hasEntry.value) {
@@ -547,6 +666,43 @@ async function removeAttachment(id: number) {
     entries.refreshAll()
   } catch (e: unknown) {
     alert(`Delete failed: ${errMsg(e)}`)
+  }
+}
+
+async function runOcrTool(mediaId: number) {
+  aiProcessing.value = true
+  try {
+    const res = await runOCR(mediaId)
+    if (res.extracted_text) {
+      body.value += `\n\n[OCR Text]\n${res.extracted_text}`
+      pushHistory()
+      markDirty()
+      alert('Text extracted and appended to entry.')
+    } else {
+      alert('No text detected in image.')
+    }
+  } catch (e: unknown) {
+    alert(`OCR failed: ${errMsg(e)}`)
+  } finally {
+    aiProcessing.value = false
+  }
+}
+
+async function encryptSelection() {
+  const text = getSelection()
+  if (!text) {
+    alert('Please select some text to encrypt.')
+    return
+  }
+  const passphrase = prompt('Enter a passphrase to encrypt this selection:')
+  if (!passphrase) return
+
+  try {
+    const res = await encryptText(text, passphrase)
+    applyToSelection(`<!--ENC{${res.encrypted}}-->`)
+    alert('Selection encrypted.')
+  } catch (e: unknown) {
+    alert(`Encryption failed: ${errMsg(e)}`)
   }
 }
 
@@ -641,34 +797,6 @@ async function applySuggestedTag(name: string) {
   onInput()
 }
 
-// ── Entry Analysis ──
-async function runAnalysis() {
-  if (!hasEntry.value) return
-  analysisLoading.value = true
-  analysis.value = null
-  similarEntries.value = []
-  try {
-    analysis.value = await runEntryAnalysis(ui.editingEntryId!)
-  } catch { /* ignore */ }
-  finally { analysisLoading.value = false }
-}
-
-async function fetchSimilar() {
-  if (!hasEntry.value) return
-  similarLoading.value = true
-  try {
-    const res = await findSimilar(ui.editingEntryId!)
-    similarEntries.value = res.similar
-  } catch { /* ignore */ }
-  finally { similarLoading.value = false }
-}
-
-function gotoEntry(entryId: number) {
-  entries.currentEntry = null
-  ui.detailPanelOpen = true
-  entries.fetchEntry(entryId).then(e => { if (e) entries.currentEntry = e })
-}
-
 // Active formatting detection
 const activeFormats = computed(() => {
   const el = textarea.value
@@ -684,10 +812,17 @@ const activeFormats = computed(() => {
   if (currentLine.startsWith('> ')) s.add('quote')
 
   // Inline: check surrounding text
-  const before = body.value.slice(Math.max(0, pos - 10), pos)
-  const after = body.value.slice(pos, pos + 10)
+  const before = body.value.slice(Math.max(0, pos - 20), pos)
+  const after = body.value.slice(pos, pos + 20)
+  const full = body.value.slice(Math.max(0, pos - 40), pos + 40)
+
   if ((before.endsWith('**') && after.startsWith('**')) || (before.endsWith('**') && body.value.slice(pos).startsWith('**'))) s.add('bold')
   if ((before.endsWith('*') && !before.endsWith('**') && after.startsWith('*')) || (before.endsWith('*') && !before.endsWith('**') && body.value.slice(pos).startsWith('*'))) s.add('italic')
+  if (full.includes('<mark>') && full.includes('</mark>')) s.add('highlight')
+  if (full.includes('text-align: left')) s.add('alignLeft')
+  if (full.includes('text-align: center')) s.add('alignCenter')
+  if (full.includes('text-align: right')) s.add('alignRight')
+  if (full.includes('text-align: justify')) s.add('alignJustify')
   return s
 })
 </script>
@@ -695,10 +830,13 @@ const activeFormats = computed(() => {
 <template>
   <div
     class="flex flex-col h-full"
-    :class="fullscreen ? 'fixed inset-0 z-[100] bg-editor' : ''"
+    :class="[
+      fullscreen ? 'fixed inset-0 z-[100] bg-editor' : '',
+      focusMode ? 'bg-editor' : ''
+    ]"
   >
     <!-- Header: Title + Date + New + controls -->
-    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border">
+    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border" v-if="!focusMode">
       <input
         v-model="title"
         class="flex-1 bg-transparent text-base font-semibold text-text-primary placeholder-text-muted/70 outline-none min-w-0"
@@ -745,7 +883,7 @@ const activeFormats = computed(() => {
 
 
     <!-- Formatting toolbar (two rows) -->
-    <div class="border-b border-border bg-editor/50" v-if="!showPreview">
+    <div class="border-b border-border bg-editor/50" v-if="!showPreview && !focusMode">
       <!-- Row 1: Font + inline formatting + undo/redo -->
       <div class="flex items-center gap-0.5 px-1.5 py-0.5">
         <select
@@ -800,6 +938,25 @@ const activeFormats = computed(() => {
           title="Link" @click="fmt.link"><Link :size="13" /></button>
         <button class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
           title="Image" @click="fmt.image"><Image :size="13" /></button>
+        <span class="w-px h-4 bg-border mx-0.5" />
+        <button
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="showEmoji ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          title="Insert Emoji"
+          @click="showEmoji = !showEmoji"
+        ><Smile :size="13" /></button>
+        <button
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="focusMode ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          title="Focus Mode"
+          @click="focusMode = !focusMode"
+        ><Focus :size="13" /></button>
+        <button
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="typewriterMode ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          title="Typewriter Mode"
+          @click="typewriterMode = !typewriterMode"
+        ><Layout :size="13" /></button>
         <span class="flex-1" />
         <button
           class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
@@ -808,7 +965,7 @@ const activeFormats = computed(() => {
           @click="showFind = !showFind"
         ><Search :size="13" /></button>
       </div>
-      <!-- Row 2: Block formatting -->
+      <!-- Row 2: Block formatting + Alignment + Highlighter -->
       <div class="flex items-center gap-0.5 px-1.5 py-0.5">
         <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
           :class="activeFormats.has('h1') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
@@ -826,6 +983,23 @@ const activeFormats = computed(() => {
         <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
           :class="activeFormats.has('quote') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
           title="Blockquote" @click="fmt.quote"><Quote :size="13" /></button>
+        <span class="w-px h-4 bg-border mx-0.5" />
+        <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
+          :class="activeFormats.has('alignLeft') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          title="Align left" @click="fmt.alignLeft"><AlignLeft :size="13" /></button>
+        <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
+          :class="activeFormats.has('alignCenter') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          title="Align center" @click="fmt.alignCenter"><AlignCenter :size="13" /></button>
+        <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
+          :class="activeFormats.has('alignRight') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          title="Align right" @click="fmt.alignRight"><AlignRight :size="13" /></button>
+        <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
+          :class="activeFormats.has('alignJustify') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          title="Align justify" @click="fmt.alignJustify"><AlignJustify :size="13" /></button>
+        <span class="w-px h-4 bg-border mx-0.5" />
+        <button class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
+          :class="activeFormats.has('highlight') ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          title="Highlight" @click="fmt.highlight"><Highlighter :size="13" /></button>
         <span class="w-px h-4 bg-border mx-0.5" />
         <button class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
           title="Checkbox" @click="fmt.checkbox"><CheckSquare :size="13" /></button>
@@ -868,9 +1042,25 @@ const activeFormats = computed(() => {
     </div>
 
     <!-- Body + Panels -->
-    <div class="flex-1 flex flex-col min-h-0">
-      <!-- Textarea / Preview -->
-      <div class="flex-1 overflow-y-auto relative min-h-0">
+    <div class="flex-1 flex min-h-0 relative overflow-hidden">
+      <!-- AI Sidebar -->
+      <div
+        v-if="showAiDrawer"
+        class="w-80 border-r border-border bg-surface flex flex-col shrink-0 transition-all duration-300 z-10"
+      >
+        <AiDrawerPanel
+          :hasEntry="hasEntry"
+          :entryId="ui.editingEntryId"
+          :getSelection="getSelection"
+          :applyText="applyToSelection"
+          @close="showAiDrawer = false"
+        />
+      </div>
+
+      <!-- Main Editor Area -->
+      <div class="flex-1 flex flex-col min-h-0">
+        <!-- Textarea / Preview -->
+        <div class="flex-1 overflow-y-auto relative min-h-0">
         <!-- Encrypted lock screen -->
         <div v-if="isEncrypted" class="flex flex-col items-center justify-center h-full gap-3 text-text-muted">
           <Lock :size="32" class="text-accent opacity-60" />
@@ -888,6 +1078,7 @@ const activeFormats = computed(() => {
             @input="onInput"
             @keydown="onTextareaKeydown"
             @keydown.capture="onKeydown"
+            @contextmenu="onContextMenu"
           />
           <div
             v-else
@@ -895,82 +1086,6 @@ const activeFormats = computed(() => {
             :style="{ fontFamily: 'var(--editor-font)', fontSize: 'var(--editor-font-size)' }"
             v-html="renderedPreview"
           />
-        </template>
-      </div>
-
-      <!-- AI Panel (unified: tools + analysis) -->
-      <div v-if="showAi" class="border-t border-border p-3 max-h-[50vh] overflow-y-auto space-y-3">
-        <!-- AI Tools section -->
-        <div v-if="body">
-          <AiPanel :text="body" @apply="(t) => { body = t; onInput() }" />
-        </div>
-
-        <!-- Analysis section (only for saved entries) -->
-        <template v-if="hasEntry">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-text-primary flex items-center gap-1"><BarChart3 :size="14" /> Analysis</span>
-            <div class="flex items-center gap-1">
-              <button @click="runAnalysis" :disabled="analysisLoading" :title="analysis ? 'Re-analyze' : 'Run analysis'"
-                class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer">
-                <Loader v-if="analysisLoading" :size="10" class="animate-spin" />
-                <RefreshCw v-else :size="10" />
-                {{ analysisLoading ? 'Analyzing...' : analysis ? 'Re-analyze' : 'Run Analysis' }}
-              </button>
-              <button @click="showAi = false" class="text-text-muted hover:text-text-primary cursor-pointer"><X :size="12" /></button>
-            </div>
-          </div>
-          <div v-if="analysisLoading" class="text-xs text-text-secondary flex items-center gap-1"><Loader :size="12" class="animate-spin" /> Analyzing...</div>
-          <template v-else-if="analysis">
-            <!-- Sentiment -->
-            <div v-if="analysis.sentiment" class="space-y-1">
-              <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide">Sentiment</div>
-              <div class="flex items-center gap-2">
-                <span class="text-xs text-text-primary capitalize">{{ analysis.sentiment.primary_emotion }}</span>
-                <span v-if="analysis.sentiment.secondary_emotion" class="text-[10px] text-text-muted">+ {{ analysis.sentiment.secondary_emotion }}</span>
-                <div class="flex-1 h-1.5 bg-surface-hover rounded-full overflow-hidden">
-                  <div class="h-full rounded-full transition-all"
-                    :class="analysis.sentiment.valence >= 0 ? 'bg-green-400' : 'bg-red-400'"
-                    :style="{ width: Math.abs(analysis.sentiment.valence) * 100 + '%' }" />
-                </div>
-                <span class="text-[10px] text-text-muted">Intensity {{ analysis.sentiment.intensity }}/10</span>
-              </div>
-            </div>
-            <!-- Summary -->
-            <div v-if="analysis.summary">
-              <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide mb-0.5">Summary</div>
-              <div class="text-xs text-text-primary bg-surface-hover rounded p-2">{{ analysis.summary }}</div>
-            </div>
-            <!-- Reflection Prompts -->
-            <div v-if="analysis.reflection_prompts.length">
-              <div class="text-[10px] font-medium text-text-muted uppercase tracking-wide mb-0.5">Reflection Prompts</div>
-              <ul class="space-y-1">
-                <li v-for="(p, i) in analysis.reflection_prompts" :key="i" class="text-xs text-text-secondary flex items-start gap-1">
-                  <Lightbulb :size="10" class="text-accent shrink-0 mt-0.5" /> {{ p }}
-                </li>
-              </ul>
-            </div>
-            <!-- Similar Entries -->
-            <div class="pt-2 border-t border-border">
-              <button @click="fetchSimilar" :disabled="similarLoading"
-                class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer mb-2">
-                <Loader v-if="similarLoading" :size="10" class="animate-spin" />
-                <SearchIcon v-else :size="10" />
-                {{ similarLoading ? 'Searching...' : 'Find similar entries' }}
-              </button>
-              <div v-if="similarEntries.length" class="space-y-1">
-                <div v-for="s in similarEntries" :key="s.id"
-                  class="flex items-center justify-between p-1.5 bg-surface-hover rounded cursor-pointer hover:bg-surface-hover/80"
-                  @click="gotoEntry(s.id)">
-                  <div>
-                    <div class="text-xs text-text-primary">{{ s.title || 'Untitled' }}</div>
-                    <div class="text-[10px] text-text-muted">{{ s.entry_date }}</div>
-                  </div>
-                  <span class="text-[10px] text-accent">{{ (s.similarity_score * 100).toFixed(0) }}%</span>
-                </div>
-              </div>
-            </div>
-          </template>
-          <div v-else-if="!analysisLoading" class="text-xs text-text-muted py-1">Click "Run Analysis" to generate sentiment, summary, and prompts.</div>
         </template>
       </div>
 
@@ -1005,6 +1120,16 @@ const activeFormats = computed(() => {
             <component v-else :is="mediaIcon(m.media_type)" :size="16" class="text-accent shrink-0" />
             <span class="text-xs text-text-primary truncate flex-1">{{ m.filename }}</span>
             <span class="text-[10px] text-text-muted shrink-0">{{ formatFileSize(m.file_size) }}</span>
+            <button
+              v-if="m.media_type === 'image' || m.media_type.startsWith('image/')"
+              class="p-0.5 text-accent hover:text-accent-hover cursor-pointer"
+              title="Extract text (OCR)"
+              @click.stop="runOcrTool(m.id)"
+              :disabled="aiProcessing"
+            >
+              <Loader v-if="aiProcessing" :size="12" class="animate-spin" />
+              <SearchIcon v-else :size="12" />
+            </button>
             <button class="p-0.5 text-text-muted hover:text-red-400 cursor-pointer" @click.stop="removeAttachment(m.id)" title="Remove">
               <Trash2 :size="12" />
             </button>
@@ -1012,9 +1137,10 @@ const activeFormats = computed(() => {
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Status bar + Bottom controls -->
-    <div class="border-t border-border">
+  <!-- Status bar + Bottom controls -->
+  <div class="border-t border-border" v-if="!focusMode">
       <!-- Stats bar -->
       <div class="flex items-center gap-3 px-3 py-0.5 text-[10px] text-text-muted bg-editor/30">
         <span class="flex items-center gap-0.5"><AlignLeft :size="10" /> {{ stats.words }} words</span>
@@ -1087,10 +1213,12 @@ const activeFormats = computed(() => {
         <span class="w-px h-4 bg-border mx-0.5" />
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="showAi ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
-          @click="showAi = !showAi"
-          title="AI Tools & Analysis"
-        ><Sparkles :size="13" /></button>
+          :class="showAiDrawer ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          title="AI Smart Actions"
+          @click="showAiDrawer = !showAiDrawer"
+        >
+          <Sparkles :size="13" />
+        </button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
           :class="showRevisions ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
@@ -1171,10 +1299,57 @@ const activeFormats = computed(() => {
       @close="viewerOpen = false"
     />
 
+    <EmojiPicker
+      v-if="showEmoji"
+      class="absolute top-20 right-4 z-50"
+      @select="onEmojiSelect"
+      @close="showEmoji = false"
+    />
+
     <TemplatePicker
       v-if="showTemplates"
       @select="onTemplateSelect"
       @close="showTemplates = false"
     />
+
+    <!-- Context Menu -->
+    <div
+      v-if="showContextMenu"
+      class="fixed z-[200] w-48 bg-surface border border-border rounded shadow-2xl py-1"
+      :style="{ left: contextMenuPos.x + 'px', top: contextMenuPos.y + 'px' }"
+      @click="showContextMenu = false"
+    >
+      <button @click="copyToClipboard" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Copy :size="12" /> Copy
+      </button>
+      <button @click="cutToClipboard" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Scissors :size="12" /> Cut
+      </button>
+      <div class="h-px bg-border my-1" />
+      <button @click="fmt.bold" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Bold :size="12" /> Bold
+      </button>
+      <button @click="fmt.italic" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Italic :size="12" /> Italic
+      </button>
+      <button @click="encryptSelection" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Lock :size="12" /> Encrypt Selection
+      </button>
+      <div class="h-px bg-border my-1" />
+      <button @click="showAiDrawer = true" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-accent">
+        <Sparkles :size="12" /> AI Smart Actions
+      </button>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.md-body :deep(.enc-block) {
+  display: inline-block;
+  transition: all 0.2s;
+}
+.md-body :deep(.enc-block:hover) {
+  opacity: 0.8;
+  transform: translateY(-1px);
+}
+</style>

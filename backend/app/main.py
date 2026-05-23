@@ -117,7 +117,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
-from app.routers.encryption import router as encryption_router  # noqa: E402
+from app.routers.encryption import router as encryption_router, global_router as encryption_global_router  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
@@ -132,6 +132,7 @@ from app.routers.tags import router as tags_router  # noqa: E402
 from app.routers.templates import router as templates_router  # noqa: E402
 from app.routers.tts import router as tts_router  # noqa: E402
 from app.routers.video_notes import router as video_router  # noqa: E402
+from app.routers.settings import router as settings_router  # noqa: E402
 
 app.include_router(ai_router)
 app.include_router(analytics_router)
@@ -143,6 +144,7 @@ app.include_router(recordings_router)
 app.include_router(backup_router)
 app.include_router(prompts_router)
 app.include_router(encryption_router)
+app.include_router(encryption_global_router)
 app.include_router(export_router)
 app.include_router(reminders_router)
 app.include_router(revision_router)
@@ -151,6 +153,7 @@ app.include_router(sync_router)
 app.include_router(plugins_router)
 app.include_router(templates_router)
 app.include_router(video_router)
+app.include_router(settings_router)
 
 
 @app.get("/health")
