@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useSearchStore } from '../../stores/search'
-import { useEntriesStore } from '../../stores/entries'
 import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
 import { Search as SearchIcon, Calendar, Hash, ArrowRight } from 'lucide-vue-next'
@@ -9,7 +8,6 @@ import DOMPurify from 'dompurify'
 import type { SearchResultEntry } from '../../types'
 
 const searchStore = useSearchStore()
-const entriesStore = useEntriesStore()
 const ui = useUiStore()
 const tagsStore = useTagsStore()
 
