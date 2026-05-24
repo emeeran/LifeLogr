@@ -184,6 +184,26 @@ async function remove() {
 }
 
 onMounted(() => nextTick(() => initMap()))
+
+function useMyLocation() {
+  if (!navigator.geolocation) {
+    alert('Geolocation is not available in this environment.')
+    return
+  }
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude
+      const lon = pos.coords.longitude
+      placeMarker(lat, lon)
+      await updateFromMap(lat, lon)
+      if (map) map.setView([lat, lon], 14)
+    },
+    () => {
+      alert('Could not get your location. Check that location services are enabled.')
+    },
+    { enableHighAccuracy: false, timeout: 8000 }
+  )
+}
 </script>
 
 <template>
@@ -196,8 +216,11 @@ onMounted(() => nextTick(() => initMap()))
       </div>
 
       <!-- Instruction -->
-      <div v-if="!selected" class="px-4 py-2 bg-accent/10 text-accent text-xs text-center font-medium">
+      <div v-if="!selected" class="px-4 py-2 bg-accent/10 text-accent text-xs text-center font-medium flex items-center justify-center gap-3">
         Click on the map or search for a place to set location
+        <button @click="useMyLocation" class="flex items-center gap-1 px-2 py-0.5 rounded bg-accent text-white text-[10px] hover:bg-accent-hover cursor-pointer transition-colors">
+          <MapPin :size="10" /> My Location
+        </button>
       </div>
       <div v-else class="px-4 py-2 bg-green-500/10 text-green-400 text-xs text-center font-medium flex items-center justify-center gap-1">
         <Check :size="12" /> Location selected — drag pin to adjust

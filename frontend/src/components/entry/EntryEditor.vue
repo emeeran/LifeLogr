@@ -66,6 +66,7 @@ const showContextMenu = ref(false)
 const contextMenuPos = ref({ x: 0, y: 0 })
 const pendingGeotag = ref<{ latitude: number; longitude: number; location_name: string | null } | null>(null)
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
+const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
 
 function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
 
@@ -312,6 +313,35 @@ async function loadEntry() {
     // Apply default title if no template set one
     if (!title.value && ui.defaultTitle) {
       title.value = ui.defaultTitle
+    }
+
+    // Auto-geotag new entries if enabled
+    if (autoGeotag.value && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = pos.coords.latitude
+          const lon = pos.coords.longitude
+          if (isNew.value && !pendingGeotag.value) {
+            try {
+              const { reverseGeocode } = await import('../../utils/geocoding')
+              const placeName = await reverseGeocode(lat, lon)
+              pendingGeotag.value = {
+                latitude: Math.round(lat * 1000000) / 1000000,
+                longitude: Math.round(lon * 1000000) / 1000000,
+                location_name: placeName || null,
+              }
+            } catch {
+              pendingGeotag.value = {
+                latitude: Math.round(lat * 1000000) / 1000000,
+                longitude: Math.round(lon * 1000000) / 1000000,
+                location_name: null,
+              }
+            }
+          }
+        },
+        () => { /* location denied or unavailable — silently skip */ },
+        { enableHighAccuracy: false, timeout: 5000 }
+      )
     }
   } else if (ui.editingEntryId) {
     const entry = await entries.fetchEntry(ui.editingEntryId!)
