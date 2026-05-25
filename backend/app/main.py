@@ -36,10 +36,22 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database tables on startup, clean up on shutdown."""
-    logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
+    logger.info("Starting %s (%s)", "DailyByte", settings.APP_ENV)
     await init_db()
+    # Start backup scheduler
+    try:
+        from app.services.scheduler_service import SchedulerService
+        await SchedulerService.start()
+    except Exception:
+        logger.warning("Failed to start backup scheduler", exc_info=True)
     yield
     logger.info("Shutting down...")
+    # Stop backup scheduler
+    try:
+        from app.services.scheduler_service import SchedulerService
+        await SchedulerService.shutdown()
+    except Exception:
+        pass
     # Cancel outstanding background enrichment tasks
     try:
         from app.services.enrichment_service import cancel_pending_tasks
@@ -56,8 +68,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="Diarilinux",
-    description="Privacy-first, offline-first journaling app for Linux",
+    title="DailyByte",
+    description="Your Day in Media & Minutes",
     version="0.1.0",
     lifespan=lifespan,
     docs_url=None if settings.is_production else "/docs",
@@ -191,9 +203,12 @@ async def health_check() -> Any:
 
 @app.get("/api/v1/brand/logo")
 async def brand_logo() -> FileResponse:
-    """Return the Diarilinux logo SVG."""
-    logo_path = _ASSETS_DIR / "diarilinux-logo.svg"
-    return FileResponse(path=str(logo_path), media_type="image/svg+xml")
+    """Return the Diarilinux logo."""
+    logo_path = _ASSETS_DIR / "diarilinux-logo.png"
+    if not logo_path.exists():
+        logo_path = _ASSETS_DIR / "diarilinux-logo.svg"
+        return FileResponse(path=str(logo_path), media_type="image/svg+xml")
+    return FileResponse(path=str(logo_path), media_type="image/png")
 
 
 # Serve built frontend in production — MUST be registered AFTER all API routes

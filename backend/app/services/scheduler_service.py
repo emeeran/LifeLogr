@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+import tarfile
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -49,14 +52,18 @@ class SchedulerService:
             sched.shutdown()
             logger.info("Backup scheduler stopped")
 
-    async def schedule_backup(self, cron_expr: str, backup_path: str) -> dict[str, str]:
+    async def schedule_backup(self, cron_expr: str, backup_path: str, retention: int = 10) -> dict[str, str]:
         """Schedule an automated backup job.
 
         Args:
             cron_expr: Cron expression (e.g., "0 2 * * *" for 2am daily)
             backup_path: Directory path to store backups
+            retention: Number of backups to keep (default 10)
         """
         sched = self.get_scheduler()
+        if not sched.running:
+            sched.start()
+            logger.info("Backup scheduler auto-started")
         parts = cron_expr.split()
         if len(parts) != 5:
             raise ValueError(f"Invalid cron expression: {cron_expr}")
@@ -76,7 +83,7 @@ class SchedulerService:
             _run_backup,
             trigger=trigger,
             id="auto_backup",
-            kwargs={"backup_path": backup_path},
+            kwargs={"backup_path": backup_path, "retention": retention},
             replace_existing=True,
         )
 
@@ -104,41 +111,57 @@ class SchedulerService:
         return {"removed": True}
 
 
-async def _run_backup(backup_path: str) -> None:
-    """Execute the backup job — creates a JSON export of all data."""
-    from app.core.database import async_session
-    from app.models.entry import Entry
-    from sqlalchemy import select
+async def _run_backup(backup_path: str, retention: int = 10) -> None:
+    """Execute the backup job — creates a .tar.gz archive of DB + media."""
+    from app.core.config import settings
+    from app.core.database import async_session, engine
+    from sqlalchemy import text
 
     logger.info(f"Running scheduled backup to {backup_path}")
 
-    path = Path(backup_path)
+    path = Path(backup_path).expanduser()
     path.mkdir(parents=True, exist_ok=True)
 
-    async with async_session() as db:
-        result = await db.execute(
-            select(Entry).where(Entry.is_deleted == False)  # noqa: E712
-        )
-        entries = list(result.scalars().all())
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    archive_path = path / f"dailybyte-backup-{timestamp}.tar.gz"
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = path / f"backup_{timestamp}.json"
+    db_url: str = settings.DATABASE_URL
+    db_file = db_url.replace("sqlite+aiosqlite:///", "")
+    media_dir = settings.MEDIA_DIR
 
-        data = {
-            "exported_at": datetime.now().isoformat(),
-            "entry_count": len(entries),
-            "entries": [
-                {
-                    "id": e.id,
-                    "date": str(e.entry_date),
-                    "title": e.title,
-                    "body": e.body,
-                    "mood": e.mood,
-                    "created_at": str(e.created_at),
-                }
-                for e in entries
-            ],
-        }
+    # Checkpoint WAL for consistency
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+    except Exception:
+        logger.warning("WAL checkpoint failed before backup", exc_info=True)
 
-        filename.write_text(json.dumps(data, indent=2))
-        logger.info(f"Backup complete: {filename} ({len(entries)} entries)")
+    tmpdir = tempfile.mkdtemp()
+    try:
+        with tarfile.open(archive_path, "w:gz") as tar:
+            if Path(db_file).exists():
+                tar.add(db_file, arcname="dev.db")
+            if media_dir.exists():
+                tar.add(str(media_dir), arcname="media")
+        logger.info(f"Backup complete: {archive_path}")
+    except Exception:
+        logger.error(f"Backup failed", exc_info=True)
+        if archive_path.exists():
+            archive_path.unlink(missing_ok=True)
+        raise
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    # Retention: remove oldest backups if exceeding limit
+    _cleanup_old_backups(path, retention)
+
+
+def _cleanup_old_backups(backup_dir: Path, retention: int) -> None:
+    """Remove oldest backup files, keeping only the most recent `retention` count."""
+    if retention <= 0:
+        return
+    backups = sorted(backup_dir.glob("dailybyte-backup-*.tar.gz"), key=lambda p: p.stat().st_mtime)
+    if len(backups) > retention:
+        for old in backups[:-retention]:
+            old.unlink(missing_ok=True)
+            logger.info(f"Removed old backup: {old.name}")

@@ -46,7 +46,7 @@ async function handleDelete(e: MouseEvent, entry: EntryResponse) {
 <template>
   <div
     class="absolute z-50 bg-surface border border-border rounded-lg shadow-xl p-2 min-w-[200px] max-w-[260px]"
-    style="top: 100%; left: 0;"
+    style="top: 100%; right: 0;"
     @click.stop
   >
     <div class="text-[10px] font-semibold text-text-muted mb-1 px-1">{{ dateStr }}</div>

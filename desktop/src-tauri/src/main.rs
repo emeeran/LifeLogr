@@ -19,9 +19,17 @@ fn check_deps() -> serde_json::Value {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
+    // Check if gstreamer1.0-plugins-bad is installed (needed for audio recording)
+    let gst_plugins_bad = std::process::Command::new("gst-inspect-1.0")
+        .arg("webrtcbin")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
     serde_json::json!({
         "tesseract": tesseract,
         "ollama": ollama,
+        "gst_plugins_bad": gst_plugins_bad,
         "all_installed": tesseract && ollama,
     })
 }
@@ -113,18 +121,27 @@ fn main() {
                 });
             });
 
-            // Auto-grant WebKit media permission requests (microphone/camera) on Linux
+            // Enable WebKit media features and auto-grant permission requests (microphone/camera) on Linux
             #[cfg(target_os = "linux")]
             {
                 let webview_window = app.get_webview_window("main").unwrap();
                 webview_window.with_webview(|webview| {
-                    use webkit2gtk::{PermissionRequest, PermissionRequestExt, WebViewExt};
+                    use webkit2gtk::{PermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt};
                     let ctx = webview.inner();
+
+                    // Explicitly enable media stream and MediaSource APIs
+                    if let Some(settings) = ctx.settings() {
+                        settings.set_enable_media_stream(true);
+                        settings.set_enable_mediasource(true);
+                        settings.set_enable_webrtc(true);
+                    }
+
+                    // Auto-grant all permission requests (microphone, camera, geolocation, etc.)
                     ctx.connect_permission_request(|_: &webkit2gtk::WebView, req: &PermissionRequest| {
                         req.allow();
                         true
                     });
-                }).expect("failed to set permission handler");
+                }).expect("failed to set webview media settings");
             }
 
             Ok(())

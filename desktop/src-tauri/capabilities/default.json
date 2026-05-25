@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for Diarilinux",
+  "description": "Default capabilities for DailyByte",
   "windows": ["main"],
   "permissions": [
     "core:default",
