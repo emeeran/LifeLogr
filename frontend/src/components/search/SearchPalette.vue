@@ -3,9 +3,10 @@ import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useSearchStore } from '../../stores/search'
 import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
-import { Search as SearchIcon, Calendar, Hash, ArrowRight } from 'lucide-vue-next'
+import { Search as SearchIcon, Calendar, Hash, ArrowRight, Clock } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
 import type { SearchResultEntry } from '../../types'
+import SearchFilters from './SearchFilters.vue'
 
 const searchStore = useSearchStore()
 const ui = useUiStore()
@@ -52,6 +53,16 @@ function formatDate(d: string) {
 function sanitize(html: string) {
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] })
 }
+
+function useHistoryItem(h: string) {
+  query.value = h
+}
+
+function wordCount(snippet: string): number {
+  return snippet.trim().split(/\s+/).length
+}
+
+const showHistory = computed(() => !query.value.trim() && searchStore.searchHistory.length > 0)
 </script>
 
 <template>
@@ -79,6 +90,9 @@ function sanitize(html: string) {
         <kbd class="hidden sm:inline text-[10px] text-text-muted bg-surface-hover border border-border rounded px-1.5 py-0.5">Esc</kbd>
       </div>
 
+      <!-- Date range filters -->
+      <SearchFilters v-model:date-from="searchStore.dateFrom" v-model:date-to="searchStore.dateTo" />
+
       <!-- Tag filters (clickable pills) -->
       <div v-if="tagsStore.tags.length" class="flex gap-1 px-4 py-2 border-b border-border overflow-x-auto">
         <button
@@ -104,7 +118,23 @@ function sanitize(html: string) {
           No results for "{{ query }}"
         </div>
 
-        <div v-else-if="!query" class="px-4 py-6 text-center text-text-muted text-xs">
+        <!-- Search history (when no query) -->
+        <div v-else-if="showHistory" class="px-4 py-3">
+          <div class="text-[9px] font-bold text-text-muted uppercase tracking-wider mb-2">Recent Searches</div>
+          <div class="space-y-0.5">
+            <button
+              v-for="h in searchStore.searchHistory"
+              :key="h"
+              class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-text-secondary hover:bg-surface-hover cursor-pointer transition-colors"
+              @click="useHistoryItem(h)"
+            >
+              <Clock :size="11" class="text-text-muted shrink-0" />
+              <span class="truncate">{{ h }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="!query && !showHistory" class="px-4 py-6 text-center text-text-muted text-xs">
           Type to search across all entries
         </div>
 
@@ -123,15 +153,19 @@ function sanitize(html: string) {
               <span v-if="item.title" class="text-xs text-text-secondary truncate">{{ item.title }}</span>
             </div>
             <p class="text-[11px] text-text-muted leading-relaxed mt-0.5 line-clamp-2" v-html="sanitize(item.snippet)" />
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-[9px] text-text-muted">{{ wordCount(item.snippet) }} words</span>
+            </div>
           </div>
           <ArrowRight v-if="i === selectedIndex" :size="12" class="text-accent mt-1 shrink-0" />
         </div>
       </div>
 
       <!-- Footer -->
-      <div v-if="results.length" class="flex items-center justify-between px-4 py-2 border-t border-border text-[10px] text-text-muted">
-        <span>{{ searchStore.total }} result{{ searchStore.total === 1 ? '' : 's' }}</span>
-        <div class="flex items-center gap-3">
+      <div v-if="results.length || searchStore.queryDuration" class="flex items-center justify-between px-4 py-2 border-t border-border text-[10px] text-text-muted">
+        <span v-if="results.length">{{ searchStore.total }} result{{ searchStore.total === 1 ? '' : 's' }}</span>
+        <span v-if="searchStore.queryDuration" class="text-text-muted/60">{{ searchStore.queryDuration }}ms</span>
+        <div v-if="results.length" class="flex items-center gap-3">
           <span class="flex items-center gap-1"><kbd class="bg-surface-hover border border-border rounded px-1 py-px">&uarr;&darr;</kbd> navigate</span>
           <span class="flex items-center gap-1"><kbd class="bg-surface-hover border border-border rounded px-1 py-px">Enter</kbd> open</span>
         </div>

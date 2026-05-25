@@ -30,6 +30,9 @@ export const useUiStore = defineStore('ui', () => {
   // Tool drawer (side panel — only one panel open at a time)
   const activeDrawer = ref<DrawerPanel | null>(null)
 
+  // Scribble pad
+  const scribbleOpen = useLocalStorage('diarium-scribble-open', false)
+
   function openSearchPalette() { searchPaletteOpen.value = true }
   function closeSearchPalette() { searchPaletteOpen.value = false }
 
@@ -37,6 +40,8 @@ export const useUiStore = defineStore('ui', () => {
     activeDrawer.value = activeDrawer.value === panel ? null : panel
   }
   function closeDrawer() { activeDrawer.value = null }
+
+  function toggleScribble() { scribbleOpen.value = !scribbleOpen.value }
 
   function setView(view: ViewType) {
     activeView.value = view
@@ -128,8 +133,9 @@ export const useUiStore = defineStore('ui', () => {
     activeView, sidebarCollapsed, detailPanelOpen, editingEntryId, newEntryDate,
     darkMode, fontFamily, fontSize, rightPanelWidth, defaultTitle, showEditor,
     showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, activeDrawer,
+    scribbleOpen,
     setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
-    openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer,
+    openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer, toggleScribble,
   }
 })

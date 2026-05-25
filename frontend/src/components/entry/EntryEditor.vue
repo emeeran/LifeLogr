@@ -22,6 +22,7 @@ import { aiStatus, suggestTags, runOCR } from '../../api/ai'
 import { encryptText, decryptText } from '../../api/encryption'
 import { ttsApi } from '../../api/tts'
 import { mediaApi } from '../../api/media'
+import { useDragDrop } from '../../composables/useDragDrop'
 import { useLocalStorage } from '@vueuse/core'
 import { marked } from 'marked'
 
@@ -67,6 +68,9 @@ const contextMenuPos = ref({ x: 0, y: 0 })
 const pendingGeotag = ref<{ latitude: number; longitude: number; location_name: string | null } | null>(null)
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
 const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
+
+// Drag & Drop
+const { isDragging, handlers: dragHandlers } = useDragDrop()
 
 function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
 
@@ -678,6 +682,17 @@ async function openRecording() {
   ui.activeDrawer = 'recording'
 }
 
+async function onDropFiles(e: DragEvent) {
+  const accepted = dragHandlers.onDrop(e)
+  if (!accepted?.length) return
+  // Auto-save entry first if new
+  if (!hasEntry.value) {
+    await save()
+    if (!hasEntry.value) return
+  }
+  await handleFileUpload({ length: accepted.length, item: (i: number) => accepted[i] } as any)
+}
+
 // ── Attachments ──
 async function loadAttachments() {
   if (!hasEntry.value) { attachments.value = []; return }
@@ -878,7 +893,23 @@ const activeFormats = computed(() => {
       fullscreen ? 'fixed inset-0 z-[100] bg-editor' : '',
       focusMode ? 'bg-editor' : ''
     ]"
+    @dragenter="dragHandlers.onDragenter"
+    @dragover="dragHandlers.onDragover"
+    @dragleave="dragHandlers.onDragleave"
+    @drop="onDropFiles"
   >
+    <!-- Drag overlay -->
+    <Transition name="drag">
+      <div
+        v-if="isDragging"
+        class="absolute inset-0 z-[150] bg-accent/5 border-2 border-dashed border-accent/40 rounded-lg flex items-center justify-center pointer-events-none"
+      >
+        <div class="text-sm font-medium text-accent/80 flex flex-col items-center gap-1">
+          <Paperclip :size="24" />
+          Drop files here
+        </div>
+      </div>
+    </Transition>
     <!-- Header: Title + Date + New + controls -->
     <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border" v-if="!focusMode">
       <input
@@ -1333,6 +1364,14 @@ const activeFormats = computed(() => {
 </template>
 
 <style scoped>
+.drag-enter-active,
+.drag-leave-active {
+  transition: all 0.2s ease;
+}
+.drag-enter-from,
+.drag-leave-to {
+  opacity: 0;
+}
 .md-body :deep(.enc-block) {
   display: inline-block;
   transition: all 0.2s;

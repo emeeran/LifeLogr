@@ -241,6 +241,51 @@ class OllamaService:
 
     # ── Shared JSON parser ─────────────────────────────────────────────
 
+    async def summarize(self, text: str) -> str:
+        """Summarize the given text concisely."""
+        prompt = (
+            'Summarize the following journal entry in 2-3 concise sentences. '
+            'Capture the key points and emotions. Return ONLY the summary text, nothing else.\n\n'
+            f'Text:\n{text[:3000]}'
+        )
+        result = await self._generate(prompt, temperature=0.3, num_predict=512)
+        return result.strip()
+
+    async def expand(self, text: str) -> str:
+        """Expand and elaborate on the given text."""
+        prompt = (
+            'Expand and elaborate on the following text, adding more detail, sensory descriptions, '
+            'and emotional depth while maintaining the same voice and style. '
+            'Return ONLY the expanded text, nothing else.\n\n'
+            f'Text:\n{text[:2000]}'
+        )
+        result = await self._generate(prompt, temperature=0.7, num_predict=2048)
+        return result.strip()
+
+    async def change_tone(self, text: str, tone: str) -> str:
+        """Rewrite text in a different tone."""
+        prompt = (
+            f'Rewrite the following text in a {tone} tone. '
+            f'Keep the same meaning and content but adjust the style and word choice. '
+            f'Return ONLY the rewritten text, nothing else.\n\n'
+            f'Text:\n{text[:3000]}'
+        )
+        result = await self._generate(prompt, temperature=0.5, num_predict=2048)
+        return result.strip()
+
+    async def translate(self, text: str, language: str) -> str:
+        """Translate text to the specified language."""
+        prompt = (
+            f'Translate the following text to {language}. '
+            f'Preserve the meaning, tone, and formatting. '
+            f'Return ONLY the translated text, nothing else.\n\n'
+            f'Text:\n{text[:3000]}'
+        )
+        result = await self._generate(prompt, temperature=0.3, num_predict=2048)
+        return result.strip()
+
+    # ── Shared JSON parser (original) ─────────────────────────────────────
+
     def _parse_json_response(self, raw: str) -> dict[str, Any] | list[Any] | None:
         """Extract and parse JSON from LLM response text."""
         text = raw.strip()
