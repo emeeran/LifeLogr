@@ -7,7 +7,8 @@ import { useEntriesStore } from '../../stores/entries'
 import { useTagsStore } from '../../stores/tags'
 import { usePagination } from '../../composables/usePagination'
 import { formatEntryDate } from '../../composables/useFormat'
-import { ChevronLeft, ChevronRight, Tag, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Tag, X, Calendar } from 'lucide-vue-next'
+import GoToDateModal from '../common/GoToDateModal.vue'
 import type { EntryResponse } from '../../types'
 
 const ui = useUiStore()
@@ -17,6 +18,7 @@ const pagination = usePagination(20)
 const entries = ref<EntryResponse[]>([])
 const filterTagId = ref<number | null>(null)
 const showTagMenu = ref(false)
+const showGoToDate = ref(false)
 
 // Lazy media thumbnail cache: entryId → first media URL
 const thumbnailMap = reactive<Record<number, string>>({})
@@ -60,12 +62,27 @@ function bodyPreview(body: string): string {
   const first2 = lines.slice(0, 2).join(' / ')
   return first2.length > 140 ? first2.slice(0, 140) + '...' : first2
 }
+
+async function onGoToDate(dateStr: string) {
+  const [y, m] = dateStr.split('-').map(Number)
+  pagination.offset.value = 0
+  const res = await entriesApi.list({ offset: 0, limit: pagination.limit.value, year: y, month: m })
+  entries.value = res.items
+  pagination.total.value = res.total
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full">
     <div class="px-4 py-3 border-b border-border flex items-center gap-2">
       <h2 class="text-lg font-semibold text-text-primary">Timeline</h2>
+      <button
+        class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer transition-colors"
+        title="Go to date"
+        @click="showGoToDate = true"
+      >
+        <Calendar :size="11" /> Go to
+      </button>
       <!-- Tag filter -->
       <div v-if="tagsStore.tags.length" class="flex items-center gap-1.5 relative ml-auto">
         <button
@@ -167,5 +184,7 @@ function bodyPreview(body: string): string {
         </button>
       </div>
     </div>
+
+    <GoToDateModal v-model="showGoToDate" @select="onGoToDate" />
   </div>
 </template>

@@ -3,7 +3,7 @@ import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Sunrise, Settings,
   Sun, Moon, BarChart3, MapPin, Bell,
-  ChevronsLeft, ChevronsRight, BookOpen
+  ChevronsLeft, ChevronsRight, BookOpen, StickyNote
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
@@ -68,6 +68,23 @@ function navigate(view: ViewType) {
         <component :is="item.icon" :size="14" />
         <span v-if="!ui.sidebarCollapsed">{{ item.label }}</span>
       </router-link>
+    </div>
+
+    <!-- Scribble pad toggle -->
+    <div class="border-t border-sidebar-hover py-1">
+      <button
+        class="flex items-center gap-2 w-full text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
+        :class="[
+          ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5',
+          ui.scribbleOpen ? 'bg-sidebar-hover text-sidebar-text' : ''
+        ]"
+        :title="ui.sidebarCollapsed ? 'Scribble Pad' : undefined"
+        aria-label="Toggle Scribble Pad"
+        @click="ui.toggleScribble()"
+      >
+        <StickyNote :size="14" />
+        <span v-if="!ui.sidebarCollapsed">Scribble</span>
+      </button>
     </div>
 
     <!-- Bottom: theme + settings + collapse -->

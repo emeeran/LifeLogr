@@ -19,10 +19,14 @@ from app.models.sentiment import EntrySentiment
 from app.models.tag import Tag
 from app.schemas.ai import (
     AIStatusResponse,
+    ChangeToneRequest,
+    ChangeToneResponse,
     ContinueWritingRequest,
     ContinueWritingResponse,
     DigestResponse,
     EntryAnalysisResponse,
+    ExpandRequest,
+    ExpandResponse,
     GrammarCheckRequest,
     GrammarCheckResponse,
     OnThisDayPastEntry,
@@ -34,10 +38,14 @@ from app.schemas.ai import (
     SimilarEntry,
     SpellCheckRequest,
     SpellCheckResponse,
+    SummarizeRequest,
+    SummarizeResponse,
     TagSuggestionRequest,
     TagSuggestionResponse,
     ThemesResponse,
     ThemeInsight,
+    TranslateRequest,
+    TranslateResponse,
 )
 from app.services.embedding_service import EmbeddingService
 from app.services.ollama_service import OllamaService
@@ -239,16 +247,17 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
         # Group entries by year offset
         past_entries: list[dict[str, Any]] = []
         for years_ago, past_date in zip(range(1, 6), past_dates):
-            entries = [e for e in all_entries if e.entry_date == past_date]
-            if entries:
-                text = "\n\n".join(f"**{e.title or 'Untitled'}** ({years_ago} years ago)\n{e.body[:500]}" for e in entries)
-                first = entries[0]
+            date_entries = [e for e in all_entries if e.entry_date == past_date]
+            if date_entries:
+                text = "\n\n".join(f"**{e.title or 'Untitled'}** ({years_ago} years ago)\n{e.body[:500]}" for e in date_entries)
+                first = date_entries[0]
                 past_entries.append({
                     "years_ago": years_ago,
                     "date": str(past_date),
                     "title": first.title,
                     "snippet": (first.body[:150].strip() + "...") if len(first.body) > 150 else first.body.strip(),
                     "text": text,
+                    "entry_ids": [e.id for e in date_entries],
                 })
 
         if not past_entries:
@@ -280,6 +289,7 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
                     date=str(p["date"]),
                     title=p["title"],
                     snippet=p["snippet"],
+                    entry_ids=p.get("entry_ids", []),
                 )
                 for p in past_entries
             ],
@@ -385,6 +395,40 @@ async def generate_digest(db: AsyncSession = Depends(get_db)) -> Any:
         except ValueError:
             continue
     raise HTTPException(status_code=422, detail="No entries found in the last 5 weeks")
+
+
+# ── Smart Tools ────────────────────────────────────────────────────────
+
+@router.post("/summarize", response_model=SummarizeResponse)
+async def summarize_text(data: SummarizeRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Summarize text concisely."""
+    svc = OllamaService()
+    summary = await svc.summarize(data.text)
+    return SummarizeResponse(summary=summary)
+
+
+@router.post("/expand", response_model=ExpandResponse)
+async def expand_text(data: ExpandRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Expand and elaborate on text."""
+    svc = OllamaService()
+    expanded = await svc.expand(data.text)
+    return ExpandResponse(expanded_text=expanded)
+
+
+@router.post("/change-tone", response_model=ChangeToneResponse)
+async def change_tone(data: ChangeToneRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Change the tone of text."""
+    svc = OllamaService()
+    changed = await svc.change_tone(data.text, data.tone)
+    return ChangeToneResponse(changed_text=changed, tone=data.tone)
+
+
+@router.post("/translate", response_model=TranslateResponse)
+async def translate_text(data: TranslateRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Translate text to another language."""
+    svc = OllamaService()
+    translated = await svc.translate(data.text, data.language)
+    return TranslateResponse(translated_text=translated, language=data.language)
 
 
 # ── Model management ───────────────────────────────────────────────────

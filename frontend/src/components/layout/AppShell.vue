@@ -9,6 +9,7 @@ import RevisionPanel from '../entry/RevisionPanel.vue'
 import RecordingPanel from '../recordings/RecordingPanel.vue'
 import AttachmentsPanel from '../entry/AttachmentsPanel.vue'
 import SearchPalette from '../search/SearchPalette.vue'
+import ScribblePad from '../scribble/ScribblePad.vue'
 import { useEntriesStore } from '../../stores/entries'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { AlertTriangle, Save, Trash2, X, Sparkles, History, Mic, Paperclip } from 'lucide-vue-next'
@@ -91,6 +92,13 @@ function onAttachmentView(index: number) {
   <div class="flex h-screen overflow-hidden bg-surface">
     <!-- Sidebar -->
     <Sidebar />
+
+    <!-- Scribble Pad (slide-in panel) -->
+    <Transition name="scribble-slide">
+      <div v-if="ui.scribbleOpen" class="shrink-0 w-[280px] overflow-hidden">
+        <ScribblePad @close="ui.scribbleOpen = false" />
+      </div>
+    </Transition>
 
     <!-- Center panel -->
     <main class="flex-1 flex flex-col min-w-0 bg-surface relative">
@@ -210,6 +218,15 @@ function onAttachmentView(index: number) {
 }
 .ai-drawer-enter-from,
 .ai-drawer-leave-to {
+  opacity: 0;
+  width: 0;
+}
+.scribble-slide-enter-active,
+.scribble-slide-leave-active {
+  transition: all 0.2s ease;
+}
+.scribble-slide-enter-from,
+.scribble-slide-leave-to {
   opacity: 0;
   width: 0;
 }

@@ -103,6 +103,12 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
             username=creds.get("username", ""),
             password=creds.get("password", ""),
         )
+    elif provider_name == "mega":
+        from app.services.cloud_sync_service import MegaProvider
+        return MegaProvider(
+            email=creds.get("email", ""),
+            password=creds.get("password", ""),
+        )
     else:
         raise ValueError(f"Unsupported cloud sync provider: {provider_name}")
 

@@ -192,6 +192,26 @@ export interface ContinueWritingResponse {
   continuation: string
 }
 
+// ── AI Smart Tools ──────────────────────────────────────────────────
+
+export interface SummarizeResponse {
+  summary: string
+}
+
+export interface ExpandResponse {
+  expanded_text: string
+}
+
+export interface ChangeToneResponse {
+  changed_text: string
+  tone: string
+}
+
+export interface TranslateResponse {
+  translated_text: string
+  language: string
+}
+
 // ── AI On This Day ──────────────────────────────────────────────────
 
 export interface OnThisDayPastEntry {
@@ -199,6 +219,7 @@ export interface OnThisDayPastEntry {
   date: string
   title: string | null
   snippet: string | null
+  entry_ids: number[]
 }
 
 export interface OnThisDayResponse {

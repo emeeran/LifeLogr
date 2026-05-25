@@ -1,11 +1,15 @@
 """Cloud sync service — E2E encrypted sync with provider adapters."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.sync_service import SyncService
+
+logger = logging.getLogger(__name__)
 
 
 class SyncProvider(Protocol):
@@ -259,10 +263,96 @@ class GoogleDriveProvider:
 
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         async with httpx.AsyncClient() as client:
             resp = await client.delete(url, headers=headers, timeout=10.0)
             resp.raise_for_status()
+
+
+class MegaProvider:
+    """MEGA cloud sync provider using mega.py library."""
+
+    def __init__(self, email: str, password: str) -> None:
+        self._email = email
+        self._password = password
+        self._mega: object | None = None
+
+    def _get_sync_client(self) -> object:
+        """Get or create the synchronous MEGA client."""
+        if self._mega is None:
+            from mega import Mega
+            m = Mega()
+            self._mega = m.login(self._email, self._password)
+        return self._mega
+
+    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+        import tempfile
+        from pathlib import Path
+
+        mega = await asyncio.to_thread(self._get_sync_client)
+
+        # Write data to a temporary file for upload
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+
+        try:
+            # Create parent folder structure in MEGA
+            parts = path.split("/")
+            folder = "/"
+            for part in parts[:-1]:
+                if part:
+                    try:
+                        await asyncio.to_thread(mega.create_folder, part, folder)
+                    except Exception:
+                        pass  # Folder likely exists
+                    folder = folder.rstrip("/") + "/" + part
+
+            result = await asyncio.to_thread(mega.upload, tmp_path, folder, parts[-1])
+            return path
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    async def download(self, path: str) -> bytes:
+        import tempfile
+        from pathlib import Path
+
+        mega = await asyncio.to_thread(self._get_sync_client)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+            tmp_path = tmp.name
+
+        try:
+            # Find the file in MEGA
+            file_info = await asyncio.to_thread(mega.find, path)
+            if not file_info:
+                raise FileNotFoundError(f"File not found on MEGA: {path}")
+            await asyncio.to_thread(mega.download, file_info, tmp_path)
+            return Path(tmp_path).read_bytes()
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    async def list_files(self, prefix: str) -> list[str]:
+        mega = await asyncio.to_thread(self._get_sync_client)
+        try:
+            files = await asyncio.to_thread(mega.get_files)
+            return [
+                f["a"]["n"] for f in files.values()
+                if isinstance(f, dict) and "a" in f and "n" in f.get("a", {})
+                and f["a"]["n"].startswith(prefix.split("/")[-1] if "/" in prefix else prefix)
+            ]
+        except Exception:
+            logger.warning("Failed to list MEGA files", exc_info=True)
+            return []
+
+    async def delete(self, path: str) -> None:
+        mega = await asyncio.to_thread(self._get_sync_client)
+        try:
+            file_info = await asyncio.to_thread(mega.find, path)
+            if file_info:
+                await asyncio.to_thread(mega.delete, file_info[0] if isinstance(file_info, list) else file_info)
+        except Exception:
+            logger.warning("Failed to delete MEGA file: %s", path, exc_info=True)
 
 
 class CloudSyncService:

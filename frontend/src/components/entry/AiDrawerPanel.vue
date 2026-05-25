@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { grammarCheck, spellCheck, rewrite, continueWriting, aiStatus, runEntryAnalysis, getEntryAnalysis, findSimilar } from '../../api/ai'
+import { grammarCheck, spellCheck, rewrite, continueWriting, aiStatus, runEntryAnalysis, getEntryAnalysis, findSimilar, summarize, expand, changeTone, translate } from '../../api/ai'
 import type { GrammarSuggestion, EntryAnalysisResponse, SimilarEntry } from '../../types'
 import {
   SpellCheck, RefreshCw, CheckCircle, AlertCircle, Loader,
   BarChart3, Sparkles, Wand2, Type, Eraser, X, ChevronRight,
-  TrendingUp, MessageSquare, History, Layers
+  TrendingUp, MessageSquare, History, Layers, FileText, Maximize2,
+  MessageCircle, Globe
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -22,10 +23,40 @@ const loading = ref(false)
 const result = ref('')
 const originalText = ref('')
 const suggestions = ref<GrammarSuggestion[]>([])
-const mode = ref<'grammar' | 'spell' | 'rewrite' | 'continue'>('grammar')
+const mode = ref<'grammar' | 'spell' | 'rewrite' | 'continue' | 'summarize' | 'expand' | 'change-tone' | 'translate'>('grammar')
 const error = ref('')
 const available = ref<boolean | null>(null)
 const activeTab = ref<'tools' | 'analysis'>('tools')
+
+// Change tone picker
+const selectedTone = ref('formal')
+const tones = ['formal', 'casual', 'friendly', 'professional', 'empathetic', 'humorous']
+
+// Translate picker
+const selectedLanguage = ref('spanish')
+const languages = ['english', 'spanish', 'french', 'german', 'portuguese', 'japanese', 'korean', 'chinese', 'arabic', 'hindi']
+
+// Tool history (localStorage)
+interface ToolHistoryItem {
+  tool: string
+  timestamp: number
+  preview: string
+}
+const toolHistory = ref<ToolHistoryItem[]>([])
+try {
+  const stored = localStorage.getItem('diarium-ai-tool-history')
+  if (stored) toolHistory.value = JSON.parse(stored)
+} catch { /* ignore */ }
+
+function addToHistory(tool: string, text: string) {
+  toolHistory.value.unshift({
+    tool,
+    timestamp: Date.now(),
+    preview: text.slice(0, 80) + (text.length > 80 ? '...' : ''),
+  })
+  if (toolHistory.value.length > 20) toolHistory.value.pop()
+  localStorage.setItem('diarium-ai-tool-history', JSON.stringify(toolHistory.value))
+}
 
 async function checkAvailability() {
   try {
@@ -37,9 +68,9 @@ async function checkAvailability() {
 }
 checkAvailability()
 
-async function runCheck(m: 'grammar' | 'spell' | 'rewrite' | 'continue') {
+async function runCheck(m: typeof mode.value) {
   const text = props.getSelection()
-  if (!text) {
+  if (!text && m !== 'summarize') {
     error.value = 'Please select some text in the editor first.'
     return
   }
@@ -66,7 +97,20 @@ async function runCheck(m: 'grammar' | 'spell' | 'rewrite' | 'continue') {
     } else if (m === 'continue') {
       const res = await continueWriting(text)
       result.value = res.continuation
+    } else if (m === 'summarize') {
+      const res = await summarize(text)
+      result.value = res.summary
+    } else if (m === 'expand') {
+      const res = await expand(text)
+      result.value = res.expanded_text
+    } else if (m === 'change-tone') {
+      const res = await changeTone(text, selectedTone.value)
+      result.value = res.changed_text
+    } else if (m === 'translate') {
+      const res = await translate(text, selectedLanguage.value)
+      result.value = res.translated_text
     }
+    if (result.value) addToHistory(m, result.value)
   } catch (e: any) {
     error.value = e.message || 'AI service unavailable'
   } finally {
@@ -180,53 +224,73 @@ watch(activeTab, (newTab) => {
         <div class="space-y-1">
           <div class="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2">Selection Tools</div>
           <div class="grid grid-cols-1 gap-1">
-            <button
-              @click="runCheck('grammar')"
-              :disabled="loading"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary"
-            >
-              <div class="flex items-center gap-2">
-                <SpellCheck :size="14" class="group-hover:scale-110 transition-transform" />
-                <span>Fix Grammar</span>
-              </div>
+            <button @click="runCheck('grammar')" :disabled="loading"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+              <div class="flex items-center gap-2"><SpellCheck :size="14" /> Fix Grammar</div>
+              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+            <button @click="runCheck('spell')" :disabled="loading"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+              <div class="flex items-center gap-2"><Type :size="14" /> Fix Spelling</div>
+              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+            <button @click="runCheck('rewrite')" :disabled="loading"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+              <div class="flex items-center gap-2"><RefreshCw :size="14" /> Polished Rewrite</div>
+              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+            <button @click="runCheck('continue')" :disabled="loading"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+              <div class="flex items-center gap-2"><Wand2 :size="14" /> Continue Writing</div>
+              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Smart Tools Section -->
+        <div class="space-y-1">
+          <div class="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2">Smart Tools</div>
+          <div class="grid grid-cols-1 gap-1">
+            <button @click="runCheck('summarize')" :disabled="loading"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+              <div class="flex items-center gap-2"><FileText :size="14" /> Summarize</div>
+              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+            <button @click="runCheck('expand')" :disabled="loading"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+              <div class="flex items-center gap-2"><Maximize2 :size="14" /> Expand & Elaborate</div>
               <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
 
-            <button
-              @click="runCheck('spell')"
-              :disabled="loading"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary"
-            >
-              <div class="flex items-center gap-2">
-                <Type :size="14" class="group-hover:scale-110 transition-transform" />
-                <span>Fix Spelling</span>
+            <!-- Change Tone with picker -->
+            <div class="space-y-1">
+              <div class="flex gap-1 flex-wrap px-3">
+                <button v-for="t in tones" :key="t" @click="selectedTone = t"
+                  class="px-1.5 py-0.5 rounded text-[9px] cursor-pointer transition-colors"
+                  :class="selectedTone === t ? 'bg-accent text-white' : 'bg-surface-hover text-text-muted hover:text-text-primary'"
+                >{{ t }}</button>
               </div>
-              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
+              <button @click="runCheck('change-tone')" :disabled="loading"
+                class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+                <div class="flex items-center gap-2"><MessageCircle :size="14" /> Change Tone ({{ selectedTone }})</div>
+                <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            </div>
 
-            <button
-              @click="runCheck('rewrite')"
-              :disabled="loading"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary"
-            >
-              <div class="flex items-center gap-2">
-                <RefreshCw :size="14" class="group-hover:rotate-45 transition-transform" />
-                <span>Polished Rewrite</span>
+            <!-- Translate with picker -->
+            <div class="space-y-1">
+              <div class="flex gap-1 flex-wrap px-3">
+                <button v-for="l in languages" :key="l" @click="selectedLanguage = l"
+                  class="px-1.5 py-0.5 rounded text-[9px] cursor-pointer transition-colors"
+                  :class="selectedLanguage === l ? 'bg-accent text-white' : 'bg-surface-hover text-text-muted hover:text-text-primary'"
+                >{{ l }}</button>
               </div>
-              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
-
-            <button
-              @click="runCheck('continue')"
-              :disabled="loading"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary"
-            >
-              <div class="flex items-center gap-2">
-                <Wand2 :size="14" class="group-hover:scale-110 transition-transform" />
-                <span>Continue Writing</span>
-              </div>
-              <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </button>
+              <button @click="runCheck('translate')" :disabled="loading"
+                class="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all group text-xs text-text-secondary">
+                <div class="flex items-center gap-2"><Globe :size="14" /> Translate to {{ selectedLanguage }}</div>
+                <ChevronRight :size="12" class="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -243,7 +307,7 @@ watch(activeTab, (newTab) => {
         </div>
 
         <!-- Result Comparison -->
-        <div v-if="result" class="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div v-if="result" class="space-y-3">
           <div class="flex items-center justify-between">
             <div class="text-[10px] font-bold text-text-muted uppercase tracking-wider">Result</div>
             <button @click="clearResult" class="p-1 hover:bg-surface-hover rounded transition-colors text-text-muted">
@@ -275,8 +339,23 @@ watch(activeTab, (newTab) => {
           </div>
         </div>
 
+        <!-- Tool History -->
+        <div v-if="toolHistory.length && !result && !loading" class="space-y-1.5">
+          <div class="text-[10px] font-bold text-text-muted uppercase tracking-wider">Recent Tools</div>
+          <div class="space-y-1">
+            <div v-for="(h, i) in toolHistory.slice(0, 5)" :key="i"
+              class="px-2 py-1.5 bg-surface-hover/30 rounded text-[10px] border border-border/30">
+              <div class="flex items-center gap-1 mb-0.5">
+                <span class="font-medium text-text-secondary">{{ h.tool }}</span>
+                <span class="text-text-muted ml-auto">{{ new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+              </div>
+              <div class="text-text-muted truncate">{{ h.preview }}</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Empty State -->
-        <div v-if="!loading && !result && !error" class="flex flex-col items-center justify-center py-12 text-center space-y-3 opacity-40">
+        <div v-if="!loading && !result && !error && !toolHistory.length" class="flex flex-col items-center justify-center py-12 text-center space-y-3 opacity-40">
           <Wand2 :size="32" class="text-text-muted" />
           <div class="text-xs text-text-muted leading-tight">
             Select text in the editor<br>and choose a smart action.
@@ -306,7 +385,7 @@ watch(activeTab, (newTab) => {
           <span class="text-[11px] text-text-muted">Analyzing sentiment & themes...</span>
         </div>
 
-        <div v-else-if="analysis" class="space-y-6 animate-in fade-in duration-500">
+        <div v-else-if="analysis" class="space-y-6">
           <!-- Sentiment -->
           <div class="space-y-2">
             <div class="text-[10px] font-bold text-text-muted uppercase tracking-wider">Sentiment & Mood</div>

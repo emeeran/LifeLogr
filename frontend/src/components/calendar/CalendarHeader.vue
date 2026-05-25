@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-vue-next'
 
 defineProps<{ label: string }>()
-const emit = defineEmits<{ prev: []; next: []; today: [] }>()
+const emit = defineEmits<{ prev: []; next: []; today: []; goto: [] }>()
 </script>
 
 <template>
@@ -14,6 +14,13 @@ const emit = defineEmits<{ prev: []; next: []; today: [] }>()
         @click="emit('today')"
       >
         Today
+      </button>
+      <button
+        class="p-1.5 rounded hover:bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer transition-colors"
+        title="Go to date"
+        @click="emit('goto')"
+      >
+        <Calendar :size="16" />
       </button>
       <button
         class="p-1.5 rounded hover:bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer transition-colors"

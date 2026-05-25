@@ -6,6 +6,7 @@ import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
 import CalendarHeader from './CalendarHeader.vue'
 import CalendarCell from './CalendarCell.vue'
+import GoToDateModal from '../common/GoToDateModal.vue'
 import { Tag, X } from 'lucide-vue-next'
 
 const cal = useCalendar()
@@ -15,6 +16,7 @@ const tagsStore = useTagsStore()
 const filterTagId = ref<number | null>(null)
 const showTagMenu = ref(false)
 const selectedDate = ref<string | null>(null)
+const showGoToDate = ref(false)
 
 onMounted(() => tagsStore.fetchTree())
 
@@ -57,6 +59,12 @@ function openEntry(entryId: number) {
   selectedDate.value = null // entry selected, not date
   ui.requestEdit(entryId)
 }
+
+function onGoToDate(dateStr: string) {
+  const [y, m] = dateStr.split('-').map(Number)
+  cal.year.value = y
+  cal.month.value = m
+}
 </script>
 
 <template>
@@ -66,6 +74,7 @@ function openEntry(entryId: number) {
       @prev="cal.prevMonth"
       @next="cal.nextMonth"
       @today="cal.goToday"
+      @goto="showGoToDate = true"
     />
 
     <!-- Tag filter -->
@@ -141,5 +150,7 @@ function openEntry(entryId: number) {
         />
       </div>
     </div>
+
+    <GoToDateModal v-model="showGoToDate" @select="onGoToDate" />
   </div>
 </template>

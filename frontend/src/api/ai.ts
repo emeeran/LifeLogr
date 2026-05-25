@@ -3,6 +3,7 @@ import type {
   GrammarCheckResponse, SpellCheckResponse, RewriteResponse, AIStatusResponse,
   TagSuggestionResponse, EntryAnalysisResponse, SimilarEntriesResponse,
   ContinueWritingResponse, OnThisDayResponse, ThemesResponse, DigestResponse,
+  SummarizeResponse, ExpandResponse, ChangeToneResponse, TranslateResponse,
 } from '../types'
 
 export const grammarCheck = (text: string) =>
@@ -52,3 +53,17 @@ export const runOCR = (mediaId: number, language: string = 'eng') =>
 
 export const pullModel = (model: string) =>
   request<{ status: string; model: string }>(`/ai/pull-model?model=${encodeURIComponent(model)}`, { method: 'POST' })
+
+// ── Smart Tools ──
+
+export const summarize = (text: string) =>
+  request<SummarizeResponse>('/ai/summarize', { method: 'POST', body: JSON.stringify({ text }) })
+
+export const expand = (text: string) =>
+  request<ExpandResponse>('/ai/expand', { method: 'POST', body: JSON.stringify({ text }) })
+
+export const changeTone = (text: string, tone: string) =>
+  request<ChangeToneResponse>('/ai/change-tone', { method: 'POST', body: JSON.stringify({ text, tone }) })
+
+export const translate = (text: string, language: string) =>
+  request<TranslateResponse>('/ai/translate', { method: 'POST', body: JSON.stringify({ text, language }) })
