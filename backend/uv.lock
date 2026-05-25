@@ -7,6 +7,9 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 
+[manifest]
+overrides = [{ name = "pathlib", marker = "sys_platform == 'never'" }]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
@@ -1456,7 +1459,7 @@ name = "mega-py"
 version = "1.0.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pathlib" },
+    { name = "pathlib", marker = "sys_platform == 'never'" },
     { name = "pycryptodome" },
     { name = "requests" },
     { name = "tenacity" },

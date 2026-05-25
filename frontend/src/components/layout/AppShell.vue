@@ -158,8 +158,8 @@ function onAttachmentView(index: number) {
         <!-- Dynamic panel content -->
         <AiDrawerPanel
           v-if="ui.activeDrawer === 'ai'"
-          :get-selection="() => editorRef?.body ?? ''"
-          :apply-text="(t: string) => { if (editorRef) { editorRef.body = t; editorRef.onInput() } }"
+          :get-selection="() => editorRef?.getSelection?.() ?? ''"
+          :apply-text="(t: string) => { editorRef?.applyToSelection?.(t) }"
           :has-entry="!!editorRef?.hasEntry"
           :entry-id="editorRef?.entryId ?? null"
         />

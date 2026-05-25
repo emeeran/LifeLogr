@@ -162,6 +162,56 @@ async def export_markdown(
     )
 
 
+@router.get("/export/diarium")
+async def export_diarium(
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Export entries in Diarium-compatible JSON format.
+
+    Produces a JSON array where each entry has: date, text, heading, rating, tags.
+    This format can be imported directly by Diarium or re-imported here.
+    """
+    mood_to_rating = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
+
+    q = select(Entry).where(Entry.is_deleted == False).options(  # noqa: E712
+        selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+    ).order_by(Entry.entry_date)
+
+    if start_date:
+        q = q.where(Entry.entry_date >= start_date)
+    if end_date:
+        q = q.where(Entry.entry_date <= end_date)
+
+    result = await db.execute(q)
+    entries = list(result.scalars().all())
+
+    export_items = []
+    for entry in entries:
+        tags = [a.tag.name for a in entry.tag_associations if a.tag]
+        item: dict[str, Any] = {
+            "date": str(entry.entry_date) + "T00:00:00.0000000+00:00",
+            "text": entry.body or "",
+        }
+        if entry.title:
+            item["heading"] = entry.title
+        if entry.mood and entry.mood in mood_to_rating:
+            item["rating"] = mood_to_rating[entry.mood]
+        if tags:
+            item["tags"] = tags
+        export_items.append(item)
+
+    content = json.dumps(export_items, indent=2, ensure_ascii=False)
+    buf = io.BytesIO(content.encode("utf-8"))
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=diarium-export.json"},
+    )
+
+
 # ── Geotagging endpoints ───────────────────────────────────────────────────────
 
 @router.put("/{entry_id}/geotag", response_model=GeotagResponse)

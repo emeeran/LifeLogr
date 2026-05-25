@@ -39,11 +39,11 @@ function navigate(view: ViewType) {
         <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-7 h-7" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
       </div>
       <template v-else>
+        <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-5 h-5" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
         <div class="flex flex-col min-w-0">
           <span class="text-sm font-bold text-sidebar-text tracking-tight leading-tight">DailyByte</span>
           <span class="text-[8px] text-sidebar-text-secondary leading-tight">Your Day in Media & Minutes</span>
         </div>
-        <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-5 h-5 ml-auto" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
       </template>
     </div>
 

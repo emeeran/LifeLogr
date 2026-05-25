@@ -48,3 +48,6 @@ target-version = "py311"
 
 [tool.mypy]
 strict = true
+
+[tool.uv]
+override-dependencies = ["pathlib ; sys_platform == 'never'"]

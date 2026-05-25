@@ -17,6 +17,8 @@ import TagList from '../tags/TagList.vue'
 import MediaViewer from '../media/MediaViewer.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
 import EmojiPicker from '../common/EmojiPicker.vue'
+import { reverseGeocode } from '../../utils/geocoding'
+import { useTemplatesStore } from '../../stores/templates'
 import { setGeotag } from '../../api/geotagging'
 import { aiStatus, suggestTags, runOCR } from '../../api/ai'
 import { encryptText, decryptText } from '../../api/encryption'
@@ -73,6 +75,29 @@ const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
 const { isDragging, handlers: dragHandlers } = useDragDrop()
 
 function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
+
+// ── Cached selection (preserved when editor loses focus) ──
+const cachedSelStart = ref(0)
+const cachedSelEnd = ref(0)
+let selCacheTimer: ReturnType<typeof setTimeout> | null = null
+
+function cacheSelection() {
+  const el = textarea.value
+  if (el) {
+    cachedSelStart.value = el.selectionStart
+    cachedSelEnd.value = el.selectionEnd
+  }
+}
+
+function startSelCache() {
+  // Cache on blur with a short delay so click handlers in drawer can still read it
+  selCacheTimer = setTimeout(cacheSelection, 0)
+}
+
+function clearSelCache() {
+  if (selCacheTimer) { clearTimeout(selCacheTimer); selCacheTimer = null }
+  cacheSelection() // cache immediately on focus too
+}
 
 // ── Dirty tracking ──
 const dirty = ref(false)
@@ -305,7 +330,7 @@ async function loadEntry() {
     // Auto-apply default template
     if (defaultTemplateId.value) {
       try {
-        const store = await import('../../stores/templates').then(m => m.useTemplatesStore())
+        const store = useTemplatesStore()
         await store.fetchAll()
         const tmpl = store.templates.find(t => t.id === defaultTemplateId.value)
         if (tmpl) {
@@ -327,7 +352,6 @@ async function loadEntry() {
           const lon = pos.coords.longitude
           if (isNew.value && !pendingGeotag.value) {
             try {
-              const { reverseGeocode } = await import('../../utils/geocoding')
               const placeName = await reverseGeocode(lat, lon)
               pendingGeotag.value = {
                 latitude: Math.round(lat * 1000000) / 1000000,
@@ -588,6 +612,7 @@ defineExpose({
   attachments, handleFileUpload, removeAttachment, runOcrTool, loadAttachments,
   triggerFileInput: () => fileInput.value?.click(),
   openViewer: (index: number) => { viewerIndex.value = index; viewerOpen.value = true },
+  getSelection, applyToSelection,
 })
 
 // ── Save ──
@@ -655,14 +680,17 @@ function cutToClipboard() {
 function getSelection() {
   const el = textarea.value
   if (!el) return ''
-  return body.value.slice(el.selectionStart, el.selectionEnd).trim()
+  const start = document.activeElement === el ? el.selectionStart : cachedSelStart.value
+  const end = document.activeElement === el ? el.selectionEnd : cachedSelEnd.value
+  return body.value.slice(start, end).trim()
 }
 
 function applyToSelection(newText: string) {
   const el = textarea.value
   if (!el) return
-  const start = el.selectionStart
-  const end = el.selectionEnd
+  const focused = document.activeElement === el
+  const start = focused ? el.selectionStart : cachedSelStart.value
+  const end = focused ? el.selectionEnd : cachedSelEnd.value
   body.value = body.value.slice(0, start) + newText + body.value.slice(end)
   pushHistory()
   markDirty()
@@ -1140,6 +1168,8 @@ const activeFormats = computed(() => {
             @keydown="onTextareaKeydown"
             @keydown.capture="onKeydown"
             @contextmenu="onContextMenu"
+            @focus="clearSelCache"
+            @blur="startSelCache"
           />
           <div
             v-else

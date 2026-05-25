@@ -6,7 +6,7 @@ import {
   SpellCheck, RefreshCw, CheckCircle, AlertCircle, Loader,
   BarChart3, Sparkles, Wand2, Type, Eraser, X, ChevronRight,
   TrendingUp, MessageSquare, History, Layers, FileText, Maximize2,
-  MessageCircle, Globe
+  MessageCircle, Globe, Copy, Check
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -130,6 +130,15 @@ function clearResult() {
   result.value = ''
   originalText.value = ''
   error.value = ''
+}
+
+const copied = ref(false)
+function copyResult() {
+  if (!result.value) return
+  navigator.clipboard.writeText(result.value).then(() => {
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  })
 }
 
 // ── Analysis ──
@@ -332,6 +341,14 @@ watch(activeTab, (newTab) => {
               @click="applyResult"
               class="flex-1 py-2 bg-accent text-white rounded-lg text-xs font-medium hover:bg-accent-hover transition-colors shadow-lg shadow-accent/20"
             >Replace Selection</button>
+            <button
+              @click="copyResult"
+              class="px-3 py-2 bg-surface-hover text-text-secondary rounded-lg text-xs font-medium hover:text-text-primary transition-colors flex items-center gap-1"
+            >
+              <Check v-if="copied" :size="12" class="text-green-400" />
+              <Copy v-else :size="12" />
+              {{ copied ? 'Copied' : 'Copy' }}
+            </button>
             <button
               @click="clearResult"
               class="px-4 py-2 bg-surface-hover text-text-secondary rounded-lg text-xs font-medium hover:text-text-primary transition-colors"
