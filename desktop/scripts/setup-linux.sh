@@ -38,7 +38,9 @@ install_system_deps() {
             apt-get install -y --no-install-recommends \
                 tesseract-ocr \
                 libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
-                libgdk-pixbuf2.0-0 libffi-dev shared-mime-info
+                libgdk-pixbuf2.0-0 libffi-dev shared-mime-info \
+                gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
+                gstreamer1.0-plugins-bad
             ;;
         fedora|rhel|centos)
             dnf install -y tesseract pango cairo gdk-pixbuf2 libffi shared-mime-info

@@ -91,7 +91,7 @@ async def export_local_backup(
 
     tmpdir = tempfile.mkdtemp()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    archive_path = Path(tmpdir) / f"diarium-backup-{timestamp}.tar.gz"
+    archive_path = Path(tmpdir) / f"dailybyte-backup-{timestamp}.tar.gz"
 
     db_url: str = settings.DATABASE_URL
     db_file = db_url.replace("sqlite+aiosqlite:///", "")
@@ -115,7 +115,7 @@ async def export_local_backup(
     return FileResponse(
         path=str(archive_path),
         media_type="application/gzip",
-        filename=f"diarium-backup-{timestamp}.tar.gz",
+        filename=f"dailybyte-backup-{timestamp}.tar.gz",
     )
 
 
@@ -186,12 +186,13 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
 async def schedule_backup(
     cron: str = Query(..., description="Cron expression (e.g., '0 2 * * *')"),
     backup_path: str = Query(..., description="Directory path for backup files"),
+    retention: int = Query(10, ge=1, le=100, description="Number of backups to keep"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Schedule an automated backup job."""
     from app.services.scheduler_service import SchedulerService
     svc = SchedulerService(db)
-    return await svc.schedule_backup(cron, backup_path)
+    return await svc.schedule_backup(cron, backup_path, retention)
 
 
 @router.get("/schedule/status")

@@ -50,7 +50,7 @@ const tabs = [
 
 // ── System Setup (Tauri desktop only) ──
 const isTauri = !!(window as any).__TAURI_INTERNALS__
-const depsStatus = ref<{ tesseract: boolean; ollama: boolean; all_installed: boolean } | null>(null)
+const depsStatus = ref<{ tesseract: boolean; ollama: boolean; gst_plugins_bad: boolean; all_installed: boolean } | null>(null)
 const setupRunning = ref(false)
 const setupOutput = ref('')
 
@@ -482,7 +482,7 @@ const dayLabels: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', 
 
 // ── Auto Backup ──
 const autoBackupEnabled = useLocalStorage<boolean>('diarium-auto-backup-enabled', false)
-const autoBackupPath = useLocalStorage<string>('diarium-auto-backup-path', '~/Backups/diarilinux')
+const autoBackupPath = useLocalStorage<string>('diarium-auto-backup-path', '~/Backups/dailybyte')
 const autoBackupFrequency = useLocalStorage<string>('diarium-auto-backup-freq', '0 2 * * *')
 const autoBackupRetention = useLocalStorage<number>('diarium-auto-backup-retention', 10)
 const autoBackupStatus = ref<{ running: boolean; backup_scheduled: boolean; next_run: string | null } | null>(null)
@@ -503,7 +503,7 @@ async function saveAutoBackup() {
   autoBackupSaving.value = true
   try {
     const { request } = await import('../../api/client')
-    const expandedPath = autoBackupPath.value.replace(/^~/, '~')  // backend handles ~ expansion
+    const expandedPath = autoBackupPath.value  // backend handles ~ expansion
     await request(`/backup/schedule?cron=${encodeURIComponent(autoBackupFrequency.value)}&backup_path=${encodeURIComponent(expandedPath)}&retention=${autoBackupRetention.value}`, { method: 'POST' })
     await loadAutoBackupStatus()
     autoBackupEnabled.value = true
@@ -884,7 +884,7 @@ onMounted(() => {
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] text-text-muted w-12">Folder</span>
                     <input v-model="autoBackupPath"
-                      placeholder="~/Backups/diarilinux"
+                      placeholder="~/Backups/dailybyte"
                       class="flex-1 bg-surface-hover border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none hover:border-accent transition-colors" />
                   </div>
                   <div class="flex items-center gap-2">
@@ -1155,7 +1155,7 @@ onMounted(() => {
             </h3>
             <div class="bg-surface rounded p-2 border border-border space-y-1.5">
               <div v-if="depsStatus === null" class="text-[10px] text-text-muted">Checking dependencies...</div>
-              <div v-else-if="depsStatus.all_installed" class="flex items-center gap-1 text-[10px] text-green-400">
+              <div v-else-if="depsStatus.all_installed && depsStatus.gst_plugins_bad" class="flex items-center gap-1 text-[10px] text-green-400">
                 <MonitorCheck :size="11" /> All system dependencies installed
               </div>
               <div v-else class="space-y-1">
@@ -1170,6 +1170,12 @@ onMounted(() => {
                   <CheckCircle2 v-if="depsStatus.ollama" :size="10" />
                   <AlertTriangle v-else :size="10" />
                   Ollama AI {{ depsStatus.ollama ? '(installed)' : '(missing)' }}
+                </div>
+                <div class="flex items-center gap-1 text-[10px]"
+                  :class="depsStatus.gst_plugins_bad ? 'text-green-400' : 'text-yellow-400'">
+                  <CheckCircle2 v-if="depsStatus.gst_plugins_bad" :size="10" />
+                  <AlertTriangle v-else :size="10" />
+                  Audio Recording {{ depsStatus.gst_plugins_bad ? '(ready)' : '(needs gstreamer1.0-plugins-bad)' }}
                 </div>
                 <button class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50 mt-1"
                   :disabled="setupRunning" @click="runSystemSetup">
@@ -1195,7 +1201,7 @@ onMounted(() => {
               <InfoIcon :size="11" /> About
             </h3>
             <div class="bg-surface rounded p-3 border border-border space-y-1.5 text-center">
-              <div class="text-sm font-semibold text-text-primary">{{ appSettings?.app_name ?? 'Diarilinux' }}</div>
+              <div class="text-sm font-semibold text-text-primary">{{ appSettings?.app_name ?? 'DailyByte' }}</div>
               <div class="text-[10px] text-text-muted">Version {{ appSettings?.version ?? '0.1.0' }}</div>
               <div class="text-[10px] text-text-secondary">Privacy-first, offline-first journaling for Linux</div>
               <div class="text-[10px] text-accent italic pt-1">Dedicated to my son Tariq Al Fayad</div>

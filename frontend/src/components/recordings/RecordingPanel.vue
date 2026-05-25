@@ -2,6 +2,7 @@
 import { Mic, Square, Loader, FileAudio, Trash2, Sparkles, Play, Pause } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { recordingsApi } from '../../api/recordings'
+import { API_ORIGIN } from '../../api/client'
 import type { VoiceRecordingResponse } from '../../types'
 
 const props = defineProps<{ entryId: number }>()
@@ -32,7 +33,14 @@ async function loadRecordings() {
 
 async function startRecording() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    alert('Audio recording requires a secure context (HTTPS or localhost). In the installed app, microphone access may not be available.')
+    alert('Audio recording is not available in this environment.\n\nOn Linux (Tauri desktop app), this requires:\n' +
+      '1. gstreamer1.0-plugins-bad: sudo apt install gstreamer1.0-plugins-bad\n' +
+      '2. Run System Setup from Settings > Features\n\n' +
+      'After installing, restart the app.')
+    return
+  }
+  if (typeof MediaRecorder === 'undefined') {
+    alert('MediaRecorder is not supported in this browser engine. On Linux, ensure GStreamer plugins are installed:\n\nsudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-plugins-bad')
     return
   }
   try {
@@ -50,7 +58,7 @@ async function startRecording() {
     }
 
     mediaRecorder.value = recorder
-    recorder.start()
+    recorder.start(1000)  // 1s timeslice ensures ondataavailable fires in WebKit2GTK
     recording.value = true
     elapsed.value = 0
     timerInterval = setInterval(() => { elapsed.value++ }, 1000)
@@ -118,7 +126,7 @@ function togglePlayback(rec: VoiceRecordingResponse) {
     return
   }
   stopPlayback()
-  const url = `/api/v1/media/${rec.media_id}/file`
+  const url = `${API_ORIGIN}/api/v1/media/${rec.media_id}/file`
   const audio = new Audio(url)
   audio.addEventListener('ended', () => { playingId.value = null })
   currentAudio = audio
@@ -142,75 +150,67 @@ function fmtTime(s: number): string {
 </script>
 
 <template>
-  <div class="space-y-2">
-    <!-- Record controls -->
-    <div class="flex items-center gap-2">
+  <div class="p-2 space-y-1">
+    <!-- Record controls — single compact row -->
+    <div class="flex items-center gap-1.5">
       <button
         v-if="!recording"
-        class="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium bg-accent/20 text-accent hover:bg-accent/30 cursor-pointer transition-colors disabled:opacity-50"
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/20 text-accent hover:bg-accent/30 cursor-pointer transition-colors disabled:opacity-50"
         :disabled="uploading"
         @click="startRecording"
       >
-        <Mic :size="13" />
-        Record
+        <Mic :size="11" /> Record
       </button>
       <button
         v-else
-        class="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium bg-danger/20 text-danger hover:bg-danger/30 cursor-pointer transition-colors animate-pulse"
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-danger/20 text-danger hover:bg-danger/30 cursor-pointer transition-colors animate-pulse"
         @click="stopRecording"
       >
-        <Square :size="13" />
-        Stop
+        <Square :size="10" /> Stop
       </button>
-
-      <span v-if="recording" class="text-[11px] text-danger font-mono">{{ fmtTime(elapsed) }}</span>
-      <span v-if="uploading" class="flex items-center gap-1 text-[11px] text-text-muted">
-        <Loader :size="11" class="animate-spin" /> Uploading...
+      <span v-if="recording" class="text-[10px] text-danger font-mono">{{ fmtTime(elapsed) }}</span>
+      <span v-if="uploading" class="flex items-center gap-1 text-[10px] text-text-muted">
+        <Loader :size="10" class="animate-spin" /> Uploading...
       </span>
     </div>
 
-    <!-- Recording list -->
-    <div v-if="recordings.length" class="space-y-1">
+    <!-- Recording list — compact rows -->
+    <div v-if="recordings.length" class="space-y-0.5">
       <div
         v-for="rec in recordings"
         :key="rec.id"
-        class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-hover text-[11px]"
+        class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-hover text-[10px]"
       >
-        <!-- Play/Pause -->
         <button
-          class="p-0.5 rounded hover:bg-accent/15 cursor-pointer transition-colors"
+          class="p-px rounded hover:bg-accent/15 cursor-pointer transition-colors"
           :class="playingId === rec.id ? 'text-accent' : 'text-text-secondary hover:text-accent'"
           @click="togglePlayback(rec)"
         >
-          <Pause v-if="playingId === rec.id" :size="12" />
-          <Play v-else :size="12" />
+          <Pause v-if="playingId === rec.id" :size="10" />
+          <Play v-else :size="10" />
         </button>
-        <FileAudio :size="12" class="text-accent shrink-0" />
-        <span class="text-text-secondary flex-1 truncate">
-          {{ rec.audio_format.toUpperCase() }}
-        </span>
-        <!-- Transcribe -->
+        <FileAudio :size="10" class="text-accent shrink-0" />
+        <span class="text-text-secondary flex-1 truncate">{{ rec.audio_format.toUpperCase() }}</span>
         <button
           v-if="!rec.is_transcribed"
-          class="p-0.5 rounded hover:bg-accent/15 text-text-muted hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
+          class="p-px rounded hover:bg-accent/15 text-text-muted hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
           :disabled="transcribingId === rec.id"
           title="Transcribe"
           @click="transcribe(rec)"
         >
-          <Loader v-if="transcribingId === rec.id" :size="11" class="animate-spin" />
-          <Sparkles v-else :size="11" />
+          <Loader v-if="transcribingId === rec.id" :size="10" class="animate-spin" />
+          <Sparkles v-else :size="10" />
         </button>
-        <span v-else class="text-[9px] text-green-400" title="Transcribed">&#10003;</span>
-        <!-- Delete -->
+        <span v-else class="text-[8px] text-green-400" title="Transcribed">&#10003;</span>
         <button
-          class="p-0.5 rounded hover:bg-danger/15 text-text-muted hover:text-danger cursor-pointer transition-colors"
-          title="Delete recording"
+          class="p-px rounded hover:bg-danger/15 text-text-muted hover:text-danger cursor-pointer transition-colors"
+          title="Delete"
           @click="deleteRecording(rec)"
         >
-          <Trash2 :size="11" />
+          <Trash2 :size="10" />
         </button>
       </div>
-      <div v-if="recordings.some(r => r.is_transcribed)" class="text-[10px] text-text-muted">
+      <div v-if="recordings.some(r => r.is_transcribed)" class="text-[9px] text-text-muted px-1">
         Transcription appended to entry body.
       </div>
     </div>

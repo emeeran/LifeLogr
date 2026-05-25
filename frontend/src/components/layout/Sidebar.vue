@@ -31,12 +31,20 @@ function navigate(view: ViewType) {
 
 <template>
   <nav class="h-full bg-sidebar flex flex-col border-r border-sidebar-hover transition-all duration-200 overflow-hidden"
-    :style="{ width: ui.sidebarCollapsed ? '48px' : '180px' }">
+    :style="{ width: ui.sidebarCollapsed ? '48px' : '200px' }">
     <!-- Brand -->
-    <div class="border-b border-sidebar-hover flex items-center gap-1.5 shrink-0"
-      :class="ui.sidebarCollapsed ? 'justify-center px-1 py-2.5' : 'px-3 py-2.5'">
-      <img src="/logo.png" alt="Diarilinux" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon" :class="ui.sidebarCollapsed ? 'w-7 h-7' : 'w-5 h-5'" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
-      <span v-if="!ui.sidebarCollapsed" class="text-sm font-bold text-sidebar-text tracking-tight">Diarilinux</span>
+    <div class="border-b border-sidebar-hover shrink-0"
+      :class="ui.sidebarCollapsed ? 'flex justify-center px-1 py-2.5' : 'flex items-center gap-1.5 px-3 py-2.5'">
+      <div v-if="ui.sidebarCollapsed" class="flex flex-col items-center gap-0.5">
+        <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-7 h-7" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
+      </div>
+      <template v-else>
+        <div class="flex flex-col min-w-0">
+          <span class="text-sm font-bold text-sidebar-text tracking-tight leading-tight">DailyByte</span>
+          <span class="text-[8px] text-sidebar-text-secondary leading-tight">Your Day in Media & Minutes</span>
+        </div>
+        <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-5 h-5 ml-auto" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
+      </template>
     </div>
 
     <!-- Scrollable nav -->
