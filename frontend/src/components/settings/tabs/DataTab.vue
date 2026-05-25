@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useBackupStore } from '../../../stores/backup'
 import { backupApi } from '../../../api/backup'
 import { entriesApi } from '../../../api/entries'
-import { exportHtml, getExportPdfUrl } from '../../../api/export'
+import { exportHtml, getExportPdfUrl, exportDiarium } from '../../../api/export'
 import { useEntriesStore } from '../../../stores/entries'
 import { useSyncStore } from '../../../stores/sync'
 import { getSettings } from '../../../api/settings'
@@ -69,6 +69,7 @@ const exportRange = ref<'all' | 'range'>('all')
 const exportFrom = ref('')
 const exportTo = ref('')
 const exportingHtml = ref(false)
+const exportingDiarium = ref(false)
 const deduplicating = ref(false)
 
 function downloadMarkdown() {
@@ -93,6 +94,18 @@ async function downloadHtmlExport() {
 function downloadPdfExport() {
   const url = getExportPdfUrl(exportFrom.value || undefined, exportTo.value || undefined)
   Object.assign(document.createElement('a'), { href: url, download: 'diary-export.pdf' }).click()
+}
+
+async function downloadDiarium() {
+  exportingDiarium.value = true
+  try {
+    const json = await exportDiarium(exportFrom.value || undefined, exportTo.value || undefined)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    Object.assign(document.createElement('a'), { href: url, download: 'diarium-export.json' }).click()
+    URL.revokeObjectURL(url)
+  } catch (e: unknown) { emit('toast', 'error', `Diarium export failed: ${errMsg(e)}`) }
+  finally { exportingDiarium.value = false }
 }
 
 function downloadExport() {
@@ -406,6 +419,9 @@ onMounted(() => {
         <div class="flex items-center gap-1">
           <button class="px-1.5 py-0.5 rounded text-[10px] bg-accent text-white hover:bg-accent-hover cursor-pointer disabled:opacity-50"
             :disabled="exportRange === 'range' && (!exportFrom || !exportTo)" @click="downloadMarkdown">.zip</button>
+          <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
+            :disabled="exportRange === 'range' && (!exportFrom || !exportTo) || exportingDiarium" @click="downloadDiarium">
+            <Loader v-if="exportingDiarium" :size="9" class="animate-spin inline" />Diarium</button>
           <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
             :disabled="exportingHtml" @click="downloadHtmlExport">
             <Loader v-if="exportingHtml" :size="9" class="animate-spin inline" />HTML</button>
