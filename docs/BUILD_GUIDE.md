@@ -1,6 +1,6 @@
-# Diarilinux — Build, Update & Install Guide
+# DailyByte — Build, Update & Install Guide
 
-Complete guide for building, updating, and installing Diarilinux on **Linux**, **Windows**, and **macOS**.
+Complete guide for building, updating, and installing DailyByte on **Linux**, **Windows**, and **macOS**.
 
 ---
 
@@ -58,9 +58,9 @@ make build     # Builds frontend + backend + native package
 ```
 
 The output goes to `desktop/src-tauri/target/release/bundle/`:
-- **Linux**: `appimage/Diarilinux_0.1.0_amd64.AppImage` + `deb/Diarilinux_0.1.0_amd64.deb`
-- **Windows**: `msi/Diarilinux_0.1.0_x64_en-US.msi`
-- **macOS**: `dmg/Diarilinux_0.1.0_aarch64.dmg`
+- **Linux**: `appimage/DailyByte_0.1.0_amd64.AppImage` + `deb/DailyByte_0.1.0_amd64.deb`
+- **Windows**: `msi/DailyByte_0.1.0_x64_en-US.msi`
+- **macOS**: `dmg/DailyByte_0.1.0_aarch64.dmg`
 
 ### Step-by-Step Build
 
@@ -80,12 +80,12 @@ uv run pyinstaller ../desktop/scripts/pyinstaller.spec \
 # 3. Copy backend binary as Tauri sidecar
 #    Linux:
 mkdir -p ../desktop/src-tauri/binaries
-cp dist/diarilinux-backend ../desktop/src-tauri/binaries/diarilinux-backend-x86_64-unknown-linux-gnu
-chmod +x ../desktop/src-tauri/binaries/diarilinux-backend-x86_64-unknown-linux-gnu
+cp dist/dailybyte-backend ../desktop/src-tauri/binaries/dailybyte-backend-x86_64-unknown-linux-gnu
+chmod +x ../desktop/src-tauri/binaries/dailybyte-backend-x86_64-unknown-linux-gnu
 #    Windows:
-#      copy dist\diarilinux-backend.exe ..\desktop\src-tauri\binaries\diarilinux-backend-x86_64-pc-windows-msvc.exe
+#      copy dist\dailybyte-backend.exe ..\desktop\src-tauri\binaries\dailybyte-backend-x86_64-pc-windows-msvc.exe
 #    macOS (Apple Silicon):
-#      cp dist/diarilinux-backend ../desktop/src-tauri/binaries/diarilinux-backend-aarch64-apple-darwin
+#      cp dist/dailybyte-backend ../desktop/src-tauri/binaries/dailybyte-backend-aarch64-apple-darwin
 
 # 4. Build the native Tauri package
 cd ../desktop/src-tauri
@@ -157,23 +157,23 @@ cd desktop && make clean && make build
 
 ```bash
 # 1. Download or copy the AppImage
-cp desktop/src-tauri/target/release/bundle/appimage/Diarilinux_0.1.0_amd64.AppImage ~/Applications/
+cp desktop/src-tauri/target/release/bundle/appimage/DailyByte_0.1.0_amd64.AppImage ~/Applications/
 
 # 2. Make it executable
-chmod +x ~/Applications/Diarilinux_0.1.0_amd64.AppImage
+chmod +x ~/Applications/DailyByte_0.1.0_amd64.AppImage
 
 # 3. Run it
-~/Applications/Diarilinux_0.1.0_amd64.AppImage
+~/Applications/DailyByte_0.1.0_amd64.AppImage
 ```
 
 To add to your application launcher:
 ```bash
 # Create a desktop entry
-cat > ~/.local/share/applications/diarilinux.desktop << 'EOF'
+cat > ~/.local/share/applications/dailybyte.desktop << 'EOF'
 [Desktop Entry]
-Name=Diarilinux
-Exec=/home/YOUR_USER/Applications/Diarilinux_0.1.0_amd64.AppImage
-Icon=diarilinux
+Name=DailyByte
+Exec=/home/YOUR_USER/Applications/DailyByte_0.1.0_amd64.AppImage
+Icon=dailybyte
 Type=Application
 Categories=Office;Utility;
 Comment=Privacy-first journaling app
@@ -183,10 +183,10 @@ EOF
 ### Option B: .deb package (Debian/Ubuntu)
 
 ```bash
-sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/Diarilinux_0.1.0_amd64.deb
+sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/DailyByte_0.1.0_amd64.deb
 
 # Then launch from your application menu, or:
-diarilinux
+dailybyte
 ```
 
 ### Option C: From source (development)
@@ -204,8 +204,8 @@ Open http://localhost:5173 in your browser.
 
 | Data | Path |
 |------|------|
-| Database | `~/.local/share/diarilinux/diarilinux.db` |
-| Media files | `~/.local/share/diarilinux/media/` |
+| Database | `~/.local/share/com.dailybyte.desktop/dailybyte.db` |
+| Media files | `~/.local/share/com.dailybyte.desktop/media/` |
 | Config | Set via `DIARI_DATA_DIR` env var |
 
 ---
@@ -214,10 +214,10 @@ Open http://localhost:5173 in your browser.
 
 ### From MSI installer
 
-1. Double-click `Diarilinux_0.1.0_x64_en-US.msi`
+1. Double-click `DailyByte_0.1.0_x64_en-US.msi`
 2. Follow the installer wizard
 3. If prompted about WebView2, allow the installer to download it
-4. Launch from **Start Menu → Diarilinux**
+4. Launch from **Start Menu → DailyByte**
 
 ### From source (development)
 
@@ -238,8 +238,8 @@ Open http://localhost:5173 in your browser.
 
 | Data | Path |
 |------|------|
-| Database | `%APPDATA%\diarilinux\diarilinux.db` |
-| Media files | `%APPDATA%\diarilinux\media\` |
+| Database | `%APPDATA%\dailybyte\dailybyte.db` |
+| Media files | `%APPDATA%\dailybyte\media\` |
 | Config | Set via `DIARI_DATA_DIR` env var |
 
 ### Building on Windows
@@ -248,7 +248,7 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri\target\release\bundle\msi\Diarilinux_0.1.0_x64_en-US.msi
+# Output: src-tauri\target\release\bundle\msi\DailyByte_0.1.0_x64_en-US.msi
 ```
 
 ---
@@ -257,8 +257,8 @@ make build
 
 ### From DMG
 
-1. Double-click `Diarilinux_0.1.0_aarch64.dmg`
-2. Drag **Diarilinux** to the **Applications** folder
+1. Double-click `DailyByte_0.1.0_aarch64.dmg`
+2. Drag **DailyByte** to the **Applications** folder
 3. Launch from Applications or Spotlight
 
 **Gatekeeper warning:** Since the app is unsigned, macOS will show a warning on first launch. To bypass:
@@ -280,8 +280,8 @@ Open http://localhost:5173 in your browser.
 
 | Data | Path |
 |------|------|
-| Database | `~/Library/Application Support/diarilinux/diarilinux.db` |
-| Media files | `~/Library/Application Support/diarilinux/media/` |
+| Database | `~/Library/Application Support/dailybyte/dailybyte.db` |
+| Media files | `~/Library/Application Support/dailybyte/media/` |
 | Config | Set via `DIARI_DATA_DIR` env var |
 
 ### Building on macOS
@@ -290,10 +290,10 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri/target/release/bundle/dmg/Diarilinux_0.1.0_aarch64.dmg
+# Output: src-tauri/target/release/bundle/dmg/DailyByte_0.1.0_aarch64.dmg
 ```
 
-> **Note:** The macOS build targets Apple Silicon (M1/M2/M3/M4) by default. Intel Mac users can run it via Rosetta 2 (transparent). To build for Intel specifically, change the sidecar filename to `diarilinux-backend-x86_64-apple-darwin`.
+> **Note:** The macOS build targets Apple Silicon (M1/M2/M3/M4) by default. Intel Mac users can run it via Rosetta 2 (transparent). To build for Intel specifically, change the sidecar filename to `dailybyte-backend-x86_64-apple-darwin`.
 
 ---
 
@@ -303,7 +303,7 @@ The app works out-of-the-box for core features (entries, tags, search, templates
 
 ### Using the built-in setup (Linux, Tauri app only)
 
-1. Launch Diarilinux
+1. Launch DailyByte
 2. Open **Settings** (gear icon in sidebar)
 3. Scroll to **System Setup** section
 4. Click **Install Missing Dependencies**
@@ -415,7 +415,7 @@ ollama pull nomic-embed-text
 
 ```bash
 # Linux/macOS
-DIARI_DATA_DIR=/path/to/data ./Diarilinux_0.1.0_amd64.AppImage
+DIARI_DATA_DIR=/path/to/data ./DailyByte_0.1.0_amd64.AppImage
 
 # Or set permanently
 export DIARI_DATA_DIR=/path/to/data
@@ -433,13 +433,13 @@ The Tauri app hardcodes the backend to port **18765**. For development mode, the
 
 ```bash
 # Make sure it's executable
-chmod +x Diarilinux_0.1.0_amd64.AppImage
+chmod +x DailyByte_0.1.0_amd64.AppImage
 
 # If FUSE is missing (some distros)
 sudo apt install libfuse2
 
 # Run with debug output
-./Diarilinux_0.1.0_amd64.AppImage --verbose
+./DailyByte_0.1.0_amd64.AppImage --verbose
 ```
 
 ### "Backend failed to start" error
@@ -448,7 +448,7 @@ The Python sidecar takes a few seconds to start. The frontend retries for 15 sec
 
 ```bash
 # Test the backend binary directly
-./desktop/dist/diarilinux-backend --host 127.0.0.1 --port 18765
+./desktop/dist/dailybyte-backend --host 127.0.0.1 --port 18765
 
 # Check if port is already in use
 lsof -i :18765
@@ -487,13 +487,13 @@ brew install tesseract            # macOS
 The MSI installer downloads WebView2 automatically. If it fails:
 1. Download from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
 2. Install the "Evergreen Bootstrapper"
-3. Re-run Diarilinux
+3. Re-run DailyByte
 
 ### macOS: "App is damaged and can't be opened"
 
 ```bash
 # Remove quarantine attribute
-xattr -cr /Applications/Diarilinux.app
+xattr -cr /Applications/DailyByte.app
 ```
 
 ### Build fails with "pyinstaller not found"
