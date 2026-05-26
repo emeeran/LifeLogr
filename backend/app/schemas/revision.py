@@ -1,4 +1,5 @@
 """Pydantic schemas for entry revision history."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -6,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 class RevisionResponse(BaseModel):
     """A single revision snapshot."""
+
     id: int
     entry_id: int
     revision_number: int
@@ -20,6 +22,7 @@ class RevisionResponse(BaseModel):
 
 class RevisionDiffResponse(BaseModel):
     """Diff between two revisions."""
+
     from_revision: int
     to_revision: int
     title_changed: bool
@@ -35,6 +38,7 @@ class RevisionDiffResponse(BaseModel):
 
 class RevisionListResponse(BaseModel):
     """Paginated list of revisions for an entry."""
+
     items: list[RevisionResponse]
     total: int
     offset: int

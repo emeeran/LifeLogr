@@ -1,4 +1,5 @@
 """Business logic for daily prompts."""
+
 from datetime import date
 
 from sqlalchemy import select

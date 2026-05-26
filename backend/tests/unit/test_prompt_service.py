@@ -1,4 +1,5 @@
 """Integration tests for prompts — today's prompt."""
+
 from httpx import AsyncClient
 
 

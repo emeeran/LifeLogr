@@ -1,4 +1,5 @@
 """Cloud sync service — E2E encrypted sync with provider adapters."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class SyncProvider(Protocol):
     """Interface for cloud sync providers."""
+
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str: ...
     async def download(self, path: str) -> bytes: ...
     async def list_files(self, prefix: str) -> list[str]: ...
@@ -25,6 +27,7 @@ class LocalFileProvider:
 
     def __init__(self, base_dir: str = "/tmp/diarilinux-sync") -> None:
         from pathlib import Path
+
         self._base = Path(base_dir)
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
@@ -41,9 +44,7 @@ class LocalFileProvider:
         if not self._base.exists():
             return []
         return [
-            str(p.relative_to(self._base))
-            for p in self._base.rglob(f"{prefix}*")
-            if p.is_file()
+            str(p.relative_to(self._base)) for p in self._base.rglob(f"{prefix}*") if p.is_file()
         ]
 
     async def delete(self, path: str) -> None:
@@ -61,6 +62,7 @@ class NextcloudProvider:
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
         import httpx
+
         async with httpx.AsyncClient() as client:
             resp = await client.put(
                 f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
@@ -72,6 +74,7 @@ class NextcloudProvider:
 
     async def download(self, path: str) -> bytes:
         import httpx
+
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
@@ -82,6 +85,7 @@ class NextcloudProvider:
 
     async def list_files(self, prefix: str) -> list[str]:
         import httpx
+
         async with httpx.AsyncClient() as client:
             resp = await client.request(
                 "PROPFIND",
@@ -99,6 +103,7 @@ class NextcloudProvider:
 
     async def delete(self, path: str) -> None:
         import httpx
+
         async with httpx.AsyncClient() as client:
             resp = await client.delete(
                 f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
@@ -111,11 +116,11 @@ class GoogleDriveProvider:
     """Google Drive async sync provider implementing the SyncProvider protocol."""
 
     def __init__(
-        self,
-        credentials: dict[str, str],
-        on_token_refresh: callable | None = None
+        self, credentials: dict[str, str], on_token_refresh: callable | None = None
     ) -> None:
-        self._client_id = credentials.get("client_id") or "diarilinux-client-id.apps.googleusercontent.com"
+        self._client_id = (
+            credentials.get("client_id") or "diarilinux-client-id.apps.googleusercontent.com"
+        )
         self._client_secret = credentials.get("client_secret") or "GOCSPX-diarilinux-secret"
         self._refresh_token = credentials.get("refresh_token")
         self._access_token = credentials.get("access_token")
@@ -149,10 +154,10 @@ class GoogleDriveProvider:
             )
             resp.raise_for_status()
             data = resp.json()
-            
+
             self._access_token = data["access_token"]
             self._token_expiry = str(now + data["expires_in"])
-            
+
             if self._on_token_refresh:
                 await self._on_token_refresh(self._access_token, self._token_expiry)
 
@@ -165,7 +170,7 @@ class GoogleDriveProvider:
 
         token = await self._ensure_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         # Escape path for query safely
         query = f"name = '{path}' and 'appDataFolder' in parents and trashed = false"
         url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
@@ -179,10 +184,11 @@ class GoogleDriveProvider:
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
         import json
         import httpx
+
         token = await self._ensure_valid_token()
-        
+
         file_id = await self._find_file_id(path)
-        
+
         if file_id:
             # Update existing file content
             url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
@@ -202,22 +208,19 @@ class GoogleDriveProvider:
                 "Authorization": f"Bearer {token}",
                 "Content-Type": f"multipart/related; boundary={boundary.decode()}",
             }
-            
-            metadata = {
-                "name": path,
-                "parents": ["appDataFolder"]
-            }
-            
+
+            metadata = {"name": path, "parents": ["appDataFolder"]}
+
             body = (
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                + json.dumps(metadata).encode("utf-8") + b"\r\n"
+                + json.dumps(metadata).encode("utf-8")
+                + b"\r\n"
                 b"--" + boundary + b"\r\n"
-                b"Content-Type: application/octet-stream\r\n\r\n"
-                + data + b"\r\n"
+                b"Content-Type: application/octet-stream\r\n\r\n" + data + b"\r\n"
                 b"--" + boundary + b"--\r\n"
             )
-            
+
             async with httpx.AsyncClient() as client:
                 resp = await client.post(url, headers=headers, content=body, timeout=15.0)
                 resp.raise_for_status()
@@ -225,6 +228,7 @@ class GoogleDriveProvider:
 
     async def download(self, path: str) -> bytes:
         import httpx
+
         token = await self._ensure_valid_token()
         file_id = await self._find_file_id(path)
         if not file_id:
@@ -232,7 +236,7 @@ class GoogleDriveProvider:
 
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, headers=headers, timeout=15.0)
             resp.raise_for_status()
@@ -241,13 +245,13 @@ class GoogleDriveProvider:
     async def list_files(self, prefix: str) -> list[str]:
         import httpx
         from urllib.parse import quote
-        
+
         token = await self._ensure_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         query = f"name contains '{prefix}' and 'appDataFolder' in parents and trashed = false"
         url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
-        
+
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, headers=headers, timeout=10.0)
             resp.raise_for_status()
@@ -256,6 +260,7 @@ class GoogleDriveProvider:
 
     async def delete(self, path: str) -> None:
         import httpx
+
         token = await self._ensure_valid_token()
         file_id = await self._find_file_id(path)
         if not file_id:
@@ -281,6 +286,7 @@ class MegaProvider:
         """Get or create the synchronous MEGA client."""
         if self._mega is None:
             from mega import Mega
+
             m = Mega()
             self._mega = m.login(self._email, self._password)
         return self._mega
@@ -305,10 +311,10 @@ class MegaProvider:
                     try:
                         await asyncio.to_thread(mega.create_folder, part, folder)
                     except Exception:
-                        pass  # Folder likely exists
+                        logger.debug("Folder creation skipped (likely exists): %s", part)
                     folder = folder.rstrip("/") + "/" + part
 
-            result = await asyncio.to_thread(mega.upload, tmp_path, folder, parts[-1])
+            await asyncio.to_thread(mega.upload, tmp_path, folder, parts[-1])
             return path
         finally:
             Path(tmp_path).unlink(missing_ok=True)
@@ -337,8 +343,11 @@ class MegaProvider:
         try:
             files = await asyncio.to_thread(mega.get_files)
             return [
-                f["a"]["n"] for f in files.values()
-                if isinstance(f, dict) and "a" in f and "n" in f.get("a", {})
+                f["a"]["n"]
+                for f in files.values()
+                if isinstance(f, dict)
+                and "a" in f
+                and "n" in f.get("a", {})
                 and f["a"]["n"].startswith(prefix.split("/")[-1] if "/" in prefix else prefix)
             ]
         except Exception:
@@ -350,7 +359,9 @@ class MegaProvider:
         try:
             file_info = await asyncio.to_thread(mega.find, path)
             if file_info:
-                await asyncio.to_thread(mega.delete, file_info[0] if isinstance(file_info, list) else file_info)
+                await asyncio.to_thread(
+                    mega.delete, file_info[0] if isinstance(file_info, list) else file_info
+                )
         except Exception:
             logger.warning("Failed to delete MEGA file: %s", path, exc_info=True)
 
@@ -373,6 +384,7 @@ class CloudSyncService:
 
             if passphrase:
                 from app.services.encryption_service import EncryptionService
+
                 key = EncryptionService._derive_key(passphrase)
                 data = EncryptionService._encrypt(data, key).encode()
 
@@ -392,6 +404,7 @@ class CloudSyncService:
             data = await self.provider.download(path)
             if passphrase:
                 from app.services.encryption_service import EncryptionService
+
                 key = EncryptionService._derive_key(passphrase)
                 data = EncryptionService._decrypt(data.decode(), key)
             pulled += 1

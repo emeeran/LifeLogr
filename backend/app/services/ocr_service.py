@@ -1,4 +1,5 @@
 """OCR service — extracts text from image media using Tesseract."""
+
 from __future__ import annotations
 
 import logging
@@ -108,7 +109,10 @@ class OCRService:
             from pytesseract import image_to_data
 
             data = image_to_data(image, lang=language, output_type=2)
-            confidences = [int(row.get("conf", -1)) for row in data if int(row.get("conf", -1)) >= 0]
+            confidences = [
+                int(row.get("conf", -1)) for row in data if int(row.get("conf", -1)) >= 0
+            ]
             return round(sum(confidences) / len(confidences), 2) if confidences else 0.0
         except Exception:
+            logger.warning("Failed to compute OCR confidence", exc_info=True)
             return 0.0

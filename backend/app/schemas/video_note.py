@@ -1,4 +1,5 @@
 """Pydantic schemas for video notes."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
@@ -6,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 class VideoNoteResponse(BaseModel):
     """A video note attached to an entry."""
+
     id: int
     entry_id: int
     filename: str

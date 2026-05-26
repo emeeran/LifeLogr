@@ -1,4 +1,5 @@
 """AES-256-GCM encryption/decryption for cloud provider credentials."""
+
 import base64
 import os
 

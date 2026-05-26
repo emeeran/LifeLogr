@@ -1,4 +1,5 @@
 """PluginService — install, uninstall, enable/disable, lifecycle management."""
+
 from __future__ import annotations
 
 import logging
@@ -36,25 +37,23 @@ class PluginService:
         plugin = await self.get(plugin_id)
 
         # Remove hooks from DB
-        result = await self.db.execute(
-            select(PluginHook).where(PluginHook.plugin_id == plugin_id)
-        )
+        result = await self.db.execute(select(PluginHook).where(PluginHook.plugin_id == plugin_id))
         for hook in result.scalars().all():
             # Unregister from hook manager
             try:
                 handler = hook_manager.load_handler(hook.handler_fn)
                 hook_manager.unregister(hook.hook_name, handler)
             except Exception as e:
-                logger.warning("Failed to unregister hook %s during plugin cleanup: %s", hook.hook_name, e)
+                logger.warning(
+                    "Failed to unregister hook %s during plugin cleanup: %s", hook.hook_name, e
+                )
             await self.db.delete(hook)
 
         await self.db.delete(plugin)
         await self.db.commit()
 
     async def get(self, plugin_id: int) -> Plugin:
-        result = await self.db.execute(
-            select(Plugin).where(Plugin.id == plugin_id)
-        )
+        result = await self.db.execute(select(Plugin).where(Plugin.id == plugin_id))
         plugin = result.scalar_one_or_none()
         if not plugin:
             raise NotFoundError(f"Plugin {plugin_id} not found")
@@ -80,7 +79,5 @@ class PluginService:
 
     async def get_hooks(self, plugin_id: int) -> list[PluginHook]:
         await self.get(plugin_id)  # verify exists
-        result = await self.db.execute(
-            select(PluginHook).where(PluginHook.plugin_id == plugin_id)
-        )
+        result = await self.db.execute(select(PluginHook).where(PluginHook.plugin_id == plugin_id))
         return list(result.scalars().all())

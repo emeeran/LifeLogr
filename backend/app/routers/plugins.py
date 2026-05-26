@@ -1,4 +1,5 @@
 """Plugin route handlers — install, uninstall, configure, hooks."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -15,9 +16,7 @@ router = APIRouter(prefix="/api/v1/plugins", tags=["plugins"])
 
 
 @router.post("", response_model=PluginResponse, status_code=201)
-async def install_plugin(
-    data: PluginInstall, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def install_plugin(data: PluginInstall, db: AsyncSession = Depends(get_db)) -> Any:
     """Install a new plugin."""
     svc = PluginService(db)
     return await svc.install(data)

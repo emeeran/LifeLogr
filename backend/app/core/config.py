@@ -1,4 +1,5 @@
 """Application configuration via pydantic-settings."""
+
 import os
 import sys
 from pathlib import Path
@@ -28,7 +29,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty
     MEDIA_DIR: Path = Path("")  # derived from DATA_DIR if empty
     DATA_DIR: Path = Path("")  # set by Tauri sidecar or defaults to platform dir
-    CORS_ORIGINS: str = "http://localhost:5173,tauri://localhost,https://tauri.localhost,http://127.0.0.1:18765"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,tauri://localhost,https://tauri.localhost,http://127.0.0.1:18765"
+    )
     MAX_MEDIA_SIZE_BYTES: int = 26_214_400  # 25 MB
 
     # Google OAuth 2.0 Credentials
@@ -79,6 +82,11 @@ class Settings(BaseSettings):
         if not self.MEDIA_DIR or str(self.MEDIA_DIR) == ".":
             self.MEDIA_DIR = self.DATA_DIR / "media"
         self.MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def db_path(self) -> Path:
+        """Filesystem path to the SQLite database file."""
+        return Path(str(self.DATABASE_URL).replace("sqlite+aiosqlite:///", ""))
 
     @property
     def is_production(self) -> bool:

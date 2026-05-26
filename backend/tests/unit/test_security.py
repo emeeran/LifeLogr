@@ -1,4 +1,5 @@
 """Integration tests for security — encrypt/decrypt roundtrip."""
+
 from app.core.security import decrypt, encrypt
 
 

@@ -1,4 +1,5 @@
 """Voice recording route handlers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -30,9 +31,7 @@ async def upload_recording(
 @router.get("/entry/{entry_id}", response_model=list[VoiceRecordingResponse])
 async def list_by_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """List all recordings for an entry."""
-    result = await db.execute(
-        select(VoiceRecording).where(VoiceRecording.entry_id == entry_id)
-    )
+    result = await db.execute(select(VoiceRecording).where(VoiceRecording.entry_id == entry_id))
     return result.scalars().all()
 
 

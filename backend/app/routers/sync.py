@@ -1,4 +1,5 @@
 """Sync route handlers — offline queue, status, flush."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -22,9 +23,7 @@ router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 
 
 @router.post("/enqueue", response_model=SyncQueueResponse, status_code=201)
-async def enqueue_operation(
-    data: SyncQueueRequest, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def enqueue_operation(data: SyncQueueRequest, db: AsyncSession = Depends(get_db)) -> Any:
     """Queue an operation for later sync."""
     svc = SyncService(db)
     return await svc.enqueue(data.operation, data.entity_type, data.entity_id, data.payload)
@@ -74,7 +73,6 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
     from app.models.backup import BackupConfig
     from app.core.security import decrypt, encrypt
     from app.core.exceptions import NotFoundError
-    from app.services.cloud_sync_service import LocalFileProvider
 
     if provider_name in ("local", "local_file"):
         return LocalFileProvider()
@@ -85,10 +83,10 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
         raise NotFoundError(f"Backup configuration for provider {provider_name} not found")
 
     creds = json.loads(decrypt(config.credentials_encrypted))
-    
+
     if provider_name == "google_drive":
         from app.services.cloud_sync_service import GoogleDriveProvider
-        
+
         async def on_refresh(new_access_token: str, new_expiry: str) -> None:
             creds["access_token"] = new_access_token
             creds["token_expiry"] = new_expiry
@@ -98,6 +96,7 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
         return GoogleDriveProvider(creds, on_token_refresh=on_refresh)
     elif provider_name == "webdav":
         from app.services.cloud_sync_service import NextcloudProvider
+
         return NextcloudProvider(
             base_url=creds.get("url", ""),
             username=creds.get("username", ""),
@@ -105,6 +104,7 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
         )
     elif provider_name == "mega":
         from app.services.cloud_sync_service import MegaProvider
+
         return MegaProvider(
             email=creds.get("email", ""),
             password=creds.get("password", ""),
@@ -114,9 +114,7 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
 
 
 @router.post("/cloud/push", response_model=CloudSyncResponse)
-async def cloud_push(
-    data: CloudSyncRequest, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def cloud_push(data: CloudSyncRequest, db: AsyncSession = Depends(get_db)) -> Any:
     """Push pending changes to cloud provider."""
     provider = await _get_provider(db, data.provider)
     svc = CloudSyncService(db, provider)
@@ -127,9 +125,7 @@ async def cloud_push(
 
 
 @router.post("/cloud/pull", response_model=CloudSyncResponse)
-async def cloud_pull(
-    data: CloudSyncRequest, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def cloud_pull(data: CloudSyncRequest, db: AsyncSession = Depends(get_db)) -> Any:
     """Pull changes from cloud provider."""
     provider = await _get_provider(db, data.provider)
     svc = CloudSyncService(db, provider)

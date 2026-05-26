@@ -1,4 +1,5 @@
 """Pydantic schemas for daily prompts."""
+
 from datetime import date
 
 from pydantic import BaseModel, ConfigDict

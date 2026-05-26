@@ -1,12 +1,12 @@
 """Automated backup scheduling with APScheduler and optional encryption."""
+
 from __future__ import annotations
 
-import json
 import logging
 import shutil
 import tarfile
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,6 +33,7 @@ class SchedulerService:
         global _scheduler
         if _scheduler is None:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
             _scheduler = AsyncIOScheduler()
         return _scheduler
 
@@ -52,7 +53,9 @@ class SchedulerService:
             sched.shutdown()
             logger.info("Backup scheduler stopped")
 
-    async def schedule_backup(self, cron_expr: str, backup_path: str, retention: int = 10) -> dict[str, str]:
+    async def schedule_backup(
+        self, cron_expr: str, backup_path: str, retention: int = 10
+    ) -> dict[str, str]:
         """Schedule an automated backup job.
 
         Args:
@@ -71,8 +74,11 @@ class SchedulerService:
         from apscheduler.triggers.cron import CronTrigger
 
         trigger = CronTrigger(
-            minute=parts[0], hour=parts[1], day=parts[2],
-            month=parts[3], day_of_week=parts[4],
+            minute=parts[0],
+            hour=parts[1],
+            day=parts[2],
+            month=parts[3],
+            day_of_week=parts[4],
         )
 
         # Remove existing backup job if any
@@ -114,7 +120,7 @@ class SchedulerService:
 async def _run_backup(backup_path: str, retention: int = 10) -> None:
     """Execute the backup job — creates a .tar.gz archive of DB + media."""
     from app.core.config import settings
-    from app.core.database import async_session, engine
+    from app.core.database import engine
     from sqlalchemy import text
 
     logger.info(f"Running scheduled backup to {backup_path}")
@@ -122,11 +128,10 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
     path = Path(backup_path).expanduser()
     path.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     archive_path = path / f"dailybyte-backup-{timestamp}.tar.gz"
 
-    db_url: str = settings.DATABASE_URL
-    db_file = db_url.replace("sqlite+aiosqlite:///", "")
+    db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
 
     # Checkpoint WAL for consistency
@@ -139,13 +144,13 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
     tmpdir = tempfile.mkdtemp()
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
-            if Path(db_file).exists():
-                tar.add(db_file, arcname="dev.db")
+            if db_file.exists():
+                tar.add(str(db_file), arcname="dev.db")
             if media_dir.exists():
                 tar.add(str(media_dir), arcname="media")
         logger.info(f"Backup complete: {archive_path}")
     except Exception:
-        logger.error(f"Backup failed", exc_info=True)
+        logger.error("Backup failed", exc_info=True)
         if archive_path.exists():
             archive_path.unlink(missing_ok=True)
         raise

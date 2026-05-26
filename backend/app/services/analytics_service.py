@@ -1,4 +1,5 @@
 """AnalyticsService — journal statistics and insights."""
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -31,28 +32,34 @@ class AnalyticsService:
         """High-level journal statistics."""
         base = select(Entry).where(Entry.is_deleted == False)  # noqa: E712
 
-        total = (await self.db.execute(
-            select(func.count()).select_from(base.subquery())
-        )).scalar_one()
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
 
-        words_result = (await self.db.execute(
-            select(func.sum(func.length(Entry.body) - func.length(func.replace(Entry.body, ' ', '')) + 1))
-            .where(Entry.is_deleted == False)  # noqa: E712
-        )).scalar()
+        words_result = (
+            await self.db.execute(
+                select(
+                    func.sum(
+                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
+                    )
+                ).where(Entry.is_deleted == False)  # noqa: E712
+            )
+        ).scalar()
         total_words = int(words_result or 0)
 
-        total_media = (await self.db.execute(
-            select(func.count()).select_from(Media)
-        )).scalar_one()
+        total_media = (await self.db.execute(select(func.count()).select_from(Media))).scalar_one()
 
-        total_recordings = (await self.db.execute(
-            select(func.count()).select_from(VoiceRecording)
-        )).scalar_one()
+        total_recordings = (
+            await self.db.execute(select(func.count()).select_from(VoiceRecording))
+        ).scalar_one()
 
-        date_range = (await self.db.execute(
-            select(func.min(Entry.entry_date), func.max(Entry.entry_date))
-            .where(Entry.is_deleted == False)  # noqa: E712
-        )).one()
+        date_range = (
+            await self.db.execute(
+                select(func.min(Entry.entry_date), func.max(Entry.entry_date)).where(
+                    Entry.is_deleted == False
+                )  # noqa: E712
+            )
+        ).one()
         start, end = date_range
 
         # Calculate streaks
@@ -92,24 +99,35 @@ class AnalyticsService:
         for i in range(7):
             # Convert Monday-indexed (0=Mon) to SQLite %w (0=Sun)
             sqlite_dow = (i + 1) % 7
-            responses.append(WritingHabitResponse(
-                day_of_week=i,
-                day_name=day_names[i],
-                entry_count=mapping.get(sqlite_dow, 0),
-            ))
+            responses.append(
+                WritingHabitResponse(
+                    day_of_week=i,
+                    day_name=day_names[i],
+                    entry_count=mapping.get(sqlite_dow, 0),
+                )
+            )
         return responses
 
     async def word_counts(self) -> WordCountResponse:
         """Word count statistics."""
-        rows = (await self.db.execute(
-            select(
-                func.sum(func.length(Entry.body) - func.length(func.replace(Entry.body, ' ', '')) + 1).label("total"),
-                func.avg(func.length(Entry.body) - func.length(func.replace(Entry.body, ' ', '')) + 1).label("avg"),
-                func.max(func.length(Entry.body) - func.length(func.replace(Entry.body, ' ', '')) + 1).label("longest"),
-                func.min(func.length(Entry.body) - func.length(func.replace(Entry.body, ' ', '')) + 1).label("shortest"),
+        rows = (
+            await self.db.execute(
+                select(
+                    func.sum(
+                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
+                    ).label("total"),
+                    func.avg(
+                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
+                    ).label("avg"),
+                    func.max(
+                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
+                    ).label("longest"),
+                    func.min(
+                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
+                    ).label("shortest"),
+                ).where(Entry.is_deleted == False)  # noqa: E712
             )
-            .where(Entry.is_deleted == False)  # noqa: E712
-        )).one()
+        ).one()
         return WordCountResponse(
             total_words=int(rows.total or 0),
             average_words_per_entry=round(float(rows.avg or 0), 1),
@@ -127,7 +145,10 @@ class AnalyticsService:
             .group_by(Tag.id)
             .order_by(func.count(EntryTag.entry_id).desc())
         )
-        return [TagStatsResponse(tag_id=row.id, tag_name=row.name, usage_count=row.cnt) for row in result]
+        return [
+            TagStatsResponse(tag_id=row.id, tag_name=row.name, usage_count=row.cnt)
+            for row in result
+        ]
 
     async def mood_distribution(self) -> list[MoodDistributionResponse]:
         """Mood frequency distribution."""
@@ -139,7 +160,11 @@ class AnalyticsService:
         )
         total = sum(row.cnt for row in result)
         return [
-            MoodDistributionResponse(mood=row.mood, count=row.cnt, percentage=round(row.cnt / total * 100, 1) if total else 0)
+            MoodDistributionResponse(
+                mood=row.mood,
+                count=row.cnt,
+                percentage=round(row.cnt / total * 100, 1) if total else 0,
+            )
             for row in result
         ]
 
@@ -165,21 +190,25 @@ class AnalyticsService:
 
     async def media_stats(self) -> MediaStatsResponse:
         """Media usage statistics."""
-        images = (await self.db.execute(
-            select(func.count()).select_from(Media).where(Media.media_type == "image")
-        )).scalar_one()
+        images = (
+            await self.db.execute(
+                select(func.count()).select_from(Media).where(Media.media_type == "image")
+            )
+        ).scalar_one()
 
-        videos = (await self.db.execute(
-            select(func.count()).select_from(Media).where(Media.media_type == "video")
-        )).scalar_one()
+        videos = (
+            await self.db.execute(
+                select(func.count()).select_from(Media).where(Media.media_type == "video")
+            )
+        ).scalar_one()
 
-        recordings = (await self.db.execute(
-            select(func.count()).select_from(VoiceRecording)
-        )).scalar_one()
+        recordings = (
+            await self.db.execute(select(func.count()).select_from(VoiceRecording))
+        ).scalar_one()
 
-        total_size = (await self.db.execute(
-            select(func.coalesce(func.sum(Media.file_size), 0))
-        )).scalar_one()
+        total_size = (
+            await self.db.execute(select(func.coalesce(func.sum(Media.file_size), 0)))
+        ).scalar_one()
 
         return MediaStatsResponse(
             total_images=images,

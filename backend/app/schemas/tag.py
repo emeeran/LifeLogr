@@ -1,4 +1,5 @@
 """Pydantic schemas for tags."""
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

@@ -1,4 +1,5 @@
 """Shared fixtures for integration tests — real async SQLite + FastAPI test client."""
+
 import os
 import tempfile
 from collections.abc import AsyncGenerator

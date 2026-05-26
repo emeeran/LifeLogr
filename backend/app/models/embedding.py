@@ -1,4 +1,5 @@
 """EntryEmbedding ORM model — stores vector embeddings for semantic search."""
+
 from __future__ import annotations
 
 from datetime import datetime

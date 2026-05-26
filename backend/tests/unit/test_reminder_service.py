@@ -1,14 +1,18 @@
 """Integration tests for reminders — CRUD."""
+
 from httpx import AsyncClient
 
 
 async def _create_reminder(client: AsyncClient):
-    r = await client.post("/api/v1/reminders", json={
-        "title": "Evening journal",
-        "message": "Write!",
-        "reminder_time": "21:00:00",
-        "days_of_week": "0,1,2,3,4",
-    })
+    r = await client.post(
+        "/api/v1/reminders",
+        json={
+            "title": "Evening journal",
+            "message": "Write!",
+            "reminder_time": "21:00:00",
+            "days_of_week": "0,1,2,3,4",
+        },
+    )
     assert r.status_code == 201
     return r.json()
 

@@ -1,4 +1,5 @@
 """Reminder route handlers — CRUD and test notification."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,9 +15,7 @@ router = APIRouter(prefix="/api/v1/reminders", tags=["reminders"])
 
 
 @router.post("", response_model=ReminderResponse, status_code=201)
-async def create_reminder(
-    data: ReminderCreate, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def create_reminder(data: ReminderCreate, db: AsyncSession = Depends(get_db)) -> Any:
     """Create a new journaling reminder."""
     svc = ReminderService(db)
     return await svc.create(data)

@@ -1,9 +1,10 @@
 """Ollama API client for AI text assistance, embeddings, and analysis."""
+
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import settings
@@ -31,8 +32,13 @@ class OllamaService:
         self.model = settings.OLLAMA_MODEL
         self.timeout = settings.OLLAMA_TIMEOUT_SECONDS
 
-    async def _generate(self, prompt: str, model: str | None = None, num_predict: int = 2048,
-                        temperature: float | None = None) -> str:
+    async def _generate(
+        self,
+        prompt: str,
+        model: str | None = None,
+        num_predict: int = 2048,
+        temperature: float | None = None,
+    ) -> str:
         """Send a generate request to Ollama and return the response text."""
         import httpx
 
@@ -85,11 +91,11 @@ class OllamaService:
             misspellings=parsed.suggestions,
         )
 
-    async def rewrite(self, text: str, style: str, instructions: str | None = None) -> RewriteResponse:
+    async def rewrite(
+        self, text: str, style: str, instructions: str | None = None
+    ) -> RewriteResponse:
         """Rewrite text in the specified style."""
-        prompt = (
-            f"Rewrite the following text in a {style} style."
-        )
+        prompt = f"Rewrite the following text in a {style} style."
         if instructions:
             prompt += f" Additional instructions: {instructions}"
         prompt += f"\n\nOriginal text:\n{text}\n\nReturn ONLY the rewritten text, nothing else."
@@ -103,7 +109,7 @@ class OllamaService:
 
         # Use cached status if fresh
         if _cached_status and _last_status_check:
-            elapsed = (datetime.now() - _last_status_check).total_seconds()
+            elapsed = (datetime.now(timezone.utc) - _last_status_check).total_seconds()
             if elapsed < _STATUS_CACHE_TTL_SECONDS:
                 return _cached_status
 
@@ -122,7 +128,9 @@ class OllamaService:
                     model_name=self.model,
                     model_loaded=model_loaded,
                     model_names=models,
-                    error=None if model_loaded else f"Model '{self.model}' not found. Available: {models}",
+                    error=None
+                    if model_loaded
+                    else f"Model '{self.model}' not found. Available: {models}",
                 )
         except Exception as exc:
             result = AIStatusResponse(
@@ -133,7 +141,7 @@ class OllamaService:
                 error=f"Cannot connect to Ollama: {exc}",
             )
 
-        _last_status_check = datetime.now()
+        _last_status_check = datetime.now(timezone.utc)
         _cached_status = result
         return result
 
@@ -156,19 +164,19 @@ class OllamaService:
     async def analyze_entry(self, text: str) -> dict[str, Any] | None:
         """Combined analysis: sentiment + summary + reflection prompts in one LLM call."""
         prompt = (
-            'Analyze this journal entry. Return ONLY a valid JSON object with this exact structure:\n'
+            "Analyze this journal entry. Return ONLY a valid JSON object with this exact structure:\n"
             '{"sentiment": {"primary_emotion": "...", "secondary_emotion": "...", '
             '"intensity": 5, "valence": 0.0}, '
             '"summary": "A 1-2 sentence summary of the entry.", '
             '"reflection_prompts": ["Question 1?", "Question 2?", "Question 3?"]}\n\n'
-            'Guidelines:\n'
-            '- primary_emotion: one of joy, sadness, anger, fear, surprise, disgust, neutral, anxiety, gratitude, hope, nostalgia, frustration, contentment, excitement\n'
-            '- secondary_emotion: optional, same set\n'
-            '- intensity: 1-10 (how strong the emotion is)\n'
-            '- valence: -1.0 (very negative) to 1.0 (very positive)\n'
-            '- summary: concise, capture the key point\n'
-            '- reflection_prompts: 3 thought-provoking questions to help the writer reflect deeper\n\n'
-            f'Entry:\n{text[:3000]}'
+            "Guidelines:\n"
+            "- primary_emotion: one of joy, sadness, anger, fear, surprise, disgust, neutral, anxiety, gratitude, hope, nostalgia, frustration, contentment, excitement\n"
+            "- secondary_emotion: optional, same set\n"
+            "- intensity: 1-10 (how strong the emotion is)\n"
+            "- valence: -1.0 (very negative) to 1.0 (very positive)\n"
+            "- summary: concise, capture the key point\n"
+            "- reflection_prompts: 3 thought-provoking questions to help the writer reflect deeper\n\n"
+            f"Entry:\n{text[:3000]}"
         )
         raw = await self._generate(prompt, temperature=0.3)
         result = self._parse_json_response(raw)
@@ -182,11 +190,11 @@ class OllamaService:
         """Suggest relevant tags for a journal entry."""
         existing = ", ".join(existing_tags) if existing_tags else "none"
         prompt = (
-            f'Given this journal entry, suggest 3-5 relevant tags.\n'
-            f'Existing tags to reuse where appropriate: [{existing}]\n'
+            f"Given this journal entry, suggest 3-5 relevant tags.\n"
+            f"Existing tags to reuse where appropriate: [{existing}]\n"
             f'Tags should be lowercase, use hyphens for multi-word (e.g. "work-life").\n'
             f'Return ONLY a JSON array of strings, e.g. ["tag1", "tag2", "tag3"]\n\n'
-            f'Entry:\n{text[:2000]}'
+            f"Entry:\n{text[:2000]}"
         )
         raw = await self._generate(prompt, temperature=0.2)
         result = self._parse_json_response(raw)
@@ -199,9 +207,9 @@ class OllamaService:
     async def continue_writing(self, text: str) -> str:
         """Generate a short continuation suggestion for writer's block."""
         prompt = (
-            'Continue this journal entry with 1-3 sentences that naturally follow. '
-            'Write in the same voice and style. Return ONLY the continuation text, nothing else.\n\n'
-            f'So far:\n{text[-1000:]}'
+            "Continue this journal entry with 1-3 sentences that naturally follow. "
+            "Write in the same voice and style. Return ONLY the continuation text, nothing else.\n\n"
+            f"So far:\n{text[-1000:]}"
         )
         result = await self._generate(prompt, temperature=0.7, num_predict=256)
         return result.strip()
@@ -211,10 +219,10 @@ class OllamaService:
     async def reflect_on_past(self, entries_text: str, years_ago: int) -> str:
         """Generate a warm reflection on past entries from the same date."""
         prompt = (
-            f'Look at these journal entries written {years_ago} year(s) ago. '
-            f'Write a brief, warm reflection (2-3 sentences) about what the person was experiencing '
-            f'and how they might have grown since then. Be thoughtful and encouraging.\n\n'
-            f'Past entries:\n{entries_text[:2000]}'
+            f"Look at these journal entries written {years_ago} year(s) ago. "
+            f"Write a brief, warm reflection (2-3 sentences) about what the person was experiencing "
+            f"and how they might have grown since then. Be thoughtful and encouraging.\n\n"
+            f"Past entries:\n{entries_text[:2000]}"
         )
         result = await self._generate(prompt, temperature=0.6)
         return result.strip()
@@ -228,7 +236,7 @@ class OllamaService:
             sections.append(f"{month}: " + " | ".join(summaries[:10]))
 
         prompt = (
-            'Analyze these monthly journal summaries and identify 3-5 recurring themes. '
+            "Analyze these monthly journal summaries and identify 3-5 recurring themes. "
             'Return ONLY a JSON array of objects: [{"theme": "...", "frequency": "monthly|weekly|occasional", '
             '"months_mentioned": ["Jan 2026", ...], "insight": "Brief observation"}]\n\n'
             + "\n".join(sections[:20])
@@ -244,9 +252,9 @@ class OllamaService:
     async def summarize(self, text: str) -> str:
         """Summarize the given text concisely."""
         prompt = (
-            'Summarize the following journal entry in 2-3 concise sentences. '
-            'Capture the key points and emotions. Return ONLY the summary text, nothing else.\n\n'
-            f'Text:\n{text[:3000]}'
+            "Summarize the following journal entry in 2-3 concise sentences. "
+            "Capture the key points and emotions. Return ONLY the summary text, nothing else.\n\n"
+            f"Text:\n{text[:3000]}"
         )
         result = await self._generate(prompt, temperature=0.3, num_predict=512)
         return result.strip()
@@ -254,10 +262,10 @@ class OllamaService:
     async def expand(self, text: str) -> str:
         """Expand and elaborate on the given text."""
         prompt = (
-            'Expand and elaborate on the following text, adding more detail, sensory descriptions, '
-            'and emotional depth while maintaining the same voice and style. '
-            'Return ONLY the expanded text, nothing else.\n\n'
-            f'Text:\n{text[:2000]}'
+            "Expand and elaborate on the following text, adding more detail, sensory descriptions, "
+            "and emotional depth while maintaining the same voice and style. "
+            "Return ONLY the expanded text, nothing else.\n\n"
+            f"Text:\n{text[:2000]}"
         )
         result = await self._generate(prompt, temperature=0.7, num_predict=2048)
         return result.strip()
@@ -265,10 +273,10 @@ class OllamaService:
     async def change_tone(self, text: str, tone: str) -> str:
         """Rewrite text in a different tone."""
         prompt = (
-            f'Rewrite the following text in a {tone} tone. '
-            f'Keep the same meaning and content but adjust the style and word choice. '
-            f'Return ONLY the rewritten text, nothing else.\n\n'
-            f'Text:\n{text[:3000]}'
+            f"Rewrite the following text in a {tone} tone. "
+            f"Keep the same meaning and content but adjust the style and word choice. "
+            f"Return ONLY the rewritten text, nothing else.\n\n"
+            f"Text:\n{text[:3000]}"
         )
         result = await self._generate(prompt, temperature=0.5, num_predict=2048)
         return result.strip()
@@ -276,10 +284,10 @@ class OllamaService:
     async def translate(self, text: str, language: str) -> str:
         """Translate text to the specified language."""
         prompt = (
-            f'Translate the following text to {language}. '
-            f'Preserve the meaning, tone, and formatting. '
-            f'Return ONLY the translated text, nothing else.\n\n'
-            f'Text:\n{text[:3000]}'
+            f"Translate the following text to {language}. "
+            f"Preserve the meaning, tone, and formatting. "
+            f"Return ONLY the translated text, nothing else.\n\n"
+            f"Text:\n{text[:3000]}"
         )
         result = await self._generate(prompt, temperature=0.3, num_predict=2048)
         return result.strip()
@@ -337,4 +345,6 @@ class OllamaService:
             )
         except (json.JSONDecodeError, KeyError) as exc:
             logger.warning("Failed to parse Ollama grammar response: %s", exc)
-            return GrammarCheckResponse(original_text=original, corrected_text=original, suggestions=[])
+            return GrammarCheckResponse(
+                original_text=original, corrected_text=original, suggestions=[]
+            )

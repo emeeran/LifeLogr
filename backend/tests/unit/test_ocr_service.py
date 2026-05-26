@@ -1,4 +1,5 @@
 """Integration tests for OCR — cached results via real DB, mocked Tesseract."""
+
 from datetime import date
 
 import pytest
@@ -15,8 +16,13 @@ async def _make_media(db: AsyncSession, media_type="image/png") -> Media:
     entry = Entry(entry_date=date(2026, 5, 1), body="test")
     db.add(entry)
     await db.flush()
-    m = Media(entry_id=entry.id, filename="test.png", media_type=media_type,
-              file_size=100, storage_path="test.png")
+    m = Media(
+        entry_id=entry.id,
+        filename="test.png",
+        media_type=media_type,
+        file_size=100,
+        storage_path="test.png",
+    )
     db.add(m)
     await db.commit()
     await db.refresh(m)

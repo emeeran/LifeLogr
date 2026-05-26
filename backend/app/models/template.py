@@ -1,4 +1,5 @@
 """ORM model for entry templates."""
+
 from __future__ import annotations
 
 from sqlalchemy import Boolean, DateTime, String, func

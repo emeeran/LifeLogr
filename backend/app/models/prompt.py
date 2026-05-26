@@ -1,4 +1,5 @@
 """DailyPrompt ORM model."""
+
 from datetime import date
 
 from sqlalchemy import Date, String

@@ -1,4 +1,5 @@
 """DigestService — weekly AI-generated journal summaries."""
+
 from __future__ import annotations
 
 import json
@@ -26,11 +27,13 @@ class DigestService:
 
         # Load entries for the week
         result = await self.db.execute(
-            select(Entry).where(
+            select(Entry)
+            .where(
                 ~Entry.is_deleted,
                 Entry.entry_date >= week_start,
                 Entry.entry_date <= week_end,
-            ).order_by(Entry.entry_date)
+            )
+            .order_by(Entry.entry_date)
         )
         entries = list(result.scalars().all())
 
@@ -51,7 +54,9 @@ class DigestService:
             select(EntrySentiment).where(EntrySentiment.entry_id.in_(entry_ids))
         )
         for sent in sent_result.scalars().all():
-            sentiments.append(f"{sent.primary_emotion} (intensity: {sent.intensity}, valence: {sent.valence:.1f})")
+            sentiments.append(
+                f"{sent.primary_emotion} (intensity: {sent.intensity}, valence: {sent.valence:.1f})"
+            )
 
         # Reduce: send to LLM
         ollama = OllamaService()
@@ -69,14 +74,16 @@ class DigestService:
         analysis = parsed if isinstance(parsed, dict) else None
 
         themes = json.dumps(analysis.get("themes", [])) if analysis else "[]"
-        trajectory = analysis.get("emotional_trajectory", "No trajectory data") if analysis else "No data"
+        trajectory = (
+            analysis.get("emotional_trajectory", "No trajectory data") if analysis else "No data"
+        )
         moments = json.dumps(analysis.get("notable_moments", [])) if analysis else "[]"
-        summary_text = analysis.get("summary_text", "Weekly digest generated.") if analysis else "Digest"
+        summary_text = (
+            analysis.get("summary_text", "Weekly digest generated.") if analysis else "Digest"
+        )
 
         # Delete existing digest for this week if any
-        existing = await self.db.execute(
-            select(Digest).where(Digest.week_start == week_start)
-        )
+        existing = await self.db.execute(select(Digest).where(Digest.week_start == week_start))
         old = existing.scalar_one_or_none()
         if old:
             await self.db.delete(old)

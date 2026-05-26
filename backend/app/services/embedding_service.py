@@ -1,4 +1,5 @@
 """EmbeddingService — CRUD and similarity search for entry embeddings."""
+
 from __future__ import annotations
 
 import json
@@ -32,8 +33,9 @@ class EmbeddingService:
 
         # Load all embeddings except the target
         result = await self.db.execute(
-            select(EntryEmbedding.entry_id, EntryEmbedding.embedding)
-            .where(EntryEmbedding.entry_id != entry_id)
+            select(EntryEmbedding.entry_id, EntryEmbedding.embedding).where(
+                EntryEmbedding.entry_id != entry_id
+            )
         )
         similarities = []
         for row in result:
@@ -54,7 +56,5 @@ class EmbeddingService:
 
     async def delete_embedding(self, entry_id: int) -> None:
         """Delete an entry's embedding."""
-        await self.db.execute(
-            delete(EntryEmbedding).where(EntryEmbedding.entry_id == entry_id)
-        )
+        await self.db.execute(delete(EntryEmbedding).where(EntryEmbedding.entry_id == entry_id))
         await self.db.commit()

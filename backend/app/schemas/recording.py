@@ -1,4 +1,5 @@
 """Pydantic schemas for voice recordings."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict

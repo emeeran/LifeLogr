@@ -1,4 +1,5 @@
 """Pydantic schemas for plugin management."""
+
 import re
 from datetime import datetime
 
@@ -7,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 def _validate_dotted_path(v: str) -> str:
     """Ensure entry_point is a safe Python dotted path (module[.path][:function])."""
-    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_.]*(?::[a-zA-Z_][a-zA-Z0-9_]*)?$', v):
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_.]*(?::[a-zA-Z_][a-zA-Z0-9_]*)?$", v):
         raise ValueError(
             "entry_point must be in 'module.path' or 'module.path:function' format "
             "(alphanumeric, underscores, dots only)"
@@ -23,6 +24,7 @@ def _validate_dotted_path(v: str) -> str:
 
 class PluginInstall(BaseModel):
     """Install a new plugin."""
+
     name: str = Field(max_length=100)
     version: str = Field(max_length=20)
     description: str | None = Field(default=None, max_length=500)
@@ -36,6 +38,7 @@ class PluginInstall(BaseModel):
 
 class PluginResponse(BaseModel):
     """An installed plugin."""
+
     id: int
     name: str
     version: str
@@ -49,6 +52,7 @@ class PluginResponse(BaseModel):
 
 class PluginHookResponse(BaseModel):
     """A registered plugin hook."""
+
     id: int
     plugin_id: int
     hook_name: str

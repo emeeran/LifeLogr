@@ -1,4 +1,5 @@
 """Business logic for entry templates."""
+
 from __future__ import annotations
 
 from sqlalchemy import select

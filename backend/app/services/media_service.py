@@ -1,4 +1,5 @@
 """Business logic for media attachments."""
+
 import io
 import logging
 import uuid
@@ -27,7 +28,14 @@ _BLOCKED_SIGNATURES: dict[bytes, str] = {
 _ALLOWED_MIME_PREFIXES = {"image/", "video/", "audio/", "application/pdf", "text/"}
 
 # Image types that can be converted to WebP
-_CONVERTIBLE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp", "image/tiff"}
+_CONVERTIBLE_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+    "image/bmp",
+    "image/tiff",
+}
 
 # Max dimension for image resizing
 _MAX_IMAGE_DIMENSION = 2048
@@ -55,7 +63,7 @@ class MediaService:
 
         # Check magic numbers for dangerous content
         for sig, label in _BLOCKED_SIGNATURES.items():
-            if file_data[:len(sig)] == sig:
+            if file_data[: len(sig)] == sig:
                 logger.warning("Blocked upload of %s (detected %s)", filename, label)
                 raise MediaSizeError(f"File type not allowed: detected {label}")
 
@@ -109,6 +117,7 @@ class MediaService:
             # Strip EXIF orientation and convert to RGB if needed
             if hasattr(img, "transpose"):
                 from PIL import ImageOps
+
                 img = ImageOps.exif_transpose(img)
 
             # Resize if larger than max dimension
@@ -129,7 +138,8 @@ class MediaService:
             if len(compressed) < len(file_data):
                 logger.info(
                     "Image compressed to WebP: %d -> %d bytes (%.1f%% reduction)",
-                    len(file_data), len(compressed),
+                    len(file_data),
+                    len(compressed),
                     (1 - len(compressed) / len(file_data)) * 100,
                 )
                 return compressed, True

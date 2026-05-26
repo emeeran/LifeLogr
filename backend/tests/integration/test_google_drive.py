@@ -1,13 +1,13 @@
 """Integration tests for Google Drive backup, sync, and OAuth features."""
+
 import json
 import time
 import pytest
 import respx
 import httpx
-from unittest.mock import AsyncMock, patch
 
 from app.core.security import encrypt, decrypt
-from app.models.backup import BackupConfig, BackupSnapshot
+from app.models.backup import BackupConfig
 from app.services.cloud_sync_service import GoogleDriveProvider
 from app.services.backup_service import BackupService
 
@@ -41,7 +41,7 @@ async def test_ensure_valid_token_refreshes():
         "refresh_token": "refresh-token",
         "token_expiry": str(time.time() - 10),  # Expired
     }
-    
+
     # Mock refresh endpoint
     respx.post("https://oauth2.googleapis.com/token").mock(
         return_value=httpx.Response(
@@ -49,11 +49,12 @@ async def test_ensure_valid_token_refreshes():
             json={
                 "access_token": "new-access-token",
                 "expires_in": 3600,
-            }
+            },
         )
     )
 
     refresh_called = False
+
     async def mock_refresh(new_token, new_expiry):
         nonlocal refresh_called
         refresh_called = True
@@ -61,7 +62,7 @@ async def test_ensure_valid_token_refreshes():
 
     provider = GoogleDriveProvider(creds, on_token_refresh=mock_refresh)
     token = await provider._ensure_valid_token()
-    
+
     assert token == "new-access-token"
     assert refresh_called is True
 
@@ -75,12 +76,12 @@ async def test_google_drive_provider_upload_create():
         "token_expiry": str(time.time() + 1000),
     }
     provider = GoogleDriveProvider(creds)
-    
+
     # Mock file lookup (no files found)
-    respx.get(url__contains="googleapis.com/drive/v3/files").mock(
+    respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
         return_value=httpx.Response(200, json={"files": []})
     )
-    
+
     # Mock file upload
     respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart").mock(
         return_value=httpx.Response(200, json={"id": "new-file-id"})
@@ -99,16 +100,18 @@ async def test_google_drive_provider_upload_update():
         "token_expiry": str(time.time() + 1000),
     }
     provider = GoogleDriveProvider(creds)
-    
+
     # Mock file lookup (find existing file)
-    respx.get(url__contains="googleapis.com/drive/v3/files").mock(
-        return_value=httpx.Response(200, json={"files": [{"id": "existing-file-id", "name": "test-file.json"}]})
+    respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
+        return_value=httpx.Response(
+            200, json={"files": [{"id": "existing-file-id", "name": "test-file.json"}]}
+        )
     )
-    
+
     # Mock file patch upload
-    respx.patch("https://www.googleapis.com/upload/drive/v3/files/existing-file-id?uploadType=media").mock(
-        return_value=httpx.Response(200, json={"id": "existing-file-id"})
-    )
+    respx.patch(
+        "https://www.googleapis.com/upload/drive/v3/files/existing-file-id?uploadType=media"
+    ).mock(return_value=httpx.Response(200, json={"id": "existing-file-id"}))
 
     result = await provider.upload("test-file.json", b"new-file-data")
     assert result == "test-file.json"
@@ -123,12 +126,12 @@ async def test_google_drive_provider_download():
         "token_expiry": str(time.time() + 1000),
     }
     provider = GoogleDriveProvider(creds)
-    
-    # Mock file lookup
-    respx.get(url__contains="googleapis.com/drive/v3/files").mock(
-        return_value=httpx.Response(200, json={"files": [{"id": "file-id"}]})
-    )
-    
+
+    # Mock file lookup (matches only the search endpoint with query params)
+    respx.get(
+        url__regex=r"https://www\.googleapis\.com/drive/v3/files\?.*spaces=appDataFolder"
+    ).mock(return_value=httpx.Response(200, json={"files": [{"id": "file-id"}]}))
+
     # Mock download contents
     respx.get("https://www.googleapis.com/drive/v3/files/file-id?alt=media").mock(
         return_value=httpx.Response(200, content=b"downloaded-bytes")
@@ -161,7 +164,7 @@ async def test_oauth_callback_endpoint(client, db_session):
                 "access_token": "returned-access-token",
                 "refresh_token": "returned-refresh-token",
                 "expires_in": 3600,
-            }
+            },
         )
     )
 
@@ -171,10 +174,13 @@ async def test_oauth_callback_endpoint(client, db_session):
 
     # Verify BackupConfig is saved in database
     from sqlalchemy import select
-    res = await db_session.execute(select(BackupConfig).where(BackupConfig.provider == "google_drive"))
+
+    res = await db_session.execute(
+        select(BackupConfig).where(BackupConfig.provider == "google_drive")
+    )
     config = res.scalar_one()
     assert config is not None
-    
+
     creds = json.loads(decrypt(config.credentials_encrypted))
     assert creds["access_token"] == "returned-access-token"
     assert creds["refresh_token"] == "returned-refresh-token"
@@ -191,7 +197,7 @@ async def test_oauth_callback_endpoint_missing_refresh_token(client, db_session)
             json={
                 "access_token": "returned-access-token",
                 "expires_in": 3600,
-            }
+            },
         )
     )
 
@@ -221,7 +227,7 @@ async def test_backup_service_run_backup_gdrive(db_session):
     await db_session.refresh(config)
 
     # Mock Google Drive provider operations
-    respx.get(url__contains="googleapis.com/drive/v3/files").mock(
+    respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
         return_value=httpx.Response(200, json={"files": []})
     )
     respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart").mock(
