@@ -36,6 +36,8 @@ Thumbs.db
 
 # DB & data
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 *.diary
 media/
