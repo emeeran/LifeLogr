@@ -1,4 +1,4 @@
-# diary
+# DailyByte
 
 > Generated with the SDD Bootstrap script.
 

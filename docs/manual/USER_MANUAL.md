@@ -1,4 +1,4 @@
-# Diarilinux — User Manual
+# DailyByte — User Manual
 
 > Privacy-first, offline-first daily journaling for Linux, Windows, macOS, Android, and iOS.
 
@@ -51,8 +51,8 @@
 **Option A — Run from source (developers)**
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/diarilinux.git
-cd diarilinux
+git clone https://github.com/your-org/dailybyte.git
+cd dailybyte
 
 # Launch both frontend and backend
 chmod +x dev.sh
@@ -62,7 +62,7 @@ chmod +x dev.sh
 The `dev.sh` script automatically finds available ports and starts both the FastAPI backend and Vite frontend. Press `Ctrl+C` to stop both servers.
 
 **Option B — Pre-built package**
-- **Linux**: Download the `.AppImage` or `.deb` file from releases. AppImages run without installation. DEB packages install via `sudo dpkg -i diarilinux_*.deb`.
+- **Linux**: Download the `.AppImage` or `.deb` file from releases. AppImages run without installation. DEB packages install via `sudo dpkg -i dailybyte_*.deb`.
 - **Windows**: Download the `.msi` installer and run it.
 - **macOS**: Download the `.dmg` file, drag to Applications.
 
@@ -79,7 +79,7 @@ docker compose up -d
 
 ### First Launch
 
-When you first open Diarilinux:
+When you first open DailyByte:
 
 1. The **calendar view** loads showing the current month
 2. A **new entry** is automatically opened in the right panel
@@ -90,7 +90,7 @@ When you first open Diarilinux:
 
 ## 2. Interface Overview
 
-Diarilinux uses a three-panel layout:
+DailyByte uses a three-panel layout:
 
 ```
 ┌──────────┬──────────────────┬─────────────────────┐
@@ -196,7 +196,7 @@ Toggle between edit and preview mode to see how your markdown renders. The previ
 
 ### Switching Entries
 
-If you have unsaved changes and try to switch to another entry, Diarilinux shows a **save prompt** with three options:
+If you have unsaved changes and try to switch to another entry, DailyByte shows a **save prompt** with three options:
 - **Save** — save current changes, then switch
 - **Discard** — discard changes, then switch
 - **Cancel** — stay on the current entry
@@ -209,7 +209,7 @@ Templates let you pre-fill new entries with structured content.
 
 ### Built-in Templates
 
-Diarilinux includes four built-in templates:
+DailyByte includes four built-in templates:
 
 | Template | Structure |
 |----------|-----------|
@@ -282,7 +282,7 @@ Tags support parent-child relationships:
 
 ## 6. Markdown Guide
 
-Diarilinux supports full **GitHub Flavored Markdown (GFM)**.
+DailyByte supports full **GitHub Flavored Markdown (GFM)**.
 
 ### Basic Formatting
 
@@ -527,7 +527,7 @@ After recording (or uploading an audio file):
 
 ## 12. AI Writing Assistant
 
-Diarilinux integrates with **Ollama** for local AI-powered writing assistance and intelligence features. All processing happens on your machine — no data is sent to external servers.
+DailyByte integrates with **Ollama** for local AI-powered writing assistance and intelligence features. All processing happens on your machine — no data is sent to external servers.
 
 ### Prerequisites
 
@@ -566,7 +566,7 @@ Stuck writing? Click the **lightbulb button** in the editor toolbar. The AI gene
 
 ### Automatic AI Analysis (Enrichment Pipeline)
 
-Every time you save an entry, Diarilinux runs AI analysis in the background. This is non-blocking — your save completes instantly, and analysis runs afterward.
+Every time you save an entry, DailyByte runs AI analysis in the background. This is non-blocking — your save completes instantly, and analysis runs afterward.
 
 #### Sentiment Analysis
 Each entry is analyzed for emotional content:
@@ -743,14 +743,14 @@ AI-detected patterns across your journaling. Shows themes that appear across mul
 
 When a reminder triggers:
 - A system notification appears with the title and message
-- Clicking the notification opens Diarilinux
+- Clicking the notification opens DailyByte
 - Reminders only fire while the app is running
 
 ---
 
 ## 16. Version History
 
-Diarilinux automatically saves revision snapshots of your entries.
+DailyByte automatically saves revision snapshots of your entries.
 
 ### Viewing History
 
@@ -852,7 +852,7 @@ After importing, run **"Deduplicate"** from Settings to find and remove duplicat
 
 ### Cloud Backup
 
-Diarilinux supports multiple cloud storage providers:
+DailyByte supports multiple cloud storage providers:
 
 | Provider | Protocol |
 |----------|----------|
@@ -979,7 +979,7 @@ Access settings via the **gear icon** in the sidebar.
 
 ## 22. Plugins
 
-Diarilinux supports a plugin architecture for extending functionality.
+DailyByte supports a plugin architecture for extending functionality.
 
 ### Installing a Plugin
 
@@ -1057,9 +1057,10 @@ If you see database errors:
 
 | Platform | Database | Media |
 |----------|----------|-------|
-| Linux | `~/.local/share/diarilinux/diarilinux.db` | `~/.local/share/diarilinux/media/` |
-| Windows | `%APPDATA%\diarilinux\diarilinux.db` | `%APPDATA%\diarilinux\media\` |
-| macOS | `~/Library/Application Support/diarilinux/diarilinux.db` | `~/Library/Application Support/diarilinux/media/` |
+| Linux (Tauri) | `~/.local/share/com.dailybyte.desktop/dailybyte.db` | `~/.local/share/com.dailybyte.desktop/media/` |
+| Linux (dev) | `~/.local/share/diarilinux/diarilinux.db` | `~/.local/share/diarilinux/media/` |
+| Windows | `%APPDATA%\dailybyte\dailybyte.db` | `%APPDATA%\dailybyte\media\` |
+| macOS | `~/Library/Application Support/dailybyte/dailybyte.db` | `~/Library/Application Support/dailybyte/media/` |
 | Dev mode | `./dev.db` | `./media/` |
 
 ### Getting Help
@@ -1074,7 +1075,7 @@ If you see database errors:
 
 ```
 ╔══════════════════════════════════════════════════╗
-║              DIARILINUX QUICK REFERENCE          ║
+║              DAILYBYTE QUICK REFERENCE           ║
 ╠══════════════════════════════════════════════════╣
 ║                                                  ║
 ║  NAVIGATION                                      ║

@@ -1,6 +1,6 @@
-# Diarilinux — API Reference
+# DailyByte — API Reference
 
-> REST API documentation for the Diarilinux backend (FastAPI).
+> REST API documentation for the DailyByte backend (FastAPI).
 
 Base URL: `http://localhost:8000/api/v1`
 
@@ -32,7 +32,7 @@ Base URL: `http://localhost:8000/api/v1`
 
 ## Authentication
 
-Currently, Diarilinux runs locally without authentication. In production deployments behind a reverse proxy, add authentication at the proxy layer.
+Currently, DailyByte runs locally without authentication. In production deployments behind a reverse proxy, add authentication at the proxy layer.
 
 **Rate Limiting:** 60 requests per minute per IP (in-memory).
 
