@@ -12,9 +12,12 @@ import { useLocalStorage } from '@vueuse/core'
 import {
   Cloud, RefreshCw, RotateCcw, Plus, Trash2,
   Download, Upload, AlertTriangle, CheckCircle2,
-  Loader, FileUp, Database, Copy
+  Loader, FileUp, Database, Copy, HardDrive
 } from 'lucide-vue-next'
 import ConfirmDialog from '../../common/ConfirmDialog.vue'
+import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
+import SkeletonCard from '../shared/SkeletonCard.vue'
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
 
@@ -180,9 +183,7 @@ async function startGoogleDriveAuth() {
     window.open(res.auth_url, '_blank')
     emit('toast', 'info', 'Opening Google Authentication in browser...')
     showCreate.value = false
-    setTimeout(async () => {
-      await backup.fetchConfigs()
-    }, 6000)
+    setTimeout(async () => { await backup.fetchConfigs() }, 6000)
   } catch (e: unknown) {
     emit('toast', 'error', `Google auth initiation failed: ${errMsg(e)}`)
   }
@@ -270,9 +271,7 @@ const autoBackupTime = computed({
     }
     return '02:00'
   },
-  set: (val: string) => {
-    autoBackupFrequency.value = timeToCron(val, autoBackupFreqType.value)
-  }
+  set: (val: string) => { autoBackupFrequency.value = timeToCron(val, autoBackupFreqType.value) }
 })
 const autoBackupFreqType = computed({
   get: (): string => {
@@ -283,15 +282,12 @@ const autoBackupFreqType = computed({
     }
     return 'daily'
   },
-  set: (val: string) => {
-    autoBackupFrequency.value = timeToCron(autoBackupTime.value, val)
-  }
+  set: (val: string) => { autoBackupFrequency.value = timeToCron(autoBackupTime.value, val) }
 })
 
 function timeToCron(time: string, freq: string): string {
   const [h, m] = time.split(':').map(Number)
-  const hh = isNaN(h) ? 2 : h
-  const mm = isNaN(m) ? 0 : m
+  const hh = isNaN(h) ? 2 : h; const mm = isNaN(m) ? 0 : m
   if (freq === 'weekly') return `${mm} ${hh} * * 0`
   if (freq === 'monthly') return `${mm} ${hh} 1 * *`
   return `${mm} ${hh} * * *`
@@ -325,15 +321,12 @@ async function saveAutoBackup() {
   autoBackupSaving.value = true
   try {
     const { request } = await import('../../../api/client')
-    const expandedPath = autoBackupPath.value
-    await request(`/backup/schedule?cron=${encodeURIComponent(autoBackupFrequency.value)}&backup_path=${encodeURIComponent(expandedPath)}&retention=${autoBackupRetention.value}`, { method: 'POST' })
+    await request(`/backup/schedule?cron=${encodeURIComponent(autoBackupFrequency.value)}&backup_path=${encodeURIComponent(autoBackupPath.value)}&retention=${autoBackupRetention.value}`, { method: 'POST' })
     await loadAutoBackupStatus()
     autoBackupEnabled.value = true
   } catch (e: any) {
     emit('toast', 'error', `Failed to save schedule: ${errMsg(e)}`)
-  } finally {
-    autoBackupSaving.value = false
-  }
+  } finally { autoBackupSaving.value = false }
 }
 
 async function loadAutoBackupStatus() {
@@ -351,155 +344,152 @@ onMounted(() => {
 
 <template>
   <!-- Storage -->
-  <section>
-    <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
-      <Database :size="11" /> Storage
-    </h3>
-    <div class="bg-surface rounded p-2 border border-border space-y-1">
-      <div v-if="appSettings?.storage" class="space-y-1">
-        <div class="flex items-center justify-between text-[11px]">
-          <span class="text-text-secondary">Database</span>
-          <span class="text-text-primary">{{ formatBytes(appSettings.storage.db_size_bytes) }}</span>
-        </div>
-        <div class="flex items-center justify-between text-[11px]">
-          <span class="text-text-secondary">Entries</span>
-          <span class="text-text-primary">{{ appSettings.storage.entry_count }}</span>
-        </div>
-        <div class="flex items-center justify-between text-[11px]">
-          <span class="text-text-secondary">Media files</span>
-          <span class="text-text-primary">{{ appSettings.storage.media_count }} ({{ formatBytes(appSettings.storage.media_size_bytes) }})</span>
-        </div>
-        <div class="flex items-center justify-between text-[11px]">
-          <span class="text-text-secondary">Total</span>
-          <span class="text-text-primary font-medium">{{ formatBytes(appSettings.storage.db_size_bytes + appSettings.storage.media_size_bytes) }}</span>
-        </div>
+  <SettingsSection title="Storage" :icon="HardDrive" description="Disk usage and entry statistics" card-class="p-3">
+    <div v-if="appSettings?.storage" class="grid grid-cols-2 gap-x-6 gap-y-1.5">
+      <div class="flex items-center justify-between text-[12px]">
+        <span class="text-text-secondary">Database</span>
+        <span class="text-text-primary font-medium">{{ formatBytes(appSettings.storage.db_size_bytes) }}</span>
       </div>
-      <div v-else class="text-[10px] text-text-muted">Loading...</div>
+      <div class="flex items-center justify-between text-[12px]">
+        <span class="text-text-secondary">Entries</span>
+        <span class="text-text-primary font-medium">{{ appSettings.storage.entry_count }}</span>
+      </div>
+      <div class="flex items-center justify-between text-[12px]">
+        <span class="text-text-secondary">Media files</span>
+        <span class="text-text-primary font-medium">{{ appSettings.storage.media_count }} ({{ formatBytes(appSettings.storage.media_size_bytes) }})</span>
+      </div>
+      <div class="flex items-center justify-between text-[12px]">
+        <span class="text-text-secondary">Total</span>
+        <span class="text-text-primary font-semibold">{{ formatBytes(appSettings.storage.db_size_bytes + appSettings.storage.media_size_bytes) }}</span>
+      </div>
     </div>
-  </section>
+    <SkeletonCard v-else :lines="4" />
+  </SettingsSection>
 
-  <!-- Data (Import/Export) -->
-  <section>
-    <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-1">Data</h3>
-    <div class="bg-surface rounded border border-border divide-y divide-border">
-      <div class="p-2 flex items-center gap-2">
-        <FileUp :size="12" class="text-text-muted shrink-0" />
-        <span class="text-[11px] text-text-secondary flex-1">Import</span>
-        <button class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50"
+  <!-- Import / Export -->
+  <SettingsSection title="Import / Export" :icon="FileUp" description="Bring entries in or export your journal"
+    card-class="divide-y divide-border">
+    <!-- Import -->
+    <div class="p-3">
+      <SettingRow :icon="Upload" label="Import entries">
+        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50"
           :disabled="fileImporting" @click="fileImportInput?.click()">
-          <Loader v-if="fileImporting" :size="10" class="animate-spin" />
-          <Upload v-else :size="10" /> {{ fileImporting ? 'Importing...' : 'Import file' }}
+          <Loader v-if="fileImporting" :size="11" class="animate-spin" />
+          {{ fileImporting ? 'Importing...' : 'Import file' }}
         </button>
         <input ref="fileImportInput" type="file" accept=".zip,.json,.diary" class="hidden" @change="handleFileImport" />
-      </div>
-      <div class="p-2 flex items-center gap-2">
-        <Copy :size="12" class="text-text-muted shrink-0" />
-        <span class="text-[11px] text-text-secondary flex-1">Remove duplicates</span>
-        <button class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
+      </SettingRow>
+    </div>
+    <!-- Deduplicate -->
+    <div class="p-3">
+      <SettingRow :icon="Copy" label="Remove duplicates">
+        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
           :disabled="deduplicating" @click="handleDeduplicate">
-          <Loader v-if="deduplicating" :size="10" class="animate-spin" />
+          <Loader v-if="deduplicating" :size="11" class="animate-spin" />
           {{ deduplicating ? 'Scanning...' : 'Deduplicate' }}
         </button>
+      </SettingRow>
+    </div>
+    <!-- Export -->
+    <div class="p-3 space-y-2">
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <Download :size="12" class="text-text-muted shrink-0" />
+        <span class="text-[12px] text-text-secondary">Export</span>
+        <label class="flex items-center gap-1 text-[11px] cursor-pointer text-text-muted">
+          <input type="radio" v-model="exportRange" value="all" class="accent-accent" /> All
+        </label>
+        <label class="flex items-center gap-1 text-[11px] cursor-pointer text-text-muted">
+          <input type="radio" v-model="exportRange" value="range" class="accent-accent" /> Range
+        </label>
+        <template v-if="exportRange === 'range'">
+          <input v-model="exportFrom" type="date" class="settings-input w-28" />
+          <input v-model="exportTo" type="date" class="settings-input w-28" />
+        </template>
       </div>
-      <div class="p-2 flex items-center gap-2 flex-wrap">
-        <div class="flex items-center gap-1.5 flex-1 min-w-0">
-          <Download :size="12" class="text-text-muted shrink-0" />
-          <span class="text-[11px] text-text-secondary">Export</span>
-          <label class="flex items-center gap-0.5 text-[10px] cursor-pointer text-text-muted">
-            <input type="radio" v-model="exportRange" value="all" class="accent-accent" /> All
-          </label>
-          <label class="flex items-center gap-0.5 text-[10px] cursor-pointer text-text-muted">
-            <input type="radio" v-model="exportRange" value="range" class="accent-accent" /> Range
-          </label>
-          <template v-if="exportRange === 'range'">
-            <input v-model="exportFrom" type="date" class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary w-[90px]" />
-            <input v-model="exportTo" type="date" class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary w-[90px]" />
-          </template>
-        </div>
-        <div class="flex items-center gap-1">
-          <button class="px-1.5 py-0.5 rounded text-[10px] bg-accent text-white hover:bg-accent-hover cursor-pointer disabled:opacity-50"
-            :disabled="exportRange === 'range' && (!exportFrom || !exportTo)" @click="downloadMarkdown">.zip</button>
-          <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
-            :disabled="exportRange === 'range' && (!exportFrom || !exportTo) || exportingDiarium" @click="downloadDiarium">
-            <Loader v-if="exportingDiarium" :size="9" class="animate-spin inline" />Diarium</button>
-          <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
-            :disabled="exportingHtml" @click="downloadHtmlExport">
-            <Loader v-if="exportingHtml" :size="9" class="animate-spin inline" />HTML</button>
-          <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer"
-            @click="downloadPdfExport">PDF</button>
-        </div>
-      </div>
-      <div class="p-2 flex items-center gap-2">
-        <Database :size="12" class="text-text-muted shrink-0" />
-        <span class="text-[11px] text-text-secondary flex-1">Local archive</span>
-        <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer"
-          @click="downloadExport"><Download :size="9" class="inline" /> Backup</button>
-        <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
-          :disabled="importing" @click="importFileInput?.click()">
-          <Loader v-if="importing" :size="9" class="animate-spin inline" />Restore</button>
-        <input ref="importFileInput" type="file" accept=".tar.gz,.tgz" class="hidden" @change="handleImport" />
-      </div>
-      <!-- Auto backup schedule -->
-      <div class="p-2 space-y-1.5">
-        <div class="flex items-center gap-2">
-          <input type="checkbox" v-model="autoBackupEnabled" class="accent-accent" @change="toggleAutoBackup" />
-          <span class="text-[11px] text-text-secondary flex-1">Auto backup (local)</span>
-          <span v-if="autoBackupStatus?.backup_scheduled" class="text-[9px] text-green-400">Scheduled</span>
-        </div>
-        <div v-if="autoBackupEnabled" class="space-y-1 pl-5">
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-text-muted w-12">Folder</span>
-            <input v-model="autoBackupPath"
-              placeholder="~/Backups/dailybyte"
-              class="flex-1 bg-surface-hover border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none hover:border-accent transition-colors" />
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-text-muted w-12">Time</span>
-            <input
-              v-model="autoBackupTime"
-              type="time"
-              class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none hover:border-accent transition-colors"
-            />
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-text-muted w-12">Freq</span>
-            <select v-model="autoBackupFreqType"
-              class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors">
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-          <div class="text-[9px] text-accent/70 pl-14">{{ autoBackupHumanPreview }}</div>
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-text-muted w-12">Keep</span>
-            <input v-model.number="autoBackupRetention" type="number" min="1" max="100"
-              class="w-12 bg-surface-hover border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none hover:border-accent transition-colors" />
-            <span class="text-[10px] text-text-muted">backups</span>
-          </div>
-          <button @click="saveAutoBackup" :disabled="autoBackupSaving"
-            class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
-            <Loader v-if="autoBackupSaving" :size="9" class="animate-spin" />
-            Save Schedule
-          </button>
-        </div>
+      <div class="flex items-center gap-1.5 pl-[26px]">
+        <button class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer disabled:opacity-50"
+          :disabled="exportRange === 'range' && (!exportFrom || !exportTo)" @click="downloadMarkdown">ZIP</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
+          :disabled="exportRange === 'range' && (!exportFrom || !exportTo) || exportingDiarium" @click="downloadDiarium">
+          <Loader v-if="exportingDiarium" :size="10" class="animate-spin inline" /> Diarium</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
+          :disabled="exportingHtml" @click="downloadHtmlExport">
+          <Loader v-if="exportingHtml" :size="10" class="animate-spin inline" /> HTML</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer"
+          @click="downloadPdfExport">PDF</button>
       </div>
     </div>
-  </section>
+  </SettingsSection>
 
-  <!-- Cloud Backup -->
-  <section>
-    <div class="flex items-center justify-between mb-1">
-      <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1">
-        <Cloud :size="11" /> Cloud
-      </h3>
-      <button class="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-accent text-white text-[10px] cursor-pointer hover:bg-accent-hover"
-        @click="openCreateForm"><Plus :size="10" /> Add</button>
+  <!-- Backup -->
+  <SettingsSection title="Backup" :icon="Database" description="Local archive and scheduled backups"
+    card-class="divide-y divide-border">
+    <!-- Local archive -->
+    <div class="p-3">
+      <SettingRow :icon="HardDrive" label="Local archive">
+        <div class="flex items-center gap-1.5">
+          <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors"
+            @click="downloadExport"><Download :size="10" class="inline" /> Backup</button>
+          <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+            :disabled="importing" @click="importFileInput?.click()">
+            <Loader v-if="importing" :size="10" class="animate-spin inline" /> Restore</button>
+        </div>
+        <input ref="importFileInput" type="file" accept=".tar.gz,.tgz" class="hidden" @change="handleImport" />
+      </SettingRow>
     </div>
-    <div v-if="showCreate" class="bg-surface rounded p-2 mb-1 border border-accent/30 space-y-1">
-      <div class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
-        <span class="text-[10px] text-text-secondary">Provider</span>
-        <select v-model="newProvider" class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary" @change="resetNewCredentials">
+    <!-- Auto backup schedule -->
+    <div class="p-3 space-y-2">
+      <div class="flex items-center gap-2.5">
+        <input type="checkbox" v-model="autoBackupEnabled" class="accent-accent" @change="toggleAutoBackup" />
+        <span class="text-[12px] text-text-secondary flex-1">Auto backup (local)</span>
+        <span v-if="autoBackupStatus?.backup_scheduled" class="text-[10px] text-green-400 font-medium">Scheduled</span>
+      </div>
+      <div v-if="autoBackupEnabled" class="space-y-1.5 pl-6">
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-text-muted w-14">Folder</span>
+          <input v-model="autoBackupPath" placeholder="~/Backups/dailybyte"
+            class="settings-input flex-1" />
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-text-muted w-14">Time</span>
+          <input v-model="autoBackupTime" type="time" class="settings-input" />
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-text-muted w-14">Freq</span>
+          <select v-model="autoBackupFreqType" class="settings-select">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <p class="text-[10px] text-accent/70 pl-16">{{ autoBackupHumanPreview }}</p>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-text-muted w-14">Keep</span>
+          <input v-model.number="autoBackupRetention" type="number" min="1" max="100"
+            class="settings-input w-14" />
+          <span class="text-[11px] text-text-muted">backups</span>
+        </div>
+        <button @click="saveAutoBackup" :disabled="autoBackupSaving"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
+          <Loader v-if="autoBackupSaving" :size="10" class="animate-spin" />
+          Save Schedule
+        </button>
+      </div>
+    </div>
+  </SettingsSection>
+
+  <!-- Cloud -->
+  <SettingsSection title="Cloud" :icon="Cloud" description="Sync your journal to cloud storage">
+    <template #actions>
+      <button class="flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-accent text-white text-[11px] font-medium cursor-pointer hover:bg-accent-hover transition-colors"
+        @click="openCreateForm"><Plus :size="11" /> Add</button>
+    </template>
+
+    <!-- Create form -->
+    <div v-if="showCreate" class="mb-3 p-3 border border-accent/30 rounded-md space-y-2">
+      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 items-center">
+        <span class="text-[11px] text-text-secondary">Provider</span>
+        <select v-model="newProvider" class="settings-select" @change="resetNewCredentials">
           <option value="webdav">WebDAV</option>
           <option value="google_drive">Google Drive</option>
           <option value="mega">MEGA</option>
@@ -508,90 +498,97 @@ onMounted(() => {
           <option value="nas">NAS</option>
         </select>
         <div v-if="newProvider === 'google_drive'" class="col-span-2 flex flex-col gap-1.5 py-1">
-          <button @click="startGoogleDriveAuth" class="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-accent text-white text-[11px] font-semibold cursor-pointer hover:bg-accent-hover transition-colors">
+          <button @click="startGoogleDriveAuth" class="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-[11px] font-semibold cursor-pointer hover:bg-accent-hover transition-colors">
             Sign in with Google
           </button>
           <div class="text-center">
-            <a href="#" @click.prevent="showManualGoogleFields = !showManualGoogleFields" class="text-[9px] text-text-muted hover:text-accent underline">
+            <a href="#" @click.prevent="showManualGoogleFields = !showManualGoogleFields" class="text-[10px] text-text-muted hover:text-accent underline">
               {{ showManualGoogleFields ? 'Hide manual settings' : 'Or configure manually (Advanced)' }}
             </a>
           </div>
         </div>
         <template v-if="newProvider !== 'google_drive' || showManualGoogleFields">
           <template v-for="field in currentFields" :key="field.label">
-            <span class="text-[10px] text-text-secondary">{{ field.label }}</span>
+            <span class="text-[11px] text-text-secondary">{{ field.label }}</span>
             <input v-model="newCredentials[field.label.toLowerCase().replace(/\s+/g, '_')]"
-              class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary" :placeholder="field.placeholder" />
+              class="settings-input" :placeholder="field.placeholder" />
           </template>
         </template>
-        <span class="text-[10px] text-text-secondary">Cron</span>
-        <input v-model="newSchedule" class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary" placeholder="0 3 * * *" />
+        <span class="text-[11px] text-text-secondary">Cron</span>
+        <input v-model="newSchedule" class="settings-input" placeholder="0 3 * * *" />
       </div>
-      <div class="flex gap-1">
-        <button class="px-2 py-0.5 rounded bg-accent text-white text-[10px] cursor-pointer hover:bg-accent-hover" @click="createConfig">Save</button>
-        <button class="px-2 py-0.5 rounded text-[10px] text-text-secondary cursor-pointer" @click="showCreate = false">Cancel</button>
+      <div class="flex gap-1.5">
+        <button class="px-3 py-0.5 rounded-md bg-accent text-white text-[11px] font-medium cursor-pointer hover:bg-accent-hover transition-colors" @click="createConfig">Save</button>
+        <button class="px-3 py-0.5 rounded-md text-[11px] text-text-secondary cursor-pointer hover:text-text-primary transition-colors" @click="showCreate = false">Cancel</button>
       </div>
     </div>
-    <div v-for="config in backup.configs" :key="config.id" class="bg-surface rounded p-1.5 mb-0.5 border border-border">
-      <div class="flex items-center gap-1.5 mb-1">
-        <span class="text-[11px] font-medium text-text-primary capitalize">{{ config.provider.replace('_', ' ') }}</span>
-        <span v-if="config.last_sync_at" class="text-[9px] text-text-muted">{{ new Date(config.last_sync_at).toLocaleDateString() }}</span>
-        <button class="ml-auto p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-danger cursor-pointer" @click="deleteConfirm = config.id"><Trash2 :size="10" /></button>
+
+    <!-- Configs -->
+    <div v-for="config in backup.configs" :key="config.id" class="p-2.5 mb-1 last:mb-0 rounded-md border border-border">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="text-[12px] font-medium text-text-primary capitalize">{{ config.provider.replace('_', ' ') }}</span>
+        <span v-if="config.last_sync_at" class="text-[10px] text-text-muted">{{ new Date(config.last_sync_at).toLocaleDateString() }}</span>
+        <button class="ml-auto p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-danger cursor-pointer transition-colors" @click="deleteConfirm = config.id"><Trash2 :size="11" /></button>
       </div>
-      <div class="flex items-center gap-1">
-        <button class="px-1 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer" @click="testConn(config.id)">Test</button>
-        <button class="flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer disabled:opacity-50"
+      <div class="flex items-center gap-1.5">
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors" @click="testConn(config.id)">Test</button>
+        <button class="flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer transition-colors disabled:opacity-50"
           :disabled="backingUp === config.id" @click="runBackup(config.id)">
-          <Loader v-if="backingUp === config.id" :size="9" class="animate-spin" />{{ backingUp === config.id ? '...' : 'Backup' }}
+          <Loader v-if="backingUp === config.id" :size="10" class="animate-spin" />{{ backingUp === config.id ? '...' : 'Backup' }}
         </button>
-        <button class="flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] bg-danger/15 text-danger hover:bg-danger/25 cursor-pointer disabled:opacity-50"
+        <button class="flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] bg-danger/15 text-danger hover:bg-danger/25 cursor-pointer transition-colors disabled:opacity-50"
           :disabled="restoring === config.id" @click="restoreConfirm = { configId: config.id, provider: config.provider }">
-          <RotateCcw v-if="restoring === config.id" :size="9" class="animate-spin" />{{ restoring === config.id ? '...' : 'Restore' }}
+          <RotateCcw v-if="restoring === config.id" :size="10" class="animate-spin" />{{ restoring === config.id ? '...' : 'Restore' }}
         </button>
       </div>
-      <div v-if="testResult?.configId === config.id" class="mt-0.5 flex items-center gap-0.5 text-[10px]"
+      <div v-if="testResult?.configId === config.id" class="mt-1 flex items-center gap-1 text-[11px]"
         :class="testResult.success ? 'text-green-400' : 'text-red-400'">
-        <CheckCircle2 v-if="testResult.success" :size="10" /><AlertTriangle v-else :size="10" /> {{ testResult.message }}
+        <CheckCircle2 v-if="testResult.success" :size="11" /><AlertTriangle v-else :size="11" /> {{ testResult.message }}
       </div>
     </div>
-    <div v-if="!backup.configs.length && !showCreate" class="text-[10px] text-text-muted py-1">No cloud backups configured.</div>
-    <details v-if="backup.snapshots.length" class="mt-1">
-      <summary class="text-[10px] text-text-muted cursor-pointer hover:text-text-primary">{{ backup.snapshots.length }} backups</summary>
-      <div class="mt-0.5 space-y-0.5">
+
+    <!-- Empty state -->
+    <div v-if="!backup.configs.length && !showCreate" class="text-center py-4">
+      <Cloud :size="20" class="mx-auto text-text-muted mb-1.5" />
+      <p class="text-[11px] text-text-secondary">No cloud backups configured.</p>
+      <p class="text-[10px] text-text-muted mt-0.5">Click Add to connect a cloud provider.</p>
+    </div>
+
+    <!-- Snapshots -->
+    <details v-if="backup.snapshots.length" class="mt-2 border-t border-border pt-2">
+      <summary class="text-[11px] text-text-muted cursor-pointer hover:text-text-primary transition-colors">{{ backup.snapshots.length }} backups</summary>
+      <div class="mt-1 space-y-0.5">
         <div v-for="snap in backup.snapshots.slice(0, 10)" :key="snap.id"
-          class="px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1.5">
-          <CheckCircle2 v-if="snap.status === 'completed'" :size="9" class="text-green-400" />
-          <AlertTriangle v-else :size="9" class="text-red-400" />
+          class="px-2 py-0.5 rounded text-[11px] flex items-center gap-2">
+          <CheckCircle2 v-if="snap.status === 'completed'" :size="10" class="text-green-400" />
+          <AlertTriangle v-else :size="10" class="text-red-400" />
           <span class="text-text-muted">{{ snap.entries_synced }}e {{ snap.media_synced }}m</span>
           <span class="ml-auto text-text-muted">{{ new Date(snap.started_at).toLocaleDateString() }}</span>
         </div>
       </div>
     </details>
-  </section>
+  </SettingsSection>
 
   <!-- Sync -->
-  <section>
-    <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-1">Sync</h3>
-    <div class="bg-surface rounded p-2 border border-border">
-      <div v-if="syncStore.status" class="flex items-center gap-3 text-[10px] mb-1.5">
-        <span :class="syncStore.status.status === 'ok' ? 'text-green-400' : 'text-accent'">{{ syncStore.status.status }}</span>
-        <span class="text-text-muted">{{ syncStore.status.pending_count }} pending</span>
-        <span class="text-text-muted ml-auto">{{ syncStore.status.last_sync_at ? new Date(syncStore.status.last_sync_at).toLocaleDateString() : '—' }}</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <button class="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer disabled:opacity-50"
-          :disabled="syncPushing" @click="handleSyncPush">
-          <Loader v-if="syncPushing" :size="9" class="animate-spin" />Push
-        </button>
-        <button class="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
-          :disabled="syncPulling" @click="handleSyncPull">
-          <Loader v-if="syncPulling" :size="9" class="animate-spin" />Pull
-        </button>
-        <button class="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-danger/15 text-danger hover:bg-danger/25 cursor-pointer"
-          @click="handleSyncFlush"><RefreshCw :size="9" /> Flush</button>
-      </div>
+  <SettingsSection title="Sync" :icon="RefreshCw" description="Manage data synchronization queue">
+    <div v-if="syncStore.status" class="flex items-center gap-3 text-[11px] mb-2">
+      <span :class="syncStore.status.status === 'ok' ? 'text-green-400' : 'text-accent'" class="font-medium">{{ syncStore.status.status }}</span>
+      <span class="text-text-muted">{{ syncStore.status.pending_count }} pending</span>
+      <span class="text-text-muted ml-auto">{{ syncStore.status.last_sync_at ? new Date(syncStore.status.last_sync_at).toLocaleDateString() : '—' }}</span>
     </div>
-  </section>
+    <div class="flex items-center gap-1.5">
+      <button class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer transition-colors disabled:opacity-50"
+        :disabled="syncPushing" @click="handleSyncPush">
+        <Loader v-if="syncPushing" :size="10" class="animate-spin" />Push
+      </button>
+      <button class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
+        :disabled="syncPulling" @click="handleSyncPull">
+        <Loader v-if="syncPulling" :size="10" class="animate-spin" />Pull
+      </button>
+      <button class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-danger/15 text-danger hover:bg-danger/25 cursor-pointer transition-colors"
+        @click="handleSyncFlush"><RefreshCw :size="10" /> Flush</button>
+    </div>
+  </SettingsSection>
 
   <ConfirmDialog v-if="restoreConfirm" title="Restore from backup?"
     :message="`Replace all local data with backup from ${restoreConfirm.provider.replace('_', ' ')}?`"
