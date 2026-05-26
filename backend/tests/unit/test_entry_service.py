@@ -1,4 +1,5 @@
 """Integration tests for entries — CRUD, soft-delete restore, 409 conflict, tags."""
+
 from httpx import AsyncClient
 
 
@@ -93,6 +94,8 @@ class TestEntryDelete:
     async def test_create_after_delete_restores(self, client: AsyncClient):
         entry = await _create_entry(client, date="2026-05-08")
         await client.delete(f"/api/v1/entries/{entry['id']}")
-        r = await client.post("/api/v1/entries", json={"entry_date": "2026-05-08", "body": "Restored"})
+        r = await client.post(
+            "/api/v1/entries", json={"entry_date": "2026-05-08", "body": "Restored"}
+        )
         assert r.status_code == 201
         assert r.json()["body"] == "Restored"

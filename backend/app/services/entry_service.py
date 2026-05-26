@@ -1,5 +1,6 @@
 """Business logic for journal entries."""
-from datetime import date, datetime
+
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -19,9 +20,7 @@ class EntryService:
 
     async def create(self, data: EntryCreate) -> Entry:
         """Create a new journal entry."""
-        entry = Entry(
-            entry_date=data.entry_date, title=data.title, body=data.body, mood=data.mood
-        )
+        entry = Entry(entry_date=data.entry_date, title=data.title, body=data.body, mood=data.mood)
         self.db.add(entry)
         await self.db.flush()
         if data.tag_ids:
@@ -56,10 +55,16 @@ class EntryService:
         base_q = select(Entry).where(Entry.is_deleted == False)  # noqa: E712
         base_q = self._apply_filters(base_q, tag_ids, mood, year, month)
         count_q = self._apply_filters(
-            select(func.count()).select_from(Entry).where(Entry.is_deleted == False), tag_ids, mood, year, month  # noqa: E712
+            select(func.count()).select_from(Entry).where(Entry.is_deleted == False),
+            tag_ids,
+            mood,
+            year,
+            month,  # noqa: E712
         )
         total = (await self.db.execute(count_q)).scalar_one()
-        result = await self.db.execute(base_q.order_by(Entry.entry_date.desc()).offset(offset).limit(limit))
+        result = await self.db.execute(
+            base_q.order_by(Entry.entry_date.desc()).offset(offset).limit(limit)
+        )
         return list(result.scalars().all()), total
 
     async def update(self, entry_id: int, data: EntryUpdate) -> Entry:
@@ -86,14 +91,13 @@ class EntryService:
         """Mark entry as deleted; remove associated media files."""
         entry = await self.get(entry_id)
         entry.is_deleted = True
-        entry.deleted_at = datetime.now()
+        entry.deleted_at = datetime.now(timezone.utc)
 
         # Clean up media files for the soft-deleted entry
         from app.models.media import Media
         from app.services.media_service import MediaService
-        media_result = await self.db.execute(
-            select(Media).where(Media.entry_id == entry_id)
-        )
+
+        media_result = await self.db.execute(select(Media).where(Media.entry_id == entry_id))
         media_list = media_result.scalars().all()
         if media_list:
             media_svc = MediaService(self.db)
@@ -121,17 +125,23 @@ class EntryService:
         pattern = f"%{query}%"
         base = select(Entry).where(
             Entry.is_deleted == False,  # noqa: E712
-            (Entry.body.ilike(pattern)) | (Entry.title.ilike(pattern))
+            (Entry.body.ilike(pattern)) | (Entry.title.ilike(pattern)),
         )
-        total = (await self.db.execute(
-            select(func.count()).select_from(base.subquery())
-        )).scalar_one()
-        result = await self.db.execute(base.order_by(Entry.entry_date.desc()).offset(offset).limit(limit))
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        result = await self.db.execute(
+            base.order_by(Entry.entry_date.desc()).offset(offset).limit(limit)
+        )
         return list(result.scalars().all()), total
 
     @staticmethod
     def _apply_filters(
-        q: Select[Any], tag_ids: list[int] | None, mood: str | None, year: int | None, month: int | None
+        q: Select[Any],
+        tag_ids: list[int] | None,
+        mood: str | None,
+        year: int | None,
+        month: int | None,
     ) -> Select[Any]:
         """Apply common filters to an entry query."""
         if tag_ids:

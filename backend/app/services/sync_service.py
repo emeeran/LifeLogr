@@ -1,8 +1,9 @@
 """SyncService — offline queue, flush, and conflict resolution."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +15,9 @@ class SyncService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def enqueue(self, operation: str, entity_type: str, entity_id: int, payload: dict[str, object]) -> SyncQueue:
+    async def enqueue(
+        self, operation: str, entity_type: str, entity_id: int, payload: dict[str, object]
+    ) -> SyncQueue:
         """Queue an operation for later sync."""
         item = SyncQueue(
             operation=operation,
@@ -40,15 +43,14 @@ class SyncService:
     async def get_pending_count(self) -> int:
         """Count unsynced operations."""
         result = await self.db.execute(
-            select(func.count()).select_from(SyncQueue)
-            .where(SyncQueue.is_synced == False)  # noqa: E712
+            select(func.count()).select_from(SyncQueue).where(SyncQueue.is_synced == False)  # noqa: E712
         )
         return result.scalar_one()
 
     async def flush(self, provider: str = "local") -> dict[str, int | str]:
         """Mark all pending operations as synced."""
         pending = await self.get_pending()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for item in pending:
             item.is_synced = True
             item.synced_at = now
@@ -67,9 +69,7 @@ class SyncService:
         return await self._get_or_create_status(provider)
 
     async def _get_or_create_status(self, provider: str) -> SyncStatus:
-        result = await self.db.execute(
-            select(SyncStatus).where(SyncStatus.provider == provider)
-        )
+        result = await self.db.execute(select(SyncStatus).where(SyncStatus.provider == provider))
         status = result.scalar_one_or_none()
         if not status:
             status = SyncStatus(provider=provider)

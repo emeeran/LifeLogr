@@ -1,16 +1,19 @@
 """Pydantic schemas for AI assistance (Ollama) endpoints."""
+
 from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class GrammarCheckRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=50000, description="Text to check for grammar and spelling errors")
+    text: str = Field(
+        min_length=1, max_length=50000, description="Text to check for grammar and spelling errors"
+    )
     language: str = Field(default="en", max_length=5, description="Language code (e.g. en, fr, de)")
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {"text": "She dont like to goes there.", "language": "en"}
-    })
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"text": "She dont like to goes there.", "language": "en"}}
+    )
 
 
 class Suggestion(BaseModel):
@@ -27,22 +30,33 @@ class GrammarCheckResponse(BaseModel):
     corrected_text: str
     suggestions: list[Suggestion]
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {
-            "original_text": "She dont like it.",
-            "corrected_text": "She doesn't like it.",
-            "suggestions": [{"offset": 4, "length": 4, "original": "dont", "suggestion": "doesn't", "rule_id": "MORFOLOGIK_RULE", "message": "Possible spelling mistake"}]
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "original_text": "She dont like it.",
+                "corrected_text": "She doesn't like it.",
+                "suggestions": [
+                    {
+                        "offset": 4,
+                        "length": 4,
+                        "original": "dont",
+                        "suggestion": "doesn't",
+                        "rule_id": "MORFOLOGIK_RULE",
+                        "message": "Possible spelling mistake",
+                    }
+                ],
+            }
         }
-    })
+    )
 
 
 class SpellCheckRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000, description="Text to spell-check")
     language: str = Field(default="en", max_length=5, description="Language code")
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {"text": "The qwick brown foxx jumps.", "language": "en"}
-    })
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"text": "The qwick brown foxx jumps.", "language": "en"}}
+    )
 
 
 class SpellCheckResponse(BaseModel):
@@ -56,11 +70,19 @@ class SpellCheckResponse(BaseModel):
 class RewriteRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000, description="Text to rewrite")
     style: str = Field(description="Rewrite style: formal, casual, concise, elaborate, creative")
-    instructions: str | None = Field(default=None, max_length=500, description="Additional rewrite instructions")
+    instructions: str | None = Field(
+        default=None, max_length=500, description="Additional rewrite instructions"
+    )
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {"text": "Hey wanna grab food?", "style": "formal", "instructions": "Make it a lunch invitation"}
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "text": "Hey wanna grab food?",
+                "style": "formal",
+                "instructions": "Make it a lunch invitation",
+            }
+        }
+    )
 
 
 class RewriteResponse(BaseModel):
@@ -68,9 +90,15 @@ class RewriteResponse(BaseModel):
     rewritten_text: str
     style: str
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {"original_text": "Hey wanna grab food?", "rewritten_text": "Would you be available to join me for lunch?", "style": "formal"}
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "original_text": "Hey wanna grab food?",
+                "rewritten_text": "Would you be available to join me for lunch?",
+                "style": "formal",
+            }
+        }
+    )
 
 
 class AIStatusResponse(BaseModel):
@@ -84,6 +112,7 @@ class AIStatusResponse(BaseModel):
 
 # ── Tag suggestions ────────────────────────────────────────────────────
 
+
 class TagSuggestionRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000, description="Entry text to suggest tags for")
 
@@ -93,6 +122,7 @@ class TagSuggestionResponse(BaseModel):
 
 
 # ── Entry analysis (combined) ──────────────────────────────────────────
+
 
 class SentimentData(BaseModel):
     primary_emotion: str
@@ -110,6 +140,7 @@ class EntryAnalysisResponse(BaseModel):
 
 # ── Similar entries ────────────────────────────────────────────────────
 
+
 class SimilarEntry(BaseModel):
     id: int
     entry_date: date
@@ -124,6 +155,7 @@ class SimilarEntriesResponse(BaseModel):
 
 # ── Writer's block ─────────────────────────────────────────────────────
 
+
 class ContinueWritingRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000)
 
@@ -133,6 +165,7 @@ class ContinueWritingResponse(BaseModel):
 
 
 # ── On this day ────────────────────────────────────────────────────────
+
 
 class OnThisDayPastEntry(BaseModel):
     years_ago: int
@@ -151,6 +184,7 @@ class OnThisDayResponse(BaseModel):
 
 # ── Theme detection ────────────────────────────────────────────────────
 
+
 class ThemeInsight(BaseModel):
     theme: str
     frequency: str
@@ -163,6 +197,7 @@ class ThemesResponse(BaseModel):
 
 
 # ── Weekly digest ──────────────────────────────────────────────────────
+
 
 class DigestResponse(BaseModel):
     id: int
@@ -178,6 +213,7 @@ class DigestResponse(BaseModel):
 
 
 # ── Smart Tools (summarize, expand, change tone, translate) ──────────
+
 
 class SummarizeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000)
@@ -197,7 +233,9 @@ class ExpandResponse(BaseModel):
 
 class ChangeToneRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000)
-    tone: str = Field(description="Desired tone: formal, casual, friendly, professional, empathetic, humorous")
+    tone: str = Field(
+        description="Desired tone: formal, casual, friendly, professional, empathetic, humorous"
+    )
 
 
 class ChangeToneResponse(BaseModel):
@@ -207,7 +245,9 @@ class ChangeToneResponse(BaseModel):
 
 class TranslateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000)
-    language: str = Field(description="Target language: english, spanish, french, german, portuguese, japanese, korean, chinese, arabic, hindi")
+    language: str = Field(
+        description="Target language: english, spanish, french, german, portuguese, japanese, korean, chinese, arabic, hindi"
+    )
 
 
 class TranslateResponse(BaseModel):

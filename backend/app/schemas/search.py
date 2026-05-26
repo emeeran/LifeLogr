@@ -1,4 +1,5 @@
 """Pydantic schemas for global search."""
+
 from datetime import date
 from typing import Literal
 
@@ -10,6 +11,7 @@ SearchMode = Literal["keyword", "semantic", "hybrid"]
 
 class SearchResultEntry(BaseModel):
     """A single search result."""
+
     id: int
     entry_date: date
     title: str | None
@@ -22,6 +24,7 @@ class SearchResultEntry(BaseModel):
 
 class GlobalSearchResponse(BaseModel):
     """Paginated search results."""
+
     items: list[SearchResultEntry]
     total: int
     offset: int
@@ -30,6 +33,7 @@ class GlobalSearchResponse(BaseModel):
 
 class SearchFilter(BaseModel):
     """Filters that can be combined with full-text search."""
+
     query: str = Field(min_length=1)
     mood: str | None = None
     tag_ids: list[int] = Field(default_factory=list)

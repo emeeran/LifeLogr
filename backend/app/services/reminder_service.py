@@ -1,4 +1,5 @@
 """ReminderService — CRUD and desktop notification delivery for reminders."""
+
 from __future__ import annotations
 
 import subprocess
@@ -29,18 +30,14 @@ class ReminderService:
         return reminder
 
     async def get(self, reminder_id: int) -> Reminder:
-        result = await self.db.execute(
-            select(Reminder).where(Reminder.id == reminder_id)
-        )
+        result = await self.db.execute(select(Reminder).where(Reminder.id == reminder_id))
         reminder = result.scalar_one_or_none()
         if not reminder:
             raise NotFoundError(f"Reminder {reminder_id} not found")
         return reminder
 
     async def list_all(self) -> list[Reminder]:
-        result = await self.db.execute(
-            select(Reminder).order_by(Reminder.reminder_time)
-        )
+        result = await self.db.execute(select(Reminder).order_by(Reminder.reminder_time))
         return list(result.scalars().all())
 
     async def update(self, reminder_id: int, data: ReminderUpdate) -> Reminder:

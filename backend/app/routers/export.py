@@ -1,4 +1,5 @@
 """Export route handlers — PDF and HTML export."""
+
 from __future__ import annotations
 
 from datetime import date

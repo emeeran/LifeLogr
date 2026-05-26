@@ -1,4 +1,5 @@
 """Pydantic schemas for journal entries."""
+
 from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,18 +14,39 @@ class EntryCreate(BaseModel):
     mood: str | None = Field(default=None, max_length=50, description="Mood label")
     tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to associate")
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {"entry_date": "2026-05-08", "title": "A great day", "body": "Today I built my journal.", "mood": "excited", "tag_ids": [1]}
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "entry_date": "2026-05-08",
+                "title": "A great day",
+                "body": "Today I built my journal.",
+                "mood": "excited",
+                "tag_ids": [1],
+            }
+        }
+    )
 
 
 class EntryUpdate(BaseModel):
-    title: str | None = Field(default=None, max_length=255, description="Updated title; null to clear")
+    title: str | None = Field(
+        default=None, max_length=255, description="Updated title; null to clear"
+    )
     body: str | None = Field(default=None, min_length=1, description="Updated Markdown body")
     mood: str | None = Field(default=None, max_length=50, description="Updated mood; null to clear")
-    tag_ids: list[int] | None = Field(default=None, description="Tag IDs to associate; null to keep existing")
+    tag_ids: list[int] | None = Field(
+        default=None, description="Tag IDs to associate; null to keep existing"
+    )
 
-    model_config = ConfigDict(json_schema_extra={"example": {"title": "Updated title", "body": "Updated thoughts.", "mood": "calm", "tag_ids": [1, 2]}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "title": "Updated title",
+                "body": "Updated thoughts.",
+                "mood": "calm",
+                "tag_ids": [1, 2],
+            }
+        }
+    )
 
 
 class EntryResponse(BaseModel):

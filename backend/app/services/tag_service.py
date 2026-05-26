@@ -1,4 +1,5 @@
 """Business logic for tags."""
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,6 +83,7 @@ class TagService:
     async def get_entry_count(self, tag_id: int) -> int:
         """Return count of non-deleted entries associated with a tag."""
         from app.models.entry import Entry
+
         result = await self.db.execute(
             select(func.count())
             .select_from(EntryTag)

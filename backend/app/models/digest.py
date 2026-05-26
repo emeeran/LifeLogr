@@ -1,4 +1,5 @@
 """Digest ORM model — weekly AI-generated journal summaries."""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -15,7 +16,7 @@ class Digest(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     week_start: Mapped[date] = mapped_column(Date, nullable=False)
     week_end: Mapped[date] = mapped_column(Date, nullable=False)
-    themes: Mapped[str] = mapped_column(String, nullable=False)          # JSON array of strings
+    themes: Mapped[str] = mapped_column(String, nullable=False)  # JSON array of strings
     emotional_trajectory: Mapped[str] = mapped_column(String, nullable=False)
     notable_moments: Mapped[str] = mapped_column(String, nullable=False)  # JSON array of strings
     summary_text: Mapped[str] = mapped_column(String, nullable=False)

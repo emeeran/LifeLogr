@@ -38,6 +38,7 @@ curl -X POST /api/v1/plugins -d '{
 3. Register them with the ``hook_manager``
 4. Install via the API with the module path as ``entry_point``
 """
+
 from __future__ import annotations
 
 import logging

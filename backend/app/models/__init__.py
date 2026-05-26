@@ -1,4 +1,5 @@
 """Re-export all models for Alembic discovery and easy imports."""
+
 from app.models.backup import BackupConfig, BackupSnapshot
 from app.models.digest import Digest
 from app.models.embedding import EntryEmbedding

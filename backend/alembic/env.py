@@ -1,4 +1,5 @@
 """Alembic env.py — async migration runner using app's database config."""
+
 from __future__ import annotations
 
 import asyncio

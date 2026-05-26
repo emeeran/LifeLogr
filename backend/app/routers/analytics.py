@@ -1,4 +1,5 @@
 """Analytics route handlers — journal statistics and insights."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -60,6 +61,7 @@ async def get_mood_distribution(db: AsyncSession = Depends(get_db)) -> Any:
 async def get_heatmap(year: int | None = Query(None)) -> Any:
     """Year-long contribution heatmap."""
     from app.core.database import async_session
+
     async with async_session() as db:
         svc = AnalyticsService(db)
         return await svc.heatmap(year)

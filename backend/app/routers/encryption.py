@@ -1,4 +1,5 @@
 """Encryption route handlers — encrypt/decrypt journal entries and text selection."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -27,7 +28,11 @@ async def encrypt_entry(
     """Encrypt an entry's title, body, and mood with AES-256-GCM."""
     svc = EncryptionService(db)
     entry = await svc.encrypt_entry(entry_id, data.passphrase)
-    return {"entry_id": entry.id, "is_encrypted": entry.is_encrypted, "encrypted_at": entry.encrypted_at}
+    return {
+        "entry_id": entry.id,
+        "is_encrypted": entry.is_encrypted,
+        "encrypted_at": entry.encrypted_at,
+    }
 
 
 @router.post("/decrypt", response_model=EncryptionStatusResponse)
@@ -37,19 +42,22 @@ async def decrypt_entry(
     """Decrypt an entry that was previously encrypted."""
     svc = EncryptionService(db)
     entry = await svc.decrypt_entry(entry_id, data.passphrase)
-    return {"entry_id": entry.id, "is_encrypted": entry.is_encrypted, "encrypted_at": entry.encrypted_at}
+    return {
+        "entry_id": entry.id,
+        "is_encrypted": entry.is_encrypted,
+        "encrypted_at": entry.encrypted_at,
+    }
 
 
 @router.get("/status", response_model=EncryptionStatusResponse)
-async def encryption_status(
-    entry_id: int, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def encryption_status(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """Check whether an entry is currently encrypted."""
     svc = EncryptionService(db)
     return await svc.get_encryption_status(entry_id)
 
 
 # ── Selection Encryption ──────────────────────────────────────────────────────
+
 
 @global_router.post("/encrypt-text")
 async def encrypt_text(data: EncryptTextRequest, db: AsyncSession = Depends(get_db)) -> Any:
@@ -70,4 +78,6 @@ async def decrypt_text(data: DecryptTextRequest, db: AsyncSession = Depends(get_
         decrypted = svc._decrypt(data.encrypted_text, key).decode()
         return {"decrypted": decrypted}
     except Exception:
-        raise HTTPException(status_code=400, detail="Decryption failed. Check your passphrase and try again.")
+        raise HTTPException(
+            status_code=400, detail="Decryption failed. Check your passphrase and try again."
+        )

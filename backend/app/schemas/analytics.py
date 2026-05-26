@@ -1,4 +1,5 @@
 """Pydantic schemas for analytics endpoints."""
+
 from datetime import date
 
 from pydantic import BaseModel
@@ -6,6 +7,7 @@ from pydantic import BaseModel
 
 class OverviewResponse(BaseModel):
     """High-level journal statistics."""
+
     total_entries: int
     total_words: int
     total_media: int
@@ -18,6 +20,7 @@ class OverviewResponse(BaseModel):
 
 class WritingHabitResponse(BaseModel):
     """Writing frequency per day-of-week."""
+
     day_of_week: int  # 0=Monday .. 6=Sunday
     day_name: str
     entry_count: int
@@ -25,6 +28,7 @@ class WritingHabitResponse(BaseModel):
 
 class WordCountResponse(BaseModel):
     """Word count stats."""
+
     total_words: int
     average_words_per_entry: float
     longest_entry_words: int
@@ -33,6 +37,7 @@ class WordCountResponse(BaseModel):
 
 class TagStatsResponse(BaseModel):
     """Tag usage statistics."""
+
     tag_id: int
     tag_name: str
     usage_count: int
@@ -40,6 +45,7 @@ class TagStatsResponse(BaseModel):
 
 class MoodDistributionResponse(BaseModel):
     """Mood frequency distribution."""
+
     mood: str
     count: int
     percentage: float
@@ -47,18 +53,21 @@ class MoodDistributionResponse(BaseModel):
 
 class HeatmapDayResponse(BaseModel):
     """Single day in the contribution heatmap."""
+
     date: date
     count: int
 
 
 class HeatmapResponse(BaseModel):
     """Year-long contribution heatmap."""
+
     year: int
     days: list[HeatmapDayResponse]
 
 
 class MediaStatsResponse(BaseModel):
     """Media usage statistics."""
+
     total_images: int
     total_videos: int
     total_recordings: int

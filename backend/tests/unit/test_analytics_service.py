@@ -1,11 +1,16 @@
 """Integration tests for analytics — overview, habits, words, heatmap."""
+
 from httpx import AsyncClient
 
 
 async def _seed(client: AsyncClient):
     await client.post("/api/v1/entries", json={"entry_date": "2026-05-01", "body": "One two three"})
-    await client.post("/api/v1/entries", json={"entry_date": "2026-05-02", "body": "Four five six seven"})
-    await client.post("/api/v1/entries", json={"entry_date": "2026-05-03", "body": "Eight nine", "mood": "happy"})
+    await client.post(
+        "/api/v1/entries", json={"entry_date": "2026-05-02", "body": "Four five six seven"}
+    )
+    await client.post(
+        "/api/v1/entries", json={"entry_date": "2026-05-03", "body": "Eight nine", "mood": "happy"}
+    )
 
 
 class TestAnalytics:

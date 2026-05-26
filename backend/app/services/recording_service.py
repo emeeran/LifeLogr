@@ -1,4 +1,5 @@
 """Business logic for voice recordings."""
+
 from __future__ import annotations
 
 import logging
@@ -27,8 +28,14 @@ def _get_whisper_model() -> Any:
     if _whisper_model is None:
         from faster_whisper import WhisperModel
 
-        logger.info("Loading Whisper model '%s' on device '%s'...", settings.WHISPER_MODEL, settings.WHISPER_DEVICE)
-        _whisper_model = WhisperModel(settings.WHISPER_MODEL, device=settings.WHISPER_DEVICE, compute_type="int8")
+        logger.info(
+            "Loading Whisper model '%s' on device '%s'...",
+            settings.WHISPER_MODEL,
+            settings.WHISPER_DEVICE,
+        )
+        _whisper_model = WhisperModel(
+            settings.WHISPER_MODEL, device=settings.WHISPER_DEVICE, compute_type="int8"
+        )
         logger.info("Whisper model loaded.")
     return _whisper_model
 
@@ -60,7 +67,9 @@ class VoiceRecordingService:
 
     async def get(self, recording_id: int) -> VoiceRecording:
         """Return recording metadata."""
-        result = await self.db.execute(select(VoiceRecording).where(VoiceRecording.id == recording_id))
+        result = await self.db.execute(
+            select(VoiceRecording).where(VoiceRecording.id == recording_id)
+        )
         rec = result.scalar_one_or_none()
         if not rec:
             raise NotFoundError(f"Recording {recording_id} not found")

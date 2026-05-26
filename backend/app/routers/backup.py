@@ -1,6 +1,8 @@
 """Backup route handlers."""
+
 from __future__ import annotations
 
+import logging
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,8 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.schemas.backup import BackupConfigCreate, BackupConfigResponse, BackupSnapshotResponse, RestoreRequest
+from app.schemas.backup import (
+    BackupConfigCreate,
+    BackupConfigResponse,
+    BackupSnapshotResponse,
+    RestoreRequest,
+)
 from app.services.backup_service import BackupService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup", tags=["backup"])
 
@@ -71,7 +80,9 @@ async def list_snapshots(
 
 
 @router.post("/restore")
-async def restore_backup(request: RestoreRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def restore_backup(
+    request: RestoreRequest, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
     """Restore journal data from a cloud backup."""
     svc = BackupService(db)
     result = await svc.restore(request.config_id)
@@ -84,29 +95,30 @@ async def export_local_backup(
     db: AsyncSession = Depends(get_db),
 ) -> FileResponse:
     """Export the SQLite database and media files as a .tar.gz archive."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     svc = BackupService(db)
     await svc.count_all()
 
     tmpdir = tempfile.mkdtemp()
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     archive_path = Path(tmpdir) / f"dailybyte-backup-{timestamp}.tar.gz"
 
-    db_url: str = settings.DATABASE_URL
-    db_file = db_url.replace("sqlite+aiosqlite:///", "")
+    db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
 
     import tarfile
 
     with tarfile.open(archive_path, "w:gz") as tar:
-        if Path(db_file).exists():
+        if db_file.exists():
             # Checkpoint WAL before copying to ensure consistency
             from app.core.database import engine
+
             async with engine.begin() as conn:
                 from sqlalchemy import text
+
                 await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-            tar.add(db_file, arcname="dev.db")
+            tar.add(str(db_file), arcname="dev.db")
         if media_dir.exists():
             tar.add(str(media_dir), arcname="media")
 
@@ -128,7 +140,7 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
     from app.core.database import init_db, reinit_engine
 
     content = await file.read()
-    db_file_path: str = settings.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
+    db_file_path: Path = settings.db_path
     media_dir = settings.MEDIA_DIR
 
     restored: list[str] = []
@@ -141,7 +153,11 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
             for member in tar.getmembers():
                 if member.name.startswith("/") or ".." in member.name:
                     from fastapi import HTTPException
-                    raise HTTPException(status_code=400, detail=f"Invalid archive: path traversal in '{member.name}'")
+
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid archive: path traversal in '{member.name}'",
+                    )
             tar.extractall(tmpdir)
 
         # If archive contains a database, swap it in atomically
@@ -150,20 +166,20 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
             await reinit_engine()
 
             # Backup the current DB before overwriting
-            backup_path = db_file_path + ".pre-restore.bak"
-            if Path(db_file_path).exists():
-                shutil.copy2(db_file_path, backup_path)
+            backup_path = str(db_file_path) + ".pre-restore.bak"
+            if db_file_path.exists():
+                shutil.copy2(str(db_file_path), backup_path)
 
             try:
-                shutil.copy2(str(extracted_db), db_file_path)
+                shutil.copy2(str(extracted_db), str(db_file_path))
                 await init_db()
                 restored.append("database")
                 # Restore succeeded — remove backup
                 Path(backup_path).unlink(missing_ok=True)
             except Exception:
-                # Restore failed — rollback to backup
+                logger.error("Database restore failed, rolling back", exc_info=True)
                 if Path(backup_path).exists():
-                    shutil.copy2(backup_path, db_file_path)
+                    shutil.copy2(backup_path, str(db_file_path))
                 Path(backup_path).unlink(missing_ok=True)
                 raise
 
@@ -182,6 +198,7 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
 
 # ── Automated backup scheduling ────────────────────────────────────────────────
 
+
 @router.post("/schedule")
 async def schedule_backup(
     cron: str = Query(..., description="Cron expression (e.g., '0 2 * * *')"),
@@ -191,6 +208,7 @@ async def schedule_backup(
 ) -> Any:
     """Schedule an automated backup job."""
     from app.services.scheduler_service import SchedulerService
+
     svc = SchedulerService(db)
     return await svc.schedule_backup(cron, backup_path, retention)
 
@@ -199,6 +217,7 @@ async def schedule_backup(
 async def schedule_status(db: AsyncSession = Depends(get_db)) -> Any:
     """Check the status of the backup scheduler."""
     from app.services.scheduler_service import SchedulerService
+
     svc = SchedulerService(db)
     return await svc.get_status()
 
@@ -207,5 +226,6 @@ async def schedule_status(db: AsyncSession = Depends(get_db)) -> Any:
 async def unschedule_backup(db: AsyncSession = Depends(get_db)) -> Any:
     """Remove the automated backup schedule."""
     from app.services.scheduler_service import SchedulerService
+
     svc = SchedulerService(db)
     return await svc.unschedule_backup()

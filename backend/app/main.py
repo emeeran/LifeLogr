@@ -1,4 +1,5 @@
 """Main FastAPI application entry point."""
+
 from __future__ import annotations
 
 import logging
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start backup scheduler
     try:
         from app.services.scheduler_service import SchedulerService
+
         await SchedulerService.start()
     except Exception:
         logger.warning("Failed to start backup scheduler", exc_info=True)
@@ -49,22 +51,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Stop backup scheduler
     try:
         from app.services.scheduler_service import SchedulerService
+
         await SchedulerService.shutdown()
     except Exception:
-        pass
+        logger.warning("Failed to stop backup scheduler", exc_info=True)
     # Cancel outstanding background enrichment tasks
     try:
         from app.services.enrichment_service import cancel_pending_tasks
+
         await cancel_pending_tasks()
     except Exception:
-        pass
+        logger.warning("Failed to cancel enrichment tasks", exc_info=True)
     # Dispose database engine
     try:
         from app.core.database import engine
+
         await engine.dispose()
         logger.info("Database engine disposed")
     except Exception:
-        pass
+        logger.warning("Failed to dispose database engine", exc_info=True)
 
 
 app = FastAPI(
@@ -93,7 +98,14 @@ async def log_requests(request: Request, call_next: Any) -> Response:
     logger.info("[%s] %s %s", req_id, request.method, request.url.path)
     response: Response = await call_next(request)
     elapsed = (time.time() - start) * 1000
-    logger.info("[%s] %s %s → %d (%.1fms)", req_id, request.method, request.url.path, response.status_code, elapsed)
+    logger.info(
+        "[%s] %s %s → %d (%.1fms)",
+        req_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed,
+    )
     return response
 
 
@@ -130,9 +142,15 @@ if _ASSETS_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(_ASSETS_DIR)), name="static")
 
 # Exception handlers — map domain exceptions to HTTP responses
-app.add_exception_handler(NotFoundError, lambda r, e: JSONResponse(status_code=404, content={"detail": str(e)}))
-app.add_exception_handler(ConflictError, lambda r, e: JSONResponse(status_code=409, content={"detail": str(e)}))
-app.add_exception_handler(MediaSizeError, lambda r, e: JSONResponse(status_code=400, content={"detail": str(e)}))
+app.add_exception_handler(
+    NotFoundError, lambda r, e: JSONResponse(status_code=404, content={"detail": str(e)})
+)
+app.add_exception_handler(
+    ConflictError, lambda r, e: JSONResponse(status_code=409, content={"detail": str(e)})
+)
+app.add_exception_handler(
+    MediaSizeError, lambda r, e: JSONResponse(status_code=400, content={"detail": str(e)})
+)
 
 
 # Global exception handler for unhandled errors
@@ -147,7 +165,10 @@ from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
-from app.routers.encryption import router as encryption_router, global_router as encryption_global_router  # noqa: E402
+from app.routers.encryption import (
+    router as encryption_router,
+    global_router as encryption_global_router,
+)  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
@@ -193,11 +214,14 @@ async def health_check() -> Any:
     try:
         from app.core.database import engine
         from sqlalchemy import text
+
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception as e:
         logger.error("Health check failed: %s", e)
-        return JSONResponse(status_code=503, content={"status": "error", "detail": "Database unavailable"})
+        return JSONResponse(
+            status_code=503, content={"status": "error", "detail": "Database unavailable"}
+        )
     return {"status": "ok"}
 
 
@@ -214,7 +238,9 @@ async def brand_logo() -> FileResponse:
 # Serve built frontend in production — MUST be registered AFTER all API routes
 # so that API GET requests are matched before this catch-all.
 if settings.is_production and _FRONTEND_DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend-assets")
+    app.mount(
+        "/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend-assets"
+    )
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str) -> FileResponse:

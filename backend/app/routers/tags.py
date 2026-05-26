@@ -1,4 +1,5 @@
 """Tag route handlers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -18,7 +19,13 @@ async def _to_response(tag: Tag, svc: TagService) -> Any:
     """Build a TagResponse from a Tag ORM object."""
     children = [TagBrief(id=c.id, name=c.name) for c in await svc.list_tree(tag.id)]
     entry_count = await svc.get_entry_count(tag.id)
-    return TagResponse(id=tag.id, name=tag.name, parent_id=tag.parent_id, children=children, entry_count=entry_count)
+    return TagResponse(
+        id=tag.id,
+        name=tag.name,
+        parent_id=tag.parent_id,
+        children=children,
+        entry_count=entry_count,
+    )
 
 
 @router.post("", response_model=TagResponse, status_code=201)

@@ -1,4 +1,5 @@
 """ExportService — PDF and HTML export with branded templates."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -51,9 +52,14 @@ class ExportService:
     async def _get_entries(
         self, start_date: date | None = None, end_date: date | None = None
     ) -> list[Entry]:
-        q = select(Entry).where(Entry.is_deleted == False).options(  # noqa: E712
-            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-        ).order_by(Entry.entry_date)
+        q = (
+            select(Entry)
+            .where(Entry.is_deleted == False)
+            .options(  # noqa: E712
+                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+            )
+            .order_by(Entry.entry_date)
+        )
 
         if start_date:
             q = q.where(Entry.entry_date >= start_date)
@@ -75,16 +81,18 @@ class ExportService:
             mood_part = f'<span class="mood">{entry.mood}</span> · ' if entry.mood else ""
             tag_html = " ".join(f'<span class="tag">{t}</span>' for t in tags)
             if tag_html:
-                tag_html = f'<div>{tag_html}</div>'
+                tag_html = f"<div>{tag_html}</div>"
 
             body_html = self._md.render(entry.body)
-            parts.append(_ENTRY_HTML.format(
-                date=entry.entry_date,
-                title=title_part,
-                mood=mood_part,
-                tags=tag_html,
-                body_html=body_html,
-            ))
+            parts.append(
+                _ENTRY_HTML.format(
+                    date=entry.entry_date,
+                    title=title_part,
+                    mood=mood_part,
+                    tags=tag_html,
+                    body_html=body_html,
+                )
+            )
 
         content = "\n".join(parts)
         return _HTML_TEMPLATE.format(title="Diarilinux Export", content=content)

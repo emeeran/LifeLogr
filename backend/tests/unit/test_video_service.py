@@ -1,4 +1,5 @@
 """Integration tests for video notes — CRUD via service with real DB."""
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.video_service import VideoService

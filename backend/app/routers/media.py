@@ -1,4 +1,5 @@
 """Media attachment route handlers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -25,7 +26,13 @@ async def upload_media(
     """Upload a media file and attach it to an entry."""
     svc = MediaService(db)
     file_data = await file.read()
-    return await svc.upload(entry_id, file.filename or "upload", file.content_type or "application/octet-stream", file_data, caption)
+    return await svc.upload(
+        entry_id,
+        file.filename or "upload",
+        file.content_type or "application/octet-stream",
+        file_data,
+        caption,
+    )
 
 
 @router.get("/{media_id}", response_model=MediaResponse)
@@ -40,7 +47,11 @@ async def download_media(media_id: int, db: AsyncSession = Depends(get_db)) -> R
     """Download the raw media file."""
     svc = MediaService(db)
     data, content_type, filename = await svc.get_file(media_id)
-    return Response(content=data, media_type=content_type, headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.delete("/{media_id}", status_code=204)
@@ -51,6 +62,7 @@ async def delete_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Non
 
 
 # ── OCR endpoints ──────────────────────────────────────────────────────────────
+
 
 @router.post("/{media_id}/ocr", response_model=OCRResponse)
 async def extract_ocr(
@@ -79,6 +91,7 @@ async def get_cached_ocr(
 
 
 # ── Batch upload & listing ─────────────────────────────────────────────────────
+
 
 @router.post("/batch", response_model=list[MediaResponse], status_code=201)
 async def batch_upload(

@@ -1,4 +1,5 @@
 """Journal entry route handlers."""
+
 from __future__ import annotations
 
 import io
@@ -71,7 +72,9 @@ async def list_entries(
     svc = EntryService(db)
     parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
     entries, total = await svc.list_entries(offset, limit, parsed_tag_ids, mood, year, month)
-    return EntryListResponse(items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit)
+    return EntryListResponse(
+        items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit
+    )
 
 
 @router.get("/calendar/{year}/{month}", response_model=list[EntryResponse])
@@ -91,7 +94,9 @@ async def search_entries(
     """Full-text search on entry bodies."""
     svc = EntryService(db)
     entries, total = await svc.search(q, offset, limit)
-    return EntryListResponse(items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit)
+    return EntryListResponse(
+        items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit
+    )
 
 
 @router.get("/export/markdown")
@@ -107,10 +112,15 @@ async def export_markdown(
     """
     from app.core.config import settings
 
-    q = select(Entry).where(Entry.is_deleted == False).options(  # noqa: E712
-        selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-        selectinload(Entry.media),
-    ).order_by(Entry.entry_date)
+    q = (
+        select(Entry)
+        .where(Entry.is_deleted == False)
+        .options(  # noqa: E712
+            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+            selectinload(Entry.media),
+        )
+        .order_by(Entry.entry_date)
+    )
 
     if start_date:
         q = q.where(Entry.entry_date >= start_date)
@@ -175,9 +185,14 @@ async def export_diarium(
     """
     mood_to_rating = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
 
-    q = select(Entry).where(Entry.is_deleted == False).options(  # noqa: E712
-        selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-    ).order_by(Entry.entry_date)
+    q = (
+        select(Entry)
+        .where(Entry.is_deleted == False)
+        .options(  # noqa: E712
+            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+        )
+        .order_by(Entry.entry_date)
+    )
 
     if start_date:
         q = q.where(Entry.entry_date >= start_date)
@@ -214,10 +229,9 @@ async def export_diarium(
 
 # ── Geotagging endpoints ───────────────────────────────────────────────────────
 
+
 @router.put("/{entry_id}/geotag", response_model=GeotagResponse)
-async def set_geotag(
-    entry_id: int, data: GeotagUpdate, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def set_geotag(entry_id: int, data: GeotagUpdate, db: AsyncSession = Depends(get_db)) -> Any:
     """Set or update the geolocation of an entry."""
     svc = EntryService(db)
     entry = await svc.get(entry_id)
@@ -284,18 +298,25 @@ async def nearby_entries(
             continue
         dlat = math.radians(e.latitude - lat)
         dlon = math.radians(e.longitude - lon)
-        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat)) * math.cos(math.radians(e.latitude)) * math.sin(dlon / 2) ** 2
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(math.radians(lat))
+            * math.cos(math.radians(e.latitude))
+            * math.sin(dlon / 2) ** 2
+        )
         dist = 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         if dist <= radius_km:
-            nearby.append(NearbyEntry(
-                id=e.id,
-                entry_date=str(e.entry_date),
-                title=e.title,
-                latitude=e.latitude,
-                longitude=e.longitude,
-                location_name=e.location_name,
-                distance_km=round(dist, 2),
-            ))
+            nearby.append(
+                NearbyEntry(
+                    id=e.id,
+                    entry_date=str(e.entry_date),
+                    title=e.title,
+                    latitude=e.latitude,
+                    longitude=e.longitude,
+                    location_name=e.location_name,
+                    distance_km=round(dist, 2),
+                )
+            )
 
     nearby.sort(key=lambda x: x.distance_km)
     return NearbyResponse(items=nearby[:limit], total=len(nearby))
@@ -312,7 +333,8 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
     from sqlalchemy import text
 
     # Find duplicate groups: same date + same normalized body, more than 1 entry
-    result = await db.execute(text("""
+    result = await db.execute(
+        text("""
         SELECT entry_date,
                LOWER(REPLACE(REPLACE(body, CHAR(10), ' '), CHAR(13), '')) AS norm_body,
                GROUP_CONCAT(id) AS ids
@@ -320,7 +342,8 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
         WHERE is_deleted = 0
         GROUP BY entry_date, norm_body
         HAVING COUNT(*) > 1
-    """))
+    """)
+    )
     rows = result.fetchall()
 
     if not rows:
@@ -332,10 +355,11 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
         # Keep the first (oldest) id, delete the rest
         ids_to_delete = id_list[1:]
         for eid in ids_to_delete:
-            from datetime import datetime
+            from datetime import datetime, timezone
+
             await db.execute(
                 text("UPDATE entries SET is_deleted = 1, deleted_at = :now WHERE id = :id"),
-                {"now": datetime.now(), "id": eid},
+                {"now": datetime.now(timezone.utc), "id": eid},
             )
             total_removed += 1
 
@@ -370,8 +394,14 @@ async def reset_database(db: AsyncSession = Depends(get_db)) -> Any:
     from sqlalchemy import text
 
     tables = [
-        "entry_tags", "entry_revisions", "media", "voice_recordings",
-        "video_notes", "ocr_results", "entries", "tags",
+        "entry_tags",
+        "entry_revisions",
+        "media",
+        "voice_recordings",
+        "video_notes",
+        "ocr_results",
+        "entries",
+        "tags",
         "sync_queue",
     ]
     for table in tables:
@@ -455,9 +485,13 @@ async def import_file(
         try:
             conn = sqlite3_mod.connect(tmp.name)
             conn.row_factory = sqlite3_mod.Row
-            rows = conn.execute("SELECT e.DiaryEntryId, e.Heading, e.Text, e.Rating, e.Latitude, e.Longitude FROM Entries e ORDER BY e.DiaryEntryId").fetchall()
+            rows = conn.execute(
+                "SELECT e.DiaryEntryId, e.Heading, e.Text, e.Rating, e.Latitude, e.Longitude FROM Entries e ORDER BY e.DiaryEntryId"
+            ).fetchall()
 
-            tag_rows = conn.execute("SELECT et.DiaryEntryId, t.Value FROM EntryTags et JOIN Tags t ON et.DiaryTagId = t.DiaryTagId").fetchall()
+            tag_rows = conn.execute(
+                "SELECT et.DiaryEntryId, t.Value FROM EntryTags et JOIN Tags t ON et.DiaryTagId = t.DiaryTagId"
+            ).fetchall()
             entry_tags_map: dict[int, list[str]] = {}
             for tr in tag_rows:
                 entry_tags_map.setdefault(tr["DiaryEntryId"], []).append(tr["Value"])
@@ -488,17 +522,21 @@ async def import_file(
                 mood_val = None
                 rating = row["Rating"]
                 if rating and isinstance(rating, (int, float)) and 1 <= int(rating) <= 5:
-                    mood_val = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}.get(int(rating))
+                    mood_val = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}.get(
+                        int(rating)
+                    )
 
-                entries_data.append({
-                    "entry_date": entry_date_str,
-                    "title": heading,
-                    "body": body_text,
-                    "mood": mood_val,
-                    "tags": entry_tags_map.get(row["DiaryEntryId"], []),
-                    "latitude": row["Latitude"] if row["Latitude"] else None,
-                    "longitude": row["Longitude"] if row["Longitude"] else None,
-                })
+                entries_data.append(
+                    {
+                        "entry_date": entry_date_str,
+                        "title": heading,
+                        "body": body_text,
+                        "mood": mood_val,
+                        "tags": entry_tags_map.get(row["DiaryEntryId"], []),
+                        "latitude": row["Latitude"] if row["Latitude"] else None,
+                        "longitude": row["Longitude"] if row["Longitude"] else None,
+                    }
+                )
             conn.close()
         finally:
             PathLib(tmp.name).unlink(missing_ok=True)

@@ -1,4 +1,5 @@
 """Plugin hook system — HookManager with priority dispatch."""
+
 from __future__ import annotations
 
 import importlib
@@ -22,9 +23,7 @@ class HookManager:
 
     def unregister(self, hook_name: str, handler: Callable[..., Any]) -> None:
         """Remove a handler from a hook."""
-        self._hooks[hook_name] = [
-            (p, h) for p, h in self._hooks[hook_name] if h != handler
-        ]
+        self._hooks[hook_name] = [(p, h) for p, h in self._hooks[hook_name] if h != handler]
 
     async def dispatch(self, hook_name: str, *args: Any, **kwargs: Any) -> list[Any]:
         """Call all handlers for a hook in priority order. Returns list of results."""
@@ -43,8 +42,7 @@ class HookManager:
     def get_hooks(self) -> dict[str, list[tuple[int, str]]]:
         """Return registered hooks for introspection."""
         return {
-            name: [(p, h.__name__) for p, h in handlers]
-            for name, handlers in self._hooks.items()
+            name: [(p, h.__name__) for p, h in handlers] for name, handlers in self._hooks.items()
         }
 
     @staticmethod

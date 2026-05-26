@@ -1,4 +1,5 @@
 """Revision service — auto-snapshot, diff, and restore for journal entries."""
+
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -43,8 +44,10 @@ class RevisionService:
         """Return paginated revision history for an entry."""
         await self._get_entry(entry_id)
 
-        count_q = select(func.count()).select_from(EntryRevision).where(
-            EntryRevision.entry_id == entry_id
+        count_q = (
+            select(func.count())
+            .select_from(EntryRevision)
+            .where(EntryRevision.entry_id == entry_id)
         )
         total = (await self.db.execute(count_q)).scalar_one()
 
@@ -72,9 +75,7 @@ class RevisionService:
             raise NotFoundError(f"Revision {revision_number} not found for entry {entry_id}")
         return rev
 
-    async def diff(
-        self, entry_id: int, from_rev: int, to_rev: int
-    ) -> RevisionDiffResponse:
+    async def diff(self, entry_id: int, from_rev: int, to_rev: int) -> RevisionDiffResponse:
         """Compare two revisions of an entry."""
         from_revision = await self.get_revision(entry_id, from_rev)
         to_revision = await self.get_revision(entry_id, to_rev)

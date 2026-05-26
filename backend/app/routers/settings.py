@@ -1,6 +1,8 @@
 """Application settings route handlers."""
+
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.entry import Entry
 from app.models.media import Media
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
@@ -78,9 +82,7 @@ def _dir_size(path: Path) -> int:
 
 def _db_file_size() -> int:
     """Return the SQLite database file size in bytes."""
-    db_url: str = settings.DATABASE_URL
-    db_path = db_url.replace("sqlite+aiosqlite:///", "")
-    p = Path(db_path)
+    p = settings.db_path
     return p.stat().st_size if p.exists() else 0
 
 
@@ -104,13 +106,11 @@ def _get_ai_settings() -> AISettings:
 @router.get("", response_model=AppSettingsResponse)
 async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
     """Return current application settings and storage info."""
-    entry_count = (await db.execute(
-        select(func.count()).select_from(Entry).where(~Entry.is_deleted)
-    )).scalar() or 0
+    entry_count = (
+        await db.execute(select(func.count()).select_from(Entry).where(~Entry.is_deleted))
+    ).scalar() or 0
 
-    media_count = (await db.execute(
-        select(func.count()).select_from(Media)
-    )).scalar() or 0
+    media_count = (await db.execute(select(func.count()).select_from(Media))).scalar() or 0
 
     return AppSettingsResponse(
         ai=_get_ai_settings(),
@@ -156,10 +156,12 @@ async def list_ollama_models() -> list[dict[str, Any]]:
             r = await client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
             if r.status_code == 200:
                 for m in r.json().get("models", []):
-                    models.append({
-                        "name": m.get("name", ""),
-                        "size": m.get("size", 0),
-                    })
+                    models.append(
+                        {
+                            "name": m.get("name", ""),
+                            "size": m.get("size", 0),
+                        }
+                    )
     except Exception:
-        pass
+        logger.warning("Failed to fetch Ollama models", exc_info=True)
     return models

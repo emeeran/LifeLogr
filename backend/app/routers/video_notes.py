@@ -1,4 +1,5 @@
 """Video note route handlers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -23,7 +24,9 @@ async def upload_video(
     """Upload a video note attached to an entry."""
     svc = VideoService(db)
     data = await file.read()
-    note = await svc.upload(entry_id, file.filename or "video.mp4", file.content_type or "video/mp4", data)
+    note = await svc.upload(
+        entry_id, file.filename or "video.mp4", file.content_type or "video/mp4", data
+    )
     return note
 
 

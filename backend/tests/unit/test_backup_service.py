@@ -1,20 +1,27 @@
 """Integration tests for backup — config, snapshots."""
+
 from httpx import AsyncClient
 
 
 class TestBackupConfig:
     async def test_create_config(self, client: AsyncClient):
-        r = await client.post("/api/v1/backup/config", json={
-            "provider": "webdav",
-            "credentials": {"url": "https://dav.example.com", "username": "u", "password": "p"},
-        })
+        r = await client.post(
+            "/api/v1/backup/config",
+            json={
+                "provider": "webdav",
+                "credentials": {"url": "https://dav.example.com", "username": "u", "password": "p"},
+            },
+        )
         assert r.status_code == 201
 
     async def test_list_configs(self, client: AsyncClient):
-        await client.post("/api/v1/backup/config", json={
-            "provider": "webdav",
-            "credentials": {"url": "https://dav.example.com"},
-        })
+        await client.post(
+            "/api/v1/backup/config",
+            json={
+                "provider": "webdav",
+                "credentials": {"url": "https://dav.example.com"},
+            },
+        )
         r = await client.get("/api/v1/backup/config")
         assert r.status_code == 200
         assert len(r.json()) >= 1

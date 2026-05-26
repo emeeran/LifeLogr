@@ -1,4 +1,5 @@
 """EntryPrompt ORM model — AI-generated reflection prompts for entries."""
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -7,7 +7,7 @@ import type { AppSettings, AIModelInfo } from '../../../api/settings'
 import { request } from '../../../api/client'
 import {
   Brain, Sparkles, Loader, Download as DownloadIcon,
-  Server, Link, Wifi, WifiOff, Eye
+  Link, Wifi, WifiOff, Eye
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'

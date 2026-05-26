@@ -1,4 +1,5 @@
 """VideoService — upload, transcribe, thumbnail, and delete video notes."""
+
 from __future__ import annotations
 
 import uuid
@@ -50,9 +51,7 @@ class VideoService:
         return note
 
     async def get(self, video_id: int) -> VideoNote:
-        result = await self.db.execute(
-            select(VideoNote).where(VideoNote.id == video_id)
-        )
+        result = await self.db.execute(select(VideoNote).where(VideoNote.id == video_id))
         note = result.scalar_one_or_none()
         if not note:
             raise NotFoundError(f"Video note {video_id} not found")
@@ -70,6 +69,7 @@ class VideoService:
         note = await self.get(video_id)
 
         from app.services.recording_service import VoiceRecordingService
+
         recording_svc = VoiceRecordingService(self.db)
 
         file_path = self._media_dir / note.storage_path

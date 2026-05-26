@@ -1,9 +1,10 @@
 """AES-256-GCM encryption service for journal entries."""
+
 from __future__ import annotations
 
 import base64
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import select
@@ -66,7 +67,7 @@ class EncryptionService:
             entry.mood = self._encrypt(entry.mood.encode(), key)
 
         entry.is_encrypted = True
-        entry.encrypted_at = datetime.now()
+        entry.encrypted_at = datetime.now(timezone.utc)
         await self.db.commit()
         await self.db.refresh(entry)
         return entry

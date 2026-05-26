@@ -5,17 +5,15 @@ Revises: f047afab5e35
 Create Date: 2026-05-16 12:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
-from alembic.operations import ops
-from alembic.operations.base import Operations
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, Sequence[str], None] = 'f047afab5e35'
+revision: str = "a1b2c3d4e5f6"
+down_revision: Union[str, Sequence[str], None] = "f047afab5e35"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -26,8 +24,9 @@ def upgrade() -> None:
 
     # Get current table columns
     from sqlalchemy import inspect
+
     insp = inspect(bind)
-    columns = insp.get_columns('entries')
+    _columns = insp.get_columns("entries")
 
     # Create new table without unique constraint on entry_date
     op.execute("""

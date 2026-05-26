@@ -1,4 +1,5 @@
 """Text-to-speech endpoint using Edge TTS."""
+
 from __future__ import annotations
 
 import io
@@ -52,8 +53,7 @@ async def list_voices() -> Any:
 
     voices = await edge_tts.list_voices()
     return [
-        {"short_name": v["ShortName"], "locale": v["Locale"], "gender": v["Gender"]}
-        for v in voices
+        {"short_name": v["ShortName"], "locale": v["Locale"], "gender": v["Gender"]} for v in voices
     ]
 
 
@@ -83,6 +83,7 @@ async def speak_entry(
     entry = result.scalar_one_or_none()
     if not entry:
         from app.core.exceptions import NotFoundError
+
         raise NotFoundError(f"Entry {entry_id} not found")
 
     parts = [t for t in [entry.title, entry.body] if t]

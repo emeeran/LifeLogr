@@ -1,4 +1,5 @@
 """Pydantic schemas for backup config and snapshots."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,13 +10,19 @@ class BackupConfigCreate(BaseModel):
     credentials: dict[str, str] = Field(description="Provider-specific credential map")
     schedule_cron: str | None = Field(default=None, description="Cron expression for auto-backup")
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {
-            "provider": "webdav",
-            "credentials": {"url": "https://dav.example.com", "username": "user", "password": "***"},
-            "schedule_cron": "0 3 * * *",
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "provider": "webdav",
+                "credentials": {
+                    "url": "https://dav.example.com",
+                    "username": "user",
+                    "password": "***",
+                },
+                "schedule_cron": "0 3 * * *",
+            }
         }
-    })
+    )
 
 
 class BackupConfigResponse(BaseModel):

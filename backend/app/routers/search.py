@@ -1,4 +1,5 @@
 """Global search route handler."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -29,5 +30,7 @@ async def global_search(
     """Search entries with keyword (FTS5), semantic (embeddings), or hybrid mode."""
     svc = SearchService(db)
     parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
-    items, total = await svc.search(q, mood, parsed_tag_ids, date_from, date_to, offset, limit, mode)
+    items, total = await svc.search(
+        q, mood, parsed_tag_ids, date_from, date_to, offset, limit, mode
+    )
     return GlobalSearchResponse(items=items, total=total, offset=offset, limit=limit)
