@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import type { EntryResponse } from '../types'
 import { entriesApi } from '../api/entries'
 
 export const useEntriesStore = defineStore('entries', () => {
-  const calendarEntries = ref<EntryResponse[]>([])
+  const calendarEntries = shallowRef<EntryResponse[]>([])
   const currentEntry = ref<EntryResponse | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)

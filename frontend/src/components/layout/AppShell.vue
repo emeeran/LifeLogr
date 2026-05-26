@@ -4,14 +4,14 @@ import Sidebar from './Sidebar.vue'
 import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
 import EntryEditor from '../entry/EntryEditor.vue'
-import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
-import RevisionPanel from '../entry/RevisionPanel.vue'
-import RecordingPanel from '../recordings/RecordingPanel.vue'
-import AttachmentsPanel from '../entry/AttachmentsPanel.vue'
+const AiDrawerPanel = defineAsyncComponent(() => import('../entry/AiDrawerPanel.vue'))
+const RevisionPanel = defineAsyncComponent(() => import('../entry/RevisionPanel.vue'))
+const RecordingPanel = defineAsyncComponent(() => import('../recordings/RecordingPanel.vue'))
+const AttachmentsPanel = defineAsyncComponent(() => import('../entry/AttachmentsPanel.vue'))
 import SearchPalette from '../search/SearchPalette.vue'
 import ScribblePad from '../scribble/ScribblePad.vue'
 import { useEntriesStore } from '../../stores/entries'
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { AlertTriangle, Save, Trash2, X, Sparkles, History, Mic, Paperclip } from 'lucide-vue-next'
 import type { Component } from 'vue'
 

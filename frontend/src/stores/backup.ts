@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import type { BackupConfigResponse, BackupSnapshotResponse } from '../types'
 import { backupApi } from '../api/backup'
 
 export const useBackupStore = defineStore('backup', () => {
-  const configs = ref<BackupConfigResponse[]>([])
-  const snapshots = ref<BackupSnapshotResponse[]>([])
+  const configs = shallowRef<BackupConfigResponse[]>([])
+  const snapshots = shallowRef<BackupSnapshotResponse[]>([])
   const loading = ref(false)
   const lastBackupResult = ref<BackupSnapshotResponse | null>(null)
   const lastRestoreResult = ref<Record<string, unknown> | null>(null)
