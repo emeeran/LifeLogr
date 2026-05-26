@@ -181,3 +181,46 @@ mark {
 }
 .fade-in { animation-name: fadeIn; }
 .slide-in-from-bottom-2 { animation-name: slideInFromBottom; }
+
+/* ── Focus ring for all interactive elements ── */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[role="switch"]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* ── Reusable select styling ── */
+.settings-select {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.settings-select:hover {
+  border-color: var(--color-accent);
+}
+
+/* ── Reusable text input styling ── */
+.settings-input {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  transition: border-color 0.15s;
+}
+.settings-input:hover {
+  border-color: var(--color-accent);
+}
+.settings-input:focus {
+  border-color: var(--color-accent);
+}

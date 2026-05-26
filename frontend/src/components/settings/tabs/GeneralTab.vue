@@ -6,6 +6,10 @@ import { useTemplatesStore } from '../../../stores/templates'
 import {
   Sun, Moon, Type, Sliders, Clock, Eye, Search, MapPin, LayoutTemplate, Keyboard
 } from 'lucide-vue-next'
+import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
+import ToggleSwitch from '../shared/ToggleSwitch.vue'
+import AccordionItem from '../shared/AccordionItem.vue'
 
 const ui = useUiStore()
 const searchStore = useSearchStore()
@@ -75,130 +79,79 @@ function resetEditorDefaults() {
 
 <template>
   <!-- Appearance -->
-  <section>
-    <div class="flex items-center justify-between mb-1">
-      <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1">
-        <Sun :size="11" /> Appearance
-      </h3>
-      <button @click="resetAppearanceDefaults"
-        class="text-[9px] text-text-muted hover:text-accent cursor-pointer transition-colors">Reset defaults</button>
-    </div>
-    <div class="bg-surface rounded p-2 border border-border space-y-1.5">
-      <label class="flex items-center gap-2 cursor-pointer">
-        <component :is="ui.darkMode ? Moon : Sun" :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Dark mode</span>
-        <input type="checkbox" :checked="ui.darkMode" @change="ui.toggleTheme()" class="accent-accent" />
-      </label>
-      <div class="flex items-center gap-2">
-        <Type :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Font family</span>
-        <select
-          :value="ui.fontFamily"
-          @change="ui.setFontFamily(($event.target as HTMLSelectElement).value)"
-          class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]"
-        >
-          <option v-for="f in fontOptions" :key="f.value" :value="f.value">{{ f.label }}</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <Type :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Font size ({{ ui.fontSize }}px)</span>
-        <input type="range" :value="ui.fontSize" @input="ui.setFontSize(+($event.target as HTMLInputElement).value)"
-          min="12" max="20" step="1" class="w-20 accent-accent" />
-      </div>
-    </div>
-  </section>
+  <SettingsSection title="Appearance" :icon="Sun" description="Customize the look and feel"
+    reset-label="Reset" @reset="resetAppearanceDefaults">
+    <SettingRow label="Dark mode">
+      <template #icon>
+        <component :is="ui.darkMode ? Moon : Sun" :size="12" class="text-text-muted shrink-0" />
+      </template>
+      <ToggleSwitch :model-value="ui.darkMode" @update:model-value="ui.toggleTheme()" />
+    </SettingRow>
+    <SettingRow :icon="Type" label="Font family">
+      <select :value="ui.fontFamily" @change="ui.setFontFamily(($event.target as HTMLSelectElement).value)"
+        class="settings-select max-w-40">
+        <option v-for="f in fontOptions" :key="f.value" :value="f.value">{{ f.label }}</option>
+      </select>
+    </SettingRow>
+    <SettingRow :icon="Type" :label="`Font size (${ui.fontSize}px)`">
+      <input type="range" :value="ui.fontSize" @input="ui.setFontSize(+($event.target as HTMLInputElement).value)"
+        min="12" max="20" step="1" class="w-24 accent-accent" />
+    </SettingRow>
+  </SettingsSection>
 
-  <!-- Editor -->
-  <section>
-    <div class="flex items-center justify-between mb-1">
-      <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1">
-        <Sliders :size="11" /> Editor
-      </h3>
-      <button @click="resetEditorDefaults"
-        class="text-[9px] text-text-muted hover:text-accent cursor-pointer transition-colors">Reset defaults</button>
-    </div>
-    <div class="bg-surface rounded p-2 border border-border space-y-1.5">
-      <div class="flex items-center gap-2">
-        <Clock :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Auto-save ({{ autosaveInterval }}s)</span>
-        <input type="range" v-model.number="autosaveInterval" min="1" max="10" step="1" class="w-20 accent-accent" />
-      </div>
-      <div class="flex items-center gap-2">
-        <Eye :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">OCR language</span>
-        <select v-model="ocrLanguage"
-          class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[140px]">
-          <option v-for="l in ocrLanguages" :key="l.value" :value="l.value">{{ l.label }}</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <Type :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Default title</span>
-        <input v-model="ui.defaultTitle"
-          placeholder="e.g. Daily Journal"
-          class="bg-surface border border-border rounded px-1.5 py-0.5 text-[10px] text-text-primary outline-none w-32 hover:border-accent transition-colors" />
-      </div>
-    </div>
-  </section>
+  <!-- Editor & Writing -->
+  <SettingsSection title="Editor & Writing" :icon="Sliders" description="Writing behavior, search, and preferences"
+    reset-label="Reset" @reset="resetEditorDefaults" card-class="p-3 space-y-2">
+    <SettingRow :icon="Clock" :label="`Auto-save (${autosaveInterval}s)`">
+      <input type="range" v-model.number="autosaveInterval" min="1" max="10" step="1" class="w-24 accent-accent" />
+    </SettingRow>
+    <SettingRow :icon="Eye" label="OCR language">
+      <select v-model="ocrLanguage" class="settings-select w-32">
+        <option v-for="l in ocrLanguages" :key="l.value" :value="l.value">{{ l.label }}</option>
+      </select>
+    </SettingRow>
+    <SettingRow :icon="Type" label="Default title">
+      <input v-model="ui.defaultTitle" placeholder="e.g. Daily Journal" class="settings-input w-40" />
+    </SettingRow>
 
-  <!-- Search -->
-  <section>
-    <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
-      <Search :size="11" /> Search
-    </h3>
-    <div class="bg-surface rounded p-2 border border-border">
-      <div class="flex items-center gap-2">
-        <Search :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Search mode</span>
-        <select v-model="searchStore.searchMode"
-          class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[120px]">
+    <div class="border-t border-border pt-2 space-y-2">
+      <SettingRow :icon="Search" label="Search mode">
+        <select v-model="searchStore.searchMode" class="settings-select w-32">
           <option value="hybrid">Hybrid</option>
           <option value="keyword">Keyword</option>
           <option value="semantic">Semantic</option>
         </select>
-      </div>
-      <div class="text-[9px] text-text-muted mt-1">
+      </SettingRow>
+      <p class="text-[10px] text-text-muted pl-[30px]">
         <span v-if="searchStore.searchMode === 'hybrid'">Combines keyword and semantic search for best results.</span>
         <span v-else-if="searchStore.searchMode === 'keyword'">Fast text matching. Works without AI models.</span>
         <span v-else>Finds entries by meaning, not just words. Requires embedding model.</span>
-      </div>
+      </p>
     </div>
-  </section>
 
-  <!-- Preferences -->
-  <section>
-    <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-1">Preferences</h3>
-    <div class="bg-surface rounded p-2 border border-border space-y-1.5">
-      <label class="flex items-center gap-2 cursor-pointer">
-        <MapPin :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Auto-tag location</span>
-        <input type="checkbox" v-model="autoGeotag" class="accent-accent" />
-      </label>
-      <div class="flex items-center gap-2">
-        <LayoutTemplate :size="11" class="text-text-muted" />
-        <span class="text-[11px] text-text-secondary flex-1">Default template</span>
-        <select v-model.number="defaultTemplateId"
-          class="bg-surface border border-border rounded px-1 py-0.5 text-[10px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors max-w-[180px]">
+    <div class="border-t border-border pt-2 space-y-2">
+      <SettingRow label="Auto-tag location">
+        <template #icon>
+          <MapPin :size="12" class="text-text-muted shrink-0" />
+        </template>
+        <ToggleSwitch v-model="autoGeotag" />
+      </SettingRow>
+      <SettingRow :icon="LayoutTemplate" label="Default template">
+        <select v-model.number="defaultTemplateId" class="settings-select max-w-40">
           <option :value="null">None</option>
           <option v-for="t in templatesStore.templates" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
-      </div>
+      </SettingRow>
     </div>
-  </section>
+  </SettingsSection>
 
-  <!-- Keyboard Shortcuts -->
-  <section>
-    <h3 class="text-[11px] font-medium text-text-muted uppercase tracking-wide flex items-center gap-1 mb-1">
-      <Keyboard :size="11" /> Keyboard Shortcuts
-    </h3>
-    <div class="bg-surface rounded border border-border overflow-hidden">
-      <div class="divide-y divide-border">
-        <div v-for="s in shortcuts" :key="s.keys" class="flex items-center justify-between px-2 py-1">
-          <span class="text-[11px] text-text-secondary">{{ s.desc }}</span>
-          <kbd class="px-1.5 py-0.5 bg-surface-hover rounded text-[9px] font-mono text-text-muted border border-border">{{ s.keys }}</kbd>
-        </div>
+  <!-- Keyboard Shortcuts (collapsible) -->
+  <AccordionItem title="Keyboard Shortcuts" :icon="Keyboard" description="Quick reference for editor shortcuts">
+    <div class="divide-y divide-border -m-3">
+      <div v-for="s in shortcuts" :key="s.keys" class="flex items-center justify-between px-3 py-1.5">
+        <span class="text-[12px] text-text-secondary">{{ s.desc }}</span>
+        <kbd class="px-1.5 py-0.5 bg-surface-hover rounded-md text-[10px] font-mono text-text-muted border border-border">{{ s.keys }}</kbd>
       </div>
     </div>
-  </section>
+  </AccordionItem>
 </template>

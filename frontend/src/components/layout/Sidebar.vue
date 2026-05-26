@@ -48,7 +48,7 @@ function navigate(view: ViewType) {
     </div>
 
     <!-- Scrollable nav -->
-    <div class="flex-1 overflow-y-auto py-1">
+    <div class="flex-1 py-1" :class="ui.sidebarCollapsed ? 'overflow-y-hidden' : 'overflow-y-auto'">
       <router-link
         v-for="item in navItems"
         :key="item.view"
