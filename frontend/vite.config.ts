@@ -22,9 +22,9 @@ export default defineConfig(({ mode }) => ({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-vue': ['vue', 'vue-router'],
-          'vendor-leaflet': ['leaflet'],
+        manualChunks(id) {
+          if (id.includes('node_modules/vue/') || id.includes('node_modules/@vue/') || id.includes('node_modules/vue-router/')) return 'vendor-vue'
+          if (id.includes('node_modules/leaflet/')) return 'vendor-leaflet'
         },
       },
     },

@@ -1,15 +1,15 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import * as analyticsApi from '../api/analytics'
 import type { OverviewResponse, WritingHabitResponse, WordCountResponse, TagStatsResponse, HeatmapResponse, MediaStatsResponse } from '../types'
 
 export const useAnalyticsStore = defineStore('analytics', () => {
-  const overview = ref<OverviewResponse | null>(null)
-  const habits = ref<WritingHabitResponse[]>([])
-  const wordCounts = ref<WordCountResponse | null>(null)
-  const tagStats = ref<TagStatsResponse[]>([])
-  const heatmap = ref<HeatmapResponse | null>(null)
-  const mediaStats = ref<MediaStatsResponse | null>(null)
+  const overview = shallowRef<OverviewResponse | null>(null)
+  const habits = shallowRef<WritingHabitResponse[]>([])
+  const wordCounts = shallowRef<WordCountResponse | null>(null)
+  const tagStats = shallowRef<TagStatsResponse[]>([])
+  const heatmap = shallowRef<HeatmapResponse | null>(null)
+  const mediaStats = shallowRef<MediaStatsResponse | null>(null)
   const loading = ref(false)
 
   async function fetchOverview() {
