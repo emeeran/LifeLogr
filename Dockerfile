@@ -7,22 +7,16 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Stage 2: Production image ──
-FROM python:3.11-slim
-
-# System deps for WeasyPrint, Tesseract, etc.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
-    libffi-dev libcairo2 shared-mime-info tesseract-ocr \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-alpine
 
 WORKDIR /app
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install Python deps
+# Install Python deps (core only — no heavy system libs needed)
 COPY backend/pyproject.toml backend/.python-version ./
-RUN uv pip install --system -r pyproject.toml
+RUN uv pip install --system -r pyproject.toml --extra pdf --extra image
 
 # Copy backend code
 COPY backend/ ./backend/

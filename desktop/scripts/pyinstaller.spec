@@ -40,7 +40,6 @@ a = Analysis(
         'uvicorn.lifespan.on',
         # Third-party
         'aiosqlite',
-        'edge_tts',
         'httpx',
         'apscheduler',
         'apscheduler.schedulers',
@@ -49,17 +48,20 @@ a = Analysis(
         'apscheduler.triggers.cron',
         'sqlalchemy.ext.asyncio',
         'sqlalchemy.orm',
-        'PIL',
-        'PIL.Image',
-        'pytesseract',
+        'fpdf',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Heavy optional deps — excluded for size; setup script installs system-level
+        # Heavy optional deps — excluded for size; install via [group] extras
         'faster_whisper',
         'weasyprint',
+        'edge_tts',
+        'mega',
+        'PIL',
+        'PIL.Image',
+        'pytesseract',
         'torch',
         'numpy',
         'scipy',

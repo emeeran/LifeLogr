@@ -26,7 +26,13 @@ def _get_whisper_model() -> Any:
     """Lazy-load the faster-whisper model on first transcription call."""
     global _whisper_model
     if _whisper_model is None:
-        from faster_whisper import WhisperModel
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as exc:
+            raise ImportError(
+                "Speech-to-text requires the 'stt' extra. "
+                'Install it with: uv pip install -e ".[stt]"'
+            ) from exc
 
         logger.info(
             "Loading Whisper model '%s' on device '%s'...",

@@ -3,14 +3,92 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from datetime import datetime, timezone
 from typing import Protocol
 
+import httpx
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.sync_service import SyncService
+from app.models.sync import SyncQueue, SyncStatus
 
 logger = logging.getLogger(__name__)
+
+
+# ── Sync queue helpers (inlined from sync_service.py) ──────────────────
+
+
+class SyncService:
+    """Offline queue, flush, and conflict resolution."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def enqueue(
+        self, operation: str, entity_type: str, entity_id: int, payload: dict[str, object]
+    ) -> SyncQueue:
+        """Queue an operation for later sync."""
+        item = SyncQueue(
+            operation=operation,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            payload=json.dumps(payload),
+        )
+        self.db.add(item)
+        await self.db.commit()
+        await self.db.refresh(item)
+        return item
+
+    async def get_pending(self, limit: int = 100) -> list[SyncQueue]:
+        """Return unsynced operations."""
+        result = await self.db.execute(
+            select(SyncQueue)
+            .where(SyncQueue.is_synced == False)  # noqa: E712
+            .order_by(SyncQueue.created_at)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_pending_count(self) -> int:
+        """Count unsynced operations."""
+        result = await self.db.execute(
+            select(func.count()).select_from(SyncQueue).where(SyncQueue.is_synced == False)  # noqa: E712
+        )
+        return result.scalar_one()
+
+    async def flush(self, provider: str = "local") -> dict[str, int | str]:
+        """Mark all pending operations as synced."""
+        pending = await self.get_pending()
+        now = datetime.now(timezone.utc)
+        for item in pending:
+            item.is_synced = True
+            item.synced_at = now
+
+        status = await self._get_or_create_status(provider)
+        status.last_sync_at = now
+        status.status = "idle"
+        status.error_message = None
+
+        await self.db.commit()
+        return {"synced": len(pending), "provider": provider}
+
+    async def get_status(self, provider: str = "local") -> SyncStatus:
+        """Get sync status for a provider."""
+        return await self._get_or_create_status(provider)
+
+    async def _get_or_create_status(self, provider: str) -> SyncStatus:
+        result = await self.db.execute(select(SyncStatus).where(SyncStatus.provider == provider))
+        status = result.scalar_one_or_none()
+        if not status:
+            status = SyncStatus(provider=provider)
+            self.db.add(status)
+            await self.db.flush()
+        return status
+
+
+# ── Provider protocol ──────────────────────────────────────────────────
 
 
 class SyncProvider(Protocol):
@@ -20,6 +98,9 @@ class SyncProvider(Protocol):
     async def download(self, path: str) -> bytes: ...
     async def list_files(self, prefix: str) -> list[str]: ...
     async def delete(self, path: str) -> None: ...
+
+
+# ── Local filesystem provider ──────────────────────────────────────────
 
 
 class LocalFileProvider:
@@ -53,67 +134,70 @@ class LocalFileProvider:
             target.unlink()
 
 
+# ── Nextcloud (WebDAV) provider ────────────────────────────────────────
+
+
 class NextcloudProvider:
-    """Nextcloud WebDAV sync provider."""
+    """Nextcloud WebDAV sync provider with a shared httpx client."""
 
     def __init__(self, base_url: str, username: str, password: str) -> None:
         self._url = base_url.rstrip("/")
         self._auth = (username, password)
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
-        import httpx
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.put(
-                f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
-                content=data,
-                auth=self._auth,
-            )
-            resp.raise_for_status()
-            return path
+        client = self._get_client()
+        resp = await client.put(
+            f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
+            content=data,
+            auth=self._auth,
+        )
+        resp.raise_for_status()
+        return path
 
     async def download(self, path: str) -> bytes:
-        import httpx
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
-                auth=self._auth,
-            )
-            resp.raise_for_status()
-            return resp.content
+        client = self._get_client()
+        resp = await client.get(
+            f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
+            auth=self._auth,
+        )
+        resp.raise_for_status()
+        return resp.content
 
     async def list_files(self, prefix: str) -> list[str]:
-        import httpx
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.request(
-                "PROPFIND",
-                f"{self._url}/remote.php/dav/files/{self._auth[0]}/",
-                auth=self._auth,
-                headers={"Depth": "1"},
-            )
-            # Parse basic file list from XML
-            files = []
-            if resp.status_code == 207:
-                for line in resp.text.splitlines():
-                    if prefix in line:
-                        files.append(line.strip())
-            return files
+        client = self._get_client()
+        resp = await client.request(
+            "PROPFIND",
+            f"{self._url}/remote.php/dav/files/{self._auth[0]}/",
+            auth=self._auth,
+            headers={"Depth": "1"},
+        )
+        files = []
+        if resp.status_code == 207:
+            for line in resp.text.splitlines():
+                if prefix in line:
+                    files.append(line.strip())
+        return files
 
     async def delete(self, path: str) -> None:
-        import httpx
+        client = self._get_client()
+        resp = await client.delete(
+            f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
+            auth=self._auth,
+        )
+        resp.raise_for_status()
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.delete(
-                f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
-                auth=self._auth,
-            )
-            resp.raise_for_status()
+
+# ── Google Drive provider ──────────────────────────────────────────────
 
 
 class GoogleDriveProvider:
-    """Google Drive async sync provider implementing the SyncProvider protocol."""
+    """Google Drive sync provider with a shared httpx client."""
 
     def __init__(
         self, credentials: dict[str, str], on_token_refresh: callable | None = None
@@ -124,84 +208,81 @@ class GoogleDriveProvider:
         self._client_secret = credentials.get("client_secret") or "GOCSPX-diarilinux-secret"
         self._refresh_token = credentials.get("refresh_token")
         self._access_token = credentials.get("access_token")
-        self._token_expiry = credentials.get("token_expiry")  # timestamp as str/float
+        self._token_expiry = credentials.get("token_expiry")
         self._on_token_refresh = on_token_refresh
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
 
     async def _ensure_valid_token(self) -> str:
         """Refreshes the access token if expired or missing."""
         import time
-        import httpx
 
         now = time.time()
-        # If we have an access token and it's not expired (buffer of 60 seconds)
         if self._access_token and self._token_expiry and float(self._token_expiry) > now + 60:
             return self._access_token
 
         if not self._refresh_token:
             raise ValueError("Refresh token missing from Google Drive credentials")
 
-        # Perform token refresh
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "client_id": self._client_id,
-                    "client_secret": self._client_secret,
-                    "refresh_token": self._refresh_token,
-                    "grant_type": "refresh_token",
-                },
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        client = self._get_client()
+        resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "refresh_token": self._refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-            self._access_token = data["access_token"]
-            self._token_expiry = str(now + data["expires_in"])
+        self._access_token = data["access_token"]
+        self._token_expiry = str(now + data["expires_in"])
 
-            if self._on_token_refresh:
-                await self._on_token_refresh(self._access_token, self._token_expiry)
+        if self._on_token_refresh:
+            await self._on_token_refresh(self._access_token, self._token_expiry)
 
-            return self._access_token
+        return self._access_token
 
     async def _find_file_id(self, path: str) -> str | None:
         """Find the unique Google Drive file ID matching the file path/name."""
-        import httpx
         from urllib.parse import quote
 
         token = await self._ensure_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
 
-        # Escape path for query safely
         query = f"name = '{path}' and 'appDataFolder' in parents and trashed = false"
         url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers, timeout=10.0)
-            resp.raise_for_status()
-            files = resp.json().get("files", [])
-            return files[0]["id"] if files else None
+        client = self._get_client()
+        resp = await client.get(url, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+        files = resp.json().get("files", [])
+        return files[0]["id"] if files else None
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
-        import json
-        import httpx
+        import json as _json
 
         token = await self._ensure_valid_token()
-
         file_id = await self._find_file_id(path)
+        client = self._get_client()
 
         if file_id:
-            # Update existing file content
             url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/octet-stream",
             }
-            async with httpx.AsyncClient() as client:
-                resp = await client.patch(url, headers=headers, content=data, timeout=15.0)
-                resp.raise_for_status()
-                return path
+            resp = await client.patch(url, headers=headers, content=data, timeout=15.0)
+            resp.raise_for_status()
+            return path
         else:
-            # Create new file using multipart upload
             url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
             boundary = b"diarilinux_upload_boundary"
             headers = {
@@ -214,21 +295,18 @@ class GoogleDriveProvider:
             body = (
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                + json.dumps(metadata).encode("utf-8")
+                + _json.dumps(metadata).encode("utf-8")
                 + b"\r\n"
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: application/octet-stream\r\n\r\n" + data + b"\r\n"
                 b"--" + boundary + b"--\r\n"
             )
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, headers=headers, content=body, timeout=15.0)
-                resp.raise_for_status()
-                return path
+            resp = await client.post(url, headers=headers, content=body, timeout=15.0)
+            resp.raise_for_status()
+            return path
 
     async def download(self, path: str) -> bytes:
-        import httpx
-
         token = await self._ensure_valid_token()
         file_id = await self._find_file_id(path)
         if not file_id:
@@ -237,13 +315,12 @@ class GoogleDriveProvider:
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
         headers = {"Authorization": f"Bearer {token}"}
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers, timeout=15.0)
-            resp.raise_for_status()
-            return resp.content
+        client = self._get_client()
+        resp = await client.get(url, headers=headers, timeout=15.0)
+        resp.raise_for_status()
+        return resp.content
 
     async def list_files(self, prefix: str) -> list[str]:
-        import httpx
         from urllib.parse import quote
 
         token = await self._ensure_valid_token()
@@ -252,15 +329,13 @@ class GoogleDriveProvider:
         query = f"name contains '{prefix}' and 'appDataFolder' in parents and trashed = false"
         url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers, timeout=10.0)
-            resp.raise_for_status()
-            files = resp.json().get("files", [])
-            return [f["name"] for f in files]
+        client = self._get_client()
+        resp = await client.get(url, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+        files = resp.json().get("files", [])
+        return [f["name"] for f in files]
 
     async def delete(self, path: str) -> None:
-        import httpx
-
         token = await self._ensure_valid_token()
         file_id = await self._find_file_id(path)
         if not file_id:
@@ -269,9 +344,12 @@ class GoogleDriveProvider:
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
         headers = {"Authorization": f"Bearer {token}"}
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.delete(url, headers=headers, timeout=10.0)
-            resp.raise_for_status()
+        client = self._get_client()
+        resp = await client.delete(url, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+
+
+# ── MEGA provider ──────────────────────────────────────────────────────
 
 
 class MegaProvider:
@@ -285,7 +363,13 @@ class MegaProvider:
     def _get_sync_client(self) -> object:
         """Get or create the synchronous MEGA client."""
         if self._mega is None:
-            from mega import Mega
+            try:
+                from mega import Mega
+            except ImportError as exc:
+                raise ImportError(
+                    "MEGA cloud sync requires the 'cloud' extra. "
+                    'Install it with: uv pip install -e ".[cloud]"'
+                ) from exc
 
             m = Mega()
             self._mega = m.login(self._email, self._password)
@@ -297,13 +381,11 @@ class MegaProvider:
 
         mega = await asyncio.to_thread(self._get_sync_client)
 
-        # Write data to a temporary file for upload
         with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
             tmp.write(data)
             tmp_path = tmp.name
 
         try:
-            # Create parent folder structure in MEGA
             parts = path.split("/")
             folder = "/"
             for part in parts[:-1]:
@@ -329,7 +411,6 @@ class MegaProvider:
             tmp_path = tmp.name
 
         try:
-            # Find the file in MEGA
             file_info = await asyncio.to_thread(mega.find, path)
             if not file_info:
                 raise FileNotFoundError(f"File not found on MEGA: {path}")
@@ -364,6 +445,9 @@ class MegaProvider:
                 )
         except Exception:
             logger.warning("Failed to delete MEGA file: %s", path, exc_info=True)
+
+
+# ── High-level orchestration ───────────────────────────────────────────
 
 
 class CloudSyncService:
