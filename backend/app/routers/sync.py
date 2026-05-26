@@ -16,8 +16,7 @@ from app.schemas.sync import (
     SyncQueueResponse,
     SyncStatusResponse,
 )
-from app.services.cloud_sync_service import CloudSyncService, LocalFileProvider
-from app.services.sync_service import SyncService
+from app.services.cloud_sync_service import CloudSyncService, LocalFileProvider, SyncService
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 

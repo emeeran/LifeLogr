@@ -45,8 +45,13 @@ class OCRService:
             raise NotFoundError(f"Image file not found: {file_path}")
 
         # Run OCR (lazy imports — PIL/pytesseract are optional deps)
-        from PIL import Image
-        from pytesseract import image_to_string
+        try:
+            from PIL import Image
+            from pytesseract import image_to_string
+        except ImportError as exc:
+            raise ImportError(
+                "OCR requires the 'ocr' extra. Install it with: uv pip install -e \".[ocr]\""
+            ) from exc
 
         image = Image.open(file_path)
         extracted_text = image_to_string(image, lang=language).strip()
@@ -106,7 +111,7 @@ class OCRService:
     def _compute_confidence(image: "Image.Image", language: str) -> float:
         """Compute average OCR confidence from Tesseract output."""
         try:
-            from pytesseract import image_to_data
+            from pytesseract import image_to_data  # noqa: F811
 
             data = image_to_data(image, lang=language, output_type=2)
             confidences = [

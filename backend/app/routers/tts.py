@@ -36,7 +36,12 @@ def _clean_markdown(text: str) -> str:
 
 async def _generate_audio(text: str, voice: str, rate: str = "+0%", volume: str = "+0%") -> bytes:
     """Generate MP3 audio bytes from text using Edge TTS."""
-    import edge_tts
+    try:
+        import edge_tts
+    except ImportError as exc:
+        raise ImportError(
+            "Text-to-speech requires the 'tts' extra. Install it with: uv pip install -e \".[tts]\""
+        ) from exc
 
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
     buf = io.BytesIO()
@@ -49,7 +54,12 @@ async def _generate_audio(text: str, voice: str, rate: str = "+0%", volume: str 
 @router.get("/voices")
 async def list_voices() -> Any:
     """List available Edge TTS voices."""
-    import edge_tts
+    try:
+        import edge_tts
+    except ImportError as exc:
+        raise ImportError(
+            "Text-to-speech requires the 'tts' extra. Install it with: uv pip install -e \".[tts]\""
+        ) from exc
 
     voices = await edge_tts.list_voices()
     return [

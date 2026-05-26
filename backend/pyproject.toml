@@ -6,28 +6,32 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "aiosqlite>=0.22.1",
-    "alembic>=1.18.4",
     "apscheduler>=3.11.2",
     "cryptography>=48.0.0",
-    "edge-tts>=7.2.8",
     "fastapi>=0.136.1",
-    "python-multipart>=0.0.18",
-    "faster-whisper>=1.2.1",
+    "fpdf2>=2.8.3",
     "httpx>=0.28.1",
     "markdown-it-py>=4.2.0",
-    "mega.py>=0.1.0",
-    "pillow>=12.2.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.0",
-    "pytesseract>=0.3.13",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.18",
     "sqlalchemy>=2.0.49",
-    "uvicorn[standard]>=0.46.0",
-    "weasyprint>=68.1",
+    "uvicorn>=0.46.0",
 ]
+
+[project.optional-dependencies]
+stt = ["faster-whisper>=1.2.1"]
+ocr = ["pytesseract>=0.3.13", "pillow>=12.2.0"]
+pdf = ["weasyprint>=68.1"]
+tts = ["edge-tts>=7.2.8"]
+image = ["pillow>=12.2.0"]
+cloud = ["mega.py>=0.1.0"]
+all = ["diarilinux[stt,ocr,pdf,tts,image,cloud]"]
 
 [dependency-groups]
 dev = [
+    "alembic>=1.18.4",
     "httpx>=0.28.1",
     "mypy>=2.0.0",
     "pyinstaller>=6.20.0",
