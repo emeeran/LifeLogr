@@ -9,7 +9,8 @@ import {
   Undo2, Redo2, Maximize2, Minimize2, Search, Type, AlignLeft, AlignCenter, AlignRight, AlignJustify, Highlighter, Smile,
   Table, CheckSquare, Clock, ChevronUp, ChevronDown,
   Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
-  Loader, Pause, Focus, Layout, Copy, Scissors
+  Loader, Pause, Focus, Layout, Copy, Scissors,
+  SpellCheck, Wand2, FileText, Globe, MessageCircle, RefreshCw
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
 import GeotagModal from './GeotagModal.vue'
@@ -20,7 +21,7 @@ import EmojiPicker from '../common/EmojiPicker.vue'
 import { reverseGeocode } from '../../utils/geocoding'
 import { useTemplatesStore } from '../../stores/templates'
 import { setGeotag } from '../../api/geotagging'
-import { aiStatus, suggestTags, runOCR } from '../../api/ai'
+import { aiStatus, suggestTags, runOCR, grammarCheck, spellCheck, rewrite, continueWriting, summarize, expand, changeTone, translate } from '../../api/ai'
 import { encryptText, decryptText } from '../../api/encryption'
 import { ttsApi } from '../../api/tts'
 import { mediaApi } from '../../api/media'
@@ -57,6 +58,8 @@ const viewerOpen = ref(false)
 const viewerIndex = ref(0)
 const showTagDropdown = ref(false)
 const aiAvailable = ref<boolean | null>(null)
+const aiLoading = ref(false)
+const aiToolActive = ref<string | null>(null)
 const suggestedTags = ref<string[]>([])
 const suggestingTags = ref(false)
 const ttsPlaying = ref(false)
@@ -800,6 +803,81 @@ async function encryptSelection() {
   }
 }
 
+// ── Inline AI tools (context menu) ──
+type AiToolMode = 'grammar' | 'spelling' | 'rewrite' | 'continue' | 'summarize' | 'expand' | 'tone' | 'translate'
+
+async function runAiTool(mode: AiToolMode) {
+  const selectedText = getSelection()
+  const needsSelection = mode !== 'continue'
+  if (needsSelection && !selectedText) return
+
+  aiLoading.value = true
+  aiToolActive.value = mode
+  try {
+    let result = ''
+    switch (mode) {
+      case 'grammar': {
+        const res = await grammarCheck(selectedText)
+        result = res.corrected_text
+        break
+      }
+      case 'spelling': {
+        const res = await spellCheck(selectedText)
+        result = res.corrected_text
+        break
+      }
+      case 'rewrite': {
+        const res = await rewrite(selectedText, 'polished')
+        result = res.rewritten_text
+        break
+      }
+      case 'continue': {
+        const text = selectedText || body.value
+        if (!text.trim()) return
+        const res = await continueWriting(text)
+        result = selectedText ? selectedText + res.continuation : res.continuation
+        break
+      }
+      case 'summarize': {
+        const res = await summarize(selectedText)
+        result = res.summary
+        break
+      }
+      case 'expand': {
+        const res = await expand(selectedText)
+        result = res.expanded_text
+        break
+      }
+      case 'tone': {
+        const res = await changeTone(selectedText, 'formal')
+        result = res.rewritten_text
+        break
+      }
+      case 'translate': {
+        const res = await translate(selectedText, 'Spanish')
+        result = res.translated_text
+        break
+      }
+    }
+    if (result) {
+      if (selectedText) {
+        applyToSelection(result)
+      } else {
+        // For "continue writing" with no selection, append
+        body.value += result
+        pushHistory()
+        markDirty()
+      }
+    }
+    showContextMenu.value = false
+  } catch (e: unknown) {
+    alert(`AI tool failed: ${errMsg(e)}`)
+  } finally {
+    aiLoading.value = false
+    aiToolActive.value = null
+  }
+}
+
 async function toggleTTS() {
   if (ttsPlaying.value) {
     if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
@@ -1365,29 +1443,98 @@ const activeFormats = computed(() => {
     <!-- Context Menu -->
     <div
       v-if="showContextMenu"
-      class="fixed z-[200] w-48 bg-surface border border-border rounded shadow-2xl py-1"
+      class="fixed z-[200] w-52 bg-surface border border-border rounded shadow-2xl py-1 max-h-[80vh] overflow-y-auto"
       :style="{ left: contextMenuPos.x + 'px', top: contextMenuPos.y + 'px' }"
-      @click="showContextMenu = false"
     >
-      <button @click="copyToClipboard" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <button @click="copyToClipboard; showContextMenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
         <Copy :size="12" /> Copy
       </button>
-      <button @click="cutToClipboard" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <button @click="cutToClipboard; showContextMenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
         <Scissors :size="12" /> Cut
       </button>
       <div class="h-px bg-border my-1" />
-      <button @click="fmt.bold" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <button @click="fmt.bold(); showContextMenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
         <Bold :size="12" /> Bold
       </button>
-      <button @click="fmt.italic" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <button @click="fmt.italic(); showContextMenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
         <Italic :size="12" /> Italic
       </button>
-      <button @click="encryptSelection" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <button @click="encryptSelection(); showContextMenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
         <Lock :size="12" /> Encrypt Selection
       </button>
       <div class="h-px bg-border my-1" />
-      <button @click="ui.toggleDrawer('ai')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-accent">
-        <Sparkles :size="12" /> AI Smart Actions
+      <!-- AI Smart Tools section -->
+      <div class="px-3 py-1 text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1">
+        <Sparkles :size="10" /> AI Smart Tools
+      </div>
+      <button
+        @click="runAiTool('grammar')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'grammar'" :size="12" class="animate-spin" />
+        <Type v-else :size="12" /> Fix Grammar
+      </button>
+      <button
+        @click="runAiTool('spelling')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'spelling'" :size="12" class="animate-spin" />
+        <SpellCheck v-else :size="12" /> Fix Spelling
+      </button>
+      <button
+        @click="runAiTool('rewrite')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'rewrite'" :size="12" class="animate-spin" />
+        <Wand2 v-else :size="12" /> Polished Rewrite
+      </button>
+      <button
+        @click="runAiTool('continue')"
+        :disabled="aiLoading"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'continue'" :size="12" class="animate-spin" />
+        <Edit3 v-else :size="12" /> Continue Writing
+      </button>
+      <div class="h-px bg-border my-1" />
+      <button
+        @click="runAiTool('summarize')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'summarize'" :size="12" class="animate-spin" />
+        <FileText v-else :size="12" /> Summarize
+      </button>
+      <button
+        @click="runAiTool('expand')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'expand'" :size="12" class="animate-spin" />
+        <Maximize2 v-else :size="12" /> Expand & Elaborate
+      </button>
+      <button
+        @click="runAiTool('tone')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'tone'" :size="12" class="animate-spin" />
+        <MessageCircle v-else :size="12" /> Change Tone
+      </button>
+      <button
+        @click="runAiTool('translate')"
+        :disabled="aiLoading || !getSelection()"
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        <Loader v-if="aiToolActive === 'translate'" :size="12" class="animate-spin" />
+        <Globe v-else :size="12" /> Translate
+      </button>
+      <div class="h-px bg-border my-1" />
+      <button @click="showContextMenu = false; ui.toggleDrawer('ai')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-accent">
+        <Sparkles :size="12" /> More AI Tools...
       </button>
     </div>
   </div>

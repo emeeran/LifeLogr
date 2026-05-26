@@ -111,7 +111,14 @@ class MediaService:
         """Compress image and convert to WebP. Returns (data, was_converted)."""
         try:
             from PIL import Image
+        except ImportError:
+            logger.warning(
+                "Image compression requires the 'image' extra. "
+                'Install it with: uv pip install -e ".[image]". Storing original.'
+            )
+            return file_data, False
 
+        try:
             img = Image.open(io.BytesIO(file_data))
 
             # Strip EXIF orientation and convert to RGB if needed
