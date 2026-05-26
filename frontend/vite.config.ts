@@ -17,7 +17,16 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    minify: mode === 'production',
-    sourcemap: mode !== 'production',
+    target: 'es2022',
+    minify: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/vue/') || id.includes('node_modules/@vue/') || id.includes('node_modules/vue-router/')) return 'vendor-vue'
+          if (id.includes('node_modules/leaflet/')) return 'vendor-leaflet'
+        },
+      },
+    },
   },
 }))

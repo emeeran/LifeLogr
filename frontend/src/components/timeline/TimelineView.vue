@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, reactive } from 'vue'
+import { ref, onMounted, watch, reactive, computed } from 'vue'
 import { entriesApi } from '../../api/entries'
 import { mediaApi } from '../../api/media'
 import { useUiStore } from '../../stores/ui'
@@ -9,6 +9,7 @@ import { usePagination } from '../../composables/usePagination'
 import { formatEntryDate } from '../../composables/useFormat'
 import { ChevronLeft, ChevronRight, Tag, X, Calendar } from 'lucide-vue-next'
 import GoToDateModal from '../common/GoToDateModal.vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { EntryResponse } from '../../types'
 
 const ui = useUiStore()
@@ -19,6 +20,21 @@ const entries = ref<EntryResponse[]>([])
 const filterTagId = ref<number | null>(null)
 const showTagMenu = ref(false)
 const showGoToDate = ref(false)
+
+const filteredEntries = computed(() =>
+  entries.value.filter(e => filterTagId.value === null || e.tags.some(t => t.id === filterTagId))
+)
+
+// Virtual scrolling
+const scrollEl = ref<HTMLElement | null>(null)
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: filteredEntries.value.length,
+    getScrollElement: () => scrollEl.value,
+    estimateSize: () => 100,
+    overscan: 5,
+  })),
+)
 
 // Lazy media thumbnail cache: entryId → first media URL
 const thumbnailMap = reactive<Record<number, string>>({})
@@ -127,34 +143,39 @@ async function onGoToDate(dateStr: string) {
       </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
+    <div ref="scrollEl" class="flex-1 overflow-y-auto">
       <div
-        v-for="entry in entries.filter(e => filterTagId === null || e.tags.some(t => t.id === filterTagId))"
-        :key="entry.id"
-        class="px-4 py-3 border-b border-border/50 hover:bg-surface-hover cursor-pointer transition-colors"
-        @click="openEntry(entry)"
+        :style="{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }"
       >
-        <div class="flex gap-3">
-          <!-- Entry content (left) -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-sm font-medium text-text-primary">{{ formatEntryDate(entry.entry_date, shortDateOpts) }}</span>
+        <div
+          v-for="virtualRow in virtualizer.getVirtualItems()"
+          :key="virtualRow.key"
+          :style="{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }"
+          class="px-4 py-3 border-b border-border/50 hover:bg-surface-hover cursor-pointer transition-colors"
+          @click="openEntry(filteredEntries[virtualRow.index])"
+        >
+          <div class="flex gap-3">
+            <!-- Entry content (left) -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-medium text-text-primary">{{ formatEntryDate(filteredEntries[virtualRow.index].entry_date, shortDateOpts) }}</span>
+              </div>
+              <p v-if="filteredEntries[virtualRow.index].title" class="text-xs font-medium text-text-primary mb-0.5">{{ filteredEntries[virtualRow.index].title }}</p>
+              <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">
+                {{ filteredEntries[virtualRow.index].is_encrypted ? 'Encrypted' : bodyPreview(filteredEntries[virtualRow.index].body) }}
+              </p>
+              <div v-if="filteredEntries[virtualRow.index].tags.length" class="flex flex-wrap gap-1 mt-1">
+                <span v-for="tag in filteredEntries[virtualRow.index].tags" :key="tag.id" class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent">#{{ tag.name }}</span>
+              </div>
             </div>
-            <p v-if="entry.title" class="text-xs font-medium text-text-primary mb-0.5">{{ entry.title }}</p>
-            <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">
-              {{ entry.is_encrypted ? 'Encrypted' : bodyPreview(entry.body) }}
-            </p>
-            <div v-if="entry.tags.length" class="flex flex-wrap gap-1 mt-1">
-              <span v-for="tag in entry.tags" :key="tag.id" class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent">#{{ tag.name }}</span>
+            <!-- Media thumbnail (right) -->
+            <div v-if="thumbnailMap[filteredEntries[virtualRow.index].id]" class="shrink-0 self-center">
+              <img
+                :src="thumbnailMap[filteredEntries[virtualRow.index].id]"
+                class="w-14 h-14 rounded object-cover border border-border/50"
+                loading="lazy"
+              />
             </div>
-          </div>
-          <!-- Media thumbnail (right) -->
-          <div v-if="thumbnailMap[entry.id]" class="shrink-0 self-center">
-            <img
-              :src="thumbnailMap[entry.id]"
-              class="w-14 h-14 rounded object-cover border border-border/50"
-              loading="lazy"
-            />
           </div>
         </div>
       </div>
