@@ -10,7 +10,7 @@ import {
   Table, CheckSquare, Clock, ChevronUp, ChevronDown,
   Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
   Loader, Pause, Focus, Layout, Copy, Scissors,
-  SpellCheck, Wand2, FileText, Globe, MessageCircle, RefreshCw
+  SpellCheck, Wand2, FileText, Globe, MessageCircle, RefreshCw, ChevronRight, ChevronLeft
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
 import GeotagModal from './GeotagModal.vue'
@@ -70,6 +70,12 @@ const focusMode = ref(false)
 const typewriterMode = ref(false)
 const showContextMenu = ref(false)
 const contextMenuPos = ref({ x: 0, y: 0 })
+const showAiSubmenu = ref(false)
+const aiResult = ref<string | null>(null)
+const aiResultMode = ref<AiToolMode | null>(null)
+const aiOriginalText = ref('')
+const aiOriginalStart = ref(0)
+const aiOriginalEnd = ref(0)
 const pendingGeotag = ref<{ latitude: number; longitude: number; location_name: string | null } | null>(null)
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
 const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
@@ -400,6 +406,14 @@ async function loadEntry() {
 onMounted(() => {
   loadEntry()
   window.addEventListener('click', async (e) => {
+    // Don't dismiss while AI is running
+    if (aiLoading.value) return
+    // If AI result panel is showing, clear it (dismisses without action)
+    if (aiResult.value && showContextMenu.value) {
+      aiResult.value = null
+      aiResultMode.value = null
+      aiOriginalText.value = ''
+    }
     showContextMenu.value = false
     const target = e.target as HTMLElement
     if (target.classList.contains('enc-block')) {
@@ -586,6 +600,7 @@ function onTextareaKeydown(e: KeyboardEvent) {
 function onContextMenu(e: MouseEvent) {
   e.preventDefault()
   contextMenuPos.value = { x: e.clientX, y: e.y }
+  showAiSubmenu.value = false
   showContextMenu.value = true
 }
 
@@ -594,7 +609,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
 
   // Close active overlays in priority order
   if (showTemplates.value) { showTemplates.value = false; return }
-  if (showContextMenu.value) { showContextMenu.value = false; return }
+  if (showContextMenu.value && !aiLoading.value) { clearAiResult(); return }
   if (ui.activeDrawer) { ui.closeDrawer(); return }
   if (showEmoji.value) { showEmoji.value = false; return }
   if (showGeotag.value) { showGeotag.value = false; return }
@@ -811,7 +826,21 @@ async function runAiTool(mode: AiToolMode) {
   const needsSelection = mode !== 'continue'
   if (needsSelection && !selectedText) return
 
+  // Save original selection positions for later use in Replace/Insert
+  const el = textarea.value
+  if (el) {
+    const focused = document.activeElement === el
+    aiOriginalStart.value = focused ? el.selectionStart : cachedSelStart.value
+    aiOriginalEnd.value = focused ? el.selectionEnd : cachedSelEnd.value
+  } else {
+    aiOriginalStart.value = cachedSelStart.value
+    aiOriginalEnd.value = cachedSelEnd.value
+  }
+  aiOriginalText.value = selectedText
+
+  // Set loading state — panel switches to progress indicator immediately
   aiLoading.value = true
+  aiResultMode.value = mode
   aiToolActive.value = mode
   try {
     let result = ''
@@ -833,9 +862,14 @@ async function runAiTool(mode: AiToolMode) {
       }
       case 'continue': {
         const text = selectedText || body.value
-        if (!text.trim()) return
+        if (!text.trim()) { aiLoading.value = false; aiToolActive.value = null; return }
         const res = await continueWriting(text)
         result = selectedText ? selectedText + res.continuation : res.continuation
+        // For continue with no selection, positions are at body end
+        if (!selectedText) {
+          aiOriginalStart.value = body.value.length
+          aiOriginalEnd.value = body.value.length
+        }
         break
       }
       case 'summarize': {
@@ -860,22 +894,69 @@ async function runAiTool(mode: AiToolMode) {
       }
     }
     if (result) {
-      if (selectedText) {
-        applyToSelection(result)
-      } else {
-        // For "continue writing" with no selection, append
-        body.value += result
-        pushHistory()
-        markDirty()
-      }
+      aiResult.value = result
+      // aiResultMode already set above
     }
-    showContextMenu.value = false
   } catch (e: unknown) {
     alert(`AI tool failed: ${errMsg(e)}`)
+    aiResultMode.value = null
+    showContextMenu.value = false
   } finally {
     aiLoading.value = false
     aiToolActive.value = null
   }
+}
+
+// ── AI Result actions ──
+function aiResultReplace() {
+  if (!aiResult.value) return
+  if (aiOriginalText.value) {
+    // Restore selection so applyToSelection targets the original range
+    const el = textarea.value
+    if (el) {
+      el.focus()
+      el.selectionStart = aiOriginalStart.value
+      el.selectionEnd = aiOriginalEnd.value
+    }
+    applyToSelection(aiResult.value)
+  } else {
+    // No original selection (e.g. Continue Writing) — append to body
+    body.value += aiResult.value
+    pushHistory()
+    markDirty()
+  }
+  clearAiResult()
+}
+
+function aiResultInsert() {
+  if (!aiResult.value) return
+  const end = aiOriginalEnd.value
+  body.value = body.value.slice(0, end) + '\n' + aiResult.value + body.value.slice(end)
+  pushHistory()
+  markDirty()
+  clearAiResult()
+}
+
+function aiResultRetry() {
+  const mode = aiResultMode.value
+  if (!mode) return
+  const modeCopy = mode
+  clearAiResult()
+  runAiTool(modeCopy)
+}
+
+function aiResultCopy() {
+  if (!aiResult.value) return
+  navigator.clipboard.writeText(aiResult.value)
+  clearAiResult()
+}
+
+function clearAiResult() {
+  aiResult.value = null
+  aiResultMode.value = null
+  aiOriginalText.value = ''
+  showAiSubmenu.value = false
+  showContextMenu.value = false
 }
 
 async function toggleTTS() {
@@ -1440,12 +1521,16 @@ const activeFormats = computed(() => {
       @close="showTemplates = false"
     />
 
-    <!-- Context Menu -->
+    <!-- Context Menu / AI Result Panel -->
     <div
       v-if="showContextMenu"
-      class="fixed z-[200] w-52 bg-surface border border-border rounded shadow-2xl py-1 max-h-[80vh] overflow-y-auto"
+      class="fixed z-[200] bg-surface border border-border rounded shadow-2xl py-1 max-h-[80vh] overflow-y-auto"
+      :class="aiResult || aiLoading ? 'w-72' : 'w-52'"
       :style="{ left: contextMenuPos.x + 'px', top: contextMenuPos.y + 'px' }"
+      @click.stop
     >
+      <!-- Standard context menu -->
+      <template v-if="!aiResult && !aiLoading && !showAiSubmenu">
       <button @click="copyToClipboard; showContextMenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
         <Copy :size="12" /> Copy
       </button>
@@ -1463,79 +1548,110 @@ const activeFormats = computed(() => {
         <Lock :size="12" /> Encrypt Selection
       </button>
       <div class="h-px bg-border my-1" />
-      <!-- AI Smart Tools section -->
-      <div class="px-3 py-1 text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1">
-        <Sparkles :size="10" /> AI Smart Tools
-      </div>
-      <button
-        @click="runAiTool('grammar')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'grammar'" :size="12" class="animate-spin" />
-        <Type v-else :size="12" /> Fix Grammar
-      </button>
-      <button
-        @click="runAiTool('spelling')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'spelling'" :size="12" class="animate-spin" />
-        <SpellCheck v-else :size="12" /> Fix Spelling
-      </button>
-      <button
-        @click="runAiTool('rewrite')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'rewrite'" :size="12" class="animate-spin" />
-        <Wand2 v-else :size="12" /> Polished Rewrite
-      </button>
-      <button
-        @click="runAiTool('continue')"
-        :disabled="aiLoading"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'continue'" :size="12" class="animate-spin" />
-        <Edit3 v-else :size="12" /> Continue Writing
-      </button>
-      <div class="h-px bg-border my-1" />
-      <button
-        @click="runAiTool('summarize')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'summarize'" :size="12" class="animate-spin" />
-        <FileText v-else :size="12" /> Summarize
-      </button>
-      <button
-        @click="runAiTool('expand')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'expand'" :size="12" class="animate-spin" />
-        <Maximize2 v-else :size="12" /> Expand & Elaborate
-      </button>
-      <button
-        @click="runAiTool('tone')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'tone'" :size="12" class="animate-spin" />
-        <MessageCircle v-else :size="12" /> Change Tone
-      </button>
-      <button
-        @click="runAiTool('translate')"
-        :disabled="aiLoading || !getSelection()"
-        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
-      >
-        <Loader v-if="aiToolActive === 'translate'" :size="12" class="animate-spin" />
-        <Globe v-else :size="12" /> Translate
+      <!-- AI Smart Tools — click to open submenu -->
+      <button @click="showAiSubmenu = true" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Sparkles :size="12" class="text-accent" /> AI Smart Tools
+        <ChevronRight :size="10" class="ml-auto text-text-muted" />
       </button>
       <div class="h-px bg-border my-1" />
       <button @click="showContextMenu = false; ui.toggleDrawer('ai')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-accent">
         <Sparkles :size="12" /> More AI Tools...
       </button>
+      </template>
+
+      <!-- AI Submenu (replaces main menu content) -->
+      <template v-else-if="showAiSubmenu && !aiResult && !aiLoading">
+        <button @click="showAiSubmenu = false" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2 text-text-muted">
+          <ChevronLeft :size="12" /> Back
+        </button>
+        <div class="h-px bg-border my-1" />
+        <div class="px-3 py-1 text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1">
+          <Sparkles :size="10" /> AI Smart Tools
+        </div>
+        <button
+          @click="runAiTool('grammar')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <Type :size="12" /> Fix Grammar
+        </button>
+        <button
+          @click="runAiTool('spelling')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <SpellCheck :size="12" /> Fix Spelling
+        </button>
+        <button
+          @click="runAiTool('rewrite')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <Wand2 :size="12" /> Polished Rewrite
+        </button>
+        <button
+          @click="runAiTool('continue')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <Edit3 :size="12" /> Continue Writing
+        </button>
+        <div class="h-px bg-border my-1" />
+        <button
+          @click="runAiTool('summarize')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <FileText :size="12" /> Summarize
+        </button>
+        <button
+          @click="runAiTool('expand')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <Maximize2 :size="12" /> Expand & Elaborate
+        </button>
+        <button
+          @click="runAiTool('tone')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <MessageCircle :size="12" /> Change Tone
+        </button>
+        <button
+          @click="runAiTool('translate')"
+          class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+        >
+          <Globe :size="12" /> Translate
+        </button>
+      </template>
+
+      <!-- AI Loading / Result Panel -->
+      <template v-if="aiResult || aiLoading">
+        <div class="px-3 py-1 text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1">
+          <Sparkles :size="10" /> {{ aiResultMode }} {{ aiLoading ? 'Running...' : 'Result' }}
+        </div>
+
+        <!-- Loading state -->
+        <div v-if="aiLoading" class="mx-3 py-6 flex flex-col items-center justify-center gap-2">
+          <Loader :size="20" class="animate-spin text-accent" />
+          <span class="text-[10px] text-text-muted">Generating response...</span>
+        </div>
+
+        <!-- Result state -->
+        <template v-else>
+          <div class="mx-3 p-2 bg-editor rounded text-xs text-text-primary max-h-40 overflow-y-auto whitespace-pre-wrap border border-border leading-relaxed">
+            {{ aiResult }}
+          </div>
+          <div class="flex items-center gap-1 px-3 py-1.5">
+            <button @click="aiResultReplace" class="flex-1 px-2 py-1 rounded text-[10px] font-medium bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer">
+              Replace
+            </button>
+            <button @click="aiResultInsert" class="flex-1 px-2 py-1 rounded text-[10px] font-medium bg-surface-hover text-text-primary hover:bg-border transition-colors cursor-pointer">
+              Insert
+            </button>
+            <button @click="aiResultRetry" class="flex-1 px-2 py-1 rounded text-[10px] font-medium bg-surface-hover text-text-primary hover:bg-border transition-colors cursor-pointer flex items-center justify-center gap-0.5">
+              <RefreshCw :size="9" /> Retry
+            </button>
+            <button @click="aiResultCopy" class="flex-1 px-2 py-1 rounded text-[10px] font-medium bg-surface-hover text-text-primary hover:bg-border transition-colors cursor-pointer flex items-center justify-center gap-0.5">
+              <Copy :size="9" /> Copy
+            </button>
+          </div>
+        </template>
+      </template>
     </div>
   </div>
 </template>
