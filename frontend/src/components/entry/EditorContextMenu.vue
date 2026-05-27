@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import {
   Copy, Scissors, Bold, Italic, Lock, Sparkles,
   Type, SpellCheck, Wand2, Edit3, FileText, Maximize2, MessageCircle, Globe,
   Loader, RefreshCw, GripHorizontal, X
 } from 'lucide-vue-next'
 import type { AiToolMode, AiToneStyle } from '../../composables/useAiTools'
-import type { UseUiStore } from '../../stores/ui'
 
 const props = defineProps<{
   visible: boolean
@@ -15,7 +14,6 @@ const props = defineProps<{
   aiResult: string | null
   aiResultMode: AiToolMode | null
   aiToneStyle: AiToneStyle
-  ui: ReturnType<typeof import('../../stores/ui')['useUiStore']>
 }>()
 
 const toneOptions: AiToneStyle[] = ['formal', 'professional', 'casual', 'friendly', 'concise', 'poetic']

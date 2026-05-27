@@ -90,7 +90,7 @@ export function useAiTools(
         }
         case 'tone': {
           const res = await changeTone(selectedText, aiToneStyle.value)
-          result = res.rewritten_text
+          result = res.changed_text
           break
         }
         case 'translate': {

@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   plugins: [vue(), tailwindcss()],
   define: {
     'import.meta.env.VITE_PLATFORM': JSON.stringify(process.env.VITE_PLATFORM || 'web'),

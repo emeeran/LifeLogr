@@ -22,7 +22,7 @@ const showTagMenu = ref(false)
 const showGoToDate = ref(false)
 
 const filteredEntries = computed(() =>
-  entries.value.filter(e => filterTagId.value === null || e.tags.some(t => t.id === filterTagId))
+  entries.value.filter(e => filterTagId.value === null || e.tags.some(t => t.id === filterTagId.value))
 )
 
 // Virtual scrolling
@@ -149,7 +149,7 @@ async function onGoToDate(dateStr: string) {
       >
         <div
           v-for="virtualRow in virtualizer.getVirtualItems()"
-          :key="virtualRow.key"
+          :key="String(virtualRow.key)"
           :style="{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }"
           class="px-4 py-3 border-b border-border/50 hover:bg-surface-hover cursor-pointer transition-colors"
           @click="openEntry(filteredEntries[virtualRow.index])"
