@@ -4,13 +4,10 @@ import { useEntriesStore } from '../../stores/entries'
 import { useTagsStore } from '../../stores/tags'
 import { useUiStore } from '../../stores/ui'
 import {
-  X, Eye, Edit3, Bold, Italic, Strikethrough, Heading1, Heading2,
-  List, ListOrdered, Quote, Code, Link, Image, Minus,
-  Undo2, Redo2, Maximize2, Minimize2, Search, Type, AlignLeft, AlignCenter, AlignRight, AlignJustify, Highlighter, Smile,
-  Table, CheckSquare, Clock, ChevronUp, ChevronDown,
+  X, Eye, Edit3, Minimize2, Maximize2,
+  Search, ChevronUp, ChevronDown,
   Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
-  Loader, Pause, Focus, Layout, Copy, Scissors,
-  SpellCheck, Wand2, FileText, Globe, MessageCircle, RefreshCw, ChevronRight, ChevronLeft
+  Loader, Pause
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
 const GeotagModal = defineAsyncComponent(() => import('./GeotagModal.vue'))
@@ -27,7 +24,6 @@ import { setGeotag } from '../../api/geotagging'
 import { aiStatus, suggestTags } from '../../api/ai'
 import { encryptText, decryptText } from '../../api/encryption'
 import { ttsApi } from '../../api/tts'
-import { mediaApi } from '../../api/media'
 import { useDragDrop } from '../../composables/useDragDrop'
 import { useLocalStorage } from '@vueuse/core'
 import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
@@ -35,7 +31,6 @@ import { useEditorHistory } from '../../composables/useEditorHistory'
 import { useFindReplace } from '../../composables/useFindReplace'
 import { useAiTools } from '../../composables/useAiTools'
 import { useAttachments } from '../../composables/useAttachments'
-import type { MediaResponse } from '../../types'
 
 const entries = useEntriesStore()
 const ui = useUiStore()
@@ -75,12 +70,15 @@ const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
 
 // ── Composables (early — no dependencies on later functions) ──
 const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(body, textarea)
-const { showFind, findQuery, replaceQuery, findIndex, findCount, findMatches, jumpToMatch, replaceOne, replaceAll } = useFindReplace(body, textarea, pushHistory)
-const { attachments, aiProcessing, loadAttachments, handleFileUpload, removeAttachment, runOcrTool } = useAttachments(
+const { showFind, findQuery, replaceQuery, findIndex, findCount, jumpToMatch, replaceOne, replaceAll } = useFindReplace(body, textarea, pushHistory)
+const { attachments, loadAttachments, handleFileUpload, removeAttachment, runOcrTool: _runOcrTool } = useAttachments(
   () => hasEntry.value,
   () => ui.editingEntryId ?? null,
   () => entries.refreshAll(),
 )
+function runOcrTool(mediaId: number) {
+  return _runOcrTool(mediaId, body, pushHistory, markDirty)
+}
 const fileInput = ref<HTMLInputElement | null>(null)
 
 // Drag & Drop
@@ -310,9 +308,7 @@ onMounted(() => {
     if (aiLoading.value) return
     // If AI result panel is showing, clear it (dismisses without action)
     if (aiResult.value) {
-      aiResult.value = null
-      aiResultMode.value = null
-      aiOriginalText.value = ''
+      clearAiResult()
     }
     showContextMenu.value = false
     const target = e.target as HTMLElement
@@ -676,7 +672,7 @@ async function encryptSelection() {
 
 // Initialize AI tools composable (needs getSelection/applyToSelection defined above)
 const {
-  aiLoading, aiToolActive, aiResult, aiResultMode, aiToneStyle,
+  aiLoading, aiResult, aiResultMode, aiToneStyle,
   runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, clearAiResult,
 } = useAiTools(body, getSelection, applyToSelection, cachedSelStart, cachedSelEnd, textarea, pushHistory, markDirty)
 
@@ -1137,7 +1133,6 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       :ai-result="aiResult"
       :ai-result-mode="aiResultMode"
       :ai-tone-style="aiToneStyle"
-      :ui="ui"
       @close="showContextMenu = false"
       @copy="copyToClipboard"
       @cut="cutToClipboard"
