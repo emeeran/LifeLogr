@@ -1157,6 +1157,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       @bold="fmt.bold()"
       @italic="fmt.italic()"
       @encrypt="encryptDecryptSelection()"
+      @open-ai-drawer="ui.toggleDrawer('ai')"
       @run-ai-tool="(mode: any) => runAiTool(mode)"
       @ai-result-replace="aiResultReplace"
       @ai-result-insert="aiResultInsert"

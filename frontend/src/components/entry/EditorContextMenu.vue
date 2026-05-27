@@ -29,6 +29,7 @@ const emit = defineEmits<{
   italic: []
   encrypt: []
   runAiTool: [mode: AiToolMode]
+  openAiDrawer: []
   aiResultReplace: []
   aiResultInsert: []
   aiResultRetry: []
@@ -41,8 +42,33 @@ const emit = defineEmits<{
 const isEncrypted = (text: string) => /^<!--ENC\{.+\}-->$/s.test(text.trim())
 const encryptLabel = (text: string) => isEncrypted(text) ? 'Decrypt Selection' : 'Encrypt/Decrypt'
 
-// ── Submenu state ──
+// ── AI submenu (fixed-positioned to avoid clipping) ──
 const showAiSubmenu = ref(false)
+const submenuPos = ref({ x: 0, y: 0 })
+const aiTriggerRef = ref<HTMLElement | null>(null)
+
+function openAiSubmenu() {
+  showAiSubmenu.value = true
+  nextTick(() => {
+    const trigger = aiTriggerRef.value
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    const submenuW = 210
+    const submenuH = 310
+    // Default: right side of trigger
+    let x = rect.right + 2
+    let y = rect.top
+    // If overflows right edge, open to the left
+    if (x + submenuW > window.innerWidth - 8) x = rect.left - submenuW - 2
+    // If overflows bottom, shift up
+    if (y + submenuH > window.innerHeight - 8) y = Math.max(8, window.innerHeight - submenuH - 8)
+    submenuPos.value = { x, y }
+  })
+}
+
+function closeSubmenu() {
+  showAiSubmenu.value = false
+}
 
 // ── Context menu viewport clamping ──
 const menuRef = ref<HTMLElement | null>(null)
@@ -67,7 +93,6 @@ const panelPos = ref({ x: 0, y: 0 })
 const isDragging = ref(false)
 const dragOffset = ref({ x: 0, y: 0 })
 
-// Position the panel at the context menu location when result appears
 watch(() => props.aiResult, (val) => {
   if (val && !isDragging.value) {
     panelPos.value = { x: props.position.x, y: props.position.y }
@@ -99,7 +124,6 @@ function startDrag(e: MouseEvent) {
     y: e.clientY - panelPos.value.y,
   }
   e.preventDefault()
-
   const onMove = (ev: MouseEvent) => {
     panelPos.value = {
       x: Math.max(0, Math.min(window.innerWidth - 100, ev.clientX - dragOffset.value.x)),
@@ -144,44 +168,51 @@ function startDrag(e: MouseEvent) {
       {{ encryptLabel(selectedText) }}
     </button>
     <div class="h-px bg-border my-1" />
+    <!-- AI Tools — hover to open fixed submenu -->
+    <button
+      ref="aiTriggerRef"
+      @mouseenter="openAiSubmenu"
+      class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+    >
+      <Sparkles :size="12" /> AI Tools
+      <ChevronRight :size="10" class="ml-auto" />
+    </button>
+  </div>
 
-    <!-- AI Tools Submenu -->
-    <div class="relative" @mouseenter="showAiSubmenu = true" @mouseleave="showAiSubmenu = false">
-      <button class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-        <Sparkles :size="12" /> AI Tools
-        <ChevronRight :size="10" class="ml-auto" />
-      </button>
-      <div
-        v-if="showAiSubmenu"
-        class="absolute left-full top-0 ml-0.5 bg-surface border border-border rounded shadow-2xl py-1 w-52 z-[210]"
-      >
-        <button @click="emit('runAiTool', 'grammar-spelling'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <Type :size="12" /> Fix Grammar & Spelling
-        </button>
-        <button @click="emit('runAiTool', 'rewrite'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <Wand2 :size="12" /> Rewrite
-        </button>
-        <button @click="emit('runAiTool', 'summarize'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <FileText :size="12" /> Summarize
-        </button>
-        <button @click="emit('runAiTool', 'expand'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <Maximize2 :size="12" /> Expand & Elaborate
-        </button>
-        <button @click="emit('runAiTool', 'tone'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <MessageCircle :size="12" /> Change Tone
-        </button>
-        <button @click="emit('runAiTool', 'translate'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <Globe :size="12" /> Translate
-        </button>
-        <button @click="emit('runAiTool', 'analysis'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <Search :size="12" /> Analysis
-        </button>
-        <div class="h-px bg-border my-1" />
-        <button @click="emit('runAiTool', 'define'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-          <BookOpen :size="12" /> Define
-        </button>
-      </div>
-    </div>
+  <!-- AI Tools submenu — fixed positioned to avoid clipping -->
+  <div
+    v-if="showAiSubmenu && visible && !aiResult && !aiLoading"
+    class="fixed z-[210] bg-surface border border-border rounded shadow-2xl py-1 w-52"
+    :style="{ left: submenuPos.x + 'px', top: submenuPos.y + 'px' }"
+    @click.stop
+    @mouseenter="showAiSubmenu = true"
+    @mouseleave="closeSubmenu"
+  >
+    <button @click="emit('runAiTool', 'grammar-spelling'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <Type :size="12" /> Fix Grammar & Spelling
+    </button>
+    <button @click="emit('runAiTool', 'rewrite'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <Wand2 :size="12" /> Rewrite
+    </button>
+    <button @click="emit('runAiTool', 'summarize'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <FileText :size="12" /> Summarize
+    </button>
+    <button @click="emit('runAiTool', 'expand'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <Maximize2 :size="12" /> Expand & Elaborate
+    </button>
+    <button @click="emit('runAiTool', 'tone'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <MessageCircle :size="12" /> Change Tone
+    </button>
+    <button @click="emit('runAiTool', 'translate'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <Globe :size="12" /> Translate
+    </button>
+    <button @click="emit('runAiTool', 'analysis'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <Search :size="12" /> Analysis
+    </button>
+    <div class="h-px bg-border my-1" />
+    <button @click="emit('runAiTool', 'define'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+      <BookOpen :size="12" /> Define
+    </button>
   </div>
 
   <!-- Floating Draggable AI Result Panel -->
