@@ -1,9 +1,17 @@
 import { ref, type Ref } from 'vue'
-import { grammarCheck, spellCheck, rewrite, continueWriting, summarize, expand, changeTone, translate } from '../api/ai'
+import { grammarCheck, rewrite, summarize, expand, changeTone, translate, analyzeText, defineText } from '../api/ai'
 
-export type AiToolMode = 'grammar' | 'spelling' | 'rewrite' | 'continue' | 'summarize' | 'expand' | 'tone' | 'translate'
+export type AiToolMode = 'grammar-spelling' | 'rewrite' | 'summarize' | 'expand' | 'tone' | 'translate' | 'analysis' | 'define'
 
-export type AiToneStyle = 'formal' | 'professional' | 'casual' | 'friendly' | 'concise' | 'poetic'
+export type AiToneStyle = 'formal' | 'casual' | 'friendly' | 'professional' | 'emphatic' | 'humorous' | 'poetic'
+
+export const AI_TONE_OPTIONS: AiToneStyle[] = ['formal', 'casual', 'friendly', 'professional', 'emphatic', 'humorous', 'poetic']
+
+export const AI_TRANSLATE_LANGUAGES = [
+  'english', 'spanish', 'french', 'german', 'portuguese',
+  'japanese', 'korean', 'chinese', 'arabic', 'hindi',
+  'tamil', 'malayalam',
+]
 
 export function useAiTools(
   body: Ref<string>,
@@ -23,13 +31,14 @@ export function useAiTools(
   const aiOriginalStart = ref(0)
   const aiOriginalEnd = ref(0)
   const aiToneStyle = ref<AiToneStyle>('formal')
+  const aiTranslateLanguage = ref('tamil')
+  const aiAnalysisResult = ref<{ emotions: string[]; themes: string[]; summary: string } | null>(null)
 
   function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
 
-  async function runAiTool(mode: AiToolMode, toneOverride?: AiToneStyle) {
+  async function runAiTool(mode: AiToolMode, toneOverride?: AiToneStyle, languageOverride?: string) {
     const selectedText = getSelection()
-    const needsSelection = mode !== 'continue'
-    if (needsSelection && !selectedText) return
+    if (!selectedText) return
 
     const el = textarea.value
     if (el) {
@@ -42,40 +51,26 @@ export function useAiTools(
     }
     aiOriginalText.value = selectedText
 
-    // Apply tone override if provided
+    // Apply overrides if provided
     if (toneOverride) aiToneStyle.value = toneOverride
+    if (languageOverride) aiTranslateLanguage.value = languageOverride
 
     aiLoading.value = true
     aiResultMode.value = mode
     aiToolActive.value = mode
-    // Keep previous result visible during retry — clear only after new result arrives
+    aiAnalysisResult.value = null
+
     try {
       let result = ''
       switch (mode) {
-        case 'grammar': {
+        case 'grammar-spelling': {
           const res = await grammarCheck(selectedText)
-          result = res.corrected_text
-          break
-        }
-        case 'spelling': {
-          const res = await spellCheck(selectedText)
           result = res.corrected_text
           break
         }
         case 'rewrite': {
           const res = await rewrite(selectedText, aiToneStyle.value)
           result = res.rewritten_text
-          break
-        }
-        case 'continue': {
-          const text = selectedText || body.value
-          if (!text.trim()) { aiLoading.value = false; aiToolActive.value = null; return }
-          const res = await continueWriting(text)
-          result = selectedText ? selectedText + res.continuation : res.continuation
-          if (!selectedText) {
-            aiOriginalStart.value = body.value.length
-            aiOriginalEnd.value = body.value.length
-          }
           break
         }
         case 'summarize': {
@@ -94,8 +89,22 @@ export function useAiTools(
           break
         }
         case 'translate': {
-          const res = await translate(selectedText, 'Spanish')
+          const res = await translate(selectedText, aiTranslateLanguage.value)
           result = res.translated_text
+          break
+        }
+        case 'analysis': {
+          const res = await analyzeText(selectedText)
+          aiAnalysisResult.value = res
+          // Format for display in result panel
+          const emotionStr = res.emotions.length ? res.emotions.join(', ') : 'None detected'
+          const themeStr = res.themes.length ? res.themes.join(', ') : 'None detected'
+          result = `Emotions: ${emotionStr}\n\nThemes: ${themeStr}\n\nSummary: ${res.summary}`
+          break
+        }
+        case 'define': {
+          const res = await defineText(selectedText)
+          result = res.definition
           break
         }
       }
@@ -141,7 +150,6 @@ export function useAiTools(
   function aiResultRetry() {
     const mode = aiResultMode.value
     if (!mode) return
-    // Don't clear result — keep panel open, loading state overlays the old result
     runAiTool(mode)
   }
 
@@ -155,6 +163,7 @@ export function useAiTools(
     aiResult.value = null
     aiResultMode.value = null
     aiOriginalText.value = ''
+    aiAnalysisResult.value = null
   }
 
   function applyToneStyle(tone: AiToneStyle) {
@@ -163,10 +172,16 @@ export function useAiTools(
     runAiTool(mode, tone)
   }
 
+  function applyTranslateLanguage(language: string) {
+    const mode = aiResultMode.value
+    if (!mode) return
+    runAiTool(mode, undefined, language)
+  }
+
   return {
     aiLoading, aiToolActive, aiResult, aiResultMode,
     aiOriginalText, aiOriginalStart, aiOriginalEnd,
-    aiToneStyle,
-    runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, clearAiResult,
+    aiToneStyle, aiTranslateLanguage, aiAnalysisResult,
+    runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, applyTranslateLanguage, clearAiResult,
   }
 }
