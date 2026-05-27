@@ -495,6 +495,8 @@ function onTextareaKeydown(e: KeyboardEvent) {
 // ── Fullscreen escape ──
 function onContextMenu(e: MouseEvent) {
   e.preventDefault()
+  // Cache selection immediately before blur fires — right-click can change selection
+  cacheSelection()
   contextMenuPos.value = { x: e.clientX, y: e.clientY - 12 }
   showContextMenu.value = true
 }
@@ -649,21 +651,35 @@ async function openAttachDialog() {
 
 // handleFileUpload, removeAttachment, runOcrTool — extracted to useAttachments composable
 
-async function encryptSelection() {
+async function encryptDecryptSelection() {
   const text = getSelection()
   if (!text) {
-    alert('Please select some text to encrypt.')
+    alert('Please select some text.')
     return
   }
-  const passphrase = prompt('Enter a passphrase to encrypt this selection:')
-  if (!passphrase) return
 
-  try {
-    const res = await encryptText(text, passphrase)
-    applyToSelection(`<!--ENC{${res.encrypted}}-->`)
-    alert('Selection encrypted.')
-  } catch (e: unknown) {
-    alert(`Encryption failed: ${errMsg(e)}`)
+  // Check if the selected text is an encrypted block
+  const encMatch = text.match(/^<!--ENC\{(.+)\}-->$/s)
+  if (encMatch) {
+    // Decrypt mode
+    const passphrase = prompt('Enter passphrase to decrypt:')
+    if (!passphrase) return
+    try {
+      const res = await decryptText(encMatch[1], passphrase)
+      applyToSelection(res.decrypted)
+    } catch (e: unknown) {
+      alert(`Decryption failed: ${errMsg(e)}`)
+    }
+  } else {
+    // Encrypt mode
+    const passphrase = prompt('Enter a passphrase to encrypt this selection:')
+    if (!passphrase) return
+    try {
+      const res = await encryptText(text, passphrase)
+      applyToSelection(`<!--ENC{${res.encrypted}}-->`)
+    } catch (e: unknown) {
+      alert(`Encryption failed: ${errMsg(e)}`)
+    }
   }
 }
 
@@ -672,8 +688,8 @@ async function encryptSelection() {
 
 // Initialize AI tools composable (needs getSelection/applyToSelection defined above)
 const {
-  aiLoading, aiResult, aiResultMode, aiToneStyle,
-  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, clearAiResult,
+  aiLoading, aiResult, aiResultMode, aiToneStyle, aiTranslateLanguage,
+  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, applyTranslateLanguage, clearAiResult,
 } = useAiTools(body, getSelection, applyToSelection, cachedSelStart, cachedSelEnd, textarea, pushHistory, markDirty)
 
 async function toggleTTS() {
@@ -1133,18 +1149,21 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       :ai-result="aiResult"
       :ai-result-mode="aiResultMode"
       :ai-tone-style="aiToneStyle"
+      :ai-translate-language="aiTranslateLanguage"
+      :selected-text="getSelection()"
       @close="showContextMenu = false"
       @copy="copyToClipboard"
       @cut="cutToClipboard"
       @bold="fmt.bold()"
       @italic="fmt.italic()"
-      @encrypt="encryptSelection()"
+      @encrypt="encryptDecryptSelection()"
       @run-ai-tool="(mode: any) => runAiTool(mode)"
       @ai-result-replace="aiResultReplace"
       @ai-result-insert="aiResultInsert"
       @ai-result-retry="aiResultRetry"
       @ai-result-copy="aiResultCopy"
       @apply-tone-style="(tone: any) => applyToneStyle(tone)"
+      @apply-translate-language="(lang: any) => applyTranslateLanguage(lang)"
       @close-result="clearAiResult"
     />
   </div>

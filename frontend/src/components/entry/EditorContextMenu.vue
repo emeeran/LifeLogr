@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import {
-  Copy, Scissors, Bold, Italic, Lock, Sparkles,
-  Type, SpellCheck, Wand2, Edit3, FileText, Maximize2, MessageCircle, Globe,
-  Loader, RefreshCw, GripHorizontal, X
+  Copy, Scissors, Bold, Italic, Lock, Sparkles, Unlock,
+  Type, Wand2, FileText, Maximize2, MessageCircle, Globe, Search, BookOpen,
+  ChevronRight, Loader, RefreshCw, GripHorizontal, X
 } from 'lucide-vue-next'
 import type { AiToolMode, AiToneStyle } from '../../composables/useAiTools'
+import { AI_TONE_OPTIONS, AI_TRANSLATE_LANGUAGES } from '../../composables/useAiTools'
 
 const props = defineProps<{
   visible: boolean
@@ -14,9 +15,11 @@ const props = defineProps<{
   aiResult: string | null
   aiResultMode: AiToolMode | null
   aiToneStyle: AiToneStyle
+  aiTranslateLanguage: string
+  selectedText: string
 }>()
 
-const toneOptions: AiToneStyle[] = ['formal', 'professional', 'casual', 'friendly', 'concise', 'poetic']
+const toneOptions = AI_TONE_OPTIONS
 
 const emit = defineEmits<{
   close: []
@@ -31,8 +34,15 @@ const emit = defineEmits<{
   aiResultRetry: []
   aiResultCopy: []
   applyToneStyle: [tone: AiToneStyle]
+  applyTranslateLanguage: [language: string]
   closeResult: []
 }>()
+
+const isEncrypted = (text: string) => /^<!--ENC\{.+\}-->$/s.test(text.trim())
+const encryptLabel = (text: string) => isEncrypted(text) ? 'Decrypt Selection' : 'Encrypt/Decrypt'
+
+// ── Submenu state ──
+const showAiSubmenu = ref(false)
 
 // ── Context menu viewport clamping ──
 const menuRef = ref<HTMLElement | null>(null)
@@ -40,6 +50,7 @@ const menuTop = ref(props.position.y)
 
 watch(() => props.visible, async (vis) => {
   if (!vis) return
+  showAiSubmenu.value = false
   menuTop.value = props.position.y
   await nextTick()
   const el = menuRef.value
@@ -60,7 +71,6 @@ const dragOffset = ref({ x: 0, y: 0 })
 watch(() => props.aiResult, (val) => {
   if (val && !isDragging.value) {
     panelPos.value = { x: props.position.x, y: props.position.y }
-    // Clamp to viewport
     clampToViewport()
   }
 })
@@ -115,7 +125,6 @@ function startDrag(e: MouseEvent) {
     :style="{ left: position.x + 'px', top: menuTop + 'px' }"
     @click.stop
   >
-    <!-- Standard context menu -->
     <button @click="emit('copy'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
       <Copy :size="12" /> Copy
     </button>
@@ -130,36 +139,49 @@ function startDrag(e: MouseEvent) {
       <Italic :size="12" /> Italic
     </button>
     <button @click="emit('encrypt'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Lock :size="12" /> Encrypt Selection
+      <Lock v-if="!isEncrypted(selectedText)" :size="12" />
+      <Unlock v-else :size="12" />
+      {{ encryptLabel(selectedText) }}
     </button>
     <div class="h-px bg-border my-1" />
-    <div class="px-3 py-1 text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1">
-      <Sparkles :size="10" /> AI Smart Tools
+
+    <!-- AI Tools Submenu -->
+    <div class="relative" @mouseenter="showAiSubmenu = true" @mouseleave="showAiSubmenu = false">
+      <button class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+        <Sparkles :size="12" /> AI Tools
+        <ChevronRight :size="10" class="ml-auto" />
+      </button>
+      <div
+        v-if="showAiSubmenu"
+        class="absolute left-full top-0 ml-0.5 bg-surface border border-border rounded shadow-2xl py-1 w-52 z-[210]"
+      >
+        <button @click="emit('runAiTool', 'grammar-spelling'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <Type :size="12" /> Fix Grammar & Spelling
+        </button>
+        <button @click="emit('runAiTool', 'rewrite'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <Wand2 :size="12" /> Rewrite
+        </button>
+        <button @click="emit('runAiTool', 'summarize'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <FileText :size="12" /> Summarize
+        </button>
+        <button @click="emit('runAiTool', 'expand'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <Maximize2 :size="12" /> Expand & Elaborate
+        </button>
+        <button @click="emit('runAiTool', 'tone'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <MessageCircle :size="12" /> Change Tone
+        </button>
+        <button @click="emit('runAiTool', 'translate'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <Globe :size="12" /> Translate
+        </button>
+        <button @click="emit('runAiTool', 'analysis'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <Search :size="12" /> Analysis
+        </button>
+        <div class="h-px bg-border my-1" />
+        <button @click="emit('runAiTool', 'define'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+          <BookOpen :size="12" /> Define
+        </button>
+      </div>
     </div>
-    <button @click="emit('runAiTool', 'grammar')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Type :size="12" /> Fix Grammar
-    </button>
-    <button @click="emit('runAiTool', 'spelling')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <SpellCheck :size="12" /> Fix Spelling
-    </button>
-    <button @click="emit('runAiTool', 'rewrite')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Wand2 :size="12" /> Polished Rewrite
-    </button>
-    <button @click="emit('runAiTool', 'continue')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Edit3 :size="12" /> Continue Writing
-    </button>
-    <button @click="emit('runAiTool', 'summarize')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <FileText :size="12" /> Summarize
-    </button>
-    <button @click="emit('runAiTool', 'expand')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Maximize2 :size="12" /> Expand & Elaborate
-    </button>
-    <button @click="emit('runAiTool', 'tone')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <MessageCircle :size="12" /> Change Tone
-    </button>
-    <button @click="emit('runAiTool', 'translate')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Globe :size="12" /> Translate
-    </button>
   </div>
 
   <!-- Floating Draggable AI Result Panel -->
@@ -208,7 +230,7 @@ function startDrag(e: MouseEvent) {
         </div>
       </div>
 
-      <!-- Tone selector for rewrite/tone modes -->
+      <!-- Tone selector for tone/rewrite modes -->
       <div v-if="(aiResultMode === 'tone' || aiResultMode === 'rewrite')" class="px-3 pb-1 flex flex-wrap gap-1">
         <button
           v-for="tone in toneOptions"
@@ -217,6 +239,17 @@ function startDrag(e: MouseEvent) {
           class="px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors capitalize"
           :class="aiToneStyle === tone ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-surface-hover text-text-secondary hover:text-text-primary border border-transparent'"
         >{{ tone }}</button>
+      </div>
+
+      <!-- Language selector for translate mode -->
+      <div v-if="aiResultMode === 'translate'" class="px-3 pb-1 flex flex-wrap gap-1">
+        <button
+          v-for="lang in AI_TRANSLATE_LANGUAGES"
+          :key="lang"
+          @click="emit('applyTranslateLanguage', lang)"
+          class="px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors capitalize"
+          :class="aiTranslateLanguage === lang ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-surface-hover text-text-secondary hover:text-text-primary border border-transparent'"
+        >{{ lang }}</button>
       </div>
 
       <!-- Action buttons -->

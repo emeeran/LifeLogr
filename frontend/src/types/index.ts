@@ -212,6 +212,20 @@ export interface TranslateResponse {
   language: string
 }
 
+// ── AI Analyze Text ──────────────────────────────────────────────────
+
+export interface AnalyzeTextResponse {
+  emotions: string[]
+  themes: string[]
+  summary: string
+}
+
+// ── AI Define Text ───────────────────────────────────────────────────
+
+export interface DefineTextResponse {
+  definition: string
+}
+
 // ── AI On This Day ──────────────────────────────────────────────────
 
 export interface OnThisDayPastEntry {

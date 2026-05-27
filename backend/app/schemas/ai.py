@@ -253,3 +253,27 @@ class TranslateRequest(BaseModel):
 class TranslateResponse(BaseModel):
     translated_text: str
     language: str
+
+
+# ── Analyze Text ──────────────────────────────────────────────────────
+
+
+class AnalyzeTextRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to analyze")
+
+
+class AnalyzeTextResponse(BaseModel):
+    emotions: list[str] = []
+    themes: list[str] = []
+    summary: str = ""
+
+
+# ── Define Text ───────────────────────────────────────────────────────
+
+
+class DefineTextRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to define")
+
+
+class DefineTextResponse(BaseModel):
+    definition: str

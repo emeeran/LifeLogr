@@ -145,7 +145,7 @@ function onAttachmentView(index: number) {
     <Transition name="ai-drawer">
       <div
         v-if="showDrawer"
-        class="shrink-0 w-80 bg-surface border-l border-r border-border overflow-y-auto flex flex-col"
+        class="shrink-0 w-80 bg-surface border-l border-r border-border overflow-y-auto overflow-x-hidden flex flex-col relative z-10"
       >
         <div class="flex items-center justify-between px-3 py-2 border-b border-border">
           <span class="text-xs font-medium text-text-primary flex items-center gap-1">

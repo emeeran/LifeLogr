@@ -4,6 +4,7 @@ import type {
   TagSuggestionResponse, EntryAnalysisResponse, SimilarEntriesResponse,
   ContinueWritingResponse, OnThisDayResponse, ThemesResponse, DigestResponse,
   SummarizeResponse, ExpandResponse, ChangeToneResponse, TranslateResponse,
+  AnalyzeTextResponse, DefineTextResponse,
 } from '../types'
 
 export const grammarCheck = (text: string) =>
@@ -67,3 +68,9 @@ export const changeTone = (text: string, tone: string) =>
 
 export const translate = (text: string, language: string) =>
   request<TranslateResponse>('/ai/translate', { method: 'POST', body: JSON.stringify({ text, language }) })
+
+export const analyzeText = (text: string) =>
+  request<AnalyzeTextResponse>('/ai/analyze-text', { method: 'POST', body: JSON.stringify({ text }) })
+
+export const defineText = (text: string) =>
+  request<DefineTextResponse>('/ai/define-text', { method: 'POST', body: JSON.stringify({ text }) })

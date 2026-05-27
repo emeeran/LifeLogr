@@ -94,8 +94,11 @@ class OllamaService:
     async def rewrite(
         self, text: str, style: str, instructions: str | None = None
     ) -> RewriteResponse:
-        """Rewrite text in the specified style."""
-        prompt = f"Rewrite the following text in a {style} style."
+        """Rewrite text for clarity and conciseness in a professional tone."""
+        prompt = (
+            "Rewrite the following text for clarity and conciseness in a professional tone. "
+            "Preserve the core meaning while improving readability and flow."
+        )
         if instructions:
             prompt += f" Additional instructions: {instructions}"
         prompt += f"\n\nOriginal text:\n{text}\n\nReturn ONLY the rewritten text, nothing else."
@@ -290,6 +293,36 @@ class OllamaService:
             f"Text:\n{text[:3000]}"
         )
         result = await self._generate(prompt, temperature=0.3, num_predict=2048)
+        return result.strip()
+
+    async def analyze_text(self, text: str) -> dict[str, Any]:
+        """Analyze text for emotions, themes, and a brief summary."""
+        prompt = (
+            "Analyze the following text and return ONLY a valid JSON object with this exact structure:\n"
+            '{"emotions": ["emotion1", "emotion2", ...], '
+            '"themes": ["theme1", "theme2", ...], '
+            '"summary": "A brief 1-2 sentence summary."}\n\n'
+            "Guidelines:\n"
+            "- emotions: 2-5 emotions conveyed in the text (e.g. joy, sadness, anxiety, gratitude, frustration, hope, nostalgia)\n"
+            "- themes: 2-4 key topics or themes present in the text\n"
+            "- summary: a concise summary of what the text is about\n\n"
+            f"Text:\n{text[:3000]}"
+        )
+        raw = await self._generate(prompt, temperature=0.3)
+        result = self._parse_json_response(raw)
+        if isinstance(result, dict):
+            return result
+        return {"emotions": [], "themes": [], "summary": "Analysis unavailable."}
+
+    async def define_text(self, text: str) -> str:
+        """Provide a definition or explanation of the given text (word, phrase, or concept)."""
+        prompt = (
+            "Define or explain the following word, phrase, or concept. "
+            "Provide a clear, concise definition followed by usage examples if helpful. "
+            "Return ONLY the definition text, nothing else.\n\n"
+            f"Text:\n{text[:1000]}"
+        )
+        result = await self._generate(prompt, temperature=0.3, num_predict=512)
         return result.strip()
 
     # ── Shared JSON parser (original) ─────────────────────────────────────

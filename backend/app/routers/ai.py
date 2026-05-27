@@ -20,10 +20,14 @@ from app.models.sentiment import EntrySentiment
 from app.models.tag import Tag
 from app.schemas.ai import (
     AIStatusResponse,
+    AnalyzeTextRequest,
+    AnalyzeTextResponse,
     ChangeToneRequest,
     ChangeToneResponse,
     ContinueWritingRequest,
     ContinueWritingResponse,
+    DefineTextRequest,
+    DefineTextResponse,
     DigestResponse,
     EntryAnalysisResponse,
     ExpandRequest,
@@ -454,6 +458,26 @@ async def translate_text(data: TranslateRequest, db: AsyncSession = Depends(get_
     svc = OllamaService()
     translated = await svc.translate(data.text, data.language)
     return TranslateResponse(translated_text=translated, language=data.language)
+
+
+@router.post("/analyze-text", response_model=AnalyzeTextResponse)
+async def analyze_text(data: AnalyzeTextRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Analyze text for emotions, themes, and a brief summary."""
+    svc = OllamaService()
+    result = await svc.analyze_text(data.text)
+    return AnalyzeTextResponse(
+        emotions=result.get("emotions", []),
+        themes=result.get("themes", []),
+        summary=result.get("summary", ""),
+    )
+
+
+@router.post("/define-text", response_model=DefineTextResponse)
+async def define_text(data: DefineTextRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Define or explain a word, phrase, or concept."""
+    svc = OllamaService()
+    definition = await svc.define_text(data.text)
+    return DefineTextResponse(definition=definition)
 
 
 # ── Model management ───────────────────────────────────────────────────
