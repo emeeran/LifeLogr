@@ -1,5 +1,6 @@
 """SQLAlchemy async engine, session factory, and Base declarative model."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -12,17 +13,22 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    pool_size=1 if _is_sqlite else settings.DB_POOL_SIZE,
-    max_overflow=0 if _is_sqlite else settings.DB_MAX_OVERFLOW,
-    pool_pre_ping=True,
-    connect_args={"check_same_thread": False} if _is_sqlite else {},
-)
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+def _build_engine() -> tuple:
+    """Create a new async engine and session factory.  Single source of truth for all params."""
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+    eng = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        pool_size=1 if is_sqlite else settings.DB_POOL_SIZE,
+        max_overflow=0 if is_sqlite else settings.DB_MAX_OVERFLOW,
+        pool_pre_ping=True,
+        connect_args={"check_same_thread": False} if is_sqlite else {},
+    )
+    if is_sqlite:
+        event.listen(eng.sync_engine, "connect", _set_sqlite_pragma)
+    factory = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
+    return eng, factory
 
 
 def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
@@ -34,8 +40,9 @@ def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
     cursor.close()
 
 
-if _is_sqlite:
-    event.listen(engine.sync_engine, "connect", _set_sqlite_pragma)
+_engine_lock = asyncio.Lock()
+
+engine, async_session = _build_engine()
 
 
 class Base(DeclarativeBase):
@@ -43,23 +50,79 @@ class Base(DeclarativeBase):
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a database session per request."""
-    async with async_session() as session:
+    """Yield a database session per request with automatic rollback on error."""
+    async with _engine_lock:
+        factory = async_session
+    session = factory()
+    try:
         yield session
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
 
 
 async def reinit_engine() -> None:
-    """Dispose current engine and create a fresh one (for backup restore)."""
+    """Dispose current engine and create a fresh one (for backup restore).
+
+    Swaps globals *before* disposing the old engine so that in-flight
+    requests holding a reference to the old session factory continue to
+    work while the old engine is drained.
+    """
     global engine, async_session
-    await engine.dispose()
-    engine = create_async_engine(
-        settings.DATABASE_URL,
-        echo=False,
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_MAX_OVERFLOW,
-        pool_pre_ping=True,
-    )
-    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with _engine_lock:
+        old = engine
+        engine, async_session = _build_engine()
+        await old.dispose()
+
+
+async def validate_db_health() -> None:
+    """Pre-flight checks before the app starts serving traffic.
+
+    Verifies DATA_DIR writability, DB file accessibility (when it exists),
+    SQLite integrity, and FTS5 availability.
+    """
+    import os
+    import tempfile
+
+    data_dir = settings.DATA_DIR
+
+    # 1. DATA_DIR must be writable
+    try:
+        with tempfile.TemporaryFile(dir=str(data_dir)):
+            pass
+    except OSError as exc:
+        raise RuntimeError(f"DATA_DIR {data_dir!s} is not writable: {exc}") from exc
+
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return  # further checks are SQLite-specific
+
+    db_path = settings.db_path
+
+    # 2. If DB file exists, verify read/write + integrity
+    if db_path.exists():
+        if not os.access(str(db_path), os.R_OK | os.W_OK):
+            raise RuntimeError(f"Database file {db_path!s} is not readable/writable")
+
+        async with engine.begin() as conn:
+            result = await conn.execute(text("PRAGMA integrity_check"))
+            row = result.scalar()
+            if row != "ok":
+                raise RuntimeError(
+                    f"SQLite integrity check failed: {row}"
+                )
+
+    # 3. Verify FTS5 is available
+    async with engine.begin() as conn:
+        try:
+            await conn.execute(text("SELECT fts5()"))
+        except Exception as exc:
+            raise RuntimeError(
+                f"SQLite FTS5 extension is not available: {exc}"
+            ) from exc
+
+    logger.info("Database health check passed")
 
 
 async def init_db() -> None:
@@ -69,6 +132,8 @@ async def init_db() -> None:
 
     if not os.environ.get("DATA_DIR"):
         settings.validate_production()
+
+    await validate_db_health()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

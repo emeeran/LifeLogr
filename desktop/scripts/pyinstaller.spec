@@ -68,7 +68,7 @@ a = Analysis(
         'matplotlib',
         # Unused Python stdlib — strip for size
         'tkinter',
-        'unittest',
+        # 'unittest' kept — required by fpdf (unittest.mock)
         'test',
         'tests',
         'xmlrpc',
