@@ -6,13 +6,16 @@ import { entriesApi } from '../../../api/entries'
 import { exportHtml, getExportPdfUrl, exportDiarium } from '../../../api/export'
 import { useEntriesStore } from '../../../stores/entries'
 import { useSyncStore } from '../../../stores/sync'
-import { getSettings } from '../../../api/settings'
+import { getSettings, vacuumDatabase, checkIntegrity } from '../../../api/settings'
 import type { AppSettings } from '../../../api/settings'
+import { isTauri } from '../../../api/client'
+import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
 import { useLocalStorage } from '@vueuse/core'
 import {
   Cloud, RefreshCw, RotateCcw, Plus, Trash2,
   Download, Upload, AlertTriangle, CheckCircle2,
-  Loader, FileUp, Database, Copy, HardDrive
+  Loader, FileUp, Database, Copy, HardDrive, FolderOpen,
+  Wrench, Shield
 } from 'lucide-vue-next'
 import ConfirmDialog from '../../common/ConfirmDialog.vue'
 import SettingsSection from '../shared/SettingsSection.vue'
@@ -41,45 +44,62 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
-// ── Import / Export ──
-const fileImporting = ref(false)
-const fileImportInput = ref<HTMLInputElement | null>(null)
-const importing = ref(false)
-const importFileInput = ref<HTMLInputElement | null>(null)
+// ── Import ──
+const importingZip = ref(false)
+const importingHtml = ref(false)
+const importingDiarium = ref(false)
 
-async function handleFileImport(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+async function handleImportZip() {
+  const file = await pickFile({ accept: '.zip,.json' })
   if (!file) return
-  fileImporting.value = true
+  importingZip.value = true
   try {
     const r = await entriesApi.importFile(file)
     entriesStore.refreshAll()
     emit('toast', 'success', `Imported ${r.imported} entries`)
   } catch (e: unknown) { emit('toast', 'error', `Import failed: ${errMsg(e)}`) }
-  finally { fileImporting.value = false; if (fileImportInput.value) fileImportInput.value.value = '' }
+  finally { importingZip.value = false }
 }
 
-async function handleImport(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+async function handleImportHtml() {
+  const file = await pickFile({ accept: '.html,.htm' })
   if (!file) return
-  importing.value = true
-  try { const r = await backupApi.importLocal(file); entriesStore.refreshAll(); emit('toast', 'success', `Restored — ${r.restored.join(', ')}`) }
-  catch (e: unknown) { emit('toast', 'error', `Import failed: ${errMsg(e)}`) }
-  finally { importing.value = false; if (importFileInput.value) importFileInput.value.value = '' }
+  importingHtml.value = true
+  try {
+    const r = await entriesApi.importFile(file)
+    entriesStore.refreshAll()
+    emit('toast', 'success', `Imported ${r.imported} entries`)
+  } catch (e: unknown) { emit('toast', 'error', `Import failed: ${errMsg(e)}`) }
+  finally { importingHtml.value = false }
 }
 
+async function handleImportDiarium() {
+  const file = await pickFile({ accept: '.json,.diary' })
+  if (!file) return
+  importingDiarium.value = true
+  try {
+    const r = await entriesApi.importFile(file)
+    entriesStore.refreshAll()
+    emit('toast', 'success', `Imported ${r.imported} entries`)
+  } catch (e: unknown) { emit('toast', 'error', `Import failed: ${errMsg(e)}`) }
+  finally { importingDiarium.value = false }
+}
+
+// ── Export ──
 const exportRange = ref<'all' | 'range'>('all')
 const exportFrom = ref('')
 const exportTo = ref('')
 const exportingHtml = ref(false)
 const exportingDiarium = ref(false)
-const deduplicating = ref(false)
+const exportDisabled = computed(() => exportRange.value === 'range' && (!exportFrom.value || !exportTo.value))
 
-function downloadMarkdown() {
+async function downloadMarkdown() {
   const url = exportRange.value === 'range' && exportFrom.value && exportTo.value
     ? entriesApi.exportMarkdownUrl(exportFrom.value, exportTo.value)
     : entriesApi.exportMarkdownUrl()
-  Object.assign(document.createElement('a'), { href: url, download: 'diarium-export.zip' }).click()
+  const resp = await fetch(url)
+  const blob = await resp.blob()
+  await saveFile({ data: blob, defaultName: 'diarium-export.zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] })
 }
 
 async function downloadHtmlExport() {
@@ -87,16 +107,16 @@ async function downloadHtmlExport() {
   try {
     const html = await exportHtml(exportFrom.value || undefined, exportTo.value || undefined)
     const blob = new Blob([html], { type: 'text/html' })
-    const url = URL.createObjectURL(blob)
-    Object.assign(document.createElement('a'), { href: url, download: 'diary-export.html' }).click()
-    URL.revokeObjectURL(url)
+    await saveFile({ data: blob, defaultName: 'diary-export.html', filters: [{ name: 'HTML', extensions: ['html'] }] })
   } catch (e: unknown) { emit('toast', 'error', `HTML export failed: ${errMsg(e)}`) }
   finally { exportingHtml.value = false }
 }
 
-function downloadPdfExport() {
+async function downloadPdfExport() {
   const url = getExportPdfUrl(exportFrom.value || undefined, exportTo.value || undefined)
-  Object.assign(document.createElement('a'), { href: url, download: 'diary-export.pdf' }).click()
+  const resp = await fetch(url)
+  const blob = await resp.blob()
+  await saveFile({ data: blob, defaultName: 'diary-export.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] })
 }
 
 async function downloadDiarium() {
@@ -104,16 +124,15 @@ async function downloadDiarium() {
   try {
     const json = await exportDiarium(exportFrom.value || undefined, exportTo.value || undefined)
     const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    Object.assign(document.createElement('a'), { href: url, download: 'diarium-export.json' }).click()
-    URL.revokeObjectURL(url)
+    await saveFile({ data: blob, defaultName: 'diarium-export.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
   } catch (e: unknown) { emit('toast', 'error', `Diarium export failed: ${errMsg(e)}`) }
   finally { exportingDiarium.value = false }
 }
 
-function downloadExport() {
-  Object.assign(document.createElement('a'), { href: backupApi.exportLocal(), download: '' }).click()
-}
+// ── Maintenance ──
+const deduplicating = ref(false)
+const vacuuming = ref(false)
+const checkingIntegrity = ref(false)
 
 async function handleDeduplicate() {
   deduplicating.value = true
@@ -126,6 +145,50 @@ async function handleDeduplicate() {
     }
   } catch (e: unknown) { emit('toast', 'error', `Deduplicate failed: ${errMsg(e)}`) }
   finally { deduplicating.value = false }
+}
+
+async function handleVacuum() {
+  vacuuming.value = true
+  try {
+    const r = await vacuumDatabase()
+    const reclaimed = formatBytes(r.reclaimed_bytes)
+    emit('toast', 'success', `Database compacted — ${reclaimed} reclaimed`)
+    await loadAppSettings()
+  } catch (e: unknown) { emit('toast', 'error', `Vacuum failed: ${errMsg(e)}`) }
+  finally { vacuuming.value = false }
+}
+
+async function handleIntegrityCheck() {
+  checkingIntegrity.value = true
+  try {
+    const r = await checkIntegrity()
+    if (r.status === 'ok') {
+      emit('toast', 'success', 'Database integrity: OK')
+    } else {
+      emit('toast', 'error', `Integrity check failed: ${r.message}`)
+    }
+  } catch (e: unknown) { emit('toast', 'error', `Check failed: ${errMsg(e)}`) }
+  finally { checkingIntegrity.value = false }
+}
+
+// ── Backup ──
+const importing = ref(false)
+
+async function handleBackupDownload() {
+  const resp = await fetch(backupApi.exportLocal())
+  const blob = await resp.blob()
+  const defaultName = `dailybyte-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.tar.gz`
+  const saved = await saveFile({ data: blob, defaultName, filters: [{ name: 'Tar Archive', extensions: ['tar.gz'] }] })
+  if (saved) emit('toast', 'success', 'Backup saved')
+}
+
+async function handleBackupRestore() {
+  const file = await pickFile({ accept: '.tar.gz,.tgz' })
+  if (!file) return
+  importing.value = true
+  try { const r = await backupApi.importLocal(file); entriesStore.refreshAll(); emit('toast', 'success', `Restored — ${r.restored.join(', ')}`) }
+  catch (e: unknown) { emit('toast', 'error', `Import failed: ${errMsg(e)}`) }
+  finally { importing.value = false }
 }
 
 // ── Cloud Backup ──
@@ -329,11 +392,29 @@ async function saveAutoBackup() {
   } finally { autoBackupSaving.value = false }
 }
 
+async function testAutoBackup() {
+  try {
+    const { API_ORIGIN } = await import('../../../api/client')
+    const res = await fetch(`${API_ORIGIN}/api/v1/backup/export`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    // Consume the body so the connection is properly closed
+    await res.arrayBuffer()
+    emit('toast', 'success', 'Test backup completed')
+  } catch (e: unknown) {
+    emit('toast', 'error', `Test backup failed: ${errMsg(e)}`)
+  }
+}
+
 async function loadAutoBackupStatus() {
   try {
     const { request } = await import('../../../api/client')
     autoBackupStatus.value = await request('/backup/schedule/status')
   } catch { /* ignore */ }
+}
+
+async function browseBackupFolder() {
+  const folder = await pickFolder()
+  if (folder) autoBackupPath.value = folder
 }
 
 onMounted(() => {
@@ -343,7 +424,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- Storage -->
+  <!-- Section 1: Storage -->
   <SettingsSection title="Storage" :icon="HardDrive" description="Disk usage and entry statistics" card-class="p-3">
     <div v-if="appSettings?.storage" class="grid grid-cols-2 gap-x-6 gap-y-1.5">
       <div class="flex items-center justify-between text-[12px]">
@@ -366,31 +447,31 @@ onMounted(() => {
     <SkeletonCard v-else :lines="4" />
   </SettingsSection>
 
-  <!-- Import / Export -->
+  <!-- Section 2: Import / Export -->
   <SettingsSection title="Import / Export" :icon="FileUp" description="Bring entries in or export your journal"
     card-class="divide-y divide-border">
-    <!-- Import -->
+    <!-- Import row -->
     <div class="p-3">
-      <SettingRow :icon="Upload" label="Import entries">
-        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50"
-          :disabled="fileImporting" @click="fileImportInput?.click()">
-          <Loader v-if="fileImporting" :size="11" class="animate-spin" />
-          {{ fileImporting ? 'Importing...' : 'Import file' }}
-        </button>
-        <input ref="fileImportInput" type="file" accept=".zip,.json,.diary" class="hidden" @change="handleFileImport" />
-      </SettingRow>
+      <div class="flex items-center gap-2.5">
+        <Upload :size="12" class="text-text-muted shrink-0" />
+        <span class="text-[12px] text-text-secondary flex-1">Import entries</span>
+        <div class="flex items-center gap-1.5">
+          <button class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer disabled:opacity-50 transition-colors"
+            :disabled="importingZip" @click="handleImportZip">
+            <Loader v-if="importingZip" :size="10" class="animate-spin inline" /> ZIP/JSON
+          </button>
+          <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+            :disabled="importingHtml" @click="handleImportHtml">
+            <Loader v-if="importingHtml" :size="10" class="animate-spin inline" /> HTML
+          </button>
+          <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+            :disabled="importingDiarium" @click="handleImportDiarium">
+            <Loader v-if="importingDiarium" :size="10" class="animate-spin inline" /> Diarium
+          </button>
+        </div>
+      </div>
     </div>
-    <!-- Deduplicate -->
-    <div class="p-3">
-      <SettingRow :icon="Copy" label="Remove duplicates">
-        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
-          :disabled="deduplicating" @click="handleDeduplicate">
-          <Loader v-if="deduplicating" :size="11" class="animate-spin" />
-          {{ deduplicating ? 'Scanning...' : 'Deduplicate' }}
-        </button>
-      </SettingRow>
-    </div>
-    <!-- Export -->
+    <!-- Export row -->
     <div class="p-3 space-y-2">
       <div class="flex items-center gap-2.5 flex-wrap">
         <Download :size="12" class="text-text-muted shrink-0" />
@@ -407,41 +488,75 @@ onMounted(() => {
         </template>
       </div>
       <div class="flex items-center gap-1.5 pl-[26px]">
-        <button class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer disabled:opacity-50"
-          :disabled="exportRange === 'range' && (!exportFrom || !exportTo)" @click="downloadMarkdown">ZIP</button>
-        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
-          :disabled="exportRange === 'range' && (!exportFrom || !exportTo) || exportingDiarium" @click="downloadDiarium">
-          <Loader v-if="exportingDiarium" :size="10" class="animate-spin inline" /> Diarium</button>
-        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50"
-          :disabled="exportingHtml" @click="downloadHtmlExport">
+        <button class="px-2 py-0.5 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer disabled:opacity-50 transition-colors"
+          :disabled="exportDisabled" @click="downloadMarkdown">ZIP</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+          :disabled="exportingHtml || exportDisabled" @click="downloadHtmlExport">
           <Loader v-if="exportingHtml" :size="10" class="animate-spin inline" /> HTML</button>
-        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer"
-          @click="downloadPdfExport">PDF</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+          :disabled="exportDisabled" @click="downloadPdfExport">PDF</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+          :disabled="exportingDiarium || exportDisabled" @click="downloadDiarium">
+          <Loader v-if="exportingDiarium" :size="10" class="animate-spin inline" /> Diarium</button>
       </div>
     </div>
   </SettingsSection>
 
-  <!-- Backup -->
+  <!-- Section 3: Maintenance -->
+  <SettingsSection title="Maintenance" :icon="Wrench" description="Database maintenance and cleanup"
+    card-class="divide-y divide-border">
+    <!-- Remove duplicates -->
+    <div class="p-3">
+      <SettingRow :icon="Copy" label="Remove duplicates">
+        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
+          :disabled="deduplicating" @click="handleDeduplicate">
+          <Loader v-if="deduplicating" :size="11" class="animate-spin" />
+          {{ deduplicating ? 'Scanning...' : 'Deduplicate' }}
+        </button>
+      </SettingRow>
+    </div>
+    <!-- Compact database -->
+    <div class="p-3">
+      <SettingRow :icon="Database" label="Compact database">
+        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
+          :disabled="vacuuming" @click="handleVacuum">
+          <Loader v-if="vacuuming" :size="11" class="animate-spin" />
+          {{ vacuuming ? 'Compacting...' : 'Vacuum' }}
+        </button>
+      </SettingRow>
+    </div>
+    <!-- Check integrity -->
+    <div class="p-3">
+      <SettingRow :icon="Shield" label="Check integrity">
+        <button class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
+          :disabled="checkingIntegrity" @click="handleIntegrityCheck">
+          <Loader v-if="checkingIntegrity" :size="11" class="animate-spin" />
+          {{ checkingIntegrity ? 'Checking...' : 'Check' }}
+        </button>
+      </SettingRow>
+    </div>
+  </SettingsSection>
+
+  <!-- Section 4: Backup -->
   <SettingsSection title="Backup" :icon="Database" description="Local archive and scheduled backups"
     card-class="divide-y divide-border">
     <!-- Local archive -->
     <div class="p-3">
       <SettingRow :icon="HardDrive" label="Local archive">
         <div class="flex items-center gap-1.5">
-          <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors"
-            @click="downloadExport"><Download :size="10" class="inline" /> Backup</button>
-          <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
-            :disabled="importing" @click="importFileInput?.click()">
+          <button class="flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors"
+            @click="handleBackupDownload"><Download :size="10" class="inline" /> Backup</button>
+          <button class="flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+            :disabled="importing" @click="handleBackupRestore">
             <Loader v-if="importing" :size="10" class="animate-spin inline" /> Restore</button>
         </div>
-        <input ref="importFileInput" type="file" accept=".tar.gz,.tgz" class="hidden" @change="handleImport" />
       </SettingRow>
     </div>
-    <!-- Auto backup schedule -->
+    <!-- Auto backup -->
     <div class="p-3 space-y-2">
       <div class="flex items-center gap-2.5">
         <input type="checkbox" v-model="autoBackupEnabled" class="accent-accent" @change="toggleAutoBackup" />
-        <span class="text-[12px] text-text-secondary flex-1">Auto backup (local)</span>
+        <span class="text-[12px] text-text-secondary flex-1">Auto backup</span>
         <span v-if="autoBackupStatus?.backup_scheduled" class="text-[10px] text-green-400 font-medium">Scheduled</span>
       </div>
       <div v-if="autoBackupEnabled" class="space-y-1.5 pl-6">
@@ -449,6 +564,10 @@ onMounted(() => {
           <span class="text-[11px] text-text-muted w-14">Folder</span>
           <input v-model="autoBackupPath" placeholder="~/Backups/dailybyte"
             class="settings-input flex-1" />
+          <button v-if="isTauri" @click="browseBackupFolder"
+            class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors">
+            <FolderOpen :size="10" class="inline" /> Browse
+          </button>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-[11px] text-text-muted w-14">Time</span>
@@ -469,16 +588,22 @@ onMounted(() => {
             class="settings-input w-14" />
           <span class="text-[11px] text-text-muted">backups</span>
         </div>
-        <button @click="saveAutoBackup" :disabled="autoBackupSaving"
-          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
-          <Loader v-if="autoBackupSaving" :size="10" class="animate-spin" />
-          Save Schedule
-        </button>
+        <div class="flex items-center gap-1.5 pt-1">
+          <button @click="saveAutoBackup" :disabled="autoBackupSaving"
+            class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">
+            <Loader v-if="autoBackupSaving" :size="10" class="animate-spin" />
+            Save Schedule
+          </button>
+          <button @click="testAutoBackup"
+            class="px-2.5 py-1 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors">
+            Test
+          </button>
+        </div>
       </div>
     </div>
   </SettingsSection>
 
-  <!-- Cloud -->
+  <!-- Section 5: Cloud -->
   <SettingsSection title="Cloud" :icon="Cloud" description="Sync your journal to cloud storage">
     <template #actions>
       <button class="flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-accent text-white text-[11px] font-medium cursor-pointer hover:bg-accent-hover transition-colors"
@@ -569,7 +694,7 @@ onMounted(() => {
     </details>
   </SettingsSection>
 
-  <!-- Sync -->
+  <!-- Section 6: Sync -->
   <SettingsSection title="Sync" :icon="RefreshCw" description="Manage data synchronization queue">
     <div v-if="syncStore.status" class="flex items-center gap-3 text-[11px] mb-2">
       <span :class="syncStore.status.status === 'ok' ? 'text-green-400' : 'text-accent'" class="font-medium">{{ syncStore.status.status }}</span>

@@ -48,4 +48,4 @@ function formDataRequest<T>(path: string, formData: FormData): Promise<T> {
   })
 }
 
-export { request, formDataRequest, API_ORIGIN }
+export { request, formDataRequest, API_ORIGIN, isTauri }

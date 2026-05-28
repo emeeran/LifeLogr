@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+# Patch sqlite3 with pysqlite3 in PyInstaller builds where the bundled
+# sqlite3 has issues with qualified column names (e.g. "entries.title").
+import sys
+try:
+    import pysqlite3 as _pysqlite3  # type: ignore[import-untyped]
+    if getattr(sys, "frozen", False):
+        sys.modules["sqlite3"] = _pysqlite3
+except ImportError:
+    pass
+
 import logging
 import time
 from collections import defaultdict

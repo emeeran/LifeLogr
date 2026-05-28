@@ -79,14 +79,14 @@ class BackupService:
         archive_io = io.BytesIO()
         with tarfile.open(fileobj=archive_io, mode="w:gz") as tar:
             if db_file.exists():
-                tar.add(str(db_file), arcname="dev.db")
+                tar.add(str(db_file), arcname="diarium.diarium")
                 # Include WAL/SHM files as belt-and-suspenders
                 wal_file = db_file.with_suffix(db_file.suffix + "-wal")
                 shm_file = db_file.with_suffix(db_file.suffix + "-shm")
                 if wal_file.exists():
-                    tar.add(str(wal_file), arcname="dev.db-wal")
+                    tar.add(str(wal_file), arcname="diarium.diarium-wal")
                 if shm_file.exists():
-                    tar.add(str(shm_file), arcname="dev.db-shm")
+                    tar.add(str(shm_file), arcname="diarium.diarium-shm")
             if media_dir.exists():
                 tar.add(str(media_dir), arcname="media")
 
@@ -209,7 +209,9 @@ class BackupService:
                             raise ValueError(f"Invalid archive: path traversal in '{member.name}'")
                     tar.extractall(tmpdir)
 
-                extracted_db = Path(tmpdir) / "dev.db"
+                extracted_db = Path(tmpdir) / "diarium.diarium"
+                if not extracted_db.exists():
+                    extracted_db = Path(tmpdir) / "dev.db"
                 extracted_media = Path(tmpdir) / "media"
 
                 if extracted_db.exists():

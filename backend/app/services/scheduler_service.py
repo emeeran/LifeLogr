@@ -145,7 +145,7 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
             if db_file.exists():
-                tar.add(str(db_file), arcname="dev.db")
+                tar.add(str(db_file), arcname="diarium.diarium")
             if media_dir.exists():
                 tar.add(str(media_dir), arcname="media")
         logger.info(f"Backup complete: {archive_path}")
