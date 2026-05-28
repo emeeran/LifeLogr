@@ -113,14 +113,21 @@ async def validate_db_health() -> None:
                     f"SQLite integrity check failed: {row}"
                 )
 
-    # 3. Verify FTS5 is available
+    # 3. Verify FTS5 is available (soft check — warn, don't abort)
+    _fts5_available = False
     async with engine.begin() as conn:
         try:
-            await conn.execute(text("SELECT fts5()"))
+            await conn.execute(
+                text("CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_check USING fts5(x)")
+            )
+            await conn.execute(text("DROP TABLE IF EXISTS _fts5_check"))
+            _fts5_available = True
         except Exception as exc:
-            raise RuntimeError(
-                f"SQLite FTS5 extension is not available: {exc}"
-            ) from exc
+            logger.warning(
+                "SQLite FTS5 extension is not available: %s. "
+                "Full-text search will not work.",
+                exc,
+            )
 
     logger.info("Database health check passed")
 
@@ -166,110 +173,123 @@ async def _migrate_schema(conn: Any) -> None:
 
 async def _setup_fts() -> None:
     """Create FTS5 virtual table if missing, populate, and install sync triggers."""
-    async with engine.begin() as conn:
-        # Check if FTS table already exists
-        exists = (
-            await conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='entries_fts'")
-            )
-        ).scalar()
+    try:
+        async with engine.begin() as conn:
+            # Check if FTS table already exists
+            exists = (
+                await conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='entries_fts'")
+                )
+            ).scalar()
 
-        if not exists:
-            logger.info("Creating FTS5 index and populating...")
-            await conn.execute(
-                text("""
-                CREATE VIRTUAL TABLE entries_fts
-                USING fts5(title, body, content=entries, content_rowid=id)
-            """)
-            )
-            await conn.execute(
-                text("""
-                INSERT INTO entries_fts(rowid, title, body)
-                SELECT id, COALESCE(title, ''), body FROM entries WHERE is_deleted = 0
-            """)
-            )
-        else:
-            # Verify integrity — try a simple query
-            try:
-                count = int(
-                    (await conn.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar() or 0
-                )
-                entry_count = int(
-                    (
-                        await conn.execute(
-                            text("SELECT COUNT(*) FROM entries WHERE is_deleted = 0")
-                        )
-                    ).scalar()
-                    or 0
-                )
-                if count < entry_count:
-                    logger.info("FTS index stale (%d/%d rows), rebuilding...", count, entry_count)
-                    await conn.execute(text("DELETE FROM entries_fts"))
-                    await conn.execute(
-                        text("""
-                        INSERT INTO entries_fts(rowid, title, body)
-                        SELECT id, COALESCE(title, ''), body FROM entries WHERE is_deleted = 0
-                    """)
-                    )
-            except Exception:
-                logger.warning("FTS index corrupt, rebuilding...")
-                for name in ("fts_entry_ai", "fts_entry_au", "fts_entry_ad", "fts_entry_soft_del"):
-                    await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
-                await conn.execute(text("DROP TABLE IF EXISTS entries_fts"))
+            if not exists:
+                logger.info("Creating FTS5 index and populating...")
                 await conn.execute(
                     text("""
                     CREATE VIRTUAL TABLE entries_fts
-                    USING fts5(title, body, content=entries, content_rowid=id)
+                    USING fts5(title, body)
                 """)
                 )
                 await conn.execute(
                     text("""
                     INSERT INTO entries_fts(rowid, title, body)
-                    SELECT id, COALESCE(title, ''), body FROM entries WHERE is_deleted = 0
+                    SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
                 """)
                 )
+            else:
+                # Verify integrity — try a simple query
+                try:
+                    count = int(
+                        (await conn.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar() or 0
+                    )
+                    entry_count = int(
+                        (
+                            await conn.execute(
+                                text("SELECT COUNT(*) FROM entries WHERE is_deleted = 0")
+                            )
+                        ).scalar()
+                        or 0
+                    )
+                    if count < entry_count:
+                        logger.info("FTS index stale (%d/%d rows), rebuilding...", count, entry_count)
+                        await conn.execute(text("DELETE FROM entries_fts"))
+                        await conn.execute(
+                            text("""
+                            INSERT INTO entries_fts(rowid, title, body)
+                            SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
+                        """)
+                        )
+                except Exception:
+                    logger.warning("FTS index corrupt, rebuilding...")
+                    try:
+                        for name in ("fts_entry_ai", "fts_entry_au", "fts_entry_ad", "fts_entry_soft_del"):
+                            await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
+                        await conn.execute(text("DROP TABLE IF EXISTS entries_fts"))
+                        await conn.execute(
+                            text("""
+                            CREATE VIRTUAL TABLE entries_fts
+                            USING fts5(title, body)
+                        """)
+                        )
+                        await conn.execute(
+                            text("""
+                            INSERT INTO entries_fts(rowid, title, body)
+                            SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
+                        """)
+                        )
+                    except Exception:
+                        logger.warning("FTS5 rebuild failed — full-text search unavailable", exc_info=True)
 
-        # Ensure triggers exist (DROP + CREATE for idempotency)
-        for name in ("fts_entry_ai", "fts_entry_au", "fts_entry_ad", "fts_entry_soft_del"):
-            await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
+            # Ensure triggers exist (DROP + CREATE for idempotency)
+            # Skip if FTS5 table couldn't be created
+            fts_exists = (
+                await conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='entries_fts'")
+                )
+            ).scalar()
+            if fts_exists:
+                for name in ("fts_entry_ai", "fts_entry_au", "fts_entry_ad", "fts_entry_soft_del"):
+                    await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
 
-        await conn.execute(
-            text("""
-            CREATE TRIGGER fts_entry_ai AFTER INSERT ON entries
-            BEGIN
-                INSERT INTO entries_fts(rowid, title, body)
-                VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
-            END
-        """)
-        )
-        await conn.execute(
-            text("""
-            CREATE TRIGGER fts_entry_au AFTER UPDATE ON entries
-            BEGIN
-                UPDATE entries_fts SET title = COALESCE(NEW.title, ''), body = NEW.body
-                WHERE rowid = NEW.id;
-            END
-        """)
-        )
-        await conn.execute(
-            text("""
-            CREATE TRIGGER fts_entry_ad AFTER DELETE ON entries
-            BEGIN
-                INSERT INTO entries_fts(entries_fts, rowid, title, body)
-                VALUES ('delete', OLD.id, COALESCE(OLD.title, ''), OLD.body);
-            END
-        """)
-        )
-        await conn.execute(
-            text("""
-            CREATE TRIGGER fts_entry_soft_del AFTER UPDATE ON entries
-            WHEN NEW.is_deleted = 1 AND OLD.is_deleted = 0
-            BEGIN
-                INSERT INTO entries_fts(entries_fts, rowid, title, body)
-                VALUES ('delete', NEW.id, COALESCE(NEW.title, ''), NEW.body);
-            END
-        """)
-        )
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_ai AFTER INSERT ON entries
+                    BEGIN
+                        INSERT INTO entries_fts(rowid, title, body)
+                        VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                    END
+                """)
+                )
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_au AFTER UPDATE ON entries
+                    BEGIN
+                        UPDATE entries_fts SET title = COALESCE(NEW.title, ''), body = NEW.body
+                        WHERE rowid = NEW.id;
+                    END
+                """)
+                )
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_ad AFTER DELETE ON entries
+                    BEGIN
+                        INSERT INTO entries_fts(entries_fts, rowid, title, body)
+                        VALUES ('delete', OLD.id, COALESCE(OLD.title, ''), OLD.body);
+                    END
+                """)
+                )
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_soft_del AFTER UPDATE ON entries
+                    WHEN NEW.is_deleted = 1 AND OLD.is_deleted = 0
+                    BEGIN
+                        INSERT INTO entries_fts(entries_fts, rowid, title, body)
+                        VALUES ('delete', NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                    END
+                """)
+                )
+    except Exception:
+        logger.warning("FTS5 setup failed — full-text search unavailable", exc_info=True)
 
 
 async def _seed_builtin_templates() -> None:

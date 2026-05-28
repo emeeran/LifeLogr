@@ -17,10 +17,22 @@ ROOT = Path(SPECPATH).resolve().parent.parent
 # Auto-discover all app.* submodules — future-proof against additions
 _app_hiddenimports = collect_submodules('app')
 
+# pysqlite3-binary ships its own libsqlite3 and C extension — include both
+# so that PyInstaller builds use a known-good sqlite3 instead of the one
+# statically compiled into uv's libpython (which breaks qualified col refs).
+_site = str(ROOT / 'backend' / '.venv' / 'lib' / 'python3.11' / 'site-packages')
+_pysqlite3_binaries = [
+    (_site + '/pysqlite3/_sqlite3.cpython-311-x86_64-linux-gnu.so', 'pysqlite3'),
+]
+# Find the vendored libsqlite3 shared lib (name includes a hash, so glob it)
+import glob as _glob
+for _so in _glob.glob(_site + '/pysqlite3_binary.libs/libsqlite3*.so*'):
+    _pysqlite3_binaries.append((_so, 'pysqlite3_binary.libs'))
+
 a = Analysis(
     [str(ROOT / 'backend' / 'app' / 'main.py')],
     pathex=[str(ROOT / 'backend')],
-    binaries=[],
+    binaries=_pysqlite3_binaries,
     datas=[
         (str(ROOT / 'backend' / 'app'), 'app'),
     ],
@@ -49,6 +61,8 @@ a = Analysis(
         'sqlalchemy.ext.asyncio',
         'sqlalchemy.orm',
         'fpdf',
+        # pysqlite3 — bundles a reliable sqlite3 with FTS5
+        'pysqlite3',
     ],
     hookspath=[],
     hooksconfig={},
@@ -104,7 +118,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
-    upx=True,
+    upx=False,
     console=sys.platform != 'win32',  # Hide cmd window on Windows
     argv_emulation=False,
 )

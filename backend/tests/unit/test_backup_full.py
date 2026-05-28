@@ -80,11 +80,11 @@ def _make_valid_db(path: Path) -> Path:
     return path
 
 
-def _make_archive_from_bytes(db_content: bytes) -> bytes:
-    """Build a .tar.gz containing dev.db with the given raw bytes."""
+def _make_archive_from_bytes(db_content: bytes, name: str = "diarium.diarium") -> bytes:
+    """Build a .tar.gz containing a DB file with the given raw bytes."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        info = tarfile.TarInfo(name="dev.db")
+        info = tarfile.TarInfo(name=name)
         info.size = len(db_content)
         tar.addfile(info, io.BytesIO(db_content))
     return buf.getvalue()
@@ -297,13 +297,10 @@ class TestExportImport:
     async def test_export_returns_tar_gz(
         self, client: AsyncClient, db_engine
     ) -> None:
-        """Export endpoint returns a valid gzip archive with dev.db."""
-        # Patch checkpoint_wal in its source module and ensure db_path exists
+        """Export endpoint returns a valid gzip archive with diarium.diarium."""
         async def _noop_checkpoint(path: Path) -> None:
             pass
 
-        # Create a copy of the test DB at settings.db_path so the export
-        # endpoint finds a real file to archive.
         db_file = settings.db_path
         db_file.parent.mkdir(parents=True, exist_ok=True)
         if not db_file.exists():
@@ -316,7 +313,7 @@ class TestExportImport:
         buf = io.BytesIO(r.content)
         with tarfile.open(fileobj=buf, mode="r:gz") as tar:
             names = [m.name for m in tar.getmembers()]
-            assert "dev.db" in names
+            assert "diarium.diarium" in names
 
     async def test_export_contains_entry_data(
         self, client: AsyncClient, db_session: AsyncSession, db_engine
@@ -352,7 +349,7 @@ class TestExportImport:
         try:
             with tarfile.open(fileobj=buf, mode="r:gz") as tar:
                 tar.extractall(extract_dir)
-            conn2 = sqlite3.connect(os.path.join(extract_dir, "dev.db"))
+            conn2 = sqlite3.connect(os.path.join(extract_dir, "diarium.diarium"))
             rows = conn2.execute("SELECT body FROM entries WHERE body='export-test'").fetchall()
             conn2.close()
             assert len(rows) == 1
@@ -397,7 +394,7 @@ class TestExportImport:
         assert r.status_code == 400
 
     async def test_import_rejects_non_sqlite_db(self, client: AsyncClient) -> None:
-        """Archive containing a non-SQLite dev.db gets 400."""
+        """Archive containing a non-SQLite diarium.diarium gets 400."""
         archive = _make_archive_from_bytes(b"this is not sqlite data at all")
         r = await client.post(
             "/api/v1/backup/import",
@@ -407,7 +404,7 @@ class TestExportImport:
         assert "not a valid SQLite" in r.json()["detail"]
 
     async def test_import_rejects_empty_db(self, client: AsyncClient) -> None:
-        """Archive containing an empty dev.db file gets 400."""
+        """Archive containing an empty diarium.diarium file gets 400."""
         archive = _make_archive_from_bytes(b"")
         r = await client.post(
             "/api/v1/backup/import",
@@ -418,7 +415,7 @@ class TestExportImport:
     async def test_import_accepts_media_only_archive(
         self, client: AsyncClient
     ) -> None:
-        """Archive with media/ but no dev.db imports just media."""
+        """Archive with media/ but no database file imports just media."""
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             data = b"fake image data"
@@ -435,6 +432,30 @@ class TestExportImport:
         data = r.json()
         assert data["success"] is True
         assert "media" in data["restored"]
+
+    async def test_import_accepts_legacy_dev_db_archive(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Old archives using dev.db (instead of diarium.diarium) still import."""
+        # Build an archive with a valid SQLite DB named "dev.db" (legacy format)
+        db = _make_valid_db(tmp_path / "legacy.db")
+        archive = _make_archive_from_bytes(db.read_bytes(), name="dev.db")
+
+        # Patch init_db to avoid FTS setup errors with the minimal test schema
+        async def _minimal_init_db():
+            from app.core.database import Base, engine
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+        with patch("app.core.database.init_db", side_effect=_minimal_init_db):
+            r = await client.post(
+                "/api/v1/backup/import",
+                files={"file": ("legacy.tar.gz", archive, "application/gzip")},
+            )
+        # Should not get 400 — the import should accept the legacy name
+        assert r.status_code == 200
+        data = r.json()
+        assert data["success"] is True
 
 
 # ── Scheduler tests ──────────────────────────────────────────────────────────
@@ -559,7 +580,7 @@ class TestAutoBackupScheduler:
 
 class TestScheduledBackupExecution:
     async def test_run_backup_creates_archive(self, tmp_path: Path) -> None:
-        """_run_backup produces a valid .tar.gz with dev.db inside."""
+        """_run_backup produces a valid .tar.gz with diarium.diarium inside."""
         from app.services.scheduler_service import _run_backup
 
         data_dir = tmp_path / "data"
@@ -591,7 +612,7 @@ class TestScheduledBackupExecution:
 
         with tarfile.open(str(archives[0]), "r:gz") as tar:
             names = [m.name for m in tar.getmembers()]
-            assert "dev.db" in names
+            assert "diarium.diarium" in names
 
     def test_retention_cleanup(self, tmp_path: Path) -> None:
         """_cleanup_old_backups keeps only N most recent archives."""

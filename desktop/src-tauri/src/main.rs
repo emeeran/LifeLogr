@@ -78,6 +78,7 @@ fn main() {
             // Another instance tried to open — focus existing window
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![check_deps, run_setup])
         .setup(|app| {
             // Resolve data directory

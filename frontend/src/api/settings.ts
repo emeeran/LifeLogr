@@ -39,3 +39,9 @@ export const updateSettings = (data: { ai?: Partial<AISettings> }) =>
 
 export const getOllamaModels = () =>
   request<AIModelInfo[]>('/settings/models')
+
+export const vacuumDatabase = () =>
+  request<{ status: string; reclaimed_bytes: number }>('/settings/vacuum', { method: 'POST' })
+
+export const checkIntegrity = () =>
+  request<{ status: string; message: string }>('/settings/integrity-check', { method: 'POST' })

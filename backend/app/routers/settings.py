@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -165,3 +165,21 @@ async def list_ollama_models() -> list[dict[str, Any]]:
     except Exception:
         logger.warning("Failed to fetch Ollama models", exc_info=True)
     return models
+
+
+@router.post("/vacuum")
+async def vacuum_database(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Run VACUUM to compact the SQLite database and reclaim disk space."""
+    before = _db_file_size()
+    await db.execute(text("VACUUM"))
+    after = _db_file_size()
+    return {"status": "ok", "reclaimed_bytes": before - after}
+
+
+@router.post("/integrity-check")
+async def integrity_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Run SQLite integrity check on the database."""
+    result = await db.execute(text("PRAGMA integrity_check"))
+    row = result.scalar()
+    ok = row == "ok"
+    return {"status": "ok" if ok else "error", "message": row}
