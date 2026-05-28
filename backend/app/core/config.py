@@ -136,8 +136,15 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         """Filesystem path to the SQLite database file."""
-        parsed = urlparse(self.DATABASE_URL)
-        return Path(parsed.path)
+        url_str = str(self.DATABASE_URL)
+        # SQLAlchemy SQLite URLs: sqlite+aiosqlite:///path
+        # 3 slashes = relative, 4 slashes = absolute.  urlparse does NOT
+        # handle this correctly for SQLite's non-standard URL scheme, so
+        # we strip the scheme prefix manually.
+        for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
+            if url_str.startswith(prefix):
+                return Path(url_str[len(prefix):])
+        return Path(urlparse(url_str).path)
 
     @property
     def is_production(self) -> bool:
