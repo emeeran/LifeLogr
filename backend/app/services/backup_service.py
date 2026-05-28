@@ -67,23 +67,26 @@ class BackupService:
         import io
         import tarfile
         from app.core.config import settings
-        from app.core.database import engine
-        from sqlalchemy import text
+        from app.core.restore import checkpoint_wal
 
         db_file = settings.db_path
         media_dir = settings.MEDIA_DIR
 
         # Checkpoint WAL to make sure database is flushed to disk
-        try:
-            async with engine.begin() as conn:
-                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-        except Exception:
-            logger.warning("WAL checkpoint failed during backup", exc_info=True)
+        if db_file.exists():
+            await checkpoint_wal(db_file)
 
         archive_io = io.BytesIO()
         with tarfile.open(fileobj=archive_io, mode="w:gz") as tar:
             if db_file.exists():
                 tar.add(str(db_file), arcname="dev.db")
+                # Include WAL/SHM files as belt-and-suspenders
+                wal_file = db_file.with_suffix(db_file.suffix + "-wal")
+                shm_file = db_file.with_suffix(db_file.suffix + "-shm")
+                if wal_file.exists():
+                    tar.add(str(wal_file), arcname="dev.db-wal")
+                if shm_file.exists():
+                    tar.add(str(shm_file), arcname="dev.db-shm")
             if media_dir.exists():
                 tar.add(str(media_dir), arcname="media")
 
@@ -154,12 +157,12 @@ class BackupService:
         creds = json.loads(decrypt(config.credentials_encrypted))
 
         import io
-        import tarfile
         import shutil
+        import tarfile
         import tempfile
         from pathlib import Path
-        from app.core.database import init_db, reinit_engine
         from app.core.config import settings
+        from app.core.restore import atomic_restore
 
         try:
             if config.provider == "google_drive":
@@ -192,7 +195,6 @@ class BackupService:
             else:
                 raise ValueError(f"Unsupported backup provider: {config.provider}")
 
-            # Swap local database and media directories atomically
             db_file_path = settings.db_path
             media_dir = settings.MEDIA_DIR
 
@@ -208,32 +210,29 @@ class BackupService:
                     tar.extractall(tmpdir)
 
                 extracted_db = Path(tmpdir) / "dev.db"
-                if extracted_db.exists():
-                    await reinit_engine()
-                    backup_path = str(db_file_path) + ".pre-restore.bak"
-                    if db_file_path.exists():
-                        shutil.copy2(str(db_file_path), backup_path)
+                extracted_media = Path(tmpdir) / "media"
 
-                    try:
-                        shutil.copy2(str(extracted_db), str(db_file_path))
-                        await init_db()
+                if extracted_db.exists():
+                    restored = await atomic_restore(
+                        extracted_db=extracted_db,
+                        extracted_media=extracted_media if extracted_media.exists() else None,
+                        live_db=db_file_path,
+                        live_media=media_dir,
+                    )
+                    if "database" in restored:
                         counts = await self.count_all()
                         restored_entries = counts["entries"]
-                        Path(backup_path).unlink(missing_ok=True)
-                    except Exception:
-                        logger.error("Database restore failed, rolling back", exc_info=True)
-                        if Path(backup_path).exists():
-                            shutil.copy2(backup_path, str(db_file_path))
-                        Path(backup_path).unlink(missing_ok=True)
-                        raise
-
-                extracted_media = Path(tmpdir) / "media"
-                if extracted_media.exists():
-                    if media_dir.exists():
-                        shutil.rmtree(str(media_dir))
-                    shutil.copytree(str(extracted_media), str(media_dir))
-                    counts = await self.count_all()
-                    restored_media = counts["media"]
+                    if "media" in restored:
+                        counts = await self.count_all()
+                        restored_media = counts["media"]
+                else:
+                    # No DB — just restore media if present
+                    if extracted_media.exists():
+                        if media_dir.exists():
+                            shutil.rmtree(str(media_dir))
+                        shutil.copytree(str(extracted_media), str(media_dir))
+                        counts = await self.count_all()
+                        restored_media = counts["media"]
             finally:
                 shutil.rmtree(tmpdir, ignore_errors=True)
 

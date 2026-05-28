@@ -1,8 +1,11 @@
 """Application configuration via pydantic-settings."""
 
+import logging
 import os
+import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +19,50 @@ def _default_data_dir() -> Path:
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     return base / "diarilinux"
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
+    """Copy an existing database (and media) into *target_data_dir* on first desktop run.
+
+    Searches the platform-default data directory for a database left by a prior
+    dev-mode or older desktop install.  Only runs when *target_db* does not yet
+    exist, so this is safe to call on every startup.
+    """
+    if target_db.exists():
+        return  # database already present — nothing to migrate
+
+    # Check the platform-default data dir (what dev mode uses when no .env override)
+    legacy_dir = _default_data_dir()
+    candidates: list[Path] = [
+        legacy_dir / "diarilinux.db",
+    ]
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.stat().st_size > 0:
+            _logger.info(
+                "Migrating existing database from %s → %s", candidate, target_db
+            )
+            # Atomic write: copy to .tmp then rename
+            tmp = target_db.with_suffix(target_db.suffix + ".tmp")
+            try:
+                shutil.copy2(str(candidate), str(tmp))
+                os.replace(str(tmp), str(target_db))
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
+
+            # Also migrate media files if they exist
+            legacy_media = candidate.parent / "media"
+            target_media = target_data_dir / "media"
+            if legacy_media.is_dir() and not target_media.exists():
+                _logger.info(
+                    "Migrating media files from %s → %s", legacy_media, target_media
+                )
+                shutil.copytree(str(legacy_media), str(target_media))
+            return  # migrated successfully
 
 
 class Settings(BaseSettings):
@@ -77,6 +124,9 @@ class Settings(BaseSettings):
         if not self.DATABASE_URL:
             db_path = self.DATA_DIR / "diarilinux.db"
             self.DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
+            # On first desktop run, migrate existing database from the
+            # platform-default data dir (e.g. from dev/prior installs).
+            _migrate_existing_db(db_path, self.DATA_DIR)
 
         # Derive MEDIA_DIR if not explicitly set
         if not self.MEDIA_DIR or str(self.MEDIA_DIR) == ".":
@@ -86,7 +136,8 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         """Filesystem path to the SQLite database file."""
-        return Path(str(self.DATABASE_URL).replace("sqlite+aiosqlite:///", ""))
+        parsed = urlparse(self.DATABASE_URL)
+        return Path(parsed.path)
 
     @property
     def is_production(self) -> bool:
