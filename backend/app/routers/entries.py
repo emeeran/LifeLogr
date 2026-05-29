@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import math
 import re
 import zipfile
 from pathlib import Path
@@ -21,7 +20,6 @@ from app.core.database import get_db
 from app.models.entry import Entry
 from app.models.tag import EntryTag
 from app.schemas.entry import EntryCreate, EntryListResponse, EntryResponse, EntryUpdate
-from app.schemas.geotagging import GeotagResponse, GeotagUpdate, NearbyEntry, NearbyResponse
 from app.schemas.tag import TagBrief
 from app.services.entry_service import EntryService
 
@@ -114,8 +112,8 @@ async def export_markdown(
 
     q = (
         select(Entry)
-        .where(Entry.is_deleted == False)
-        .options(  # noqa: E712
+        .where(Entry.is_deleted.is_(False))
+        .options(
             selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
             selectinload(Entry.media),
         )
@@ -187,8 +185,8 @@ async def export_diarium(
 
     q = (
         select(Entry)
-        .where(Entry.is_deleted == False)
-        .options(  # noqa: E712
+        .where(Entry.is_deleted.is_(False))
+        .options(
             selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
         )
         .order_by(Entry.entry_date)
@@ -225,101 +223,6 @@ async def export_diarium(
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=diarium-export.json"},
     )
-
-
-# ── Geotagging endpoints ───────────────────────────────────────────────────────
-
-
-@router.put("/{entry_id}/geotag", response_model=GeotagResponse)
-async def set_geotag(entry_id: int, data: GeotagUpdate, db: AsyncSession = Depends(get_db)) -> Any:
-    """Set or update the geolocation of an entry."""
-    svc = EntryService(db)
-    entry = await svc.get(entry_id)
-    entry.latitude = data.latitude
-    entry.longitude = data.longitude
-    entry.location_name = data.location_name
-    await db.commit()
-    await db.refresh(entry)
-    return entry
-
-
-@router.delete("/{entry_id}/geotag", status_code=204)
-async def remove_geotag(entry_id: int, db: AsyncSession = Depends(get_db)) -> None:
-    """Remove geolocation from an entry."""
-    svc = EntryService(db)
-    entry = await svc.get(entry_id)
-    entry.latitude = None
-    entry.longitude = None
-    entry.location_name = None
-    await db.commit()
-
-
-@router.get("/map", response_model=list[GeotagResponse])
-async def map_view(db: AsyncSession = Depends(get_db)) -> Any:
-    """Return all geotagged entries for map display."""
-    result = await db.execute(
-        select(Entry).where(
-            Entry.is_deleted == False,  # noqa: E712
-            Entry.latitude.is_not(None),
-            Entry.longitude.is_not(None),
-        )
-    )
-    return list(result.scalars().all())
-
-
-@router.get("/nearby", response_model=NearbyResponse)
-async def nearby_entries(
-    lat: float = Query(..., ge=-90, le=90),
-    lon: float = Query(..., ge=-180, le=180),
-    radius_km: float = Query(default=10, ge=0.1, le=1000),
-    limit: int = Query(default=20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-) -> Any:
-    """Find entries near a given lat/lon within radius_km using Haversine."""
-    # Rough bounding box for pre-filtering
-    lat_delta = radius_km / 111.0
-    lon_delta = radius_km / (111.0 * math.cos(math.radians(lat)))
-
-    result = await db.execute(
-        select(Entry).where(
-            Entry.is_deleted == False,  # noqa: E712
-            Entry.latitude.is_not(None),
-            Entry.longitude.is_not(None),
-            Entry.latitude.between(lat - lat_delta, lat + lat_delta),
-            Entry.longitude.between(lon - lon_delta, lon + lon_delta),
-        )
-    )
-    candidates = list(result.scalars().all())
-
-    # Exact Haversine filtering
-    nearby = []
-    for e in candidates:
-        if e.latitude is None or e.longitude is None:
-            continue
-        dlat = math.radians(e.latitude - lat)
-        dlon = math.radians(e.longitude - lon)
-        a = (
-            math.sin(dlat / 2) ** 2
-            + math.cos(math.radians(lat))
-            * math.cos(math.radians(e.latitude))
-            * math.sin(dlon / 2) ** 2
-        )
-        dist = 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        if dist <= radius_km:
-            nearby.append(
-                NearbyEntry(
-                    id=e.id,
-                    entry_date=str(e.entry_date),
-                    title=e.title,
-                    latitude=e.latitude,
-                    longitude=e.longitude,
-                    location_name=e.location_name,
-                    distance_km=round(dist, 2),
-                )
-            )
-
-    nearby.sort(key=lambda x: x.distance_km)
-    return NearbyResponse(items=nearby[:limit], total=len(nearby))
 
 
 @router.post("/deduplicate", response_model=dict)

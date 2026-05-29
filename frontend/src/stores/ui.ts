@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
-export type ViewType = 'calendar' | 'timeline' | 'search' | 'on-this-day' | 'analytics' | 'map' | 'reminders' | 'settings' | 'digest'
-export type DrawerPanel = 'ai' | 'revisions' | 'recording' | 'attachments'
+export type ViewType = 'calendar' | 'timeline' | 'search' | 'on-this-day' | 'analytics' | 'reminders' | 'settings'
+export type DrawerPanel = 'ai' | 'recording' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {
   const activeView = useLocalStorage<ViewType>('diarium-view', 'calendar')

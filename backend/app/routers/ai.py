@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, timedelta
 from typing import Any
@@ -13,10 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.digest import Digest
 from app.models.entry import Entry
-from app.models.reflection_prompt import EntryPrompt
-from app.models.sentiment import EntrySentiment
 from app.models.tag import Tag
 from app.schemas.ai import (
     AIStatusResponse,
@@ -28,8 +24,6 @@ from app.schemas.ai import (
     ContinueWritingResponse,
     DefineTextRequest,
     DefineTextResponse,
-    DigestResponse,
-    EntryAnalysisResponse,
     ExpandRequest,
     ExpandResponse,
     GrammarCheckRequest,
@@ -38,21 +32,13 @@ from app.schemas.ai import (
     OnThisDayResponse,
     RewriteRequest,
     RewriteResponse,
-    SentimentData,
-    SimilarEntriesResponse,
-    SimilarEntry,
     SpellCheckRequest,
     SpellCheckResponse,
-    SummarizeRequest,
-    SummarizeResponse,
     TagSuggestionRequest,
     TagSuggestionResponse,
     ThemesResponse,
     ThemeInsight,
-    TranslateRequest,
-    TranslateResponse,
 )
-from app.services.embedding_service import EmbeddingService
 from app.services.ollama_service import OllamaService
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
@@ -111,122 +97,6 @@ async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(ge
     svc = OllamaService()
     tags = await svc.suggest_tags(data.text, existing)
     return TagSuggestionResponse(tags=tags)
-
-
-# ── Entry analysis ─────────────────────────────────────────────────────
-
-
-@router.post("/entry-analysis/{entry_id}/run", response_model=EntryAnalysisResponse)
-async def run_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
-    """Trigger AI analysis on demand for a specific entry, then return results."""
-    from fastapi import HTTPException
-
-    result = await db.execute(select(Entry).where(Entry.id == entry_id, ~Entry.is_deleted))
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Entry not found")
-
-    await _run_enrichment_sync(entry_id, entry.title, entry.body)
-    return await _load_analysis(entry_id, db)
-
-
-async def _run_enrichment_sync(entry_id: int, title: str | None, body: str) -> None:
-    """Run enrichment synchronously (awaited) so results are available immediately."""
-    ollama = OllamaService()
-    status = await ollama.status()
-    if not status.ollama_available:
-        return
-
-    text = f"{title or ''}\n\n{body}".strip()
-    if not text.strip():
-        return
-
-    if (
-        settings.AI_ENABLE_SENTIMENT
-        or settings.AI_ENABLE_SUMMARIZATION
-        or settings.AI_ENABLE_REFLECTION_PROMPTS
-    ):
-        from app.services.enrichment_service import _analyze_entry
-
-        await _analyze_entry(entry_id, text, ollama)
-
-
-async def _load_analysis(entry_id: int, db: AsyncSession) -> EntryAnalysisResponse:
-    """Load existing analysis data for an entry."""
-    sentiment = None
-    summary = None
-    prompts = []
-
-    sent_result = await db.execute(
-        select(EntrySentiment).where(EntrySentiment.entry_id == entry_id)
-    )
-    sent = sent_result.scalar_one_or_none()
-    if sent:
-        sentiment = SentimentData(
-            primary_emotion=sent.primary_emotion,
-            secondary_emotion=sent.secondary_emotion,
-            intensity=sent.intensity,
-            valence=sent.valence,
-        )
-
-    entry_result = await db.execute(select(Entry.summary).where(Entry.id == entry_id))
-    summary = entry_result.scalar_one_or_none()
-
-    prompts_result = await db.execute(
-        select(EntryPrompt.prompt_text).where(EntryPrompt.entry_id == entry_id)
-    )
-    prompts = [row[0] for row in prompts_result]
-
-    return EntryAnalysisResponse(
-        entry_id=entry_id,
-        sentiment=sentiment,
-        summary=summary,
-        reflection_prompts=prompts,
-    )
-
-
-@router.get("/entry-analysis/{entry_id}", response_model=EntryAnalysisResponse)
-async def get_entry_analysis(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
-    """Get the AI analysis (sentiment, summary, prompts) for an entry."""
-    return await _load_analysis(entry_id, db)
-
-
-# ── Similar entries ────────────────────────────────────────────────────
-
-
-@router.get("/similar/{entry_id}", response_model=SimilarEntriesResponse)
-async def find_similar(
-    entry_id: int, top_k: int = Query(5, ge=1, le=20), db: AsyncSession = Depends(get_db)
-) -> Any:
-    """Find entries similar to the given entry using embeddings."""
-    svc = EmbeddingService(db)
-    similar_ids = await svc.find_similar(entry_id, top_k)
-
-    if not similar_ids:
-        return SimilarEntriesResponse(entry_id=entry_id, similar=[])
-
-    # Load entry details
-    entries_result = await db.execute(
-        select(Entry.id, Entry.entry_date, Entry.title).where(
-            Entry.id.in_([s[0] for s in similar_ids])
-        )
-    )
-    entry_map = {row.id: row for row in entries_result}
-
-    similar = []
-    for eid, score in similar_ids:
-        row = entry_map.get(eid)
-        if row:
-            similar.append(
-                SimilarEntry(
-                    id=row.id,
-                    entry_date=row.entry_date,
-                    title=row.title,
-                    similarity_score=round(score, 4),
-                )
-            )
-
-    return SimilarEntriesResponse(entry_id=entry_id, similar=similar)
 
 
 # ── Writer's block helper ──────────────────────────────────────────────
@@ -368,72 +238,7 @@ async def detect_themes(
     return ThemesResponse(themes=[ThemeInsight(**t) if isinstance(t, dict) else t for t in themes])
 
 
-# ── Weekly digest ──────────────────────────────────────────────────────
-
-
-def _digest_to_response(d: Digest) -> DigestResponse:
-    """Convert a Digest ORM object to a DigestResponse schema."""
-    return DigestResponse(
-        id=d.id,
-        week_start=d.week_start,
-        week_end=d.week_end,
-        themes=json.loads(d.themes) if d.themes else [],
-        emotional_trajectory=d.emotional_trajectory,
-        notable_moments=json.loads(d.notable_moments) if d.notable_moments else [],
-        summary_text=d.summary_text,
-        created_at=d.created_at,
-    )
-
-
-@router.get("/digests", response_model=list[DigestResponse])
-async def list_digests(
-    limit: int = Query(10, ge=1, le=50),
-    db: AsyncSession = Depends(get_db),
-) -> Any:
-    """List past weekly digests."""
-    result = await db.execute(select(Digest).order_by(Digest.week_start.desc()).limit(limit))
-    digests = list(result.scalars().all())
-    return [_digest_to_response(d) for d in digests]
-
-
-@router.get("/digests/latest", response_model=DigestResponse | None)
-async def latest_digest(db: AsyncSession = Depends(get_db)) -> Any:
-    """Get the most recent weekly digest."""
-    result = await db.execute(select(Digest).order_by(Digest.week_start.desc()).limit(1))
-    d = result.scalar_one_or_none()
-    if not d:
-        return None
-    return _digest_to_response(d)
-
-
-@router.post("/digests/generate", response_model=DigestResponse)
-async def generate_digest(db: AsyncSession = Depends(get_db)) -> Any:
-    """Generate a digest for the current week (or most recent week with entries)."""
-    from fastapi import HTTPException
-
-    from app.services.digest_service import DigestService
-
-    svc = DigestService(db)
-    # Try current week first, then walk back up to 4 weeks
-    for weeks_ago in range(5):
-        start = date.today() - timedelta(days=date.today().weekday() + weeks_ago * 7)
-        try:
-            digest = await svc.generate_for_week(start)
-            return _digest_to_response(digest)
-        except ValueError:
-            continue
-    raise HTTPException(status_code=422, detail="No entries found in the last 5 weeks")
-
-
 # ── Smart Tools ────────────────────────────────────────────────────────
-
-
-@router.post("/summarize", response_model=SummarizeResponse)
-async def summarize_text(data: SummarizeRequest, db: AsyncSession = Depends(get_db)) -> Any:
-    """Summarize text concisely."""
-    svc = OllamaService()
-    summary = await svc.summarize(data.text)
-    return SummarizeResponse(summary=summary)
 
 
 @router.post("/expand", response_model=ExpandResponse)
@@ -450,14 +255,6 @@ async def change_tone(data: ChangeToneRequest, db: AsyncSession = Depends(get_db
     svc = OllamaService()
     changed = await svc.change_tone(data.text, data.tone)
     return ChangeToneResponse(changed_text=changed, tone=data.tone)
-
-
-@router.post("/translate", response_model=TranslateResponse)
-async def translate_text(data: TranslateRequest, db: AsyncSession = Depends(get_db)) -> Any:
-    """Translate text to another language."""
-    svc = OllamaService()
-    translated = await svc.translate(data.text, data.language)
-    return TranslateResponse(translated_text=translated, language=data.language)
 
 
 @router.post("/analyze-text", response_model=AnalyzeTextResponse)

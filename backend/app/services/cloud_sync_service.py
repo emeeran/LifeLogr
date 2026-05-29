@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 from sqlalchemy import func, select

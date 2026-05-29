@@ -212,15 +212,7 @@ class DigestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ── Smart Tools (summarize, expand, change tone, translate) ──────────
-
-
-class SummarizeRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=50000)
-
-
-class SummarizeResponse(BaseModel):
-    summary: str
+# ── Smart Tools (expand, change tone) ──────────
 
 
 class ExpandRequest(BaseModel):
@@ -241,18 +233,6 @@ class ChangeToneRequest(BaseModel):
 class ChangeToneResponse(BaseModel):
     changed_text: str
     tone: str
-
-
-class TranslateRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=50000)
-    language: str = Field(
-        description="Target language: english, spanish, french, german, portuguese, japanese, korean, chinese, arabic, hindi"
-    )
-
-
-class TranslateResponse(BaseModel):
-    translated_text: str
-    language: str
 
 
 # ── Analyze Text ──────────────────────────────────────────────────────

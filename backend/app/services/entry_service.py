@@ -51,14 +51,14 @@ class EntryService:
         month: int | None = None,
     ) -> tuple[list[Entry], int]:
         """Return paginated entries matching optional filters and total count."""
-        base_q = select(Entry).where(Entry.is_deleted == False)  # noqa: E712
+        base_q = select(Entry).where(Entry.is_deleted.is_(False))
         base_q = self._apply_filters(base_q, tag_ids, mood, year, month)
         count_q = self._apply_filters(
-            select(func.count()).select_from(Entry).where(Entry.is_deleted == False),
+            select(func.count()).select_from(Entry).where(Entry.is_deleted.is_(False)),
             tag_ids,
             mood,
             year,
-            month,  # noqa: E712
+            month,
         )
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(

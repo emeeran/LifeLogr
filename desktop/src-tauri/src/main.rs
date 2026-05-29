@@ -19,11 +19,6 @@ fn backend_port() -> u16 {
 /// Check which system dependencies are installed.
 #[tauri::command]
 fn check_deps() -> serde_json::Value {
-    let tesseract = std::process::Command::new("tesseract")
-        .arg("--version")
-        .output()
-        .is_ok();
-
     let ollama = std::process::Command::new("ollama")
         .arg("list")
         .output()
@@ -38,10 +33,9 @@ fn check_deps() -> serde_json::Value {
         .unwrap_or(false);
 
     serde_json::json!({
-        "tesseract": tesseract,
         "ollama": ollama,
         "gst_plugins_bad": gst_plugins_bad,
-        "all_installed": tesseract && ollama,
+        "all_installed": ollama,
     })
 }
 

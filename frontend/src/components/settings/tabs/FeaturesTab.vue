@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-import { usePluginsStore } from '../../../stores/plugins'
 import { useRemindersStore } from '../../../stores/reminders'
 import { API_ORIGIN } from '../../../api/client'
 import {
-  Plus, Trash2, AlertTriangle, CheckCircle2,
-  Loader, Volume2, Package, Power, PowerOff, Bell, Wrench, MonitorCheck
+  Trash2, AlertTriangle, CheckCircle2,
+  Loader, Volume2, Bell, Wrench, MonitorCheck
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
@@ -60,12 +59,11 @@ const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: 
 
 function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
-const pluginsStore = usePluginsStore()
 const remindersStore = useRemindersStore()
 
 // ── System Setup (Tauri desktop only) ──
 const isTauri = !!(window as any).__TAURI_INTERNALS__
-const depsStatus = ref<{ tesseract: boolean; ollama: boolean; gst_plugins_bad: boolean; all_installed: boolean } | null>(null)
+const depsStatus = ref<{ ollama: boolean; gst_plugins_bad: boolean; all_installed: boolean } | null>(null)
 const setupRunning = ref(false)
 const setupOutput = ref('')
 
@@ -110,26 +108,6 @@ async function loadVoices() {
   finally { ttsVoicesLoading.value = false }
 }
 
-// ── Plugins ──
-const pluginForm = ref({ name: '', version: '', description: '', entry_point: '' })
-const pluginInstalling = ref(false)
-
-async function installPlugin() {
-  if (!pluginForm.value.name || !pluginForm.value.entry_point) return
-  pluginInstalling.value = true
-  try { await pluginsStore.install(pluginForm.value); pluginForm.value = { name: '', version: '', description: '', entry_point: '' }; emit('toast', 'success', 'Plugin installed') }
-  catch (e: unknown) { emit('toast', 'error', `Install failed: ${errMsg(e)}`) }
-  finally { pluginInstalling.value = false }
-}
-async function togglePlugin(id: number, enabled: boolean) {
-  try { enabled ? await pluginsStore.enable(id) : await pluginsStore.disable(id) }
-  catch (e: unknown) { emit('toast', 'error', errMsg(e)) }
-}
-async function removePlugin(id: number) {
-  try { await pluginsStore.uninstall(id); emit('toast', 'info', 'Plugin removed') }
-  catch (e: unknown) { emit('toast', 'error', errMsg(e)) }
-}
-
 // ── Reminders ──
 const reminderForm = ref({ title: '', message: '', reminder_time: '', days_of_week: 'mon,tue,wed,thu,fri,sat,sun' })
 const reminderSaving = ref(false)
@@ -170,7 +148,6 @@ function resetTTSDefaults() {
 }
 
 onMounted(() => {
-  pluginsStore.fetchAll()
   remindersStore.fetchAll()
   loadVoices()
   checkSystemDeps()
@@ -247,49 +224,6 @@ onMounted(() => {
     </div>
   </SettingsSection>
 
-  <!-- Plugins -->
-  <SettingsSection title="Plugins" :icon="Package" description="Extend DailyByte with plugins">
-    <!-- Marketplace placeholder -->
-    <div class="text-center py-4 border border-dashed border-border rounded-md mb-2">
-      <Package :size="20" class="mx-auto text-text-muted mb-1" />
-      <p class="text-[12px] text-text-secondary font-medium">Plugin Marketplace</p>
-      <p class="text-[10px] text-text-muted mt-0.5">Browse and install community plugins — coming soon.</p>
-    </div>
-    <!-- Manual install -->
-    <div class="space-y-1.5 border-t border-border pt-2">
-      <p class="text-[10px] text-text-muted uppercase tracking-wide">Install manually</p>
-      <div class="grid grid-cols-2 gap-1.5">
-        <input v-model="pluginForm.name" placeholder="Name *" class="settings-input py-1" />
-        <input v-model="pluginForm.entry_point" placeholder="module:function *" class="settings-input py-1" />
-      </div>
-      <div class="flex items-center gap-1.5">
-        <input v-model="pluginForm.version" placeholder="Version" class="flex-1 settings-input py-1" />
-        <button class="flex items-center gap-1 px-2.5 py-1 rounded-md bg-accent text-white text-[11px] font-medium cursor-pointer hover:bg-accent-hover disabled:opacity-50 transition-colors"
-          :disabled="pluginInstalling || !pluginForm.name || !pluginForm.entry_point" @click="installPlugin">
-          <Loader v-if="pluginInstalling" :size="10" class="animate-spin" /><Plus v-else :size="10" /> Install
-        </button>
-      </div>
-    </div>
-    <!-- Installed plugins -->
-    <div v-for="p in pluginsStore.plugins" :key="p.id"
-      class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-surface-hover border border-border mt-1.5">
-      <span class="text-[12px] font-medium text-text-primary flex-1">{{ p.name }}
-        <span v-if="p.version" class="text-[10px] text-text-muted">v{{ p.version }}</span></span>
-      <button class="p-0.5 rounded hover:bg-surface cursor-pointer transition-colors" :class="p.is_enabled ? 'text-green-400' : 'text-text-muted'"
-        @click="togglePlugin(p.id, !p.is_enabled)" :title="p.is_enabled ? 'Disable plugin' : 'Enable plugin'">
-        <PowerOff v-if="p.is_enabled" :size="12" /><Power v-else :size="12" />
-      </button>
-      <button class="p-0.5 rounded hover:bg-surface text-text-muted hover:text-danger cursor-pointer transition-colors" @click="removePlugin(p.id)" title="Remove plugin">
-        <Trash2 :size="12" />
-      </button>
-    </div>
-    <div v-if="!pluginsStore.plugins.length" class="text-center py-3 border-t border-border mt-2">
-      <Package :size="18" class="mx-auto text-text-muted mb-1" />
-      <p class="text-[11px] text-text-secondary">No plugins installed.</p>
-      <p class="text-[10px] text-text-muted mt-0.5">Install one manually above or wait for the marketplace.</p>
-    </div>
-  </SettingsSection>
-
   <!-- System Setup (Tauri desktop only, collapsible) -->
   <AccordionItem v-if="isTauri" title="System Setup" :icon="Wrench" description="Check and install system dependencies">
     <div class="space-y-2">
@@ -298,12 +232,6 @@ onMounted(() => {
         <MonitorCheck :size="12" /> All system dependencies installed
       </div>
       <div v-else class="space-y-1.5">
-        <div class="flex items-center gap-1.5 text-[11px]"
-          :class="depsStatus.tesseract ? 'text-green-400' : 'text-red-400'">
-          <CheckCircle2 v-if="depsStatus.tesseract" :size="11" />
-          <AlertTriangle v-else :size="11" />
-          Tesseract OCR {{ depsStatus.tesseract ? '(installed)' : '(missing)' }}
-        </div>
         <div class="flex items-center gap-1.5 text-[11px]"
           :class="depsStatus.ollama ? 'text-green-400' : 'text-red-400'">
           <CheckCircle2 v-if="depsStatus.ollama" :size="11" />

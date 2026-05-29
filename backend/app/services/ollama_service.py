@@ -252,16 +252,6 @@ class OllamaService:
 
     # ── Shared JSON parser ─────────────────────────────────────────────
 
-    async def summarize(self, text: str) -> str:
-        """Summarize the given text concisely."""
-        prompt = (
-            "Summarize the following journal entry in 2-3 concise sentences. "
-            "Capture the key points and emotions. Return ONLY the summary text, nothing else.\n\n"
-            f"Text:\n{text[:3000]}"
-        )
-        result = await self._generate(prompt, temperature=0.3, num_predict=512)
-        return result.strip()
-
     async def expand(self, text: str) -> str:
         """Expand and elaborate on the given text."""
         prompt = (
@@ -282,17 +272,6 @@ class OllamaService:
             f"Text:\n{text[:3000]}"
         )
         result = await self._generate(prompt, temperature=0.5, num_predict=2048)
-        return result.strip()
-
-    async def translate(self, text: str, language: str) -> str:
-        """Translate text to the specified language."""
-        prompt = (
-            f"Translate the following text to {language}. "
-            f"Preserve the meaning, tone, and formatting. "
-            f"Return ONLY the translated text, nothing else.\n\n"
-            f"Text:\n{text[:3000]}"
-        )
-        result = await self._generate(prompt, temperature=0.3, num_predict=2048)
         return result.strip()
 
     async def analyze_text(self, text: str) -> dict[str, Any]:

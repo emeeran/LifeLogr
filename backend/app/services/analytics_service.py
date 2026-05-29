@@ -56,8 +56,8 @@ class AnalyticsService:
         date_range = (
             await self.db.execute(
                 select(func.min(Entry.entry_date), func.max(Entry.entry_date)).where(
-                    Entry.is_deleted == False
-                )  # noqa: E712
+                    Entry.is_deleted.is_(False)
+                )
             )
         ).one()
         start, end = date_range

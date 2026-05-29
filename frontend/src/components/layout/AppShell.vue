@@ -5,14 +5,13 @@ import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
 import EntryEditor from '../entry/EntryEditor.vue'
 const AiDrawerPanel = defineAsyncComponent(() => import('../entry/AiDrawerPanel.vue'))
-const RevisionPanel = defineAsyncComponent(() => import('../entry/RevisionPanel.vue'))
 const RecordingPanel = defineAsyncComponent(() => import('../recordings/RecordingPanel.vue'))
 const AttachmentsPanel = defineAsyncComponent(() => import('../entry/AttachmentsPanel.vue'))
 import SearchPalette from '../search/SearchPalette.vue'
 import ScribblePad from '../scribble/ScribblePad.vue'
 import { useEntriesStore } from '../../stores/entries'
 import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
-import { AlertTriangle, Save, Trash2, X, Sparkles, History, Mic, Paperclip } from 'lucide-vue-next'
+import { AlertTriangle, Save, Trash2, X, Sparkles, Mic, Paperclip } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 const ui = useUiStore()
@@ -26,7 +25,6 @@ const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
 const drawerTitle = computed(() => {
   switch (ui.activeDrawer) {
     case 'ai': return 'AI Assistant'
-    case 'revisions': return 'Version History'
     case 'recording': return 'Voice Recording'
     case 'attachments': return 'Attachments'
     default: return ''
@@ -36,7 +34,6 @@ const drawerTitle = computed(() => {
 const drawerIcon = computed<Component>(() => {
   switch (ui.activeDrawer) {
     case 'ai': return Sparkles
-    case 'revisions': return History
     case 'recording': return Mic
     case 'attachments': return Paperclip
     default: return Sparkles
@@ -70,12 +67,6 @@ function handleCancel() {
 }
 
 // ── Drawer panel callbacks ──
-function onRevisionRestored() {
-  ui.closeDrawer()
-  editorRef.value?.loadAttachments?.()
-  entries.refreshAll()
-}
-
 function onTranscribed(text: string) {
   if (editorRef.value) {
     editorRef.value.body += `\n\n[Transcription]\n${text}`
@@ -163,11 +154,6 @@ function onAttachmentView(index: number) {
           :has-entry="!!editorRef?.hasEntry"
           :entry-id="editorRef?.entryId ?? null"
         />
-        <RevisionPanel
-          v-if="ui.activeDrawer === 'revisions'"
-          :entry-id="editorRef?.entryId ?? 0"
-          @restored="onRevisionRestored"
-        />
         <RecordingPanel
           v-if="ui.activeDrawer === 'recording'"
           :entry-id="editorRef?.entryId ?? 0"
@@ -176,10 +162,8 @@ function onAttachmentView(index: number) {
         <AttachmentsPanel
           v-if="ui.activeDrawer === 'attachments'"
           :attachments="editorRef?.attachments ?? []"
-          :ai-processing="false"
           @add="editorRef?.triggerFileInput?.()"
           @remove="(id: number) => editorRef?.removeAttachment?.(id)"
-          @ocr="(id: number) => editorRef?.runOcrTool?.(id)"
           @view="onAttachmentView"
         />
       </div>
