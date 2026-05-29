@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -30,7 +30,10 @@ class Tag(Base):
 
 class EntryTag(Base):
     __tablename__ = "entry_tags"
-    __table_args__ = (UniqueConstraint("entry_id", "tag_id"),)
+    __table_args__ = (
+        UniqueConstraint("entry_id", "tag_id"),
+        Index("ix_entry_tags_tag_id", "tag_id"),
+    )
 
     entry_id: Mapped[int] = mapped_column(
         ForeignKey("entries.id", ondelete="CASCADE"), primary_key=True

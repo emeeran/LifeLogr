@@ -62,22 +62,26 @@ class TagService:
 
     async def associate(self, entry_id: int, tag_ids: list[int]) -> None:
         """Associate tags with an entry; skip already-associated."""
-        for tag_id in tag_ids:
-            existing = await self.db.execute(
-                select(EntryTag).where(EntryTag.entry_id == entry_id, EntryTag.tag_id == tag_id)
-            )
-            if not existing.scalar_one_or_none():
-                self.db.add(EntryTag(entry_id=entry_id, tag_id=tag_id))
+        existing = {
+            row[0]
+            for row in (
+                await self.db.execute(
+                    select(EntryTag.tag_id).where(EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(tag_ids))
+                )
+            ).fetchall()
+        }
+        new_tags = [tid for tid in tag_ids if tid not in existing]
+        if new_tags:
+            self.db.add_all([EntryTag(entry_id=entry_id, tag_id=tid) for tid in new_tags])
         await self.db.flush()
 
     async def dissociate(self, entry_id: int, tag_ids: list[int]) -> None:
         """Remove tag associations from an entry."""
-        for tag_id in tag_ids:
-            result = await self.db.execute(
-                select(EntryTag).where(EntryTag.entry_id == entry_id, EntryTag.tag_id == tag_id)
+        await self.db.execute(
+            EntryTag.__table__.delete().where(
+                EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(tag_ids)  # type: ignore[attr-defined]
             )
-            if assoc := result.scalar_one_or_none():
-                await self.db.delete(assoc)
+        )
         await self.db.flush()
 
     async def get_entry_count(self, tag_id: int) -> int:

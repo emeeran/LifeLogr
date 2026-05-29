@@ -1,9 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::io::Write;
+use std::net::TcpStream;
+use std::time::Duration;
+
+use log::{error, info, warn};
 use tauri::{Manager, RunEvent};
 use tauri_plugin_shell::ShellExt;
 
-const BACKEND_PORT: u16 = 18765;
+/// Read backend port from DIARI_PORT env var, defaulting to 18765.
+fn backend_port() -> u16 {
+    std::env::var("DIARI_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(18765)
+}
 
 /// Check which system dependencies are installed.
 #[tauri::command]
@@ -71,6 +82,29 @@ async fn run_setup(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+/// Probe the backend sidecar via TCP until it accepts connections or timeout.
+fn wait_for_sidecar(port: u16) {
+    let addr = format!("127.0.0.1:{port}");
+    for _ in 0..60 {
+        if TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(500)).is_ok() {
+            info!("Backend sidecar is ready on port {port}");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    warn!("Backend sidecar did not become ready within 30s on port {port}");
+}
+
+fn init_logging(data_dir: &std::path::Path) {
+    let log_path = data_dir.join("dailybyte-desktop.log");
+    let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .format(|buf, record| writeln!(buf, "[{} {}] {}", record.level(), record.target(), record.args()))
+        .init();
+    info!("Logging initialised — writing to {}", log_path.display());
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -85,47 +119,66 @@ fn main() {
             let data_dir = app
                 .path()
                 .app_data_dir()
-                .expect("failed to resolve app data dir");
-            std::fs::create_dir_all(&data_dir).expect("failed to create data dir");
+                .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+            std::fs::create_dir_all(&data_dir)
+                .map_err(|e| format!("Failed to create data dir {}: {e}", data_dir.display()))?;
+
+            // Initialise structured logging to file
+            init_logging(&data_dir);
+
+            let port = backend_port();
+            info!("Starting DailyByte desktop with backend port {port}");
 
             // Launch Python backend sidecar
             let sidecar_command = app
                 .shell()
                 .sidecar("diarilinux-backend")
-                .expect("failed to find sidecar binary")
+                .map_err(|e| format!("Failed to find sidecar binary: {e}"))?
                 .args([
                     "--host", "127.0.0.1",
-                    "--port", &BACKEND_PORT.to_string(),
+                    "--port", &port.to_string(),
                 ])
                 .env("DATA_DIR", data_dir.to_string_lossy().to_string())
                 .env("APP_ENV", "production");
 
-            let (mut rx, _child) = sidecar_command.spawn().expect("failed to start backend sidecar");
+            let (mut rx, _child) = sidecar_command
+                .spawn()
+                .map_err(|e| format!("Failed to start backend sidecar: {e}"))?;
 
-            // Log sidecar output/stderr to help debug startup issues
+            // Log sidecar output/stderr
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .unwrap();
+                    .expect("failed to create tokio runtime for sidecar logging");
                 rt.block_on(async {
                     use tauri_plugin_shell::process::CommandEvent;
                     while let Some(event) = rx.recv().await {
                         match event {
-                            CommandEvent::Stdout(line) => eprintln!("[backend] {}", String::from_utf8_lossy(&line)),
-                            CommandEvent::Stderr(line) => eprintln!("[backend:err] {}", String::from_utf8_lossy(&line)),
-                            CommandEvent::Terminated(status) => eprintln!("[backend] exited: {:?}", status),
-                            CommandEvent::Error(err) => eprintln!("[backend:error] {}", err),
+                            CommandEvent::Stdout(line) => info!("[backend] {}", String::from_utf8_lossy(&line)),
+                            CommandEvent::Stderr(line) => warn!("[backend:err] {}", String::from_utf8_lossy(&line)),
+                            CommandEvent::Terminated(status) => info!("[backend] exited: {:?}", status),
+                            CommandEvent::Error(err) => error!("[backend:error] {}", err),
                             _ => {}
                         }
                     }
                 });
             });
 
-            // Enable WebKit media features and auto-grant permission requests (microphone/camera) on Linux
+            // Sidecar health check — TCP probe until backend is ready
+            let health_port = port;
+            std::thread::spawn(move || {
+                wait_for_sidecar(health_port);
+            });
+
+            // SAFETY: Auto-grant permission requests (microphone, camera, geolocation).
+            // This is correct for a local-only desktop journaling app — all content is
+            // user-created and stored locally. No remote content is loaded, so there is
+            // no risk of malicious sites abusing these permissions.
             #[cfg(target_os = "linux")]
             {
-                let webview_window = app.get_webview_window("main").unwrap();
+                let webview_window = app.get_webview_window("main")
+                    .ok_or_else(|| "Main webview window not found".to_string())?;
                 webview_window.with_webview(|webview| {
                     use webkit2gtk::{PermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt};
                     let ctx = webview.inner();
@@ -142,7 +195,7 @@ fn main() {
                         req.allow();
                         true
                     });
-                }).expect("failed to set webview media settings");
+                }).map_err(|e| format!("Failed to set webview media settings: {e}"))?;
             }
 
             Ok(())
@@ -150,8 +203,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
-            if let RunEvent::Exit = event {
-                // Sidecar is killed automatically when the app exits
+            match event {
+                RunEvent::ExitRequested { .. } => {
+                    info!("Exit requested — shutting down");
+                }
+                RunEvent::Exit => {
+                    info!("Application exiting — sidecar will be killed automatically");
+                }
+                _ => {}
             }
         });
 }

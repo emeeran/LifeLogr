@@ -38,7 +38,9 @@ class SearchService:
                 query, mood, tag_ids, date_from, date_to, offset, limit
             )
         elif mode == "semantic":
-            return await self._semantic_search(query, offset, limit)
+            return await self._semantic_search(
+                query, mood, tag_ids, date_from, date_to, offset, limit
+            )
         else:
             return await self._hybrid_search(
                 query, mood, tag_ids, date_from, date_to, offset, limit
@@ -111,6 +113,10 @@ class SearchService:
     async def _semantic_search(
         self,
         query: str,
+        mood: str | None,
+        tag_ids: list[int] | None,
+        date_from: date | None,
+        date_to: date | None,
         offset: int,
         limit: int,
     ) -> tuple[list[SearchResultEntry], int]:
@@ -124,12 +130,22 @@ class SearchService:
             logger.warning("Failed to generate embedding for search query", exc_info=True)
             return [], 0
 
-        # Only load embeddings for non-deleted entries
-        result = await self.db.execute(
+        # Build filtered query for embeddings
+        stmt = (
             select(EntryEmbedding.entry_id, EntryEmbedding.embedding)
             .join(Entry, Entry.id == EntryEmbedding.entry_id)
             .where(~Entry.is_deleted)
         )
+        
+        from app.services.entry_service import EntryService
+        stmt = EntryService._apply_filters(stmt, tag_ids, mood, None, None)
+        
+        if date_from:
+            stmt = stmt.where(Entry.entry_date >= date_from)
+        if date_to:
+            stmt = stmt.where(Entry.entry_date <= date_to)
+
+        result = await self.db.execute(stmt)
         rows = result.fetchall()
         if not rows:
             return [], 0
@@ -185,7 +201,9 @@ class SearchService:
         keyword_result = await self._keyword_search(
             query, mood, tag_ids, date_from, date_to, 0, 100
         )
-        semantic_result = await self._semantic_search(query, 0, 100)
+        semantic_result = await self._semantic_search(
+            query, mood, tag_ids, date_from, date_to, 0, 100
+        )
 
         keyword_items, keyword_total = keyword_result
         semantic_items, semantic_total = semantic_result

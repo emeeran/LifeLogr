@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -73,7 +74,7 @@ class VideoService:
         recording_svc = VoiceRecordingService(self.db)
 
         file_path = self._media_dir / note.storage_path
-        text = recording_svc._run_stt(file_path.read_bytes())
+        text = await asyncio.to_thread(recording_svc._run_stt, file_path)
 
         note.transcription = text
         await self.db.commit()

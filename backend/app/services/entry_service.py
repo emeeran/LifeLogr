@@ -24,8 +24,7 @@ class EntryService:
         self.db.add(entry)
         await self.db.flush()
         if data.tag_ids:
-            for tag_id in data.tag_ids:
-                self.db.add(EntryTag(entry_id=entry.id, tag_id=tag_id))
+            self.db.add_all([EntryTag(entry_id=entry.id, tag_id=tid) for tid in data.tag_ids])
             await self.db.flush()
         await self.db.commit()
         await self.db.refresh(entry)
@@ -77,11 +76,18 @@ class EntryService:
         if data.mood is not None:
             entry.mood = data.mood
         if data.tag_ids is not None:
-            await self.db.execute(
-                EntryTag.__table__.delete().where(EntryTag.entry_id == entry_id)  # type: ignore[attr-defined]
-            )
-            for tag_id in data.tag_ids:
-                self.db.add(EntryTag(entry_id=entry_id, tag_id=tag_id))
+            current = {a.tag_id for a in entry.tag_associations}
+            desired = set(data.tag_ids)
+            to_add = desired - current
+            to_remove = current - desired
+            if to_add:
+                self.db.add_all([EntryTag(entry_id=entry_id, tag_id=tid) for tid in to_add])
+            if to_remove:
+                await self.db.execute(
+                    EntryTag.__table__.delete().where(
+                        EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(to_remove)  # type: ignore[attr-defined]
+                    )
+                )
         await self.db.commit()
         await self.db.refresh(entry)
         EnrichmentService.schedule(entry.id, entry.title, entry.body)

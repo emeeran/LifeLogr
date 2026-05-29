@@ -1,6 +1,6 @@
 // In Tauri desktop app, the frontend is served from tauri:// protocol (no Vite proxy).
 // Detect this and use the backend's direct URL instead of relative paths.
-const isTauri = !!(window as any).__TAURI_INTERNALS__
+const isTauri = '__TAURI_INTERNALS__' in window
 const API_ORIGIN = isTauri ? 'http://127.0.0.1:18765' : ''
 const BASE_URL = `${API_ORIGIN}/api/v1`
 

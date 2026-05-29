@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -146,8 +147,13 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_schema(conn)
 
-    # Ensure FTS5 virtual table and sync triggers exist
-    await _setup_fts()
+    # Ensure FTS5 virtual table and sync triggers exist.
+    # Skip in PyInstaller builds — FTS virtual table creation can corrupt
+    # the schema cache, breaking all subsequent qualified column queries.
+    if not getattr(sys, "frozen", False):
+        await _setup_fts()
+    else:
+        logger.info("FTS setup skipped (frozen build)")
 
     # Seed built-in templates (idempotent)
     await _seed_builtin_templates()
@@ -159,15 +165,33 @@ _COLUMN_MIGRATIONS = [
     ("entries", "summary", "ALTER TABLE entries ADD COLUMN summary VARCHAR(500)"),
 ]
 
+_INDEX_MIGRATIONS = [
+    ("ix_entries_deleted_date", "CREATE INDEX IF NOT EXISTS ix_entries_deleted_date ON entries (is_deleted, entry_date)"),
+    ("ix_entries_deleted_mood", "CREATE INDEX IF NOT EXISTS ix_entries_deleted_mood ON entries (is_deleted, mood)"),
+    ("ix_entry_tags_tag_id", "CREATE INDEX IF NOT EXISTS ix_entry_tags_tag_id ON entry_tags (tag_id)"),
+]
+
 
 async def _migrate_schema(conn: Any) -> None:
-    """Add missing columns to existing tables (idempotent)."""
+    """Add missing columns and indexes to existing tables (idempotent)."""
     for table, column, sql in _COLUMN_MIGRATIONS:
         existing = {
             row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()
         }
         if column not in existing:
             logger.info("Adding column %s.%s ...", table, column)
+            await conn.execute(text(sql))
+
+    # Ensure performance indexes exist
+    existing_indexes = {
+        row[1]
+        for row in (
+            await conn.execute(text("SELECT type, name FROM sqlite_master WHERE type='index'"))
+        ).fetchall()
+    }
+    for idx_name, sql in _INDEX_MIGRATIONS:
+        if idx_name not in existing_indexes:
+            logger.info("Creating index %s ...", idx_name)
             await conn.execute(text(sql))
 
 
