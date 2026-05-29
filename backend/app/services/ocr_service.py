@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -54,8 +55,9 @@ class OCRService:
             ) from exc
 
         image = Image.open(file_path)
-        extracted_text = image_to_string(image, lang=language).strip()
-        confidence = self._compute_confidence(image, language)
+        extracted_text = await asyncio.to_thread(image_to_string, image, lang=language)
+        extracted_text = extracted_text.strip()
+        confidence = await asyncio.to_thread(self._compute_confidence, image, language)
 
         # Cache result
         result = OCRResult(

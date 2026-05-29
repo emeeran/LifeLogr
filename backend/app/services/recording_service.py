@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import tempfile
 from pathlib import Path
@@ -88,7 +89,7 @@ class VoiceRecordingService:
             raise ConflictError(f"Recording {recording_id} already transcribed")
 
         audio_bytes, _, _ = await self.media_svc.get_file(rec.media_id)
-        text = self._run_stt(audio_bytes)
+        text = await asyncio.to_thread(self._run_stt, audio_bytes)
         rec.transcription = text
         rec.is_transcribed = True
 
@@ -116,13 +117,17 @@ class VoiceRecordingService:
         return ext if ext in ("mp3", "mp4") else "mp3"
 
     @staticmethod
-    def _run_stt(audio_data: bytes) -> str:
-        """Run local speech-to-text using faster-whisper."""
+    def _run_stt(audio_data: bytes | Path) -> str:
+        """Run local speech-to-text using faster-whisper from bytes or a file path."""
         try:
             model = _get_whisper_model()
         except Exception as exc:
             logger.error("Failed to load Whisper model: %s", exc)
             raise RuntimeError(f"Speech-to-text unavailable: {exc}") from exc
+
+        if isinstance(audio_data, Path):
+            segments, _info = model.transcribe(str(audio_data), beam_size=5)
+            return " ".join(segment.text.strip() for segment in segments)
 
         # Write audio to a temp file (faster-whisper needs a file path)
         with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:

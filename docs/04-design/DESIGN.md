@@ -330,3 +330,26 @@ Services raise domain exceptions. Routers don't need try/except — the global h
 | 004 — missing pagination notes | Tree/calendar are bounded; documented in DESIGN |
 | 005 — missing examples | Will be added during implementation (p5) |
 | 006 — no out-of-scope section | Linked from REQUIREMENTS.md; not duplicated in design |
+
+---
+
+## Future Performance & Reliability Enhancements
+
+To sustain single-user scaling and local ML inference throughput, the following architectural upgrades are slated for implementation:
+
+### 1. Concurrency Optimization in Inference Services
+*   **Target:** `VoiceRecordingService._run_stt`, `OCRService.extract_text`, and `VideoService.transcribe`.
+*   **Resolution:** Offload CPU-intensive operations (Whisper transcription, Tesseract process execution) from the main ASGI thread to a separate threadpool using `asyncio.to_thread`. This guarantees that long-running inferences will not block FastAPI's primary event loop.
+
+### 2. Video STT Memory Management
+*   **Target:** `VideoService.transcribe`.
+*   **Resolution:** Refactor `VoiceRecordingService` to accept file paths directly, avoiding loading raw video files (often exceeding 100MB+) into active RAM as `bytes`.
+
+### 3. Filter Propagation to Vector Indexes
+*   **Target:** `SearchService._semantic_search`.
+*   **Resolution:** Integrate SQL filter generators directly into the SQL select statements preceding embedding computations. Instead of running full in-memory cosine similarity comparisons across the entire database, pre-filtering by tags, mood, or dates will narrow down candidates significantly.
+
+### 4. Connection Pool Audits
+*   **Target:** `NextcloudProvider` and `GoogleDriveProvider`.
+*   **Resolution:** Expand `SyncProvider` with an explicit `close()` protocol method, and utilize context manager lifecycles inside orchestration routines to cleanly tear down shared `httpx.AsyncClient` socket connection pools.
+

@@ -98,6 +98,7 @@ class SyncProvider(Protocol):
     async def download(self, path: str) -> bytes: ...
     async def list_files(self, prefix: str) -> list[str]: ...
     async def delete(self, path: str) -> None: ...
+    async def close(self) -> None: ...
 
 
 # ── Local filesystem provider ──────────────────────────────────────────
@@ -132,6 +133,10 @@ class LocalFileProvider:
         target = self._base / path
         if target.exists():
             target.unlink()
+
+    async def close(self) -> None:
+        """Safely release connection resources."""
+        pass
 
 
 # ── Nextcloud (WebDAV) provider ────────────────────────────────────────
@@ -191,6 +196,12 @@ class NextcloudProvider:
             auth=self._auth,
         )
         resp.raise_for_status()
+
+    async def close(self) -> None:
+        """Safely release connection resources."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            logger.info("Nextcloud provider HTTP client closed.")
 
 
 # ── Google Drive provider ──────────────────────────────────────────────
@@ -348,6 +359,12 @@ class GoogleDriveProvider:
         resp = await client.delete(url, headers=headers, timeout=10.0)
         resp.raise_for_status()
 
+    async def close(self) -> None:
+        """Safely release connection resources."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            logger.info("Google Drive provider HTTP client closed.")
+
 
 # ── MEGA provider ──────────────────────────────────────────────────────
 
@@ -446,6 +463,10 @@ class MegaProvider:
         except Exception:
             logger.warning("Failed to delete MEGA file: %s", path, exc_info=True)
 
+    async def close(self) -> None:
+        """Safely release connection resources."""
+        pass
+
 
 # ── High-level orchestration ───────────────────────────────────────────
 
@@ -457,6 +478,14 @@ class CloudSyncService:
         self.db = db
         self.provider = provider
         self._sync_svc = SyncService(db)
+
+    async def __aenter__(self) -> CloudSyncService:
+        return self
+
+    async def __aexit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any) -> None:
+        """Safely release connection resources from the provider."""
+        if hasattr(self.provider, "close"):
+            await self.provider.close()
 
     async def push(self, passphrase: str | None = None) -> dict[str, int]:
         """Push pending changes to cloud provider."""

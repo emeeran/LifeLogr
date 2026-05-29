@@ -18,7 +18,6 @@ import TagList from '../tags/TagList.vue'
 import MediaViewer from '../media/MediaViewer.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
 import EmojiPicker from '../common/EmojiPicker.vue'
-import { reverseGeocode } from '../../utils/geocoding'
 import { useTemplatesStore } from '../../stores/templates'
 import { setGeotag } from '../../api/geotagging'
 import { aiStatus, suggestTags } from '../../api/ai'
@@ -31,6 +30,8 @@ import { useEditorHistory } from '../../composables/useEditorHistory'
 import { useFindReplace } from '../../composables/useFindReplace'
 import { useAiTools } from '../../composables/useAiTools'
 import { useAttachments } from '../../composables/useAttachments'
+import { useAutoSave } from '../../composables/useAutoSave'
+import { useGeolocation } from '../../composables/useGeolocation'
 
 const entries = useEntriesStore()
 const ui = useUiStore()
@@ -83,6 +84,28 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 // Drag & Drop
 const { isDragging, handlers: dragHandlers } = useDragDrop()
+
+// Auto-save composable
+const { triggerAutosave, saving: saveActive } = useAutoSave({
+  isNew,
+  hasEntry,
+  body,
+  title,
+  entryDate,
+  tagIds,
+  editingEntryId: computed(() => ui.editingEntryId),
+  snapshot,
+  createEntry: (data) => entries.createEntry(data),
+  updateEntry: (id, data) => entries.updateEntry(id, data),
+  setEditingEntryId: (id) => { ui.editingEntryId = id },
+})
+
+// Geolocation composable
+const { requestGeolocation } = useGeolocation({
+  isNew,
+  autoGeotag,
+  pendingGeotag,
+})
 
 function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
 
@@ -252,32 +275,7 @@ async function loadEntry() {
     }
 
     // Auto-geotag new entries if enabled
-    if (autoGeotag.value && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const lat = pos.coords.latitude
-          const lon = pos.coords.longitude
-          if (isNew.value && !pendingGeotag.value) {
-            try {
-              const placeName = await reverseGeocode(lat, lon)
-              pendingGeotag.value = {
-                latitude: Math.round(lat * 1000000) / 1000000,
-                longitude: Math.round(lon * 1000000) / 1000000,
-                location_name: placeName || null,
-              }
-            } catch {
-              pendingGeotag.value = {
-                latitude: Math.round(lat * 1000000) / 1000000,
-                longitude: Math.round(lon * 1000000) / 1000000,
-                location_name: null,
-              }
-            }
-          }
-        },
-        () => { /* location denied or unavailable — silently skip */ },
-        { enableHighAccuracy: false, timeout: 5000 }
-      )
-    }
+    requestGeolocation()
   } else if (ui.editingEntryId) {
     const entry = await entries.fetchEntry(ui.editingEntryId!)
     if (entry) {
@@ -360,12 +358,6 @@ async function onGeotagSaved() {
   }
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-const autosaveMs = computed(() => {
-  const secs = parseInt(localStorage.getItem('diarium-autosave-interval') || '2')
-  return (isNaN(secs) ? 2 : secs) * 1000
-})
-
 function onInput() {
   pushHistory()
   markDirty()
@@ -382,25 +374,7 @@ function onInput() {
     })
   }
 
-  if (saveTimer) clearTimeout(saveTimer)
-  if (!body.value.trim()) return
-
-  saveTimer = setTimeout(async () => {
-    if (isNew.value) {
-      try {
-        const entry = await entries.createEntry({
-          entry_date: entryDate.value,
-          title: title.value || null,
-          body: body.value,
-          tag_ids: tagIds.value
-        })
-        ui.editingEntryId = entry.id
-        snapshot()
-      } catch (e: unknown) { /* ignore auto-save failures */ }
-    } else {
-      entries.updateEntry(ui.editingEntryId!, { title: title.value || null, body: body.value, tag_ids: tagIds.value })
-    }
-  }, autosaveMs.value)
+  triggerAutosave()
 }
 
 // ── Keyboard shortcuts ──
@@ -973,7 +947,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
   <!-- Status bar + Bottom controls -->
   <div class="border-t border-border" v-if="!focusMode">
       <!-- Stats bar -->
-      <EditorStatusBar :stats="stats" :saving="!!saveTimer" :saved="!!body.trim()" />
+      <EditorStatusBar :stats="stats" :saving="saveActive" :saved="!!body.trim()" />
 
       <!-- Controls bar: Edit/Preview + Tags + Save -->
       <div class="flex items-center gap-1.5 px-3 py-1.5 relative">
