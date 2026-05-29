@@ -31,9 +31,6 @@ export interface EntryResponse {
   tags: TagBrief[]
   media_count: number
   has_recording: boolean
-  latitude: number | null
-  longitude: number | null
-  location_name: string | null
   created_at: string
   updated_at: string
 }
@@ -156,36 +153,6 @@ export interface TagSuggestionResponse {
   tags: string[]
 }
 
-// ── AI Entry Analysis ───────────────────────────────────────────────
-
-export interface SentimentData {
-  primary_emotion: string
-  secondary_emotion: string | null
-  intensity: number
-  valence: number
-}
-
-export interface EntryAnalysisResponse {
-  entry_id: number
-  sentiment: SentimentData | null
-  summary: string | null
-  reflection_prompts: string[]
-}
-
-// ── AI Similar Entries ──────────────────────────────────────────────
-
-export interface SimilarEntry {
-  id: number
-  entry_date: string
-  title: string | null
-  similarity_score: number
-}
-
-export interface SimilarEntriesResponse {
-  entry_id: number
-  similar: SimilarEntry[]
-}
-
 // ── AI Writer's Block ───────────────────────────────────────────────
 
 export interface ContinueWritingResponse {
@@ -194,10 +161,6 @@ export interface ContinueWritingResponse {
 
 // ── AI Smart Tools ──────────────────────────────────────────────────
 
-export interface SummarizeResponse {
-  summary: string
-}
-
 export interface ExpandResponse {
   expanded_text: string
 }
@@ -205,11 +168,6 @@ export interface ExpandResponse {
 export interface ChangeToneResponse {
   changed_text: string
   tone: string
-}
-
-export interface TranslateResponse {
-  translated_text: string
-  language: string
 }
 
 // ── AI Analyze Text ──────────────────────────────────────────────────
@@ -256,82 +214,12 @@ export interface ThemesResponse {
   themes: ThemeInsight[]
 }
 
-// ── AI Weekly Digest ────────────────────────────────────────────────
-
-export interface DigestResponse {
-  id: number
-  week_start: string
-  week_end: string
-  themes: string[]
-  emotional_trajectory: string
-  notable_moments: string[]
-  summary_text: string
-  created_at: string
-}
-
-// ── OCR ──────────────────────────────────────────────────────────────
-
-export interface OCRResponse {
-  media_id: number
-  extracted_text: string
-  confidence: number
-  language: string
-}
-
 // ── Encryption ───────────────────────────────────────────────────────
 
 export interface EncryptionStatusResponse {
   entry_id: number
   is_encrypted: boolean
   encrypted_at: string | null
-}
-
-// ── Revisions ────────────────────────────────────────────────────────
-
-export interface RevisionResponse {
-  id: number
-  entry_id: number
-  revision_number: number
-  title: string | null
-  body: string
-  snapshot_reason: string
-  created_at: string
-}
-
-export interface RevisionDiffResponse {
-  from_revision: number
-  to_revision: number
-  title_changed: boolean
-  body_changed: boolean
-  from_title: string | null
-  to_title: string | null
-  from_body: string
-  to_body: string
-}
-
-// ── Geotagging ───────────────────────────────────────────────────────
-
-export interface GeotagResponse {
-  entry_id: number
-  latitude: number | null
-  longitude: number | null
-  location_name: string | null
-}
-
-export interface GeotagUpdate {
-  latitude: number
-  longitude: number
-  location_name?: string | null
-}
-
-export interface NearbyEntry {
-  id: number
-  entry_date: string
-  title: string | null
-  latitude: number
-  longitude: number
-  location_name: string | null
-  distance_km: number
 }
 
 // ── Video Notes ──────────────────────────────────────────────────────
@@ -465,33 +353,6 @@ export interface CloudSyncResponse {
   pushed?: number | null
   pulled?: number | null
   provider: string
-}
-
-// ── Plugins ──────────────────────────────────────────────────────────
-
-export interface PluginResponse {
-  id: number
-  name: string
-  version: string
-  description: string | null
-  entry_point: string
-  is_enabled: boolean
-  installed_at: string
-}
-
-export interface PluginInstall {
-  name: string
-  version: string
-  description?: string | null
-  entry_point: string
-}
-
-export interface PluginHookResponse {
-  id: number
-  plugin_id: number
-  hook_name: string
-  handler_fn: string
-  priority: number
 }
 
 // ── Templates ──────────────────────────────────────────────────────────

@@ -17,14 +17,12 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
-from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -44,8 +42,6 @@ from app.core.restore import (
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_scheduler():
     """Ensure the global scheduler is clean before and after every test."""
-    from app.services.scheduler_service import SchedulerService, _scheduler
-
     # Reset the global scheduler instance before each test
     import app.services.scheduler_service as sched_mod
     if sched_mod._scheduler is not None and sched_mod._scheduler.running:
@@ -593,7 +589,6 @@ class TestScheduledBackupExecution:
 
         import app.core.config as config_mod
 
-        original_db_path = config_mod.settings.db_path
         original_media_dir = config_mod.settings.MEDIA_DIR
         original_db_url = config_mod.settings.DATABASE_URL
 
@@ -616,8 +611,6 @@ class TestScheduledBackupExecution:
 
     def test_retention_cleanup(self, tmp_path: Path) -> None:
         """_cleanup_old_backups keeps only N most recent archives."""
-        import time
-
         from app.services.scheduler_service import _cleanup_old_backups
 
         # Create 5 fake backup files with distinct mtimes

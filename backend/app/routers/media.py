@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.schemas.media import MediaResponse
-from app.schemas.ocr import OCRResponse
 from app.services.media_service import MediaService
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
@@ -59,35 +58,6 @@ async def delete_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Non
     """Delete a media attachment and its file."""
     svc = MediaService(db)
     await svc.delete(media_id)
-
-
-# ── OCR endpoints ──────────────────────────────────────────────────────────────
-
-
-@router.post("/{media_id}/ocr", response_model=OCRResponse)
-async def extract_ocr(
-    media_id: int,
-    language: str = Query(default="eng", max_length=10, description="Tesseract language code"),
-    db: AsyncSession = Depends(get_db),
-) -> Any:
-    """Extract text from an image using OCR."""
-    from app.services.ocr_service import OCRService
-
-    svc = OCRService(db)
-    return await svc.extract_text(media_id, language)
-
-
-@router.get("/{media_id}/ocr", response_model=OCRResponse)
-async def get_cached_ocr(
-    media_id: int,
-    language: str = Query(default="eng", max_length=10, description="Tesseract language code"),
-    db: AsyncSession = Depends(get_db),
-) -> Any:
-    """Get cached OCR result for an image."""
-    from app.services.ocr_service import OCRService
-
-    svc = OCRService(db)
-    return await svc.get_cached(media_id, language)
 
 
 # ── Batch upload & listing ─────────────────────────────────────────────────────

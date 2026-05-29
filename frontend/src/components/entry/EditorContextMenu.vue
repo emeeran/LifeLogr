@@ -2,11 +2,11 @@
 import { ref, watch, nextTick } from 'vue'
 import {
   Copy, Scissors, Bold, Italic, Lock, Sparkles, Unlock,
-  Type, Wand2, FileText, Maximize2, MessageCircle, Globe, Search, BookOpen,
+  Type, Wand2, Maximize2, MessageCircle, BookOpen,
   ChevronRight, Loader, RefreshCw, GripHorizontal, X
 } from 'lucide-vue-next'
 import type { AiToolMode, AiToneStyle } from '../../composables/useAiTools'
-import { AI_TONE_OPTIONS, AI_TRANSLATE_LANGUAGES } from '../../composables/useAiTools'
+import { AI_TONE_OPTIONS } from '../../composables/useAiTools'
 
 const props = defineProps<{
   visible: boolean
@@ -15,7 +15,6 @@ const props = defineProps<{
   aiResult: string | null
   aiResultMode: AiToolMode | null
   aiToneStyle: AiToneStyle
-  aiTranslateLanguage: string
   selectedText: string
 }>()
 
@@ -35,7 +34,6 @@ const emit = defineEmits<{
   aiResultRetry: []
   aiResultCopy: []
   applyToneStyle: [tone: AiToneStyle]
-  applyTranslateLanguage: [language: string]
   closeResult: []
 }>()
 
@@ -54,7 +52,7 @@ function openAiSubmenu() {
     if (!trigger) return
     const rect = trigger.getBoundingClientRect()
     const submenuW = 210
-    const submenuH = 310
+    const submenuH = 240
     // Default: right side of trigger
     let x = rect.right + 2
     let y = rect.top
@@ -194,20 +192,11 @@ function startDrag(e: MouseEvent) {
     <button @click="emit('runAiTool', 'rewrite'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
       <Wand2 :size="12" /> Rewrite
     </button>
-    <button @click="emit('runAiTool', 'summarize'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <FileText :size="12" /> Summarize
-    </button>
     <button @click="emit('runAiTool', 'expand'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
       <Maximize2 :size="12" /> Expand & Elaborate
     </button>
     <button @click="emit('runAiTool', 'tone'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
       <MessageCircle :size="12" /> Change Tone
-    </button>
-    <button @click="emit('runAiTool', 'translate'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Globe :size="12" /> Translate
-    </button>
-    <button @click="emit('runAiTool', 'analysis'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Search :size="12" /> Analysis
     </button>
     <div class="h-px bg-border my-1" />
     <button @click="emit('runAiTool', 'define'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
@@ -270,17 +259,6 @@ function startDrag(e: MouseEvent) {
           class="px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors capitalize"
           :class="aiToneStyle === tone ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-surface-hover text-text-secondary hover:text-text-primary border border-transparent'"
         >{{ tone }}</button>
-      </div>
-
-      <!-- Language selector for translate mode -->
-      <div v-if="aiResultMode === 'translate'" class="px-3 pb-1 flex flex-wrap gap-1">
-        <button
-          v-for="lang in AI_TRANSLATE_LANGUAGES"
-          :key="lang"
-          @click="emit('applyTranslateLanguage', lang)"
-          class="px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors capitalize"
-          :class="aiTranslateLanguage === lang ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-surface-hover text-text-secondary hover:text-text-primary border border-transparent'"
-        >{{ lang }}</button>
       </div>
 
       <!-- Action buttons -->

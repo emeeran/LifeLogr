@@ -163,6 +163,15 @@ async def init_db() -> None:
 # Each entry: (table, column, sql). Safe to run on every startup — skipped if column exists.
 _COLUMN_MIGRATIONS = [
     ("entries", "summary", "ALTER TABLE entries ADD COLUMN summary VARCHAR(500)"),
+    ("entries", "title", "ALTER TABLE entries ADD COLUMN title VARCHAR(255)"),
+    ("entries", "mood", "ALTER TABLE entries ADD COLUMN mood VARCHAR(50)"),
+    ("entries", "deleted_at", "ALTER TABLE entries ADD COLUMN deleted_at DATETIME"),
+    ("entries", "encrypted_at", "ALTER TABLE entries ADD COLUMN encrypted_at DATETIME"),
+    ("entries", "latitude", "ALTER TABLE entries ADD COLUMN latitude FLOAT"),
+    ("entries", "longitude", "ALTER TABLE entries ADD COLUMN longitude FLOAT"),
+    ("entries", "location_name", "ALTER TABLE entries ADD COLUMN location_name VARCHAR(255)"),
+    ("entries", "created_at", "ALTER TABLE entries ADD COLUMN created_at DATETIME DEFAULT '1970-01-01 00:00:00'"),
+    ("entries", "updated_at", "ALTER TABLE entries ADD COLUMN updated_at DATETIME DEFAULT '1970-01-01 00:00:00'"),
 ]
 
 _INDEX_MIGRATIONS = [

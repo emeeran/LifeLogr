@@ -28,7 +28,7 @@ echo "==================================="
 echo "Detected distro: $DISTRO"
 echo ""
 
-# ── 1. System packages (tesseract, weasyprint deps) ──
+# ── 1. System packages (weasyprint deps, gstreamer) ──
 install_system_deps() {
     echo ">>> Installing system packages..."
 
@@ -36,24 +36,23 @@ install_system_deps() {
         ubuntu|debian|linuxmint|pop)
             apt-get update -qq
             apt-get install -y --no-install-recommends \
-                tesseract-ocr \
                 libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
                 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info \
                 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
                 gstreamer1.0-plugins-bad
             ;;
         fedora|rhel|centos)
-            dnf install -y tesseract pango cairo gdk-pixbuf2 libffi shared-mime-info
+            dnf install -y pango cairo gdk-pixbuf2 libffi shared-mime-info
             ;;
         arch|manjaro|endeavouros)
-            pacman -S --needed --noconfirm tesseract pango cairo gdk-pixbuf2 libffi shared-mime-info
+            pacman -S --needed --noconfirm pango cairo gdk-pixbuf2 libffi shared-mime-info
             ;;
         opensuse*|sles)
-            zypper install -y tesseract-ocr pango cairo gdk-pixbuf libffi shared-mime-info
+            zypper install -y pango cairo gdk-pixbuf libffi shared-mime-info
             ;;
         *)
             warn "Unsupported distro: $DISTRO"
-            warn "Install manually: tesseract-ocr, pango, cairo, gdk-pixbuf, libffi"
+            warn "Install manually: pango, cairo, gdk-pixbuf, libffi"
             return
             ;;
     esac
@@ -135,13 +134,6 @@ verify_install() {
 
     local all_ok=true
 
-    if command -v tesseract &>/dev/null; then
-        log "Tesseract OCR: $(tesseract --version 2>&1 | head -1)"
-    else
-        warn "Tesseract OCR: NOT FOUND"
-        all_ok=false
-    fi
-
     if command -v ollama &>/dev/null; then
         log "Ollama: installed"
         if ollama list 2>/dev/null | grep -q "llama3.2"; then
@@ -159,7 +151,7 @@ verify_install() {
     if $all_ok; then
         log "All dependencies installed! Restart Diarilinux to use all features."
     else
-        warn "Some deps are missing — AI/OCR features may be limited."
+        warn "Some deps are missing — AI features may be limited."
         echo "    Re-run this script or install manually."
     fi
 }

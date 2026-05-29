@@ -1,6 +1,5 @@
-import { ref, type Ref } from 'vue'
+import { ref } from 'vue'
 import { mediaApi } from '../api/media'
-import { runOCR } from '../api/ai'
 import type { MediaResponse } from '../types'
 
 export function useAttachments(
@@ -9,7 +8,6 @@ export function useAttachments(
   refreshAll: () => void
 ) {
   const attachments = ref<MediaResponse[]>([])
-  const aiProcessing = ref(false)
 
   function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
 
@@ -43,24 +41,5 @@ export function useAttachments(
     }
   }
 
-  async function runOcrTool(mediaId: number, body: Ref<string>, pushHistory: () => void, markDirty: () => void) {
-    aiProcessing.value = true
-    try {
-      const res = await runOCR(mediaId)
-      if (res.extracted_text) {
-        body.value += `\n\n[OCR Text]\n${res.extracted_text}`
-        pushHistory()
-        markDirty()
-        alert('Text extracted and appended to entry.')
-      } else {
-        alert('No text detected in image.')
-      }
-    } catch (e: unknown) {
-      alert(`OCR failed: ${errMsg(e)}`)
-    } finally {
-      aiProcessing.value = false
-    }
-  }
-
-  return { attachments, aiProcessing, loadAttachments, handleFileUpload, removeAttachment, runOcrTool }
+  return { attachments, loadAttachments, handleFileUpload, removeAttachment }
 }

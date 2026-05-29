@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useEntriesStore } from '../../stores/entries'
 import { useTagsStore } from '../../stores/tags'
 import { useUiStore } from '../../stores/ui'
 import {
   X, Eye, Edit3, Minimize2, Maximize2,
   Search, ChevronUp, ChevronDown,
-  Sparkles, History, MapPin, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
+  Sparkles, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
   Loader, Pause
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
-const GeotagModal = defineAsyncComponent(() => import('./GeotagModal.vue'))
 import EditorToolbar from './EditorToolbar.vue'
 import EditorStatusBar from './EditorStatusBar.vue'
 import EditorContextMenu from './EditorContextMenu.vue'
@@ -19,7 +18,6 @@ import MediaViewer from '../media/MediaViewer.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
 import EmojiPicker from '../common/EmojiPicker.vue'
 import { useTemplatesStore } from '../../stores/templates'
-import { setGeotag } from '../../api/geotagging'
 import { aiStatus, suggestTags } from '../../api/ai'
 import { encryptText, decryptText } from '../../api/encryption'
 import { ttsApi } from '../../api/tts'
@@ -31,7 +29,6 @@ import { useFindReplace } from '../../composables/useFindReplace'
 import { useAiTools } from '../../composables/useAiTools'
 import { useAttachments } from '../../composables/useAttachments'
 import { useAutoSave } from '../../composables/useAutoSave'
-import { useGeolocation } from '../../composables/useGeolocation'
 
 const entries = useEntriesStore()
 const ui = useUiStore()
@@ -42,13 +39,9 @@ const title = ref('')
 const body = ref('')
 const tagIds = ref<number[]>([])
 const entryDate = ref('')
-const entryLat = ref<number | null>(null)
-const entryLon = ref<number | null>(null)
-const entryLocationName = ref<string | null>(null)
 const showPreview = ref(false)
 const fullscreen = ref(false)
 const textarea = ref<HTMLTextAreaElement | null>(null)
-const showGeotag = ref(false)
 const showTemplates = ref(false)
 const showEmoji = ref(false)
 const viewerOpen = ref(false)
@@ -65,21 +58,16 @@ const focusMode = ref(false)
 const typewriterMode = ref(false)
 const showContextMenu = ref(false)
 const contextMenuPos = ref({ x: 0, y: 0 })
-const pendingGeotag = ref<{ latitude: number; longitude: number; location_name: string | null } | null>(null)
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
-const autoGeotag = useLocalStorage<boolean>('diarium-auto-geotag', false)
 
 // ── Composables (early — no dependencies on later functions) ──
 const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(body, textarea)
 const { showFind, findQuery, replaceQuery, findIndex, findCount, jumpToMatch, replaceOne, replaceAll } = useFindReplace(body, textarea, pushHistory)
-const { attachments, loadAttachments, handleFileUpload, removeAttachment, runOcrTool: _runOcrTool } = useAttachments(
+const { attachments, loadAttachments, handleFileUpload, removeAttachment } = useAttachments(
   () => hasEntry.value,
   () => ui.editingEntryId ?? null,
   () => entries.refreshAll(),
 )
-function runOcrTool(mediaId: number) {
-  return _runOcrTool(mediaId, body, pushHistory, markDirty)
-}
 const fileInput = ref<HTMLInputElement | null>(null)
 
 // Drag & Drop
@@ -98,13 +86,6 @@ const { triggerAutosave, saving: saveActive } = useAutoSave({
   createEntry: (data) => entries.createEntry(data),
   updateEntry: (id, data) => entries.updateEntry(id, data),
   setEditingEntryId: (id) => { ui.editingEntryId = id },
-})
-
-// Geolocation composable
-const { requestGeolocation } = useGeolocation({
-  isNew,
-  autoGeotag,
-  pendingGeotag,
 })
 
 function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
@@ -246,9 +227,6 @@ async function loadEntry() {
   body.value = ''
   title.value = ''
   tagIds.value = []
-  entryLat.value = null
-  entryLon.value = null
-  entryLocationName.value = null
 
   if (isNew.value) {
     if (ui.newEntryDate) {
@@ -273,9 +251,6 @@ async function loadEntry() {
     if (!title.value && ui.defaultTitle) {
       title.value = ui.defaultTitle
     }
-
-    // Auto-geotag new entries if enabled
-    requestGeolocation()
   } else if (ui.editingEntryId) {
     const entry = await entries.fetchEntry(ui.editingEntryId!)
     if (entry) {
@@ -289,9 +264,6 @@ async function loadEntry() {
       }
       tagIds.value = entry.tags.map(t => t.id)
       entryDate.value = entry.entry_date
-      entryLat.value = entry.latitude ?? null
-      entryLon.value = entry.longitude ?? null
-      entryLocationName.value = entry.location_name ?? null
     }
   }
   pushHistory()
@@ -337,25 +309,6 @@ aiStatus().then(s => { aiAvailable.value = s.ollama_available && s.model_loaded 
 async function onEncryptionChange(encrypted: boolean) {
   isEncrypted.value = encrypted
   await loadEntry()
-}
-
-async function onGeotagSaved() {
-  showGeotag.value = false
-  if (hasEntry.value) {
-    try {
-      const entry = await entries.fetchEntry(ui.editingEntryId!)
-      if (entry) {
-        entryLat.value = entry.latitude ?? null
-        entryLon.value = entry.longitude ?? null
-        entryLocationName.value = entry.location_name ?? null
-      }
-    } catch {
-      // Entry may have been deleted or DB reset — clear stale refs
-      entryLat.value = null
-      entryLon.value = null
-      entryLocationName.value = null
-    }
-  }
 }
 
 function onInput() {
@@ -483,7 +436,6 @@ function onGlobalKeydown(e: KeyboardEvent) {
   if ((showContextMenu.value || aiResult.value) && !aiLoading.value) { clearAiResult(); return }
   if (ui.activeDrawer) { ui.closeDrawer(); return }
   if (showEmoji.value) { showEmoji.value = false; return }
-  if (showGeotag.value) { showGeotag.value = false; return }
   if (viewerOpen.value) { viewerOpen.value = false; return }
   if (showTagDropdown.value) { showTagDropdown.value = false; return }
   if (showFind.value) { showFind.value = false; return }
@@ -498,7 +450,7 @@ onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
 
 defineExpose({
   isDirty, save, body, onInput, hasEntry, entryId: computed(() => ui.editingEntryId),
-  attachments, handleFileUpload, removeAttachment, runOcrTool, loadAttachments,
+  attachments, handleFileUpload, removeAttachment, loadAttachments,
   triggerFileInput: () => fileInput.value?.click(),
   openViewer: (index: number) => { viewerIndex.value = index; viewerOpen.value = true },
   getSelection, applyToSelection,
@@ -520,11 +472,6 @@ async function save() {
         body: body.value,
         tag_ids: tagIds.value.length ? tagIds.value : undefined,
       })
-      // Apply pending geotag from modal (new entries)
-      if (pendingGeotag.value && entry.id) {
-        await setGeotag(entry.id, pendingGeotag.value)
-        pendingGeotag.value = null
-      }
       snapshot()
       entries.refreshAll()
       entries.currentEntry = entry
@@ -623,7 +570,7 @@ async function openAttachDialog() {
   nextTick(() => fileInput.value?.click())
 }
 
-// handleFileUpload, removeAttachment, runOcrTool — extracted to useAttachments composable
+// handleFileUpload, removeAttachment — extracted to useAttachments composable
 
 async function encryptDecryptSelection() {
   const text = getSelection()
@@ -662,8 +609,8 @@ async function encryptDecryptSelection() {
 
 // Initialize AI tools composable (needs getSelection/applyToSelection defined above)
 const {
-  aiLoading, aiResult, aiResultMode, aiToneStyle, aiTranslateLanguage,
-  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, applyTranslateLanguage, clearAiResult,
+  aiLoading, aiResult, aiResultMode, aiToneStyle,
+  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, clearAiResult,
 } = useAiTools(body, getSelection, applyToSelection, cachedSelStart, cachedSelEnd, textarea, pushHistory, markDirty)
 
 async function toggleTTS() {
@@ -1017,21 +964,6 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         </button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="ui.activeDrawer === 'revisions' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
-          @click="hasEntry && ui.toggleDrawer('revisions')"
-          title="Version History"
-        ><History :size="13" /></button>
-        <div class="relative group">
-          <button
-            class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
-            @click="showGeotag = true"
-          ><MapPin :size="13" /></button>
-          <div v-if="entryLocationName"
-            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded text-[10px] text-white bg-gray-800 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50"
-          >{{ entryLocationName }}</div>
-        </div>
-        <button
-          class="p-1 rounded cursor-pointer transition-colors"
           :class="ui.activeDrawer === 'recording' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
           @click="openRecording"
           title="Voice Recording"
@@ -1083,18 +1015,6 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       </div>
     </div>
 
-    <!-- Geotag Modal -->
-    <GeotagModal
-      v-if="showGeotag && (ui.editingEntryId || isNew)"
-      :entryId="ui.editingEntryId ?? -1"
-      :lat="entryLat"
-      :lon="entryLon"
-      :name="entryLocationName"
-      @close="showGeotag = false"
-      @saved="onGeotagSaved"
-      @pending="(data) => { pendingGeotag = data; showGeotag = false }"
-    />
-
     <MediaViewer
       v-if="viewerOpen"
       :items="attachments"
@@ -1123,7 +1043,6 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       :ai-result="aiResult"
       :ai-result-mode="aiResultMode"
       :ai-tone-style="aiToneStyle"
-      :ai-translate-language="aiTranslateLanguage"
       :selected-text="getSelection()"
       @close="showContextMenu = false"
       @copy="copyToClipboard"
@@ -1138,7 +1057,6 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       @ai-result-retry="aiResultRetry"
       @ai-result-copy="aiResultCopy"
       @apply-tone-style="(tone: any) => applyToneStyle(tone)"
-      @apply-translate-language="(lang: any) => applyTranslateLanguage(lang)"
       @close-result="clearAiResult"
     />
   </div>

@@ -175,7 +175,7 @@ from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
-from app.routers.encryption import (
+from app.routers.encryption import (  # noqa: E402
     router as encryption_router,
     global_router as encryption_global_router,
 )  # noqa: E402
@@ -185,10 +185,8 @@ from app.routers.media import router as media_router  # noqa: E402
 from app.routers.prompts import router as prompts_router  # noqa: E402
 from app.routers.recordings import router as recordings_router  # noqa: E402
 from app.routers.reminders import router as reminders_router  # noqa: E402
-from app.routers.revision import router as revision_router  # noqa: E402
 from app.routers.search import router as search_router  # noqa: E402
 from app.routers.sync import router as sync_router  # noqa: E402
-from app.routers.plugins import router as plugins_router  # noqa: E402
 from app.routers.tags import router as tags_router  # noqa: E402
 from app.routers.templates import router as templates_router  # noqa: E402
 from app.routers.tts import router as tts_router  # noqa: E402
@@ -209,10 +207,8 @@ app.include_router(encryption_router)
 app.include_router(encryption_global_router)
 app.include_router(export_router)
 app.include_router(reminders_router)
-app.include_router(revision_router)
 app.include_router(search_router)
 app.include_router(sync_router)
-app.include_router(plugins_router)
 app.include_router(templates_router)
 app.include_router(video_router)
 app.include_router(settings_router)
