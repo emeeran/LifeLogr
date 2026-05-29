@@ -24,3 +24,13 @@ class MediaResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MediaTimelineItem(MediaResponse):
+    entry_date: str
+    entry_title: str | None
+
+
+class MediaTimelineResponse(BaseModel):
+    items: list[MediaTimelineItem]
+    total: int

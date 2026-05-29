@@ -2,7 +2,7 @@
 import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Sunrise, Settings,
-  Sun, Moon, BarChart3, Bell,
+  Sun, Moon, BarChart3, Bell, ImageIcon,
   ChevronsLeft, ChevronsRight, StickyNote
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
@@ -15,6 +15,7 @@ const navItems: { view: ViewType; icon: Component; label: string }[] = [
   { view: 'search', icon: Search, label: 'Search' },
   { view: 'analytics', icon: BarChart3, label: 'Analytics' },
   { view: 'reminders', icon: Bell, label: 'Reminders' },
+  { view: 'media', icon: ImageIcon, label: 'Media' },
   { view: 'on-this-day', icon: Sunrise, label: 'On this day' },
 ]
 

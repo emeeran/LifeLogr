@@ -65,6 +65,16 @@ export interface MediaResponse {
   created_at: string
 }
 
+export interface MediaTimelineItem extends MediaResponse {
+  entry_date: string
+  entry_title: string | null
+}
+
+export interface MediaTimelineResponse {
+  items: MediaTimelineItem[]
+  total: number
+}
+
 export interface VoiceRecordingResponse {
   id: number
   entry_id: number

@@ -9,6 +9,7 @@ const router = createRouter({
     { path: '/search', name: 'search', component: () => import('./components/search/SearchView.vue') },
     { path: '/analytics', name: 'analytics', component: () => import('./components/analytics/AnalyticsView.vue') },
     { path: '/reminders', name: 'reminders', component: () => import('./components/reminders/RemindersView.vue') },
+    { path: '/media', name: 'media', component: () => import('./components/media/MediaTimelineView.vue') },
     { path: '/on-this-day', name: 'on-this-day', component: () => import('./components/onthisday/OnThisDayView.vue') },
     { path: '/settings', name: 'settings', component: () => import('./components/settings/SettingsView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/calendar' },

@@ -5,7 +5,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -199,6 +199,46 @@ class MediaService:
             select(Media).where(Media.entry_id == entry_id).order_by(Media.created_at)
         )
         return list(result.scalars().all())
+
+    async def list_all(
+        self,
+        offset: int = 0,
+        limit: int = 50,
+        media_type: str | None = None,
+    ) -> tuple[list[tuple[Media, str, str | None]], int]:
+        """Return all media across non-deleted entries, with entry context.
+
+        Returns list of (media, entry_date_str, entry_title) tuples and total count.
+        """
+        base_q = (
+            select(Media, Entry.entry_date, Entry.title)
+            .join(Entry, Media.entry_id == Entry.id)
+            .where(Entry.is_deleted == False)  # noqa: E712
+        )
+        if media_type:
+            base_q = base_q.where(Media.media_type == media_type)
+
+        # Total count
+        count_q = select(func.count()).select_from(
+            select(Media.id)
+            .join(Entry, Media.entry_id == Entry.id)
+            .where(Entry.is_deleted == False)  # noqa: E712
+            .subquery()
+        )
+        if media_type:
+            count_q = select(func.count()).select_from(
+                select(Media.id)
+                .join(Entry, Media.entry_id == Entry.id)
+                .where(Entry.is_deleted == False, Media.media_type == media_type)  # noqa: E712
+                .subquery()
+            )
+        total = (await self.db.execute(count_q)).scalar_one()
+
+        # Paginated results
+        rows = await self.db.execute(
+            base_q.order_by(Media.created_at.desc()).offset(offset).limit(limit)
+        )
+        return [(m, str(date), title) for m, date, title in rows.all()], total
 
     @staticmethod
     def _classify_media(content_type: str) -> str:

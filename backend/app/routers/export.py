@@ -41,3 +41,19 @@ async def export_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=diarilinux-export.pdf"},
     )
+
+
+@router.get("/markdown")
+async def export_markdown(
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Export entries as an Obsidian-compatible Markdown ZIP vault."""
+    svc = ExportService(db)
+    zip_bytes = await svc.export_markdown(start_date, end_date)
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=dailybyte-obsidian-vault.zip"},
+    )
