@@ -173,3 +173,126 @@ class ExportService:
             pdf.multi_cell(0, 6, plain)
 
         return bytes(pdf.output())
+
+    async def export_markdown(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> bytes:
+        """Export entries as an Obsidian-compatible Markdown vault bundled inside a ZIP file."""
+        import io
+        import zipfile
+        from sqlalchemy.orm import selectinload
+        from app.core.config import settings
+
+        q = (
+            select(Entry)
+            .where(Entry.is_deleted == False)  # noqa: E712
+            .options(
+                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+                selectinload(Entry.media),
+            )
+            .order_by(Entry.entry_date)
+        )
+
+        if start_date:
+            q = q.where(Entry.entry_date >= start_date)
+        if end_date:
+            q = q.where(Entry.entry_date <= end_date)
+
+        result = await self.db.execute(q)
+        entries = list(result.scalars().all())
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for entry in entries:
+                # 1. Gather tags
+                tags = [assoc.tag.name for assoc in entry.tag_associations if assoc.tag]
+
+                # 2. Gather attachments and copy files to Zip
+                attachments_meta = []
+                for media in entry.media:
+                    local_file_path = settings.MEDIA_DIR / media.storage_path
+                    if local_file_path.exists():
+                        zip_media_path = f"attachments/{entry.entry_date}/{media.filename}"
+                        zip_file.writestr(zip_media_path, local_file_path.read_bytes())
+                        attachments_meta.append({
+                            "filename": media.filename,
+                            "size": media.file_size,
+                            "type": media.media_type,
+                            "path": zip_media_path,
+                        })
+
+                # 3. Create frontmatter manually to avoid PyYAML dependency
+                metadata = {
+                    "date": str(entry.entry_date),
+                    "title": entry.title,
+                    "mood": entry.mood,
+                    "tags": tags,
+                    "location": entry.location_name,
+                    "latitude": entry.latitude,
+                    "longitude": entry.longitude,
+                }
+                if attachments_meta:
+                    metadata["attachments"] = attachments_meta
+
+                frontmatter_block = self._dump_yaml(metadata)
+                
+                # 4. Format entry body with relative links
+                body_content = entry.body or ""
+                
+                unread_attachments = []
+                for attachment in attachments_meta:
+                    if attachment["filename"] not in body_content:
+                        unread_attachments.append(attachment)
+                
+                if unread_attachments:
+                    body_content += "\n\n## Attachments\n"
+                    for attachment in unread_attachments:
+                        rel_path = f"../../attachments/{entry.entry_date}/{attachment['filename']}"
+                        if attachment["type"] == "image":
+                            body_content += f"![{attachment['filename']}]({rel_path})\n"
+                        elif attachment["type"] == "audio":
+                            body_content += f'<audio controls src="{rel_path}"></audio>\n'
+                        elif attachment["type"] == "video":
+                            body_content += f'<video controls src="{rel_path}"></video>\n'
+                        else:
+                            body_content += f"[{attachment['filename']}]({rel_path})\n"
+
+                full_markdown = f"---\n{frontmatter_block}\n---\n\n{body_content}"
+
+                # 5. Save markdown entry in zip
+                year_str = entry.entry_date.strftime("%Y")
+                month_str = entry.entry_date.strftime("%m")
+                zip_md_path = f"journal/{year_str}/{month_str}/{entry.entry_date}.md"
+                zip_file.writestr(zip_md_path, full_markdown.encode("utf-8"))
+
+        return zip_buffer.getvalue()
+
+    @staticmethod
+    def _dump_yaml(data: dict) -> str:
+        """Helper to serialize a simple dictionary to YAML format manually."""
+        lines = []
+        for k, v in data.items():
+            if v is None:
+                lines.append(f"{k}: null")
+            elif isinstance(v, (bool, int, float)):
+                lines.append(f"{k}: {str(v).lower() if isinstance(v, bool) else str(v)}")
+            elif isinstance(v, str):
+                if ":" in v or "'" in v or '"' in v or "\n" in v or "-" in v:
+                    escaped = v.replace('"', '\\"')
+                    lines.append(f'{k}: "{escaped}"')
+                else:
+                    lines.append(f"{k}: {v}")
+            elif isinstance(v, list):
+                if not v:
+                    lines.append(f"{k}: []")
+                else:
+                    lines.append(f"{k}:")
+                    for item in v:
+                        if isinstance(item, dict):
+                            lines.append(f"  - filename: {item.get('filename')}")
+                            lines.append(f"    size: {item.get('size')}")
+                            lines.append(f"    type: {item.get('type')}")
+                            lines.append(f"    path: {item.get('path')}")
+                        else:
+                            lines.append(f"  - {item}")
+        return "\n".join(lines)
