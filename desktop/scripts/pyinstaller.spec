@@ -16,6 +16,7 @@ ROOT = Path(SPECPATH).resolve().parent.parent
 
 # Auto-discover all app.* submodules — future-proof against additions
 _app_hiddenimports = collect_submodules('app')
+_edge_tts_hiddenimports = collect_submodules('edge_tts')
 
 # pysqlite3-binary ships its own libsqlite3 and C extension — include both
 # so that PyInstaller builds use a known-good sqlite3 instead of the one
@@ -63,6 +64,8 @@ a = Analysis(
         'fpdf',
         # pysqlite3 — bundles a reliable sqlite3 with FTS5
         'pysqlite3',
+        # TTS — Edge TTS for Read Aloud
+        *_edge_tts_hiddenimports,
     ],
     hookspath=[],
     hooksconfig={},
@@ -71,7 +74,6 @@ a = Analysis(
         # Heavy optional deps — excluded for size; install via [group] extras
         'faster_whisper',
         'weasyprint',
-        'edge_tts',
         'mega',
         'PIL',
         'PIL.Image',

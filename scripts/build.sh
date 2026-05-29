@@ -31,7 +31,7 @@ build_backend_binary() {
   echo "[2/3] Building backend binary (PyInstaller)..."
   need_cmd uv "Install uv: https://docs.astral.sh/uv/"
   cd "$ROOT/backend"
-  uv sync
+  uv sync --extra tts
   # Install pyinstaller into the backend venv (idempotent)
   uv pip install pyinstaller
   cd "$ROOT/desktop"
