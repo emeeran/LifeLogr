@@ -623,13 +623,24 @@ async function toggleTTS() {
   if (!text.trim()) return
   ttsLoading.value = true
   try {
-    // Use streaming URL for saved entries — starts playback immediately
     if (hasEntry.value) {
+      // Fetch audio as blob — more reliable in Tauri webview than direct HTTP URL
       const url = ttsApi.entryUrl(ui.editingEntryId!)
-      ttsAudio = new Audio(url)
+      console.log('[TTS] Fetching:', url)
+      const res = await fetch(url)
+      console.log('[TTS] Response:', res.status, res.headers.get('content-type'))
+      if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`)
+      const blob = await res.blob()
+      console.log('[TTS] Blob size:', blob.size, 'type:', blob.type)
+      const blobUrl = URL.createObjectURL(blob)
+      ttsAudio = new Audio(blobUrl)
+      ttsAudio.addEventListener('canplaythrough', () => console.log('[TTS] canplaythrough'))
+      ttsAudio.addEventListener('ended', () => { console.log('[TTS] ended'); URL.revokeObjectURL(blobUrl) })
+      ttsAudio.addEventListener('error', (e) => { console.error('[TTS] audio error:', e, ttsAudio?.error); URL.revokeObjectURL(blobUrl) })
     } else {
       // For new entries, generate audio blob then play
       const blob = await ttsApi.speakBlob(text)
+      console.log('[TTS] Blob size:', blob.size, 'type:', blob.type)
       const blobUrl = URL.createObjectURL(blob)
       ttsAudio = new Audio(blobUrl)
       ttsAudio.addEventListener('ended', () => URL.revokeObjectURL(blobUrl))
@@ -639,7 +650,9 @@ async function toggleTTS() {
     ttsAudio.addEventListener('error', () => { ttsPlaying.value = false })
     ttsPlaying.value = true
     ttsLoading.value = false
-    ttsAudio.play()
+    console.log('[TTS] Calling play()...')
+    await ttsAudio.play()
+    console.log('[TTS] play() resolved')
   } catch (e: unknown) {
     alert(`Read Aloud failed: ${errMsg(e)}`)
   } finally {

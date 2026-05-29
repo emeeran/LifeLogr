@@ -65,7 +65,7 @@ function stopPlayback() {
 const ttsPlaying = ref(false)
 const ttsLoading = ref(false)
 
-function toggleTTS() {
+async function toggleTTS() {
   if (ttsPlaying.value) {
     stopPlayback()
     return
@@ -73,14 +73,26 @@ function toggleTTS() {
   if (!entry.value) return
   stopPlayback()
   ttsLoading.value = true
-  const url = ttsApi.entryUrl(entry.value.id)
-  const audio = new Audio(url)
-  audio.addEventListener('canplay', () => { ttsLoading.value = false; ttsPlaying.value = true })
-  audio.addEventListener('ended', () => { ttsPlaying.value = false })
-  audio.addEventListener('error', () => { ttsLoading.value = false; ttsPlaying.value = false })
-  currentAudio = audio
-  playingId.value = -1 // sentinel for TTS
-  audio.play().catch(() => { ttsLoading.value = false })
+  try {
+    // Fetch audio as blob — more reliable in Tauri webview than direct HTTP URL
+    const url = ttsApi.entryUrl(entry.value.id)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`)
+    const blob = await res.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const audio = new Audio(blobUrl)
+    audio.addEventListener('canplay', () => { ttsLoading.value = false; ttsPlaying.value = true })
+    audio.addEventListener('ended', () => { ttsPlaying.value = false; URL.revokeObjectURL(blobUrl) })
+    audio.addEventListener('error', () => { ttsLoading.value = false; ttsPlaying.value = false; URL.revokeObjectURL(blobUrl) })
+    currentAudio = audio
+    playingId.value = -1 // sentinel for TTS
+    await audio.play()
+    ttsPlaying.value = true
+    ttsLoading.value = false
+  } catch {
+    ttsLoading.value = false
+    ttsPlaying.value = false
+  }
 }
 </script>
 
