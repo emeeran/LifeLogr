@@ -243,7 +243,7 @@ async def brand_logo() -> FileResponse:
 
 # Serve built frontend in production — MUST be registered AFTER all API routes
 # so that API GET requests are matched before this catch-all.
-if settings.is_production and _FRONTEND_DIST.is_dir():
+if _FRONTEND_DIST.is_dir():
     app.mount(
         "/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="frontend-assets"
     )

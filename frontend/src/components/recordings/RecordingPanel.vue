@@ -129,9 +129,17 @@ function togglePlayback(rec: VoiceRecordingResponse) {
   const url = `${API_ORIGIN}/api/v1/media/${rec.media_id}/file`
   const audio = new Audio(url)
   audio.addEventListener('ended', () => { playingId.value = null })
+  audio.addEventListener('error', () => {
+    playingId.value = null
+    currentAudio = null
+    alert(`Playback failed. The audio format (${rec.audio_format}) may not be supported. Try recording again.`)
+  })
   currentAudio = audio
   playingId.value = rec.id
-  audio.play()
+  audio.play().catch(() => {
+    playingId.value = null
+    currentAudio = null
+  })
 }
 
 function stopPlayback() {

@@ -168,7 +168,7 @@ class MediaService:
         """Return (file_bytes, content_type, filename) from disk."""
         media = await self.get(media_id)
         full_path = settings.MEDIA_DIR / media.storage_path
-        content_type = self._media_content_type(media.media_type)
+        content_type = self._content_type_from_ext(media.storage_path, media.media_type)
         # Serve WebP content type for converted images
         if media.storage_path.endswith(".webp"):
             content_type = "image/webp"
@@ -257,3 +257,16 @@ class MediaService:
         return {"image": "image/jpeg", "video": "video/mp4", "audio": "audio/mpeg"}.get(
             media_type, "application/octet-stream"
         )
+
+    @staticmethod
+    def _content_type_from_ext(storage_path: str, media_type: str) -> str:
+        """Return accurate MIME type based on actual file extension."""
+        ext = storage_path.rsplit(".", 1)[-1].lower() if "." in storage_path else ""
+        audio_map = {
+            "webm": "audio/webm", "ogg": "audio/ogg", "mp3": "audio/mpeg",
+            "mp4": "audio/mp4", "wav": "audio/wav", "m4a": "audio/mp4",
+            "opus": "audio/opus",
+        }
+        if media_type == "audio" and ext in audio_map:
+            return audio_map[ext]
+        return MediaService._media_content_type(media_type)

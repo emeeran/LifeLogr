@@ -194,6 +194,15 @@ export interface DefineTextResponse {
   definition: string
 }
 
+export interface VoiceChangeResponse {
+  changed_text: string
+  voice: string
+}
+
+export interface RewriteForClarityResponse {
+  rewritten_text: string
+}
+
 // ── AI On This Day ──────────────────────────────────────────────────
 
 export interface OnThisDayPastEntry {

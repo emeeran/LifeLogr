@@ -5,6 +5,7 @@ import type {
   ContinueWritingResponse, OnThisDayResponse, ThemesResponse,
   ExpandResponse, ChangeToneResponse,
   AnalyzeTextResponse, DefineTextResponse,
+  VoiceChangeResponse, RewriteForClarityResponse,
 } from '../types'
 
 export const grammarCheck = (text: string) =>
@@ -47,3 +48,9 @@ export const analyzeText = (text: string) =>
 
 export const defineText = (text: string) =>
   request<DefineTextResponse>('/ai/define-text', { method: 'POST', body: JSON.stringify({ text }) })
+
+export const changeVoice = (text: string, voice: string) =>
+  request<VoiceChangeResponse>('/ai/change-voice', { method: 'POST', body: JSON.stringify({ text, voice }) })
+
+export const rewriteForClarity = (text: string) =>
+  request<RewriteForClarityResponse>('/ai/rewrite-for-clarity', { method: 'POST', body: JSON.stringify({ text }) })
