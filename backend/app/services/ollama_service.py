@@ -304,6 +304,29 @@ class OllamaService:
         result = await self._generate(prompt, temperature=0.3, num_predict=512)
         return result.strip()
 
+    async def change_voice(self, text: str, voice: str) -> str:
+        """Convert text between active and passive voice."""
+        prompt = (
+            f"Rewrite the following text in {voice} voice. "
+            f"Keep the same meaning but convert every sentence to {voice} voice. "
+            f"Return ONLY the converted text, nothing else.\n\n"
+            f"Text:\n{text[:3000]}"
+        )
+        result = await self._generate(prompt, temperature=0.3, num_predict=2048)
+        return result.strip()
+
+    async def rewrite_for_clarity(self, text: str) -> str:
+        """Rewrite text for maximum clarity and readability."""
+        prompt = (
+            "Rewrite the following text for maximum clarity and readability. "
+            "Simplify complex sentences, remove ambiguity, and improve flow. "
+            "Preserve the original meaning and tone. "
+            "Return ONLY the rewritten text, nothing else.\n\n"
+            f"Text:\n{text[:3000]}"
+        )
+        result = await self._generate(prompt, temperature=0.3, num_predict=2048)
+        return result.strip()
+
     # ── Shared JSON parser (original) ─────────────────────────────────────
 
     def _parse_json_response(self, raw: str) -> dict[str, Any] | list[Any] | None:

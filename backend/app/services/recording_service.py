@@ -89,7 +89,7 @@ class VoiceRecordingService:
             raise ConflictError(f"Recording {recording_id} already transcribed")
 
         audio_bytes, _, _ = await self.media_svc.get_file(rec.media_id)
-        text = await asyncio.to_thread(self._run_stt, audio_bytes)
+        text = await asyncio.to_thread(self._run_stt, audio_bytes, rec.audio_format)
         rec.transcription = text
         rec.is_transcribed = True
 
@@ -114,10 +114,10 @@ class VoiceRecordingService:
     def _detect_format(filename: str) -> str:
         """Detect audio format from filename extension."""
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp3"
-        return ext if ext in ("mp3", "mp4") else "mp3"
+        return ext if ext in ("mp3", "mp4", "webm", "ogg", "wav", "m4a", "opus") else "mp3"
 
     @staticmethod
-    def _run_stt(audio_data: bytes | Path) -> str:
+    def _run_stt(audio_data: bytes | Path, audio_format: str = "webm") -> str:
         """Run local speech-to-text using faster-whisper from bytes or a file path."""
         try:
             model = _get_whisper_model()
@@ -129,8 +129,9 @@ class VoiceRecordingService:
             segments, _info = model.transcribe(str(audio_data), beam_size=5)
             return " ".join(segment.text.strip() for segment in segments)
 
-        # Write audio to a temp file (faster-whisper needs a file path)
-        with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:
+        # Use proper extension so faster-whisper can detect the codec
+        suffix = f".{audio_format}" if audio_format in ("webm", "ogg", "wav", "mp3", "mp4", "m4a", "opus") else ".webm"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(audio_data)
             tmp_path = tmp.name
 

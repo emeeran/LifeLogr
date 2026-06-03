@@ -257,3 +257,29 @@ class DefineTextRequest(BaseModel):
 
 class DefineTextResponse(BaseModel):
     definition: str
+
+
+# ── Voice (active/passive) ────────────────────────────────────────────
+
+
+class VoiceChangeRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to convert")
+    voice: str = Field(
+        description="Target voice: active or passive"
+    )
+
+
+class VoiceChangeResponse(BaseModel):
+    changed_text: str
+    voice: str
+
+
+# ── Rewrite for clarity ───────────────────────────────────────────────
+
+
+class RewriteForClarityRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to rewrite for clarity")
+
+
+class RewriteForClarityResponse(BaseModel):
+    rewritten_text: str

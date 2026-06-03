@@ -32,12 +32,16 @@ from app.schemas.ai import (
     OnThisDayResponse,
     RewriteRequest,
     RewriteResponse,
+    RewriteForClarityRequest,
+    RewriteForClarityResponse,
     SpellCheckRequest,
     SpellCheckResponse,
     TagSuggestionRequest,
     TagSuggestionResponse,
     ThemesResponse,
     ThemeInsight,
+    VoiceChangeRequest,
+    VoiceChangeResponse,
 )
 from app.services.ollama_service import OllamaService
 
@@ -275,6 +279,22 @@ async def define_text(data: DefineTextRequest, db: AsyncSession = Depends(get_db
     svc = OllamaService()
     definition = await svc.define_text(data.text)
     return DefineTextResponse(definition=definition)
+
+
+@router.post("/change-voice", response_model=VoiceChangeResponse)
+async def change_voice(data: VoiceChangeRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Convert text between active and passive voice."""
+    svc = OllamaService()
+    changed = await svc.change_voice(data.text, data.voice)
+    return VoiceChangeResponse(changed_text=changed, voice=data.voice)
+
+
+@router.post("/rewrite-for-clarity", response_model=RewriteForClarityResponse)
+async def rewrite_for_clarity(data: RewriteForClarityRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Rewrite text for maximum clarity and readability."""
+    svc = OllamaService()
+    rewritten = await svc.rewrite_for_clarity(data.text)
+    return RewriteForClarityResponse(rewritten_text=rewritten)
 
 
 # ── Model management ───────────────────────────────────────────────────

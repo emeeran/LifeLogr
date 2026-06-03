@@ -56,6 +56,7 @@ let ttsAudio: HTMLAudioElement | null = null
 const isEncrypted = ref(false)
 const focusMode = ref(false)
 const typewriterMode = ref(false)
+const showToolbar = ref(false)
 const showContextMenu = ref(false)
 const contextMenuPos = ref({ x: 0, y: 0 })
 const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
@@ -208,7 +209,7 @@ const fmt = {
   codeBlock: () => wrap('\n```\n', '\n```\n', 'code block'),
   link: () => wrap('[', '](url)', 'link text'),
   image: () => wrap('![', '](url)', 'alt text'),
-  hr: () => insertAtCursor('\n---\n'),
+  hr: () => insertAtCursor('\n\n────────────────────────────────\n\n'),
   table: insertTable,
   checkbox: insertCheckbox,
   undo: doUndo,
@@ -353,6 +354,12 @@ function onKeydown(e: KeyboardEvent) {
     i: fmt.italic,
     k: fmt.code,
     u: fmt.strikethrough,
+  }
+  // Ctrl+Alt+H for horizontal rule
+  if (mod && e.altKey && e.key.toLowerCase() === 'h') {
+    e.preventDefault()
+    fmt.hr()
+    return
   }
   const handler = handlers[e.key.toLowerCase()]
   if (handler) {
@@ -624,23 +631,16 @@ async function toggleTTS() {
   ttsLoading.value = true
   try {
     if (hasEntry.value) {
-      // Fetch audio as blob — more reliable in Tauri webview than direct HTTP URL
       const url = ttsApi.entryUrl(ui.editingEntryId!)
-      console.log('[TTS] Fetching:', url)
       const res = await fetch(url)
-      console.log('[TTS] Response:', res.status, res.headers.get('content-type'))
       if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`)
       const blob = await res.blob()
-      console.log('[TTS] Blob size:', blob.size, 'type:', blob.type)
       const blobUrl = URL.createObjectURL(blob)
       ttsAudio = new Audio(blobUrl)
-      ttsAudio.addEventListener('canplaythrough', () => console.log('[TTS] canplaythrough'))
-      ttsAudio.addEventListener('ended', () => { console.log('[TTS] ended'); URL.revokeObjectURL(blobUrl) })
-      ttsAudio.addEventListener('error', (e) => { console.error('[TTS] audio error:', e, ttsAudio?.error); URL.revokeObjectURL(blobUrl) })
+      ttsAudio.addEventListener('ended', () => URL.revokeObjectURL(blobUrl))
+      ttsAudio.addEventListener('error', () => URL.revokeObjectURL(blobUrl))
     } else {
-      // For new entries, generate audio blob then play
       const blob = await ttsApi.speakBlob(text)
-      console.log('[TTS] Blob size:', blob.size, 'type:', blob.type)
       const blobUrl = URL.createObjectURL(blob)
       ttsAudio = new Audio(blobUrl)
       ttsAudio.addEventListener('ended', () => URL.revokeObjectURL(blobUrl))
@@ -650,9 +650,7 @@ async function toggleTTS() {
     ttsAudio.addEventListener('error', () => { ttsPlaying.value = false })
     ttsPlaying.value = true
     ttsLoading.value = false
-    console.log('[TTS] Calling play()...')
     await ttsAudio.play()
-    console.log('[TTS] play() resolved')
   } catch (e: unknown) {
     alert(`Read Aloud failed: ${errMsg(e)}`)
   } finally {
@@ -817,23 +815,36 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
     </div>
 
 
-    <!-- Formatting toolbar -->
-    <EditorToolbar
-      v-if="!showPreview && !focusMode"
-      :active-formats="activeFormats"
-      :undo-count="undoStack.length"
-      :redo-count="redoStack.length"
-      :show-emoji="showEmoji"
-      :show-find="showFind"
-      :focus-mode="focusMode"
-      :typewriter-mode="typewriterMode"
-      :ui="ui"
-      @action="(name: string) => { const fn = (fmt as any)[name]; if (fn) fn() }"
-      @toggle-emoji="showEmoji = !showEmoji"
-      @toggle-find="showFind = !showFind"
-      @toggle-focus="focusMode = !focusMode"
-      @toggle-typewriter="typewriterMode = !typewriterMode"
-    />
+    <!-- Formatting toolbar (collapsible, closed by default) -->
+    <div v-if="!showPreview && !focusMode" class="border-b border-border">
+      <button
+        class="flex items-center gap-1 w-full px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+        @click="showToolbar = !showToolbar"
+      >
+        <ChevronDown v-if="!showToolbar" :size="10" class="transition-transform" />
+        <ChevronUp v-else :size="10" class="transition-transform" />
+        Formatting
+      </button>
+      <Transition name="toolbar-slide">
+        <div v-if="showToolbar">
+          <EditorToolbar
+            :active-formats="activeFormats"
+            :undo-count="undoStack.length"
+            :redo-count="redoStack.length"
+            :show-emoji="showEmoji"
+            :show-find="showFind"
+            :focus-mode="focusMode"
+            :typewriter-mode="typewriterMode"
+            :ui="ui"
+            @action="(name: string) => { const fn = (fmt as any)[name]; if (fn) fn() }"
+            @toggle-emoji="showEmoji = !showEmoji"
+            @toggle-find="showFind = !showFind"
+            @toggle-focus="focusMode = !focusMode"
+            @toggle-typewriter="typewriterMode = !typewriterMode"
+          />
+        </div>
+      </Transition>
+    </div>
 
     <!-- Find & Replace bar -->
     <div v-if="showFind" class="flex items-center gap-1.5 px-2 py-1 border-b border-border bg-surface">
@@ -1076,6 +1087,21 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
 </template>
 
 <style scoped>
+.toolbar-slide-enter-active,
+.toolbar-slide-leave-active {
+  transition: all 0.15s ease;
+  overflow: hidden;
+}
+.toolbar-slide-enter-from,
+.toolbar-slide-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.toolbar-slide-enter-to,
+.toolbar-slide-leave-from {
+  max-height: 120px;
+  opacity: 1;
+}
 .drag-enter-active,
 .drag-leave-active {
   transition: all 0.2s ease;

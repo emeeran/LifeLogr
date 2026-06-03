@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { grammarCheck, rewrite, aiStatus, expand, changeTone, defineText } from '../../api/ai'
+import { grammarCheck, rewrite, aiStatus, expand, changeTone, defineText, changeVoice, rewriteForClarity } from '../../api/ai'
 import type { GrammarSuggestion } from '../../types'
 import { AI_TONE_OPTIONS } from '../../composables/useAiTools'
 import {
   CheckCircle, AlertCircle, Loader,
   Sparkles, Wand2, Type, Eraser,
   Maximize2,
-  MessageCircle, Copy, Check, BookOpen
+  MessageCircle, Copy, Check, BookOpen,
+  ArrowRightLeft, Eye,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -24,7 +25,7 @@ const loading = ref(false)
 const result = ref('')
 const originalText = ref('')
 const suggestions = ref<GrammarSuggestion[]>([])
-const mode = ref<'grammar-spelling' | 'rewrite' | 'expand' | 'change-tone' | 'define'>('grammar-spelling')
+const mode = ref<'grammar-spelling' | 'rewrite' | 'expand' | 'change-tone' | 'define' | 'active-voice' | 'passive-voice' | 'clarity'>('grammar-spelling')
 const error = ref('')
 const available = ref<boolean | null>(null)
 
@@ -73,6 +74,15 @@ async function runCheck(m: typeof mode.value) {
     } else if (m === 'define') {
       const res = await defineText(text)
       result.value = res.definition
+    } else if (m === 'active-voice') {
+      const res = await changeVoice(text, 'active')
+      result.value = res.changed_text
+    } else if (m === 'passive-voice') {
+      const res = await changeVoice(text, 'passive')
+      result.value = res.changed_text
+    } else if (m === 'clarity') {
+      const res = await rewriteForClarity(text)
+      result.value = res.rewritten_text
     }
   } catch (e: any) {
     error.value = e.message || 'AI service unavailable'
@@ -144,6 +154,18 @@ function copyResult() {
           <button @click="runCheck('define')" :disabled="loading"
             class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
             <BookOpen :size="12" /> Define
+          </button>
+          <button @click="runCheck('active-voice')" :disabled="loading"
+            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
+            <ArrowRightLeft :size="12" /> Active
+          </button>
+          <button @click="runCheck('passive-voice')" :disabled="loading"
+            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
+            <ArrowRightLeft :size="12" /> Passive
+          </button>
+          <button @click="runCheck('clarity')" :disabled="loading"
+            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
+            <Eye :size="12" /> Clarity
           </button>
         </div>
 

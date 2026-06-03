@@ -1,7 +1,7 @@
 import { ref, type Ref } from 'vue'
-import { grammarCheck, rewrite, expand, changeTone, defineText } from '../api/ai'
+import { grammarCheck, rewrite, expand, changeTone, defineText, changeVoice, rewriteForClarity } from '../api/ai'
 
-export type AiToolMode = 'grammar-spelling' | 'rewrite' | 'expand' | 'tone' | 'define'
+export type AiToolMode = 'grammar-spelling' | 'rewrite' | 'expand' | 'tone' | 'define' | 'active-voice' | 'passive-voice' | 'clarity'
 
 export type AiToneStyle = 'formal' | 'casual' | 'friendly' | 'professional' | 'emphatic' | 'humorous' | 'poetic'
 
@@ -76,6 +76,21 @@ export function useAiTools(
         case 'define': {
           const res = await defineText(selectedText)
           result = res.definition
+          break
+        }
+        case 'active-voice': {
+          const res = await changeVoice(selectedText, 'active')
+          result = res.changed_text
+          break
+        }
+        case 'passive-voice': {
+          const res = await changeVoice(selectedText, 'passive')
+          result = res.changed_text
+          break
+        }
+        case 'clarity': {
+          const res = await rewriteForClarity(selectedText)
+          result = res.rewritten_text
           break
         }
       }

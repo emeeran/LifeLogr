@@ -30,7 +30,7 @@ function fire(name: string) { emit('action', name) }
 </script>
 
 <template>
-  <div class="border-b border-border bg-editor/50">
+  <div class="bg-editor/50">
     <!-- Row 1: Font + inline formatting + undo/redo -->
     <div class="flex items-center gap-0.5 px-1.5 py-0.5">
       <select

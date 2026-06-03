@@ -91,8 +91,8 @@ function onAttachmentView(index: number) {
       </div>
     </Transition>
 
-    <!-- Center panel -->
-    <main class="flex-1 flex flex-col min-w-0 bg-surface relative">
+    <!-- Center panel (hidden when drawer is open so editor + drawer get full space) -->
+    <main v-if="!showDrawer" class="flex-1 flex flex-col min-w-0 bg-surface relative">
       <router-view />
 
       <!-- Save prompt overlay -->
