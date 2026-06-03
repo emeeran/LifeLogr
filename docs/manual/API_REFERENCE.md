@@ -28,6 +28,8 @@ Base URL: `http://localhost:8000/api/v1`
 18. [Plugins](#plugins)
 19. [Error Responses](#error-responses)
 
+> **New in AI:** Active/Passive voice conversion (`POST /ai/change-voice`) and Rewrite for Clarity (`POST /ai/rewrite-for-clarity`).
+
 ---
 
 ## Authentication
@@ -489,9 +491,18 @@ GET /recordings/entry/{entry_id}
 POST /recordings/{recording_id}/transcribe
 ```
 
-Uses local Whisper model for transcription.
+Uses local Whisper model for transcription. Requires `faster-whisper` to be installed (`uv pip install -e ".[stt]"`).
 
 **Response:** `VoiceRecordingResponse` (with `transcription` populated)
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| `501` | `faster-whisper` not installed |
+| `500` | Model loading or transcription failed |
+| `409` | Recording already transcribed |
+| `404` | Recording not found |
 
 ### Get Recording
 
@@ -1003,6 +1014,61 @@ Triggers download of an Ollama model. The pull runs in the background — the en
 }
 ```
 
+### Change Voice (Active/Passive)
+
+```
+POST /ai/change-voice
+```
+
+Converts text between active and passive voice.
+
+**Body:**
+
+```json
+{
+  "text": "The ball was thrown by the boy.",
+  "voice": "active"
+}
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `text` | string | Text to convert (1-50000 chars) |
+| `voice` | string | Target voice: `active` or `passive` |
+
+**Response:**
+
+```json
+{
+  "changed_text": "The boy threw the ball.",
+  "voice": "active"
+}
+```
+
+### Rewrite for Clarity
+
+```
+POST /ai/rewrite-for-clarity
+```
+
+Rewrites text for maximum clarity and readability. Simplifies complex sentences, removes ambiguity, and improves flow while preserving meaning.
+
+**Body:**
+
+```json
+{
+  "text": "In spite of the fact that it was raining, we went ahead and decided to go outside anyway."
+}
+```
+
+**Response:**
+
+```json
+{
+  "rewritten_text": "Despite the rain, we went outside."
+}
+```
+
 ---
 
 ## Export
@@ -1460,10 +1526,12 @@ All endpoints return errors in this format:
 | `204` | No Content (successful deletion) |
 | `400` | Bad Request (invalid input) |
 | `404` | Not Found |
+| `409` | Conflict (e.g., already transcribed) |
 | `413` | Payload Too Large (media exceeds 25 MB) |
 | `422` | Validation Error (Pydantic) |
 | `429` | Too Many Requests (rate limited) |
 | `500` | Internal Server Error |
+| `501` | Not Implemented (missing optional dependency) |
 
 ### Rate Limiting
 

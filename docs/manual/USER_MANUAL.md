@@ -103,6 +103,18 @@ DailyByte uses a three-panel layout:
 └──────────┴──────────────────┴─────────────────────┘
 ```
 
+When a tool drawer (AI Assistant, Voice Recording, or Attachments) is open, the content area is hidden to give the editor and drawer full space:
+
+```
+┌──────────┬───────────────────────┬─────────────────────┐
+│          │                       │                     │
+│ Sidebar  │    Tool Drawer        │    Editor Panel     │
+│ (nav)    │  (AI, Recording,      │  (entry editor +    │
+│          │   Attachments)        │   preview)          │
+│          │                       │                     │
+└──────────┴───────────────────────┴─────────────────────┘
+```
+
 ### Sidebar
 
 The sidebar provides navigation to all major views:
@@ -130,7 +142,7 @@ The sidebar provides navigation to all major views:
 The right panel contains the entry editor with:
 - **Title field** — set the entry title
 - **Date field** — change the entry date
-- **Formatting toolbar** — markdown formatting buttons
+- **Formatting toolbar** — collapsible markdown formatting buttons (closed by default; click "Formatting" to expand)
 - **Body editor** — the main writing area
 - **Bottom bar** — word count, template picker, tag manager, media, recording, geotag, AI tools, and save controls
 
@@ -173,7 +185,7 @@ The formatting toolbar provides these controls:
 | Quote | — | Blockquote |
 | Checkbox | — | Task checkbox |
 | Table | — | Insert table |
-| Line | — | Horizontal rule |
+| Line | `Ctrl+Alt+H` | Horizontal separator |
 | Undo | `Ctrl+Z` | Undo last action |
 | Redo | `Ctrl+Y` | Redo last action |
 
@@ -351,9 +363,13 @@ def hello():
 
 ### Horizontal Rule
 
+Insert a visible horizontal separator with `Ctrl+Alt+H`, or type:
+
 ```markdown
----
+────────────────────────────────
 ```
+
+In preview mode, standard `---` markdown syntax also renders as a horizontal rule.
 
 ### Line Breaks
 
@@ -521,7 +537,7 @@ After recording (or uploading an audio file):
 - **Transcription status** — shows if a recording has been transcribed
 - **Delete** — remove unwanted recordings
 
-> **Note:** Voice transcription requires the Whisper model to be available. This is a desktop-only feature.
+> **Note:** Voice transcription requires the `faster-whisper` library. Install it with `uv pip install -e ".[stt]"` or `uv pip install faster-whisper`. Supported audio formats: WebM, OGG, MP3, WAV, M4A, and Opus.
 
 ---
 
@@ -552,6 +568,16 @@ DailyByte integrates with **Ollama** for local AI-powered writing assistance and
 1. Select text and click **AI** → **Rewrite**
 2. Choose a style (formal, casual, concise, etc.)
 3. Review the rewritten text and apply if desired
+
+#### Active / Passive Voice
+1. Select text and click **AI** → **Active** or **Passive**
+2. The text is converted to the selected voice
+3. Review and apply the converted text
+
+#### Rewrite for Clarity
+1. Select text and click **AI** → **Clarity**
+2. The text is simplified and rewritten for maximum readability
+3. Ambiguous phrasing is removed while preserving meaning
 
 #### Auto-Tag Suggestions
 After saving an entry, AI analyzes the content and suggests relevant tags. Suggestions appear as clickable pills below the tag dropdown — click to add, ignore to dismiss. The AI considers your existing tag names and reuses them where appropriate.
@@ -962,6 +988,7 @@ Access settings via the **gear icon** in the sidebar.
 | `Ctrl+I` | Italic |
 | `Ctrl+U` | Strikethrough |
 | `Ctrl+K` | Inline code |
+| `Ctrl+Alt+H` | Insert horizontal separator |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` | Redo |
 | `Ctrl+F` | Find & replace |
@@ -1051,7 +1078,17 @@ If you see database errors:
 
 - Grant microphone permissions in your browser/system
 - Check that no other application is using the microphone
-- Desktop: ensure Whisper model is configured correctly
+- On Linux (Tauri desktop app), ensure GStreamer plugins are installed:
+  ```
+  sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-plugins-bad
+  ```
+
+### Transcription Fails
+
+- Ensure `faster-whisper` is installed: `uv pip install faster-whisper`
+- Or install the STT extra: `uv pip install -e ".[stt]"`
+- Check that the Whisper model (`base` by default) can load without errors
+- Supported audio formats: WebM, OGG, MP3, WAV, M4A, Opus
 
 ### Data Storage Locations
 
@@ -1084,8 +1121,9 @@ If you see database errors:
 ║  EDITOR                                          ║
 ║  Ctrl+B    Bold            Ctrl+I  Italic        ║
 ║  Ctrl+U    Strikethrough   Ctrl+K  Inline code   ║
+║  Ctrl+Alt+H Separator      Ctrl+S  Save          ║
 ║  Ctrl+Z    Undo            Ctrl+Y  Redo          ║
-║  Ctrl+F    Find/Replace    Ctrl+S  Save          ║
+║  Ctrl+F    Find/Replace                              ║
 ║                                                  ║
 ║  MARKDOWN                                        ║
 ║  **bold**  *italic*     ~~strike~~  `code`       ║
