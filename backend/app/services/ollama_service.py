@@ -341,6 +341,38 @@ class OllamaService:
         result = await self._generate(prompt, temperature=0.3, num_predict=2048)
         return result.strip()
 
+    # ── Generic registry tools ───────────────────────────────────────────
+
+    async def run_generic_tool(
+        self, tool_id: str, text: str, param_value: str | None = None
+    ) -> str:
+        """Run a registry-defined text tool and return its plain-text result.
+
+        Raises ``KeyError`` for an unknown ``tool_id`` and ``ValueError`` for an
+        invalid parameter value (the router maps these to 404 / 400).
+        """
+        from app.services.ai_tool_registry import get_spec
+
+        spec = get_spec(tool_id)
+        if spec is None:
+            raise KeyError(tool_id)
+
+        value = param_value
+        if spec.param is not None:
+            allowed = spec.param.options
+            value = param_value if param_value is not None else spec.param.default
+            if value not in allowed:
+                raise ValueError(
+                    f"Invalid {spec.param.name!r} for tool {tool_id!r}: {value!r}. "
+                    f"Allowed: {', '.join(allowed)}"
+                )
+
+        prompt = spec.prompt_builder(text, value)
+        result = await self._generate(
+            prompt, temperature=spec.temperature, num_predict=spec.num_predict
+        )
+        return result.strip()
+
     # ── Shared JSON parser (original) ─────────────────────────────────────
 
     def _parse_json_response(self, raw: str) -> dict[str, Any] | list[Any] | None:

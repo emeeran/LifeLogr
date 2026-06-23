@@ -6,7 +6,7 @@ import logging
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,8 @@ from app.schemas.ai import (
     DefineTextResponse,
     ExpandRequest,
     ExpandResponse,
+    GenericToolRequest,
+    GenericToolResponse,
     GrammarCheckRequest,
     GrammarCheckResponse,
     OnThisDayPastEntry,
@@ -295,6 +297,27 @@ async def rewrite_for_clarity(data: RewriteForClarityRequest, db: AsyncSession =
     svc = OllamaService()
     rewritten = await svc.rewrite_for_clarity(data.text)
     return RewriteForClarityResponse(rewritten_text=rewritten)
+
+
+# ── Generic registry tools ─────────────────────────────────────────────
+
+
+@router.post("/tool/{tool_id}", response_model=GenericToolResponse)
+async def run_generic_tool(
+    tool_id: str,
+    data: GenericToolRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Run a registry-defined AI text tool (summarize, translate, …)."""
+    svc = OllamaService()
+    try:
+        result = await svc.run_generic_tool(tool_id, data.text, data.param)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown AI tool: {tool_id}") from None
+    except ValueError as exc:
+        logger.warning("Invalid AI tool parameter for %s: %s", tool_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GenericToolResponse(result=result)
 
 
 # ── Model management ───────────────────────────────────────────────────
