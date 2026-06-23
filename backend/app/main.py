@@ -48,6 +48,13 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database tables on startup, clean up on shutdown."""
     logger.info("Starting %s (%s)", "DailyByte", settings.APP_ENV)
+    # Load persisted runtime settings (model selections, feature toggles)
+    try:
+        from app.routers.settings import load_persisted_settings
+
+        load_persisted_settings()
+    except Exception:
+        logger.warning("Failed to load persisted settings", exc_info=True)
     await init_db()
     # Start backup scheduler
     try:

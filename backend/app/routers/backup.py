@@ -197,15 +197,34 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
 @router.post("/schedule")
 async def schedule_backup(
     cron: str = Query(..., description="Cron expression (e.g., '0 2 * * *')"),
-    backup_path: str = Query(..., description="Directory path for backup files"),
-    retention: int = Query(10, ge=1, le=100, description="Number of backups to keep"),
+    backup_path: str | None = Query(None, description="Directory path for local backup files"),
+    retention: int = Query(10, ge=1, le=100, description="Number of local backups to keep"),
+    config_id: int | None = Query(
+        None, description="BackupConfig ID for cloud upload (e.g., Google Drive)"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Schedule an automated backup job."""
+    """Schedule an automated backup job.
+
+    Provide **config_id** to upload to a cloud provider (Google Drive, WebDAV),
+    or **backup_path** for local filesystem backups.
+    """
+    from sqlalchemy import select
+
+    from app.models.backup import BackupConfig
     from app.services.scheduler_service import SchedulerService
 
+    # Validate config_id exists before scheduling
+    if config_id is not None:
+        result = await db.execute(select(BackupConfig).where(BackupConfig.id == config_id))
+        config = result.scalar_one_or_none()
+        if not config:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404, detail=f"Backup config {config_id} not found")
+
     svc = SchedulerService(db)
-    return await svc.schedule_backup(cron, backup_path, retention)
+    return await svc.schedule_backup(cron, backup_path, retention, config_id)
 
 
 @router.get("/schedule/status")
