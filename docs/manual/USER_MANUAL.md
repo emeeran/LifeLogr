@@ -569,15 +569,41 @@ DailyByte integrates with **Ollama** for local AI-powered writing assistance and
 2. Choose a style (formal, casual, concise, etc.)
 3. Review the rewritten text and apply if desired
 
-#### Active / Passive Voice
-1. Select text and click **AI** → **Active** or **Passive**
-2. The text is converted to the selected voice
+#### Voice (Active / Passive)
+1. Select text and click **AI → Voice**
+2. Pick **Active** or **Passive** from the pills
 3. Review and apply the converted text
 
 #### Rewrite for Clarity
 1. Select text and click **AI** → **Clarity**
 2. The text is simplified and rewritten for maximum readability
 3. Ambiguous phrasing is removed while preserving meaning
+
+#### Expand
+Select text and click **AI → Expand** to elaborate with more detail, sensory description, and emotional depth while preserving your voice and tense.
+
+#### Change Tone
+Select text, click **AI → Tone**, then pick a tone (formal, casual, friendly, etc.) from the pills. The meaning stays the same; only the style changes.
+
+#### Define
+Select a word or phrase and click **AI → Define** for a concise definition and short usage example.
+
+#### Summarize & Productivity Tools
+The AI drawer and the right-click **AI Tools** menu also offer one-click transformations. Each works the same way: select text, run the tool, review the result, then **Replace**, **Insert**, or **Copy**.
+- **Summarize** — a 2–3 sentence TL;DR
+- **Key Points** — the 3–7 main points as a bullet list
+- **Action Items** — extract to-dos as a markdown checklist
+- **Shorten** — condense to roughly half the length, keeping the meaning
+- **Simplify** — plain-language / ELI5 rewrite
+- **Polish** — improve word choice and flow
+- **Translate** — translate into a chosen language (pick from the language pills)
+- **Structure** — reorganize with markdown headings and bullets
+- **Title** — generate a concise title for the selection
+
+> All AI tools are defined in a single registry, so the same set appears in the drawer and the context menu. They run locally through Ollama — no text leaves your machine.
+
+#### Read Aloud (Text-to-Speech)
+Select text (or open an entry) and choose **Read Aloud** to hear it spoken. Audio is generated on the fly via Microsoft Edge TTS (`edge-tts`, bundled with the app) and streamed as MP3. You can pick a voice and adjust rate/volume. Requires an internet connection for the TTS service.
 
 #### Auto-Tag Suggestions
 After saving an entry, AI analyzes the content and suggests relevant tags. Suggestions appear as clickable pills below the tag dropdown — click to add, ignore to dismiss. The AI considers your existing tag names and reuses them where appropriate.
