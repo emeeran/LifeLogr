@@ -94,16 +94,20 @@ class OllamaService:
     async def rewrite(
         self, text: str, style: str, instructions: str | None = None
     ) -> RewriteResponse:
-        """Rewrite text for clarity and conciseness in a professional tone."""
+        """Rewrite text in the requested style while preserving its meaning."""
         prompt = (
-            "Rewrite the following text for clarity and conciseness in a professional tone. "
-            "Preserve the core meaning while improving readability and flow."
+            f"You are an editor. Rewrite the following text in a {style} style. "
+            "Preserve the original meaning and the author's intent, and improve readability and flow. "
+            "Do not add new information or change the subject."
         )
         if instructions:
-            prompt += f" Additional instructions: {instructions}"
-        prompt += f"\n\nOriginal text:\n{text}\n\nReturn ONLY the rewritten text, nothing else."
+            prompt += f" Additional instructions: {instructions}."
+        prompt += (
+            f"\n\nOriginal text:\n{text[:5000]}\n\n"
+            "Return ONLY the rewritten text — no preamble, no quotation marks, no markdown."
+        )
 
-        rewritten = await self._generate(prompt)
+        rewritten = await self._generate(prompt, temperature=0.5)
         return RewriteResponse(original_text=text, rewritten_text=rewritten.strip(), style=style)
 
     async def status(self) -> AIStatusResponse:
