@@ -69,4 +69,5 @@ diary/
 - Backup import validates tar members for path traversal before extraction.
 - Soft delete must clean up associated media files (see `entry_service.py`).
 - Body size limit: `max_length=1_000_000` on `EntryCreate.body`.
-- `.deb` build script reads version from `pyproject.toml` and auto-generates SECRET_KEY.
+- **Versioning:** bump the version in `backend/pyproject.toml`, `desktop/src-tauri/Cargo.toml`, AND `desktop/src-tauri/tauri.conf.json` together (these drive the `.deb`/AppImage filename). The version shown in the About tab comes from `APP_VERSION` in `backend/app/core/config.py` (served via `/api/v1/settings`), so update that too or the UI lags behind. The `.deb` build auto-generates a `SECRET_KEY`.
+- **AI tools are registry-driven:** the editor's AI tools are defined once in `frontend/src/composables/aiToolRegistry.ts` (id/label/icon/endpoint/resultField/param). The AI drawer, right-click context menu, and `useAiTools` composable all iterate it — no per-tool boilerplate. Tools backed by the generic `POST /api/v1/ai/tool/{tool_id}` endpoint also need a prompt builder added to `backend/app/services/ai_tool_registry.py`.

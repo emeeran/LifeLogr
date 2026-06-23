@@ -58,9 +58,13 @@ make build     # Builds frontend + backend + native package
 ```
 
 The output goes to `desktop/src-tauri/target/release/bundle/`:
-- **Linux**: `appimage/DailyByte_0.1.0_amd64.AppImage` + `deb/DailyByte_0.1.0_amd64.deb`
-- **Windows**: `msi/DailyByte_0.1.0_x64_en-US.msi`
-- **macOS**: `dmg/DailyByte_0.1.0_aarch64.dmg`
+- **Linux**: `appimage/DailyByte_0.2.0_amd64.AppImage` + `deb/DailyByte_0.2.0_amd64.deb`
+- **Windows**: `msi/DailyByte_0.2.0_x64_en-US.msi`
+- **macOS**: `dmg/DailyByte_0.2.0_aarch64.dmg`
+
+> **Versioning:** the package version is sourced from `backend/pyproject.toml`, `desktop/src-tauri/Cargo.toml`, and `desktop/src-tauri/tauri.conf.json` — bump all three together. The version shown in the app's **About** tab comes from `APP_VERSION` in `backend/app/core/config.py` (served via the `/api/v1/settings` endpoint), so update that too or the UI will lag behind the package version. The artifact filenames above reflect whatever version you set.
+>
+> **TTS (Read Aloud):** `edge_tts` is bundled automatically — `scripts/build.sh` runs `uv sync --extra tts` and the PyInstaller spec collects the `edge_tts` submodules. No extra steps needed.
 
 ### Step-by-Step Build
 
@@ -143,6 +147,19 @@ cd backend && uv lock --upgrade && uv sync
 cd desktop/src-tauri && cargo update
 ```
 
+### Reinstalling the .deb over a running version
+
+`dpkg -i` replaces the on-disk binaries, but a **running** DailyByte keeps the old binary in memory and holds port 18765 — so the new version won't take effect until you fully restart. After installing a new `.deb`:
+
+```bash
+# Quit DailyByte from the UI first (save any open entry), then clear lingering procs:
+pkill -f diarilinux-backend
+pkill -f /usr/bin/dailybyte
+# Relaunch from your application menu — it spawns the new backend on 18765
+```
+
+If the **About** tab still shows the old version after reopening, a stale `diarilinux-backend` process is almost always the cause.
+
 ### Clean build (start fresh)
 
 ```bash
@@ -157,13 +174,13 @@ cd desktop && make clean && make build
 
 ```bash
 # 1. Download or copy the AppImage
-cp desktop/src-tauri/target/release/bundle/appimage/DailyByte_0.1.0_amd64.AppImage ~/Applications/
+cp desktop/src-tauri/target/release/bundle/appimage/DailyByte_0.2.0_amd64.AppImage ~/Applications/
 
 # 2. Make it executable
-chmod +x ~/Applications/DailyByte_0.1.0_amd64.AppImage
+chmod +x ~/Applications/DailyByte_0.2.0_amd64.AppImage
 
 # 3. Run it
-~/Applications/DailyByte_0.1.0_amd64.AppImage
+~/Applications/DailyByte_0.2.0_amd64.AppImage
 ```
 
 To add to your application launcher:
@@ -172,7 +189,7 @@ To add to your application launcher:
 cat > ~/.local/share/applications/dailybyte.desktop << 'EOF'
 [Desktop Entry]
 Name=DailyByte
-Exec=/home/YOUR_USER/Applications/DailyByte_0.1.0_amd64.AppImage
+Exec=/home/YOUR_USER/Applications/DailyByte_0.2.0_amd64.AppImage
 Icon=dailybyte
 Type=Application
 Categories=Office;Utility;
@@ -183,7 +200,7 @@ EOF
 ### Option B: .deb package (Debian/Ubuntu)
 
 ```bash
-sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/DailyByte_0.1.0_amd64.deb
+sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/DailyByte_0.2.0_amd64.deb
 
 # Then launch from your application menu, or:
 dailybyte
@@ -214,7 +231,7 @@ Open http://localhost:5173 in your browser.
 
 ### From MSI installer
 
-1. Double-click `DailyByte_0.1.0_x64_en-US.msi`
+1. Double-click `DailyByte_0.2.0_x64_en-US.msi`
 2. Follow the installer wizard
 3. If prompted about WebView2, allow the installer to download it
 4. Launch from **Start Menu → DailyByte**
@@ -248,7 +265,7 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri\target\release\bundle\msi\DailyByte_0.1.0_x64_en-US.msi
+# Output: src-tauri\target\release\bundle\msi\DailyByte_0.2.0_x64_en-US.msi
 ```
 
 ---
@@ -257,7 +274,7 @@ make build
 
 ### From DMG
 
-1. Double-click `DailyByte_0.1.0_aarch64.dmg`
+1. Double-click `DailyByte_0.2.0_aarch64.dmg`
 2. Drag **DailyByte** to the **Applications** folder
 3. Launch from Applications or Spotlight
 
@@ -290,7 +307,7 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri/target/release/bundle/dmg/DailyByte_0.1.0_aarch64.dmg
+# Output: src-tauri/target/release/bundle/dmg/DailyByte_0.2.0_aarch64.dmg
 ```
 
 > **Note:** The macOS build targets Apple Silicon (M1/M2/M3/M4) by default. Intel Mac users can run it via Rosetta 2 (transparent). To build for Intel specifically, change the sidecar filename to `dailybyte-backend-x86_64-apple-darwin`.
@@ -415,7 +432,7 @@ ollama pull nomic-embed-text
 
 ```bash
 # Linux/macOS
-DIARI_DATA_DIR=/path/to/data ./DailyByte_0.1.0_amd64.AppImage
+DIARI_DATA_DIR=/path/to/data ./DailyByte_0.2.0_amd64.AppImage
 
 # Or set permanently
 export DIARI_DATA_DIR=/path/to/data
@@ -433,13 +450,13 @@ The Tauri app hardcodes the backend to port **18765**. For development mode, the
 
 ```bash
 # Make sure it's executable
-chmod +x DailyByte_0.1.0_amd64.AppImage
+chmod +x DailyByte_0.2.0_amd64.AppImage
 
 # If FUSE is missing (some distros)
 sudo apt install libfuse2
 
 # Run with debug output
-./DailyByte_0.1.0_amd64.AppImage --verbose
+./DailyByte_0.2.0_amd64.AppImage --verbose
 ```
 
 ### "Backend failed to start" error

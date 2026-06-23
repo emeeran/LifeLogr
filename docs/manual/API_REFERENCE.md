@@ -28,7 +28,7 @@ Base URL: `http://localhost:8000/api/v1`
 18. [Plugins](#plugins)
 19. [Error Responses](#error-responses)
 
-> **New in AI:** Active/Passive voice conversion (`POST /ai/change-voice`) and Rewrite for Clarity (`POST /ai/rewrite-for-clarity`).
+> **New in AI:** A generic tool endpoint `POST /ai/tool/{tool_id}` powers nine new tools — Summarize, Key Points, Action Items, Shorten, Simplify, Polish, Translate, Structure, and Title. Active/Passive voice conversion (`POST /ai/change-voice`) and Rewrite for Clarity (`POST /ai/rewrite-for-clarity`) remain available.
 
 ---
 
@@ -1068,6 +1068,44 @@ Rewrites text for maximum clarity and readability. Simplifies complex sentences,
   "rewritten_text": "Despite the rain, we went outside."
 }
 ```
+
+### Generic AI Tool
+
+```
+POST /ai/tool/{tool_id}
+```
+
+Runs any registry-driven text tool and returns its result as plain text. The available `tool_id` values:
+
+| `tool_id` | Output |
+|---|---|
+| `summarize` | 2–3 sentence summary |
+| `key-points` | 3–7 markdown bullets |
+| `action-items` | markdown checklist of to-dos |
+| `shorten` | condensed text (~half length, meaning preserved) |
+| `simplify` | plain-language / ELI5 rewrite |
+| `polish` | improved word choice and flow |
+| `translate` | translation into the `param` language (default `Spanish`) |
+| `add-structure` | reorganized with markdown headings/bullets |
+| `title` | a concise (≤8 words) title |
+
+**Body:**
+
+```json
+{ "text": "Text to process.", "param": "French" }
+```
+
+`param` is optional and only used by tools that take one (e.g. `translate`). It must be one of the tool's allowed values.
+
+**Response:**
+
+```json
+{ "result": "J'ai terminé la migration aujourd'hui." }
+```
+
+- `404` — unknown `tool_id`
+- `400` — invalid `param` for the tool
+- `422` — empty/missing `text`
 
 ---
 
