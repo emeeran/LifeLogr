@@ -240,3 +240,62 @@ async def test_backup_service_run_backup_gdrive(db_session):
     assert snapshot.status == "completed"
     assert snapshot.error_message is None
     assert snapshot.entries_synced == 0
+
+
+@pytest.mark.asyncio
+async def test_schedule_cloud_backup_registers_job(client, db_session):
+    """Test POST /schedule with config_id registers a cloud backup job."""
+    from app.services.scheduler_service import SchedulerService
+
+    # Seed a Google Drive BackupConfig
+    creds = {
+        "client_id": "test-id",
+        "client_secret": "test-secret",
+        "access_token": "valid-token",
+        "refresh_token": "refresh-token",
+        "token_expiry": str(time.time() + 1000),
+    }
+    config = BackupConfig(
+        provider="google_drive",
+        credentials_encrypted=encrypt(json.dumps(creds)),
+    )
+    db_session.add(config)
+    await db_session.commit()
+    await db_session.refresh(config)
+
+    # Schedule with config_id
+    response = await client.post(
+        f"/api/v1/backup/schedule?config_id={config.id}&cron=0+3+*+*+*"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["job_id"] == "auto_backup"
+    assert data["config_id"] == config.id
+    assert data["cron"] == "0 3 * * *"
+
+    # Verify the scheduler job is registered
+    sched = SchedulerService.get_scheduler()
+    job = sched.get_job("auto_backup")
+    assert job is not None
+    assert job.kwargs["config_id"] == config.id
+
+    # Clean up scheduler singleton to avoid poisoning other test modules
+    import app.services.scheduler_service as _sched_mod
+
+    try:
+        if _sched_mod._scheduler is not None:
+            if _sched_mod._scheduler.running:
+                _sched_mod._scheduler.shutdown(wait=False)
+    except Exception:
+        pass
+    _sched_mod._scheduler = None
+
+
+@pytest.mark.asyncio
+async def test_schedule_cloud_backup_rejects_invalid_config_id(client, db_session):
+    """Test POST /schedule with non-existent config_id returns 404."""
+    response = await client.post(
+        "/api/v1/backup/schedule?config_id=9999&cron=0+3+*+*+*"
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]

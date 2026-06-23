@@ -323,6 +323,7 @@ const autoBackupEnabled = useLocalStorage<boolean>('diarium-auto-backup-enabled'
 const autoBackupPath = useLocalStorage<string>('diarium-auto-backup-path', '~/Backups/dailybyte')
 const autoBackupFrequency = useLocalStorage<string>('diarium-auto-backup-freq', '0 2 * * *')
 const autoBackupRetention = useLocalStorage<number>('diarium-auto-backup-retention', 10)
+const autoBackupConfigId = useLocalStorage<number | null>('diarium-auto-backup-config-id', null)
 
 const autoBackupTime = computed({
   get: () => {
@@ -383,8 +384,11 @@ async function toggleAutoBackup() {
 async function saveAutoBackup() {
   autoBackupSaving.value = true
   try {
-    const { request } = await import('../../../api/client')
-    await request(`/backup/schedule?cron=${encodeURIComponent(autoBackupFrequency.value)}&backup_path=${encodeURIComponent(autoBackupPath.value)}&retention=${autoBackupRetention.value}`, { method: 'POST' })
+    await backupApi.scheduleBackup(autoBackupFrequency.value, {
+      configId: autoBackupConfigId.value ?? undefined,
+      backupPath: autoBackupConfigId.value ? undefined : autoBackupPath.value,
+      retention: autoBackupConfigId.value ? undefined : autoBackupRetention.value,
+    })
     await loadAutoBackupStatus()
     autoBackupEnabled.value = true
   } catch (e: any) {
@@ -561,14 +565,29 @@ onMounted(() => {
       </div>
       <div v-if="autoBackupEnabled" class="space-y-1.5 pl-6">
         <div class="flex items-center gap-2">
-          <span class="text-[11px] text-text-muted w-14">Folder</span>
-          <input v-model="autoBackupPath" placeholder="~/Backups/dailybyte"
-            class="settings-input flex-1" />
-          <button v-if="isTauri" @click="browseBackupFolder"
-            class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors">
-            <FolderOpen :size="10" class="inline" /> Browse
-          </button>
+          <span class="text-[11px] text-text-muted w-14">Dest</span>
+          <select v-model="autoBackupConfigId" class="settings-select flex-1">
+            <option :value="null">Local folder</option>
+            <option v-for="c in backup.configs" :key="c.id" :value="c.id">{{ c.provider === 'google_drive' ? 'Google Drive' : c.provider }}</option>
+          </select>
         </div>
+        <template v-if="!autoBackupConfigId">
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-text-muted w-14">Folder</span>
+            <input v-model="autoBackupPath" placeholder="~/Backups/dailybyte"
+              class="settings-input flex-1" />
+            <button v-if="isTauri" @click="browseBackupFolder"
+              class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors">
+              <FolderOpen :size="10" class="inline" /> Browse
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-text-muted w-14">Keep</span>
+            <input v-model.number="autoBackupRetention" type="number" min="1" max="100"
+              class="settings-input w-14" />
+            <span class="text-[11px] text-text-muted">backups</span>
+          </div>
+        </template>
         <div class="flex items-center gap-2">
           <span class="text-[11px] text-text-muted w-14">Time</span>
           <input v-model="autoBackupTime" type="time" class="settings-input" />
@@ -582,12 +601,6 @@ onMounted(() => {
           </select>
         </div>
         <p class="text-[10px] text-accent/70 pl-16">{{ autoBackupHumanPreview }}</p>
-        <div class="flex items-center gap-2">
-          <span class="text-[11px] text-text-muted w-14">Keep</span>
-          <input v-model.number="autoBackupRetention" type="number" min="1" max="100"
-            class="settings-input w-14" />
-          <span class="text-[11px] text-text-muted">backups</span>
-        </div>
         <div class="flex items-center gap-1.5 pt-1">
           <button @click="saveAutoBackup" :disabled="autoBackupSaving"
             class="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:bg-accent-hover cursor-pointer transition-colors disabled:opacity-50">

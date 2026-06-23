@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -20,6 +21,63 @@ from app.models.media import Media
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+
+# ── Settings persistence ─────────────────────────────────────────────────
+
+
+def _settings_file() -> Path:
+    """Path to the persisted runtime settings JSON file."""
+    return Path(settings.DATA_DIR) / ".runtime-settings.json"
+
+
+def _persist_settings() -> None:
+    """Write current mutable settings to disk so they survive restarts."""
+    data = {
+        "OLLAMA_MODEL": settings.OLLAMA_MODEL,
+        "OLLAMA_BASE_URL": settings.OLLAMA_BASE_URL,
+        "OLLAMA_EMBED_MODEL": settings.OLLAMA_EMBED_MODEL,
+        "AI_ENABLE_EMBEDDINGS": settings.AI_ENABLE_EMBEDDINGS,
+        "AI_ENABLE_TAG_SUGGESTIONS": settings.AI_ENABLE_TAG_SUGGESTIONS,
+        "AI_ENABLE_SENTIMENT": settings.AI_ENABLE_SENTIMENT,
+        "AI_ENABLE_SUMMARIZATION": settings.AI_ENABLE_SUMMARIZATION,
+        "AI_ENABLE_REFLECTION_PROMPTS": settings.AI_ENABLE_REFLECTION_PROMPTS,
+        "AI_ENABLE_WRITER_BLOCK_HELPER": settings.AI_ENABLE_WRITER_BLOCK_HELPER,
+    }
+    try:
+        Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
+        _settings_file().write_text(json.dumps(data, indent=2))
+    except Exception:
+        logger.warning("Failed to persist settings", exc_info=True)
+
+
+def load_persisted_settings() -> None:
+    """Load previously saved runtime settings from disk.
+
+    Called once during app startup. Values here override the defaults
+    from .env / environment variables.
+    """
+    path = _settings_file()
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+        mapping = {
+            "OLLAMA_MODEL": "OLLAMA_MODEL",
+            "OLLAMA_BASE_URL": "OLLAMA_BASE_URL",
+            "OLLAMA_EMBED_MODEL": "OLLAMA_EMBED_MODEL",
+            "AI_ENABLE_EMBEDDINGS": "AI_ENABLE_EMBEDDINGS",
+            "AI_ENABLE_TAG_SUGGESTIONS": "AI_ENABLE_TAG_SUGGESTIONS",
+            "AI_ENABLE_SENTIMENT": "AI_ENABLE_SENTIMENT",
+            "AI_ENABLE_SUMMARIZATION": "AI_ENABLE_SUMMARIZATION",
+            "AI_ENABLE_REFLECTION_PROMPTS": "AI_ENABLE_REFLECTION_PROMPTS",
+            "AI_ENABLE_WRITER_BLOCK_HELPER": "AI_ENABLE_WRITER_BLOCK_HELPER",
+        }
+        for json_key, settings_attr in mapping.items():
+            if json_key in data:
+                setattr(settings, settings_attr, data[json_key])
+        logger.info("Loaded persisted settings from %s", path)
+    except Exception:
+        logger.warning("Failed to load persisted settings", exc_info=True)
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────
@@ -53,6 +111,8 @@ class AppSettingsResponse(BaseModel):
 
 class AISettingsUpdate(BaseModel):
     ollama_model: str | None = None
+    ollama_base_url: str | None = None
+    ollama_embed_model: str | None = None
     enable_embeddings: bool | None = None
     enable_tag_suggestions: bool | None = None
     enable_sentiment: bool | None = None
@@ -120,7 +180,7 @@ async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
             media_size_bytes=_dir_size(settings.MEDIA_DIR),
             entry_count=entry_count,
         ),
-        version="0.1.0",
+        version=settings.APP_VERSION,
         app_name=settings.APP_NAME,
     )
 
@@ -131,6 +191,8 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
     if data.ai:
         mapping = {
             "ollama_model": "OLLAMA_MODEL",
+            "ollama_base_url": "OLLAMA_BASE_URL",
+            "ollama_embed_model": "OLLAMA_EMBED_MODEL",
             "enable_embeddings": "AI_ENABLE_EMBEDDINGS",
             "enable_tag_suggestions": "AI_ENABLE_TAG_SUGGESTIONS",
             "enable_sentiment": "AI_ENABLE_SENTIMENT",
@@ -142,6 +204,7 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
             val = getattr(data.ai, field, None)
             if val is not None:
                 setattr(settings, attr, val)
+        _persist_settings()
     return {"status": "ok"}
 
 

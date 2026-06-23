@@ -1,4 +1,4 @@
-"""Automated backup scheduling with APScheduler and optional encryption."""
+"""Automated backup scheduling with APScheduler and cloud provider support."""
 
 from __future__ import annotations
 
@@ -54,14 +54,20 @@ class SchedulerService:
             logger.info("Backup scheduler stopped")
 
     async def schedule_backup(
-        self, cron_expr: str, backup_path: str, retention: int = 10
-    ) -> dict[str, str]:
+        self,
+        cron_expr: str,
+        backup_path: str | None = None,
+        retention: int = 10,
+        config_id: int | None = None,
+    ) -> dict[str, str | int | None]:
         """Schedule an automated backup job.
 
         Args:
             cron_expr: Cron expression (e.g., "0 2 * * *" for 2am daily)
-            backup_path: Directory path to store backups
-            retention: Number of backups to keep (default 10)
+            backup_path: Directory path to store backups (local mode only)
+            retention: Number of backups to keep (local mode only, default 10)
+            config_id: BackupConfig ID for cloud upload (e.g., Google Drive).
+                       When provided, the job uses BackupService.run_backup().
         """
         sched = self.get_scheduler()
         if not sched.running:
@@ -85,17 +91,29 @@ class SchedulerService:
         if sched.get_job("auto_backup"):
             sched.remove_job("auto_backup")
 
-        sched.add_job(
-            _run_backup,
-            trigger=trigger,
-            id="auto_backup",
-            kwargs={"backup_path": backup_path, "retention": retention},
-            replace_existing=True,
-        )
+        if config_id is not None:
+            sched.add_job(
+                _run_cloud_backup,
+                trigger=trigger,
+                id="auto_backup",
+                kwargs={"config_id": config_id},
+                replace_existing=True,
+            )
+        else:
+            if not backup_path:
+                raise ValueError("backup_path is required when config_id is not provided")
+            sched.add_job(
+                _run_backup,
+                trigger=trigger,
+                id="auto_backup",
+                kwargs={"backup_path": backup_path, "retention": retention},
+                replace_existing=True,
+            )
 
         return {
             "job_id": "auto_backup",
             "cron": cron_expr,
+            "config_id": config_id,
             "next_run": str(sched.get_job("auto_backup").next_run_time),
         }
 
@@ -115,6 +133,32 @@ class SchedulerService:
         if sched.get_job("auto_backup"):
             sched.remove_job("auto_backup")
         return {"removed": True}
+
+
+async def _run_cloud_backup(config_id: int) -> None:
+    """Execute a cloud backup job using BackupService.run_backup().
+
+    Opens its own DB session since APScheduler runs outside FastAPI's
+    dependency injection. All errors are logged — never raises.
+    """
+    from app.core.database import async_session
+    from app.services.backup_service import BackupService
+
+    logger.info("Running scheduled cloud backup (config_id=%d)", config_id)
+
+    try:
+        async with async_session() as session:
+            svc = BackupService(session)
+            snapshot = await svc.run_backup(config_id)
+            logger.info(
+                "Cloud backup complete: snapshot_id=%d, status=%s",
+                snapshot.id,
+                snapshot.status,
+            )
+    except Exception:
+        logger.error(
+            "Scheduled cloud backup failed (config_id=%d)", config_id, exc_info=True
+        )
 
 
 async def _run_backup(backup_path: str, retention: int = 10) -> None:

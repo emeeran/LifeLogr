@@ -47,8 +47,12 @@ export const backupApi = {
     return res.json()
   },
 
-  scheduleBackup(cron: string, backupPath: string): Promise<{ job_id: string; cron: string; next_run: string }> {
-    return request(`/backup/schedule?cron=${encodeURIComponent(cron)}&backup_path=${encodeURIComponent(backupPath)}`, { method: 'POST' })
+  scheduleBackup(cron: string, opts?: { backupPath?: string; retention?: number; configId?: number }): Promise<{ job_id: string; cron: string; config_id: number | null; next_run: string }> {
+    const sp = new URLSearchParams({ cron })
+    if (opts?.configId) sp.set('config_id', String(opts.configId))
+    if (opts?.backupPath) sp.set('backup_path', opts.backupPath)
+    if (opts?.retention) sp.set('retention', String(opts.retention))
+    return request(`/backup/schedule?${sp}`, { method: 'POST' })
   },
 
   getScheduleStatus(): Promise<{ running: boolean; backup_scheduled: boolean; next_run: string | null }> {

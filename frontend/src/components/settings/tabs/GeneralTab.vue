@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useUiStore } from '../../../stores/ui'
 import { useSearchStore } from '../../../stores/search'
@@ -14,6 +15,9 @@ import AccordionItem from '../shared/AccordionItem.vue'
 const ui = useUiStore()
 const searchStore = useSearchStore()
 const templatesStore = useTemplatesStore()
+
+// Fetch templates so the "Default template" dropdown is populated
+onMounted(() => { templatesStore.fetchAll() })
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
 
