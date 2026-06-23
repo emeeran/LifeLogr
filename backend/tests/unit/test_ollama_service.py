@@ -56,6 +56,15 @@ class TestRewrite:
             result = await svc.rewrite("Thanks!", style="formal")
         assert result.rewritten_text
 
+    async def test_rewrite_prompt_uses_requested_style(self):
+        """Regression: rewrite() must interpolate the style, not hardcode 'professional'."""
+        with patch.object(OllamaService, "_generate", return_value="hey there") as mock_generate:
+            svc = OllamaService()
+            await svc.rewrite("Thanks!", style="casual")
+        prompt = mock_generate.call_args.args[0]
+        assert "casual" in prompt
+        assert "professional tone" not in prompt
+
 
 class TestStatus:
     async def test_status_available_model_loaded(self):
