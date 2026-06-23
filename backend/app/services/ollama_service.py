@@ -68,7 +68,7 @@ class OllamaService:
             f'{{"corrected_text": "...", "suggestions": [{{"offset": 0, "length": 0, '
             f'"original": "...", "suggestion": "...", "rule_id": "...", "message": "..."}}]}}\n\n'
             f"Text to check:\n{text}\n\n"
-            f"Return ONLY the JSON object, no other text."
+            f"Return ONLY the raw JSON object — no markdown code fence, no commentary."
         )
         raw = await self._generate(prompt)
         return self._parse_grammar_response(text, raw)
@@ -81,7 +81,7 @@ class OllamaService:
             f'{{"corrected_text": "...", "misspellings": [{{"offset": 0, "length": 0, '
             f'"original": "...", "suggestion": "...", "rule_id": "SPELL", "message": "..."}}]}}\n\n'
             f"Text to check:\n{text}\n\n"
-            f"Return ONLY the JSON object."
+            f"Return ONLY the raw JSON object — no markdown code fence, no commentary."
         )
         raw = await self._generate(prompt)
         parsed = self._parse_grammar_response(text, raw)
@@ -183,7 +183,8 @@ class OllamaService:
             "- valence: -1.0 (very negative) to 1.0 (very positive)\n"
             "- summary: concise, capture the key point\n"
             "- reflection_prompts: 3 thought-provoking questions to help the writer reflect deeper\n\n"
-            f"Entry:\n{text[:3000]}"
+            f"Entry:\n{text[:3000]}\n\n"
+            "Return ONLY the raw JSON object — no markdown code fence, no commentary."
         )
         raw = await self._generate(prompt, temperature=0.3)
         result = self._parse_json_response(raw)
@@ -200,7 +201,8 @@ class OllamaService:
             f"Given this journal entry, suggest 3-5 relevant tags.\n"
             f"Existing tags to reuse where appropriate: [{existing}]\n"
             f'Tags should be lowercase, use hyphens for multi-word (e.g. "work-life").\n'
-            f'Return ONLY a JSON array of strings, e.g. ["tag1", "tag2", "tag3"]\n\n'
+            f'Return ONLY a raw JSON array of strings, e.g. ["tag1", "tag2", "tag3"], '
+            f"with no markdown code fence or commentary.\n\n"
             f"Entry:\n{text[:2000]}"
         )
         raw = await self._generate(prompt, temperature=0.2)
@@ -214,9 +216,11 @@ class OllamaService:
     async def continue_writing(self, text: str) -> str:
         """Generate a short continuation suggestion for writer's block."""
         prompt = (
-            "Continue this journal entry with 1-3 sentences that naturally follow. "
-            "Write in the same voice and style. Return ONLY the continuation text, nothing else.\n\n"
-            f"So far:\n{text[-1000:]}"
+            "You are a thoughtful writing partner. Continue this journal entry with 1-3 sentences "
+            "that naturally follow what is already written. Match the author's voice, tense, and point of view exactly. "
+            "Do not repeat what is already there.\n\n"
+            f"So far:\n{text[-1000:]}\n\n"
+            "Return ONLY the continuation — no preamble, no quotation marks, no markdown."
         )
         result = await self._generate(prompt, temperature=0.7, num_predict=256)
         return result.strip()
@@ -244,7 +248,8 @@ class OllamaService:
 
         prompt = (
             "Analyze these monthly journal summaries and identify 3-5 recurring themes. "
-            'Return ONLY a JSON array of objects: [{"theme": "...", "frequency": "monthly|weekly|occasional", '
+            'Return ONLY a raw JSON array of objects — no markdown code fence, no commentary: '
+            '[{"theme": "...", "frequency": "monthly|weekly|occasional", '
             '"months_mentioned": ["Jan 2026", ...], "insight": "Brief observation"}]\n\n'
             + "\n".join(sections[:20])
         )
@@ -259,10 +264,11 @@ class OllamaService:
     async def expand(self, text: str) -> str:
         """Expand and elaborate on the given text."""
         prompt = (
-            "Expand and elaborate on the following text, adding more detail, sensory descriptions, "
-            "and emotional depth while maintaining the same voice and style. "
-            "Return ONLY the expanded text, nothing else.\n\n"
-            f"Text:\n{text[:2000]}"
+            "You are an editor. Expand and elaborate on the following text, adding vivid detail, "
+            "sensory description, and emotional depth. Preserve the author's voice, tense, and point of view; "
+            "do not change the subject or introduce unrelated facts.\n\n"
+            f"Text:\n{text[:2000]}\n\n"
+            "Return ONLY the expanded text — no preamble, no quotation marks, no markdown."
         )
         result = await self._generate(prompt, temperature=0.7, num_predict=2048)
         return result.strip()
@@ -270,10 +276,11 @@ class OllamaService:
     async def change_tone(self, text: str, tone: str) -> str:
         """Rewrite text in a different tone."""
         prompt = (
-            f"Rewrite the following text in a {tone} tone. "
-            f"Keep the same meaning and content but adjust the style and word choice. "
-            f"Return ONLY the rewritten text, nothing else.\n\n"
-            f"Text:\n{text[:3000]}"
+            f"You are an editor. Rewrite the following text in a {tone} tone. "
+            "Keep the same meaning and facts; adjust only the style, register, and word choice. "
+            "Do not add or remove information.\n\n"
+            f"Text:\n{text[:3000]}\n\n"
+            "Return ONLY the rewritten text — no preamble, no quotation marks, no markdown."
         )
         result = await self._generate(prompt, temperature=0.5, num_predict=2048)
         return result.strip()
@@ -289,7 +296,8 @@ class OllamaService:
             "- emotions: 2-5 emotions conveyed in the text (e.g. joy, sadness, anxiety, gratitude, frustration, hope, nostalgia)\n"
             "- themes: 2-4 key topics or themes present in the text\n"
             "- summary: a concise summary of what the text is about\n\n"
-            f"Text:\n{text[:3000]}"
+            f"Text:\n{text[:3000]}\n\n"
+            "Return ONLY the raw JSON object — no markdown code fence, no commentary."
         )
         raw = await self._generate(prompt, temperature=0.3)
         result = self._parse_json_response(raw)
@@ -300,10 +308,11 @@ class OllamaService:
     async def define_text(self, text: str) -> str:
         """Provide a definition or explanation of the given text (word, phrase, or concept)."""
         prompt = (
-            "Define or explain the following word, phrase, or concept. "
-            "Provide a clear, concise definition followed by usage examples if helpful. "
-            "Return ONLY the definition text, nothing else.\n\n"
-            f"Text:\n{text[:1000]}"
+            "You are a lexicographer. Define or explain the following word, phrase, or concept clearly and concisely. "
+            "Give the part of speech where useful, a plain-language definition, and a short usage example. "
+            "Do not pad with unnecessary detail.\n\n"
+            f"Term:\n{text[:1000]}\n\n"
+            "Return ONLY the definition — no preamble, no quotation marks, no markdown."
         )
         result = await self._generate(prompt, temperature=0.3, num_predict=512)
         return result.strip()
@@ -311,10 +320,11 @@ class OllamaService:
     async def change_voice(self, text: str, voice: str) -> str:
         """Convert text between active and passive voice."""
         prompt = (
-            f"Rewrite the following text in {voice} voice. "
-            f"Keep the same meaning but convert every sentence to {voice} voice. "
-            f"Return ONLY the converted text, nothing else.\n\n"
-            f"Text:\n{text[:3000]}"
+            f"You are an editor. Rewrite the following text entirely in the {voice} voice. "
+            f"Keep the same meaning; convert every clause to {voice} voice and keep tense and actors consistent. "
+            "Do not add commentary.\n\n"
+            f"Text:\n{text[:3000]}\n\n"
+            "Return ONLY the converted text — no preamble, no quotation marks, no markdown."
         )
         result = await self._generate(prompt, temperature=0.3, num_predict=2048)
         return result.strip()
@@ -322,11 +332,11 @@ class OllamaService:
     async def rewrite_for_clarity(self, text: str) -> str:
         """Rewrite text for maximum clarity and readability."""
         prompt = (
-            "Rewrite the following text for maximum clarity and readability. "
-            "Simplify complex sentences, remove ambiguity, and improve flow. "
-            "Preserve the original meaning and tone. "
-            "Return ONLY the rewritten text, nothing else.\n\n"
-            f"Text:\n{text[:3000]}"
+            "You are an editor. Rewrite the following text for maximum clarity and readability. "
+            "Split long sentences, remove ambiguity, prefer concrete words, and improve flow. "
+            "Preserve the original meaning, tone, and level of formality; do not add or omit information.\n\n"
+            f"Text:\n{text[:3000]}\n\n"
+            "Return ONLY the rewritten text — no preamble, no quotation marks, no markdown."
         )
         result = await self._generate(prompt, temperature=0.3, num_predict=2048)
         return result.strip()
