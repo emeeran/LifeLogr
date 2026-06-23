@@ -237,17 +237,22 @@ async function loadEntry() {
       entryDate.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
     // Auto-apply default template
-    if (defaultTemplateId.value) {
-      try {
-        const store = useTemplatesStore()
-        await store.fetchAll()
+    try {
+      const store = useTemplatesStore()
+      await store.fetchAll()
+      // If no default template selected yet, auto-pick the first built-in one
+      if (!defaultTemplateId.value && store.templates.length) {
+        const firstBuiltin = store.templates.find(t => t.is_builtin)
+        if (firstBuiltin) defaultTemplateId.value = firstBuiltin.id
+      }
+      if (defaultTemplateId.value) {
         const tmpl = store.templates.find(t => t.id === defaultTemplateId.value)
         if (tmpl) {
           body.value = tmpl.body
           if (!title.value) title.value = tmpl.name
         }
-      } catch { /* ignore */ }
-    }
+      }
+    } catch { /* ignore */ }
     // Apply default title if no template set one
     if (!title.value && ui.defaultTitle) {
       title.value = ui.defaultTitle
@@ -616,8 +621,8 @@ async function encryptDecryptSelection() {
 
 // Initialize AI tools composable (needs getSelection/applyToSelection defined above)
 const {
-  aiLoading, aiResult, aiResultMode, aiToneStyle,
-  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, clearAiResult,
+  aiLoading, aiResult, aiResultMode, aiParamValue,
+  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToolParam, clearAiResult,
 } = useAiTools(body, getSelection, applyToSelection, cachedSelStart, cachedSelEnd, textarea, pushHistory, markDirty)
 
 async function toggleTTS() {
@@ -1066,7 +1071,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       :ai-loading="aiLoading"
       :ai-result="aiResult"
       :ai-result-mode="aiResultMode"
-      :ai-tone-style="aiToneStyle"
+      :ai-param-value="aiParamValue"
       :selected-text="getSelection()"
       @close="showContextMenu = false"
       @copy="copyToClipboard"
@@ -1080,7 +1085,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       @ai-result-insert="aiResultInsert"
       @ai-result-retry="aiResultRetry"
       @ai-result-copy="aiResultCopy"
-      @apply-tone-style="(tone: any) => applyToneStyle(tone)"
+      @apply-tool-param="(value: string) => applyToolParam(value)"
       @close-result="clearAiResult"
     />
   </div>
