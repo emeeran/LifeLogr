@@ -183,16 +183,6 @@ class MediaService:
         await self.db.delete(media)
         await self.db.commit()
 
-    async def delete_by_entry(self, entry_id: int) -> None:
-        """Delete all media for an entry (cascade on soft-delete)."""
-        result = await self.db.execute(select(Media).where(Media.entry_id == entry_id))
-        for media in result.scalars().all():
-            full_path = settings.MEDIA_DIR / media.storage_path
-            if full_path.exists():
-                full_path.unlink()
-            await self.db.delete(media)
-        await self.db.flush()
-
     async def list_for_entry(self, entry_id: int) -> list[Media]:
         """Return all media attachments for an entry."""
         result = await self.db.execute(
