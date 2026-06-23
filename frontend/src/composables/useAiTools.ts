@@ -1,11 +1,10 @@
 import { ref, type Ref } from 'vue'
-import { grammarCheck, rewrite, expand, changeTone, defineText, changeVoice, rewriteForClarity } from '../api/ai'
+import { callAiTool } from '../api/ai'
+import { AI_TOOL_BY_ID } from './aiToolRegistry'
 
-export type AiToolMode = 'grammar-spelling' | 'rewrite' | 'expand' | 'tone' | 'define' | 'active-voice' | 'passive-voice' | 'clarity'
-
-export type AiToneStyle = 'formal' | 'casual' | 'friendly' | 'professional' | 'emphatic' | 'humorous' | 'poetic'
-
-export const AI_TONE_OPTIONS: AiToneStyle[] = ['formal', 'casual', 'friendly', 'professional', 'emphatic', 'humorous', 'poetic']
+// Re-exported so existing imports from this module keep resolving.
+export type { AiToolMode, AiToneStyle } from './aiToolRegistry'
+export { AI_TONE_OPTIONS } from './aiToolRegistry'
 
 export function useAiTools(
   body: Ref<string>,
@@ -20,15 +19,21 @@ export function useAiTools(
   const aiLoading = ref(false)
   const aiToolActive = ref<string | null>(null)
   const aiResult = ref<string | null>(null)
-  const aiResultMode = ref<AiToolMode | null>(null)
+  const aiResultMode = ref<string | null>(null)
   const aiOriginalText = ref('')
   const aiOriginalStart = ref(0)
   const aiOriginalEnd = ref(0)
-  const aiToneStyle = ref<AiToneStyle>('formal')
+  /** Current parameter value for the active tool (tone / voice / language…). */
+  const aiParamValue = ref<string>('formal')
 
-  function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
+  function errMsg(e: unknown) {
+    return e instanceof Error ? e.message : String(e)
+  }
 
-  async function runAiTool(mode: AiToolMode, toneOverride?: AiToneStyle) {
+  async function runAiTool(mode: string, paramOverride?: string) {
+    const def = AI_TOOL_BY_ID[mode]
+    if (!def) return
+
     const selectedText = getSelection()
     if (!selectedText) return
 
@@ -43,59 +48,20 @@ export function useAiTools(
     }
     aiOriginalText.value = selectedText
 
-    // Apply overrides if provided
-    if (toneOverride) aiToneStyle.value = toneOverride
+    if (paramOverride !== undefined) {
+      aiParamValue.value = paramOverride
+    } else if (def.param) {
+      aiParamValue.value = def.param.default
+    }
 
     aiLoading.value = true
     aiResultMode.value = mode
     aiToolActive.value = mode
 
     try {
-      let result = ''
-      switch (mode) {
-        case 'grammar-spelling': {
-          const res = await grammarCheck(selectedText)
-          result = res.corrected_text
-          break
-        }
-        case 'rewrite': {
-          const res = await rewrite(selectedText, aiToneStyle.value)
-          result = res.rewritten_text
-          break
-        }
-        case 'expand': {
-          const res = await expand(selectedText)
-          result = res.expanded_text
-          break
-        }
-        case 'tone': {
-          const res = await changeTone(selectedText, aiToneStyle.value)
-          result = res.changed_text
-          break
-        }
-        case 'define': {
-          const res = await defineText(selectedText)
-          result = res.definition
-          break
-        }
-        case 'active-voice': {
-          const res = await changeVoice(selectedText, 'active')
-          result = res.changed_text
-          break
-        }
-        case 'passive-voice': {
-          const res = await changeVoice(selectedText, 'passive')
-          result = res.changed_text
-          break
-        }
-        case 'clarity': {
-          const res = await rewriteForClarity(selectedText)
-          result = res.rewritten_text
-          break
-        }
-      }
-      if (result) {
-        aiResult.value = result
+      const { text } = await callAiTool(def, selectedText, aiParamValue.value)
+      if (text) {
+        aiResult.value = text
       }
     } catch (e: unknown) {
       alert(`AI tool failed: ${errMsg(e)}`)
@@ -151,16 +117,27 @@ export function useAiTools(
     aiOriginalText.value = ''
   }
 
-  function applyToneStyle(tone: AiToneStyle) {
+  function applyToolParam(value: string) {
     const mode = aiResultMode.value
     if (!mode) return
-    runAiTool(mode, tone)
+    runAiTool(mode, value)
   }
 
   return {
-    aiLoading, aiToolActive, aiResult, aiResultMode,
-    aiOriginalText, aiOriginalStart, aiOriginalEnd,
-    aiToneStyle,
-    runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToneStyle, clearAiResult,
+    aiLoading,
+    aiToolActive,
+    aiResult,
+    aiResultMode,
+    aiOriginalText,
+    aiOriginalStart,
+    aiOriginalEnd,
+    aiParamValue,
+    runAiTool,
+    aiResultReplace,
+    aiResultInsert,
+    aiResultRetry,
+    aiResultCopy,
+    applyToolParam,
+    clearAiResult,
   }
 }

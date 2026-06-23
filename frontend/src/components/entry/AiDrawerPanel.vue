@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { grammarCheck, rewrite, aiStatus, expand, changeTone, defineText, changeVoice, rewriteForClarity } from '../../api/ai'
+import { computed, ref } from 'vue'
+import { aiStatus, callAiTool } from '../../api/ai'
+import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
 import type { GrammarSuggestion } from '../../types'
-import { AI_TONE_OPTIONS } from '../../composables/useAiTools'
 import {
   CheckCircle, AlertCircle, Loader,
-  Sparkles, Wand2, Type, Eraser,
-  Maximize2,
-  MessageCircle, Copy, Check, BookOpen,
-  ArrowRightLeft, Eye,
+  Sparkles, Eraser,
+  Copy, Check,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -25,13 +23,14 @@ const loading = ref(false)
 const result = ref('')
 const originalText = ref('')
 const suggestions = ref<GrammarSuggestion[]>([])
-const mode = ref<'grammar-spelling' | 'rewrite' | 'expand' | 'change-tone' | 'define' | 'active-voice' | 'passive-voice' | 'clarity'>('grammar-spelling')
+const mode = ref<string>('grammar')
 const error = ref('')
 const available = ref<boolean | null>(null)
+const selectedParam = ref<string>('formal')
 
-// Change tone picker
-const selectedTone = ref('formal')
-const tones = AI_TONE_OPTIONS.map(t => t as string)
+const activeTool = computed(() => AI_TOOL_BY_ID[mode.value])
+const paramOptions = computed(() => activeTool.value?.param?.options ?? [])
+const showParamPills = computed(() => !!activeTool.value?.param)
 
 async function checkAvailability() {
   try {
@@ -43,14 +42,17 @@ async function checkAvailability() {
 }
 checkAvailability()
 
-async function runCheck(m: typeof mode.value) {
+async function runTool(toolId: string) {
+  const def = AI_TOOL_BY_ID[toolId]
+  if (!def) return
   const text = props.getSelection()
   if (!text) {
     error.value = 'Please select some text in the editor first.'
     return
   }
 
-  mode.value = m
+  mode.value = toolId
+  if (def.param) selectedParam.value = def.param.default
   loading.value = true
   error.value = ''
   suggestions.value = []
@@ -58,34 +60,11 @@ async function runCheck(m: typeof mode.value) {
   originalText.value = text
 
   try {
-    if (m === 'grammar-spelling') {
-      const res = await grammarCheck(text)
-      result.value = res.corrected_text
-      suggestions.value = res.suggestions
-    } else if (m === 'rewrite') {
-      const res = await rewrite(text, 'formal')
-      result.value = res.rewritten_text
-    } else if (m === 'expand') {
-      const res = await expand(text)
-      result.value = res.expanded_text
-    } else if (m === 'change-tone') {
-      const res = await changeTone(text, selectedTone.value)
-      result.value = res.changed_text
-    } else if (m === 'define') {
-      const res = await defineText(text)
-      result.value = res.definition
-    } else if (m === 'active-voice') {
-      const res = await changeVoice(text, 'active')
-      result.value = res.changed_text
-    } else if (m === 'passive-voice') {
-      const res = await changeVoice(text, 'passive')
-      result.value = res.changed_text
-    } else if (m === 'clarity') {
-      const res = await rewriteForClarity(text)
-      result.value = res.rewritten_text
-    }
-  } catch (e: any) {
-    error.value = e.message || 'AI service unavailable'
+    const { text: out, suggestions: sugg } = await callAiTool(def, text, selectedParam.value)
+    result.value = out
+    suggestions.value = sugg
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'AI service unavailable'
   } finally {
     loading.value = false
   }
@@ -133,48 +112,25 @@ function copyResult() {
     <!-- Main Content Area -->
     <div class="flex-1 overflow-y-auto custom-scrollbar">
       <div class="p-3 space-y-3">
-        <!-- Compact 2-column tool grid -->
+        <!-- Compact tool grid (data-driven from the registry) -->
         <div class="grid grid-cols-2 gap-1">
-          <button @click="runCheck('grammar-spelling')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <Type :size="12" /> Grammar
-          </button>
-          <button @click="runCheck('rewrite')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <Wand2 :size="12" /> Rewrite
-          </button>
-          <button @click="runCheck('expand')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <Maximize2 :size="12" /> Expand
-          </button>
-          <button @click="runCheck('change-tone')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <MessageCircle :size="12" /> Tone
-          </button>
-          <button @click="runCheck('define')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <BookOpen :size="12" /> Define
-          </button>
-          <button @click="runCheck('active-voice')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <ArrowRightLeft :size="12" /> Active
-          </button>
-          <button @click="runCheck('passive-voice')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <ArrowRightLeft :size="12" /> Passive
-          </button>
-          <button @click="runCheck('clarity')" :disabled="loading"
-            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50">
-            <Eye :size="12" /> Clarity
+          <button
+            v-for="tool in AI_TOOLS"
+            :key="tool.id"
+            @click="runTool(tool.id)"
+            :disabled="loading"
+            class="flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-surface-hover/50 hover:bg-accent/10 hover:text-accent transition-all text-[11px] text-text-secondary disabled:opacity-50"
+          >
+            <component :is="tool.icon" :size="12" /> {{ tool.label }}
           </button>
         </div>
 
-        <!-- Tone pills (compact) -->
-        <div class="flex gap-1 flex-wrap">
-          <button v-for="t in tones" :key="t" @click="selectedTone = t"
-            class="px-1.5 py-0.5 rounded text-[9px] cursor-pointer transition-colors"
-            :class="selectedTone === t ? 'bg-accent text-white' : 'bg-surface-hover text-text-muted hover:text-text-primary'"
-          >{{ t }}</button>
+        <!-- Parameter pills for the active tool (tone / voice / language) -->
+        <div v-if="showParamPills" class="flex gap-1 flex-wrap">
+          <button v-for="opt in paramOptions" :key="opt" @click="selectedParam = opt"
+            class="px-1.5 py-0.5 rounded text-[9px] cursor-pointer transition-colors capitalize"
+            :class="selectedParam === opt ? 'bg-accent text-white' : 'bg-surface-hover text-text-muted hover:text-text-primary'"
+          >{{ opt }}</button>
         </div>
 
         <!-- Processing State -->

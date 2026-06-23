@@ -1,24 +1,25 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import {
   Copy, Scissors, Bold, Italic, Lock, Sparkles, Unlock,
-  Type, Wand2, Maximize2, MessageCircle, BookOpen,
   ChevronRight, Loader, RefreshCw, GripHorizontal, X
 } from 'lucide-vue-next'
-import type { AiToolMode, AiToneStyle } from '../../composables/useAiTools'
-import { AI_TONE_OPTIONS } from '../../composables/useAiTools'
+import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
 
 const props = defineProps<{
   visible: boolean
   position: { x: number; y: number }
   aiLoading: boolean
   aiResult: string | null
-  aiResultMode: AiToolMode | null
-  aiToneStyle: AiToneStyle
+  aiResultMode: string | null
+  aiParamValue: string
   selectedText: string
 }>()
 
-const toneOptions = AI_TONE_OPTIONS
+const activeTool = computed(() =>
+  props.aiResultMode ? AI_TOOL_BY_ID[props.aiResultMode] : undefined,
+)
+const paramOptions = computed(() => activeTool.value?.param?.options ?? [])
 
 const emit = defineEmits<{
   close: []
@@ -27,13 +28,13 @@ const emit = defineEmits<{
   bold: []
   italic: []
   encrypt: []
-  runAiTool: [mode: AiToolMode]
+  runAiTool: [mode: string]
   openAiDrawer: []
   aiResultReplace: []
   aiResultInsert: []
   aiResultRetry: []
   aiResultCopy: []
-  applyToneStyle: [tone: AiToneStyle]
+  applyToolParam: [value: string]
   closeResult: []
 }>()
 
@@ -186,21 +187,13 @@ function startDrag(e: MouseEvent) {
     @mouseenter="showAiSubmenu = true"
     @mouseleave="closeSubmenu"
   >
-    <button @click="emit('runAiTool', 'grammar-spelling'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Type :size="12" /> Fix Grammar & Spelling
-    </button>
-    <button @click="emit('runAiTool', 'rewrite'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Wand2 :size="12" /> Rewrite
-    </button>
-    <button @click="emit('runAiTool', 'expand'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <Maximize2 :size="12" /> Expand & Elaborate
-    </button>
-    <button @click="emit('runAiTool', 'tone'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <MessageCircle :size="12" /> Change Tone
-    </button>
-    <div class="h-px bg-border my-1" />
-    <button @click="emit('runAiTool', 'define'); emit('close'); closeSubmenu()" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
-      <BookOpen :size="12" /> Define
+    <button
+      v-for="tool in AI_TOOLS"
+      :key="tool.id"
+      @click="emit('runAiTool', tool.id); emit('close'); closeSubmenu()"
+      class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+    >
+      <component :is="tool.icon" :size="12" /> {{ tool.label }}
     </button>
   </div>
 
@@ -219,7 +212,7 @@ function startDrag(e: MouseEvent) {
     >
       <GripHorizontal :size="12" class="text-text-muted" />
       <span class="text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-1">
-        <Sparkles :size="10" /> {{ aiResultMode }} {{ aiLoading ? 'Running...' : 'Result' }}
+        <Sparkles :size="10" /> {{ activeTool?.label ?? aiResultMode }} {{ aiLoading ? 'Running...' : 'Result' }}
       </span>
       <span class="flex-1" />
       <button
@@ -250,15 +243,15 @@ function startDrag(e: MouseEvent) {
         </div>
       </div>
 
-      <!-- Tone selector for tone/rewrite modes -->
-      <div v-if="(aiResultMode === 'tone' || aiResultMode === 'rewrite')" class="px-3 pb-1 flex flex-wrap gap-1">
+      <!-- Parameter selector for the active tool (tone / voice / language) -->
+      <div v-if="activeTool?.param" class="px-3 pb-1 flex flex-wrap gap-1">
         <button
-          v-for="tone in toneOptions"
-          :key="tone"
-          @click="emit('applyToneStyle', tone)"
+          v-for="opt in paramOptions"
+          :key="opt"
+          @click="emit('applyToolParam', opt)"
           class="px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors capitalize"
-          :class="aiToneStyle === tone ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-surface-hover text-text-secondary hover:text-text-primary border border-transparent'"
-        >{{ tone }}</button>
+          :class="aiParamValue === opt ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-surface-hover text-text-secondary hover:text-text-primary border border-transparent'"
+        >{{ opt }}</button>
       </div>
 
       <!-- Action buttons -->
