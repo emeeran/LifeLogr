@@ -283,3 +283,17 @@ class RewriteForClarityRequest(BaseModel):
 
 class RewriteForClarityResponse(BaseModel):
     rewritten_text: str
+
+
+# ── Generic registry tools (summarize, translate, …) ───────────────────
+
+
+class GenericToolRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=50000, description="Text to process")
+    param: str | None = Field(
+        default=None, description="Optional tool parameter (e.g. target language)"
+    )
+
+
+class GenericToolResponse(BaseModel):
+    result: str
