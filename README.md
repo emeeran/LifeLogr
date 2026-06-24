@@ -45,7 +45,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## 🧪 Testing
 
-The backend includes a highly comprehensive unit and integration test suite (130 tests) achieving **100% test passes** in `43.50s`:
+The backend includes a highly comprehensive unit and integration test suite (150 tests) achieving **100% test passes**:
 
 ```bash
 cd backend
@@ -69,4 +69,4 @@ All system design blueprints are generated using Spec-Driven Development (SDD) p
 
 ### 🔍 Project Review & Enhancements
 A detailed, Obsidian-compatible architectural analysis, test verification report, and code-level enhancement blueprint can be found here:
-*   [agy_review_280526.md](.local/agy_review_280526.md)
+*   [docs/reviews/](docs/reviews)

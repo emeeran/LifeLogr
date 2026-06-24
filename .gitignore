@@ -56,6 +56,8 @@ frontend/playwright-report/
 # Tauri / desktop build
 desktop/src-tauri/target/
 desktop/src-tauri/binaries/
+# PyInstaller sidecar binaries built fresh by CI/dev.sh — never commit
+desktop/src-tauri/lifelogr-backend-*
 desktop/build/
 desktop/dist/
 

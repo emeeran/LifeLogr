@@ -49,8 +49,7 @@ build-backend:
 build-sidecar: build-backend
 	@mkdir -p src-tauri/binaries
 	cp dist/lifelogr-backend$(EXE) $(SIDECAR)
-	cp dist/lifelogr-backend$(EXE) src-tauri/lifelogr-backend-$(TRIPLE)$(EXE)
-	-chmod +x $(SIDECAR) src-tauri/lifelogr-backend-$(TRIPLE)$(EXE)
+	-chmod +x $(SIDECAR)
 	@echo "Sidecar ready: $(SIDECAR)"
 
 build: build-frontend build-sidecar

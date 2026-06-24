@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import sys
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -139,11 +138,16 @@ async def validate_db_health() -> None:
 
 
 async def init_db() -> None:
-    """Create all tables (for dev/bootstrap; use Alembic in production)."""
-    # Skip production validation for desktop/Tauri sidecar (local-only access)
+    """Create all tables (for dev/bootstrap; desktop uses inline migrations)."""
+    # Enforce the SECRET_KEY guard for any *server* (non-desktop) deployment.
+    # Desktop/Tauri sidecar runs locally with no external access and sets
+    # DATA_DIR, so we skip validation there. Tying the guard to the production
+    # env (rather than the presence of DATA_DIR) ensures a misconfigured server
+    # that forgot DATA_DIR still fails fast.
     import os
 
-    if not os.environ.get("DATA_DIR"):
+    is_desktop_sidecar = bool(os.environ.get("DATA_DIR"))
+    if settings.is_production and not is_desktop_sidecar:
         settings.validate_production()
 
     await validate_db_health()
@@ -153,12 +157,11 @@ async def init_db() -> None:
         await _migrate_schema(conn)
 
     # Ensure FTS5 virtual table and sync triggers exist.
-    # Skip in PyInstaller builds — FTS virtual table creation can corrupt
-    # the schema cache, breaking all subsequent qualified column queries.
-    if not getattr(sys, "frozen", False):
-        await _setup_fts()
-    else:
-        logger.info("FTS setup skipped (frozen build)")
+    # The bundled stdlib sqlite3 in some PyInstaller builds mishandles
+    # qualified column names (e.g. "entries.title"); we swap in pysqlite3
+    # at import time (see app/main.py) to fix that, so FTS setup is safe in
+    # frozen builds too.
+    await _setup_fts()
 
     # Seed built-in templates (idempotent)
     await _seed_builtin_templates()
@@ -187,7 +190,15 @@ _INDEX_MIGRATIONS = [
 
 
 async def _migrate_schema(conn: Any) -> None:
-    """Add missing columns and indexes to existing tables (idempotent)."""
+    """Add missing columns and indexes to existing tables (idempotent).
+
+    This is the **canonical** desktop/lightweight migration path: LifeLogr runs
+    on SQLite in embedded (Tauri sidecar) mode where a single-process startup
+    must self-heal its schema without an external tool. Add new columns here as
+    ``(table, column, ALTER)`` tuples and new indexes to ``_INDEX_MIGRATIONS``;
+    both lists are idempotent (skipped if the object already exists). A full
+    Alembic setup was removed to avoid drift between two competing systems.
+    """
     for table, column, sql in _COLUMN_MIGRATIONS:
         existing = {
             row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()
@@ -286,24 +297,38 @@ async def _setup_fts() -> None:
                 )
             ).scalar()
             if fts_exists:
-                for name in ("fts_entry_ai", "fts_entry_au", "fts_entry_ad", "fts_entry_soft_del"):
+                for name in (
+                    "fts_entry_ai",
+                    "fts_entry_au",
+                    "fts_entry_ad",
+                    "fts_entry_soft_del",
+                    "fts_entry_restore",
+                ):
                     await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
 
                 await conn.execute(
                     text("""
                     CREATE TRIGGER fts_entry_ai AFTER INSERT ON entries
+                    WHEN NEW.is_deleted = 0
                     BEGIN
                         INSERT INTO entries_fts(rowid, title, body)
                         VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
                     END
                 """)
                 )
+                # Use delete+insert (not UPDATE) so this is correct even when the
+                # row was previously removed from FTS (e.g. after a soft delete
+                # followed by content edits) — a plain UPDATE would be a no-op.
+                # Guarded to 0→0 so it can't overlap the soft-del/restore triggers.
                 await conn.execute(
                     text("""
                     CREATE TRIGGER fts_entry_au AFTER UPDATE ON entries
+                    WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 0
                     BEGIN
-                        UPDATE entries_fts SET title = COALESCE(NEW.title, ''), body = NEW.body
-                        WHERE rowid = NEW.id;
+                        INSERT INTO entries_fts(entries_fts, rowid, title, body)
+                        VALUES ('delete', NEW.id, COALESCE(OLD.title, ''), OLD.body);
+                        INSERT INTO entries_fts(rowid, title, body)
+                        VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
                     END
                 """)
                 )
@@ -316,6 +341,7 @@ async def _setup_fts() -> None:
                     END
                 """)
                 )
+                # Soft delete: remove from FTS index (0 → 1).
                 await conn.execute(
                     text("""
                     CREATE TRIGGER fts_entry_soft_del AFTER UPDATE ON entries
@@ -323,6 +349,18 @@ async def _setup_fts() -> None:
                     BEGIN
                         INSERT INTO entries_fts(entries_fts, rowid, title, body)
                         VALUES ('delete', NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                    END
+                """)
+                )
+                # Restore: re-index the entry (1 → 0). Without this the entry
+                # would stay invisible to search until its body changed.
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_restore AFTER UPDATE ON entries
+                    WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 1
+                    BEGIN
+                        INSERT INTO entries_fts(rowid, title, body)
+                        VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
                     END
                 """)
                 )

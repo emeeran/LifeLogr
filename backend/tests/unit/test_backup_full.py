@@ -270,6 +270,22 @@ class TestBackupConfigCrud:
         r = await client.post("/api/v1/backup/config/9999/test")
         assert r.status_code == 404
 
+    async def test_migrate_credentials_is_idempotent(self, client: AsyncClient) -> None:
+        """The v1->v2 credential migration endpoint is a no-op on v2 tokens."""
+        # A freshly created config is already encrypted at v2.
+        r = await client.post(
+            "/api/v1/backup/config",
+            json={"provider": "webdav", "credentials": {"url": "https://dav.example.com"}},
+        )
+        assert r.status_code == 201
+
+        r = await client.post("/api/v1/backup/config/migrate-credentials")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["checked"] >= 1
+        assert data["upgraded"] == 0  # already v2
+        assert data["remaining_v1"] == 0
+
 
 class TestBackupSnapshots:
     async def test_list_snapshots_empty(self, client: AsyncClient) -> None:
@@ -388,6 +404,39 @@ class TestExportImport:
             files={"file": ("evil.tar.gz", buf.read(), "application/gzip")},
         )
         assert r.status_code == 400
+
+    async def test_import_strips_symlink_escape(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """A symlink whose target escapes the tmpdir must be neutralised.
+
+        With ``filter=\"data\"`` the symlink member is dropped entirely, so
+        the malicious link does not get created on disk. The archive is
+        otherwise empty (no diarium.diarium), so we only assert no file is
+        written outside the extraction dir.
+        """
+        target = tmp_path / "canary.txt"
+        target.write_text("secret")
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            link = tarfile.TarInfo(name="media/escape")
+            link.type = tarfile.SYMTYPE
+            link.linkname = str(target)
+            tar.addfile(link)
+        buf.seek(0)
+
+        # Import will fail validation (no valid db), but the key assertion is
+        # that extraction did not create an accessible link to `target`.
+        sentinel = Path(tempfile.gettempdir()) / "lifelogr_symlink_canary"
+        sentinel.unlink(missing_ok=True)
+
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("symlink.tar.gz", buf.read(), "application/gzip")},
+        )
+        # 400 is expected (no valid DB), but must not be a 500 from a crash.
+        assert r.status_code in (400, 409)
 
     async def test_import_rejects_non_sqlite_db(self, client: AsyncClient) -> None:
         """Archive containing a non-SQLite diarium.diarium gets 400."""

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.core.security import decrypt, encrypt
+from app.core.security import decrypt, encrypt, reencrypt
 from app.models.backup import BackupConfig, BackupSnapshot
 from app.schemas.backup import BackupConfigCreate
 
@@ -125,7 +125,10 @@ class BackupService:
                 async def on_refresh(new_access_token: str, new_expiry: str) -> None:
                     creds["access_token"] = new_access_token
                     creds["token_expiry"] = new_expiry
-                    config.credentials_encrypted = encrypt(json.dumps(creds))
+                    # Re-encrypt at v2, upgrading any legacy v1 token on write.
+                    config.credentials_encrypted = reencrypt(
+                        encrypt(json.dumps(creds))
+                    )
 
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
                 await provider.upload(filename, archive_data, encrypted=False)
@@ -179,7 +182,9 @@ class BackupService:
                 async def on_refresh(new_access_token: str, new_expiry: str) -> None:
                     creds["access_token"] = new_access_token
                     creds["token_expiry"] = new_expiry
-                    config.credentials_encrypted = encrypt(json.dumps(creds))
+                    config.credentials_encrypted = reencrypt(
+                        encrypt(json.dumps(creds))
+                    )
 
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
                 files = await provider.list_files("lifelogr-backup-")
@@ -210,10 +215,16 @@ class BackupService:
             tmpdir = tempfile.mkdtemp()
             try:
                 with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as tar:
+                    # Defence-in-depth: reject path traversal before extraction.
                     for member in tar.getmembers():
                         if member.name.startswith("/") or ".." in member.name:
-                            raise ValueError(f"Invalid archive: path traversal in '{member.name}'")
-                    tar.extractall(tmpdir)
+                            raise ValueError(
+                                f"Invalid archive: path traversal in '{member.name}'"
+                            )
+                    # `filter="data"` (PEP 706) additionally strips symlinks,
+                    # hardlinks, device files and absolute/parent links — closing
+                    # the symlink-escape vector the manual check above does not cover.
+                    tar.extractall(tmpdir, filter="data")
 
                 extracted_db = Path(tmpdir) / "diarium.diarium"
                 if not extracted_db.exists():

@@ -63,6 +63,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from app.services.scheduler_service import SchedulerService
 
         await SchedulerService.start()
+        # Schedule offline catch-up for missed reminders ~30s after boot,
+        # giving the DB and scheduler time to settle.
+        sched = SchedulerService.get_scheduler()
+        if sched.running:
+            from datetime import datetime, timedelta
+            from apscheduler.triggers.date import DateTrigger  # type: ignore[import-untyped]
+
+            sched.add_job(
+                SchedulerService.schedule_catchup,
+                trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=30)),
+                id="reminder_catchup",
+                replace_existing=True,
+            )
     except Exception:
         logger.warning("Failed to start backup scheduler", exc_info=True)
     yield
@@ -112,6 +125,10 @@ app.add_middleware(
 # ── Request logging middleware ──
 @app.middleware("http")
 async def log_requests(request: Request, call_next: Any) -> Response:
+    # Health checks and static asset polls are noisy; log them at DEBUG only.
+    skip = request.url.path.startswith(("/health", "/static", "/favicon"))
+    if skip:
+        return await call_next(request)  # type: ignore[no-any-return]
     req_id = uuid4().hex[:8]
     start = time.time()
     logger.info("[%s] %s %s", req_id, request.method, request.url.path)
@@ -136,10 +153,13 @@ RATE_WINDOW = 60.0
 
 @app.middleware("http")
 async def rate_limiter(request: Request, call_next: Any) -> Response:
+    # Rate limiting only matters for multi-tenant server deployments. The
+    # desktop/Tauri sidecar is single-user on loopback, where limiting the
+    # user's own bulk imports/enrichment is actively harmful.
+    if not settings.is_production:
+        return await call_next(request)  # type: ignore[no-any-return]
     # Skip rate limiting for static assets, health, and tests
     if request.url.path.startswith(("/static", "/health", "/favicon")):
-        return await call_next(request)  # type: ignore[no-any-return]
-    if settings.APP_ENV == "test":
         return await call_next(request)  # type: ignore[no-any-return]
 
     client_ip = request.client.host if request.client else "unknown"
@@ -225,19 +245,64 @@ app.include_router(settings_router)
 
 @app.get("/health")
 async def health_check() -> Any:
-    """Health check — verifies database connectivity."""
+    """Health check — reports DB connectivity plus key subsystem availability.
+
+    Each subsystem is checked independently so a single failure (e.g. Ollama
+    not running) degrades gracefully rather than failing the whole probe. The
+    overall status is ``ok`` only when the DB (the hard dependency) is up.
+    """
+    checks: dict[str, str] = {}
+    healthy = True
+
+    from sqlalchemy import text
+
+    # 1. Database (hard dependency)
     try:
         from app.core.database import engine
-        from sqlalchemy import text
 
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
     except Exception as e:
-        logger.error("Health check failed: %s", e)
+        logger.error("Health check DB failed: %s", e)
+        checks["database"] = "error"
+        healthy = False
+
+    # 2. FTS5 (soft — search feature)
+    try:
+        from app.core.database import engine
+
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT count(*) FROM entries_fts"))
+        checks["fts"] = "ok"
+    except Exception:
+        checks["fts"] = "unavailable"
+
+    # 3. Scheduler (soft)
+    try:
+        from app.services.scheduler_service import SchedulerService
+
+        sched = SchedulerService.get_scheduler()
+        checks["scheduler"] = "ok" if sched.running else "stopped"
+    except Exception:
+        checks["scheduler"] = "unavailable"
+
+    # 4. Ollama (soft — AI features)
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=2.0) as c:
+            r = await c.get(f"{settings.OLLAMA_BASE_URL}/api/tags")
+            checks["ollama"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+    except Exception:
+        checks["ollama"] = "unreachable"
+
+    if not healthy:
         return JSONResponse(
-            status_code=503, content={"status": "error", "detail": "Database unavailable"}
+            status_code=503,
+            content={"status": "error", "detail": "Database unavailable", "checks": checks},
         )
-    return {"status": "ok"}
+    return {"status": "ok", "checks": checks}
 
 
 @app.get("/api/v1/brand/logo")
