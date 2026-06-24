@@ -8,6 +8,7 @@ import {
   AlertTriangle, Loader, Info as InfoIcon, Heart
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
+import memorialImg from '../../../assets/tariq-memorial.jpg'
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
 
@@ -35,18 +36,29 @@ onMounted(() => { loadAppSettings() })
 </script>
 
 <template>
-  <SettingsSection title="About" :icon="InfoIcon" description="App information and credits" card-class="p-5">
-    <div class="text-center space-y-2">
-      <div class="text-base font-semibold text-text-primary">{{ appSettings?.app_name ?? 'LifeLogr' }}</div>
-      <div class="text-[11px] text-text-muted">Version {{ appSettings?.version ?? '0.1.0' }}</div>
-      <div class="text-[12px] text-text-secondary">Privacy-first, offline-first journaling for Linux</div>
-      <div class="flex items-center justify-center gap-1 text-[11px] text-accent/80 italic pt-1">
-        <Heart :size="10" /> Dedicated to my son Tariq Al Fayad
+  <SettingsSection title="About" :icon="InfoIcon" description="App information and credits" card-class="p-0 overflow-hidden">
+    <div class="flex items-stretch min-h-[320px]">
+      <!-- Left half: app info -->
+      <div class="flex-1 p-6 flex flex-col justify-center space-y-2.5 text-center">
+        <div class="text-lg font-semibold text-text-primary">LifeLogr</div>
+        <div class="text-[11px] text-text-muted">Version {{ appSettings?.version ?? '0.2.0' }}</div>
+        <div class="text-[12px] text-text-secondary">Privacy-first, offline-first journaling for Linux</div>
+        <div class="flex items-center justify-center gap-1 text-[11px] text-accent/80 italic pt-1">
+          <Heart :size="11" /> Dedicated to my son Tariq Al Fayad
+        </div>
+        <div class="flex justify-center gap-4 pt-2">
+          <a href="https://github.com/lifelogr/lifelogr" target="_blank" class="text-[11px] text-accent hover:underline">GitHub</a>
+          <a href="https://github.com/lifelogr/lifelogr/issues" target="_blank" class="text-[11px] text-accent hover:underline">Report Issue</a>
+          <a href="https://github.com/lifelogr/lifelogr/blob/main/LICENSE" target="_blank" class="text-[11px] text-accent hover:underline">License</a>
+        </div>
       </div>
-      <div class="flex justify-center gap-4 pt-2">
-        <a href="https://github.com/lifelogr/lifelogr" target="_blank" class="text-[11px] text-accent hover:underline">GitHub</a>
-        <a href="https://github.com/lifelogr/lifelogr/issues" target="_blank" class="text-[11px] text-accent hover:underline">Report Issue</a>
-        <a href="https://github.com/lifelogr/lifelogr/blob/main/LICENSE" target="_blank" class="text-[11px] text-accent hover:underline">License</a>
+      <!-- Right half: memorial, fills the half -->
+      <div class="relative shrink-0 w-1/2">
+        <img :src="memorialImg" alt="In Loving Remembrance — Tariq Al Fayad (1997–2020)"
+          class="absolute inset-0 w-full h-full object-cover" />
+        <div class="absolute bottom-0 inset-x-0 px-2 py-1.5 text-center text-[10px] text-white italic bg-gradient-to-t from-black/70 to-transparent">
+          In Loving Remembrance — Tariq Al Fayad
+        </div>
       </div>
     </div>
   </SettingsSection>
