@@ -35,12 +35,12 @@ function navigate(view: ViewType) {
     <div class="border-b border-sidebar-hover shrink-0"
       :class="ui.sidebarCollapsed ? 'flex justify-center px-1 py-2.5' : 'flex items-center gap-1.5 px-3 py-2.5'">
       <div v-if="ui.sidebarCollapsed" class="flex flex-col items-center gap-0.5">
-        <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-7 h-7" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
+        <img src="/logo.png" alt="LifeLogr" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-7 h-7" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
       </div>
       <template v-else>
-        <img src="/logo.png" alt="DailyByte" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-5 h-5" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
+        <img src="/logo.png" alt="LifeLogr" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-5 h-5" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
         <div class="flex flex-col min-w-0">
-          <span class="text-sm font-bold text-sidebar-text tracking-tight leading-tight">DailyByte</span>
+          <span class="text-sm font-bold text-sidebar-text tracking-tight leading-tight">LifeLogr</span>
           <span class="text-[8px] text-sidebar-text-secondary leading-tight">Your Day in Media & Minutes</span>
         </div>
       </template>

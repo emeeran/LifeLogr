@@ -38,29 +38,32 @@ class BackupService:
 
     async def test_connection(self, config_id: int) -> bool:
         """Validate stored credentials by connecting to the provider."""
+        from app.services.cloud_sync_service import GoogleDriveProvider, NextcloudProvider, SyncProvider
+
         config = await self._get_config(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
+        provider: SyncProvider | None = None
 
-        if config.provider == "google_drive":
-            from app.services.cloud_sync_service import GoogleDriveProvider
-
-            provider = GoogleDriveProvider(creds)
-            # Try to get valid token to ensure client ID, client secret, and refresh token work
-            await provider._ensure_valid_token()
-            return True
-        elif config.provider == "webdav":
-            from app.services.cloud_sync_service import NextcloudProvider
-
-            provider = NextcloudProvider(
-                base_url=creds.get("url", ""),
-                username=creds.get("username", ""),
-                password=creds.get("password", ""),
-            )
-            # Just do a simple listing to verify connection
-            await provider.list_files("diarilinux-backup-")
-            return True
-        else:
+        try:
+            if config.provider == "google_drive":
+                google_provider = GoogleDriveProvider(creds)
+                provider = google_provider
+                # Try to get valid token to ensure client ID, client secret, and refresh token work
+                await google_provider._ensure_valid_token()
+                return True
+            if config.provider == "webdav":
+                provider = NextcloudProvider(
+                    base_url=creds.get("url", ""),
+                    username=creds.get("username", ""),
+                    password=creds.get("password", ""),
+                )
+                # Just do a simple listing to verify connection
+                await provider.list_files("lifelogr-backup-")
+                return True
             raise ValueError(f"Unsupported backup provider: {config.provider}")
+        finally:
+            if provider is not None:
+                await provider.close()
 
     async def _create_backup_archive(self) -> bytes:
         """Create a temporary .tar.gz backup archive in memory."""
@@ -94,6 +97,8 @@ class BackupService:
 
     async def run_backup(self, config_id: int) -> BackupSnapshot:
         """Perform incremental backup; transfer new/modified data since last sync."""
+        from app.services.cloud_sync_service import GoogleDriveProvider, NextcloudProvider, SyncProvider
+
         config = await self._get_config(config_id)
         # Check for already-running backup
         running = await self.db.execute(
@@ -108,14 +113,14 @@ class BackupService:
         self.db.add(snapshot)
         await self.db.flush()
 
+        provider: SyncProvider | None = None
         try:
             creds = json.loads(decrypt(config.credentials_encrypted))
             archive_data = await self._create_backup_archive()
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            filename = f"diarilinux-backup-{timestamp}.tar.gz"
+            filename = f"lifelogr-backup-{timestamp}.tar.gz"
 
             if config.provider == "google_drive":
-                from app.services.cloud_sync_service import GoogleDriveProvider
 
                 async def on_refresh(new_access_token: str, new_expiry: str) -> None:
                     creds["access_token"] = new_access_token
@@ -125,8 +130,6 @@ class BackupService:
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
                 await provider.upload(filename, archive_data, encrypted=False)
             elif config.provider == "webdav":
-                from app.services.cloud_sync_service import NextcloudProvider
-
                 provider = NextcloudProvider(
                     base_url=creds.get("url", ""),
                     username=creds.get("username", ""),
@@ -145,6 +148,9 @@ class BackupService:
         except Exception as e:
             snapshot.status = "failed"
             snapshot.error_message = str(e)
+        finally:
+            if provider is not None:
+                await provider.close()
 
         snapshot.completed_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -153,6 +159,8 @@ class BackupService:
 
     async def restore(self, config_id: int) -> dict[str, int]:
         """Atomically replace local data with cloud backup; rollback on failure."""
+        from app.services.cloud_sync_service import GoogleDriveProvider, NextcloudProvider, SyncProvider
+
         config = await self._get_config(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
 
@@ -164,9 +172,9 @@ class BackupService:
         from app.core.config import settings
         from app.core.restore import atomic_restore
 
+        provider: SyncProvider | None = None
         try:
             if config.provider == "google_drive":
-                from app.services.cloud_sync_service import GoogleDriveProvider
 
                 async def on_refresh(new_access_token: str, new_expiry: str) -> None:
                     creds["access_token"] = new_access_token
@@ -174,20 +182,18 @@ class BackupService:
                     config.credentials_encrypted = encrypt(json.dumps(creds))
 
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
-                files = await provider.list_files("diarilinux-backup-")
+                files = await provider.list_files("lifelogr-backup-")
                 if not files:
                     raise ConflictError("No backups found in Google Drive App Data")
                 latest_backup = sorted(files)[-1]
                 archive_data = await provider.download(latest_backup)
             elif config.provider == "webdav":
-                from app.services.cloud_sync_service import NextcloudProvider
-
                 provider = NextcloudProvider(
                     base_url=creds.get("url", ""),
                     username=creds.get("username", ""),
                     password=creds.get("password", ""),
                 )
-                files = await provider.list_files("diarilinux-backup-")
+                files = await provider.list_files("lifelogr-backup-")
                 if not files:
                     raise ConflictError("No backups found in WebDAV")
                 latest_backup = sorted(files)[-1]
@@ -242,6 +248,9 @@ class BackupService:
         except Exception as e:
             await self.db.rollback()
             raise ConflictError(f"Restore failed: {str(e)}")
+        finally:
+            if provider is not None:
+                await provider.close()
 
     async def list_snapshots(
         self, config_id: int | None, offset: int, limit: int

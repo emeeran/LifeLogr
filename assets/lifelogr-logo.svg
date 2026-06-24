@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="#1a1a2e" stroke="#e94560" stroke-width="4"/>
+  <!-- Feather pen body -->
+  <path d="M100 190 L140 80 Q150 60 160 70 L165 75 Q155 65 145 85 L105 190Z" fill="#e94560" opacity="0.9"/>
+  <!-- Feather vane (left) -->
+  <path d="M100 190 L60 140 Q70 135 80 140 L100 170Z" fill="#e94560" opacity="0.7"/>
+  <path d="M100 175 L55 120 Q65 115 75 120 L100 155Z" fill="#e94560" opacity="0.6"/>
+  <path d="M100 160 L55 100 Q65 97 72 102 L100 142Z" fill="#e94560" opacity="0.5"/>
+  <!-- Feather vane (right) -->
+  <path d="M100 190 L140 140 Q130 135 120 140 L100 170Z" fill="#e94560" opacity="0.7"/>
+  <path d="M110 175 L155 120 Q145 115 135 120 L110 155Z" fill="#e94560" opacity="0.6"/>
+  <path d="M120 160 L165 100 Q155 97 148 102 L120 142Z" fill="#e94560" opacity="0.5"/>
+  <!-- Pen nib -->
+  <path d="M100 190 L97 198 L103 198Z" fill="#f5f5f5"/>
+  <!-- Tux-inspired penguin eye detail on nib -->
+  <circle cx="100" cy="196" r="1.5" fill="#1a1a2e"/>
+  <!-- Page/book beneath -->
+  <rect x="150" y="150" width="50" height="40" rx="3" fill="none" stroke="#f5f5f5" stroke-width="2" opacity="0.8"/>
+  <line x1="158" y1="162" x2="192" y2="162" stroke="#f5f5f5" stroke-width="1.5" opacity="0.6"/>
+  <line x1="158" y1="170" x2="185" y2="170" stroke="#f5f5f5" stroke-width="1.5" opacity="0.6"/>
+  <line x1="158" y1="178" x2="180" y2="178" stroke="#f5f5f5" stroke-width="1.5" opacity="0.6"/>
+  <!-- Text: D -->
+  <text x="165" y="145" font-family="sans-serif" font-size="24" font-weight="bold" fill="#e94560">D</text>
+</svg>

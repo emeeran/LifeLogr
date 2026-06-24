@@ -28,7 +28,7 @@ def _get_whisper_model() -> Any:
     global _whisper_model
     if _whisper_model is None:
         try:
-            from faster_whisper import WhisperModel
+            from faster_whisper import WhisperModel  # type: ignore[import-not-found]
         except ImportError as exc:
             raise ImportError(
                 "Speech-to-text requires the 'stt' extra. "
@@ -130,7 +130,8 @@ class VoiceRecordingService:
             return " ".join(segment.text.strip() for segment in segments)
 
         # Use proper extension so faster-whisper can detect the codec
-        suffix = f".{audio_format}" if audio_format in ("webm", "ogg", "wav", "mp3", "mp4", "m4a", "opus") else ".webm"
+        allowed_exts = ("webm", "ogg", "wav", "mp3", "mp4", "m4a", "opus")
+        suffix = f".{audio_format}" if audio_format in allowed_exts else ".webm"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(audio_data)
             tmp_path = tmp.name

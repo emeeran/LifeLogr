@@ -1,4 +1,4 @@
-# Requirements — Diarilinux
+# Requirements — LifeLogr
 
 > Phase 1: Requirements derived from [DOMAIN.md](../00-domain/DOMAIN.md).
 > All requirements trace to domain concepts. No invented requirements.

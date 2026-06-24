@@ -1,6 +1,6 @@
 # 📔 Open-Format Data Management & Obsidian-Vault Separation
 
-An architectural proposal for **DailyByte (Diarilinux)** to separate text entries and media attachments into a highly portable, standard directory tree, shifting the database's role from the primary "source of truth" to a "high-performance search/render cache."
+An architectural proposal for **LifeLogr (LifeLogr)** to separate text entries and media attachments into a highly portable, standard directory tree, shifting the database's role from the primary "source of truth" to a "high-performance search/render cache."
 
 ---
 
@@ -12,7 +12,7 @@ Currently, text entries are locked in a SQLite relational database (`.db`), whil
 
 ```
                   ┌────────────────────────────────────────────────────────┐
-                  │              DailyByte Application Directory           │
+                  │              LifeLogr Application Directory           │
                   └──────────────────────────┬─────────────────────────────┘
                                              │
              ┌───────────────────────────────┴───────────────────────────────┐
@@ -87,7 +87,7 @@ attachments:
 
 Today, I explored the scope for improving and enhancing the local data management layer. 
 
-I proposed separating the raw text journals and media files entirely into physical folders, making the DailyByte journal directory 100% interoperable with Obsidian.
+I proposed separating the raw text journals and media files entirely into physical folders, making the LifeLogr journal directory 100% interoperable with Obsidian.
 
 ![Sunset Over the City](../../attachments/2026-05-29/photo_sunset.webp)
 

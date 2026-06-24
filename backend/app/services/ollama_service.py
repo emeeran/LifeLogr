@@ -381,7 +381,7 @@ class OllamaService:
         try:
             return json.loads(text)  # type: ignore[no-any-return]
         except json.JSONDecodeError:
-            pass
+            logger.debug("LLM response was not raw JSON; attempting boundary extraction")
         # Find JSON boundaries
         start = text.find("{")
         if start < 0:
@@ -391,7 +391,7 @@ class OllamaService:
             try:
                 return json.loads(text[start:end])  # type: ignore[no-any-return]
             except json.JSONDecodeError:
-                pass
+                logger.debug("Failed JSON boundary extraction for LLM response")
         logger.warning("Failed to parse JSON from LLM response: %s", text[:200])
         return None
 

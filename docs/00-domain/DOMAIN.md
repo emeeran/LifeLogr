@@ -1,4 +1,4 @@
-# Domain Model — Diarilinux
+# Domain Model — LifeLogr
 
 ## Overview
 A single-user, offline-first daily journaling application for Linux, replicating the core experience of the Diarium app. Entries are date-bound, taggable, support inline media attachments, voice recordings with local transcription, and incremental cloud backup.

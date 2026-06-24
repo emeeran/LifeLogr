@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives import hashes
 
 from app.core.config import settings
 
-_V2_SALT = b"diarilinux-encryption-v2"
+_V2_SALT = b"lifelogr-encryption-v2"
 _V2_INFO = b"aes-256-gcm-key"
 
 # v2 key: HKDF-derived from SECRET_KEY

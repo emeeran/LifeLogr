@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Diarilinux — First-run system dependency installer
+# LifeLogr — First-run system dependency installer
 # Installs all system-level deps needed for full app functionality.
 # Run: sudo ./setup-linux.sh  (or via the app's Setup dialog)
 set -euo pipefail
@@ -23,7 +23,7 @@ else
     fail "Cannot detect Linux distribution"
 fi
 
-echo "Diarilinux System Dependency Setup"
+echo "LifeLogr System Dependency Setup"
 echo "==================================="
 echo "Detected distro: $DISTRO"
 echo ""
@@ -103,7 +103,7 @@ install_python_optional() {
         REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
     fi
 
-    local VENV="$REAL_HOME/.local/share/diarilinux/python-deps"
+    local VENV="$REAL_HOME/.local/share/lifelogr/python-deps"
 
     if [ ! -d "$VENV" ]; then
         python3 -m venv "$VENV"
@@ -149,7 +149,7 @@ verify_install() {
 
     echo ""
     if $all_ok; then
-        log "All dependencies installed! Restart Diarilinux to use all features."
+        log "All dependencies installed! Restart LifeLogr to use all features."
     else
         warn "Some deps are missing — AI features may be limited."
         echo "    Re-run this script or install manually."

@@ -52,7 +52,7 @@ class TestScheduleBackupLocal:
         svc = SchedulerService(db_session)
         result = await svc.schedule_backup(
             cron_expr="0 2 * * *",
-            backup_path="/tmp/diarilinux-test-backups",
+            backup_path="/tmp/lifelogr-test-backups",
             retention=5,
         )
 
@@ -64,7 +64,7 @@ class TestScheduleBackupLocal:
         sched = SchedulerService.get_scheduler()
         job = sched.get_job("auto_backup")
         assert job is not None
-        assert job.kwargs == {"backup_path": "/tmp/diarilinux-test-backups", "retention": 5}
+        assert job.kwargs == {"backup_path": "/tmp/lifelogr-test-backups", "retention": 5}
 
     @pytest.mark.asyncio
     async def test_schedule_local_requires_backup_path(self, db_session, _clean_scheduler):

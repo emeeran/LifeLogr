@@ -2,6 +2,8 @@
 
 import json
 import time
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 import respx
 import httpx
@@ -144,18 +146,38 @@ async def test_google_drive_provider_download():
 @pytest.mark.asyncio
 async def test_oauth_auth_url_endpoint(client, db_session):
     """Test GET /api/v1/backup/google-drive/auth-url endpoint."""
+    creds = {
+        "client_id": "test-client-id",
+        "client_secret": "test-client-secret",
+    }
+    db_session.add(
+        BackupConfig(provider="google_drive", credentials_encrypted=encrypt(json.dumps(creds)))
+    )
+    await db_session.commit()
+
     response = await client.get("/api/v1/backup/google-drive/auth-url")
     assert response.status_code == 200
     data = response.json()
     assert "auth_url" in data
     assert "client_id=" in data["auth_url"]
     assert "redirect_uri=" in data["auth_url"]
+    assert "state=" in data["auth_url"]
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_oauth_callback_endpoint(client, db_session):
     """Test GET /api/v1/backup/google-drive/callback success scenario."""
+    db_session.add(
+        BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt(
+                json.dumps({"client_id": "test-client-id", "client_secret": "test-client-secret"})
+            ),
+        )
+    )
+    await db_session.commit()
+
     # Mock Google Token exchange
     respx.post("https://oauth2.googleapis.com/token").mock(
         return_value=httpx.Response(
@@ -168,7 +190,12 @@ async def test_oauth_callback_endpoint(client, db_session):
         )
     )
 
-    response = await client.get("/api/v1/backup/google-drive/callback?code=mock-auth-code")
+    auth = await client.get("/api/v1/backup/google-drive/auth-url")
+    state = parse_qs(urlparse(auth.json()["auth_url"]).query).get("state", [""])[0]
+
+    response = await client.get(
+        f"/api/v1/backup/google-drive/callback?code=mock-auth-code&state={state}"
+    )
     assert response.status_code == 200
     assert "Google Drive Connected" in response.text
 
@@ -190,6 +217,16 @@ async def test_oauth_callback_endpoint(client, db_session):
 @respx.mock
 async def test_oauth_callback_endpoint_missing_refresh_token(client, db_session):
     """Test GET /api/v1/backup/google-drive/callback when refresh token is missing."""
+    db_session.add(
+        BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt(
+                json.dumps({"client_id": "test-client-id", "client_secret": "test-client-secret"})
+            ),
+        )
+    )
+    await db_session.commit()
+
     # Mock Google Token exchange without a refresh token
     respx.post("https://oauth2.googleapis.com/token").mock(
         return_value=httpx.Response(
@@ -201,7 +238,12 @@ async def test_oauth_callback_endpoint_missing_refresh_token(client, db_session)
         )
     )
 
-    response = await client.get("/api/v1/backup/google-drive/callback?code=mock-auth-code")
+    auth = await client.get("/api/v1/backup/google-drive/auth-url")
+    state = parse_qs(urlparse(auth.json()["auth_url"]).query).get("state", [""])[0]
+
+    response = await client.get(
+        f"/api/v1/backup/google-drive/callback?code=mock-auth-code&state={state}"
+    )
     assert response.status_code == 400
     assert "No refresh token returned" in response.text
 

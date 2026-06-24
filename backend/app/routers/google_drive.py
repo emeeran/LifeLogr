@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import time
+from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +25,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/backup/google-drive", tags=["backup-google-drive"])
 
 REDIRECT_URI = "http://127.0.0.1:18765/api/v1/backup/google-drive/callback"
+_STATE_TTL_SECONDS = 600
+_pending_states: dict[str, float] = {}
+
+
+def _new_oauth_state() -> str:
+    now = time.time()
+    expired = [k for k, created in _pending_states.items() if now - created > _STATE_TTL_SECONDS]
+    for key in expired:
+        _pending_states.pop(key, None)
+
+    state = secrets.token_urlsafe(24)
+    _pending_states[state] = now
+    return state
+
+
+def _consume_oauth_state(state: str | None) -> bool:
+    if not state:
+        return False
+    created = _pending_states.pop(state, None)
+    if created is None:
+        return False
+    return (time.time() - created) <= _STATE_TTL_SECONDS
 
 
 def get_default_credentials() -> tuple[str, str]:
-    client_id = settings.GOOGLE_CLIENT_ID or "diarilinux-client-id.apps.googleusercontent.com"
-    client_secret = settings.GOOGLE_CLIENT_SECRET or "GOCSPX-diarilinux-secret"
-    return client_id, client_secret
+    return settings.GOOGLE_CLIENT_ID, settings.GOOGLE_CLIENT_SECRET
 
 
 @router.get("/auth-url")
@@ -48,9 +70,16 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
         except Exception:
             logger.warning("Failed to decrypt stored Google credentials", exc_info=True)
 
+    if not client_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Google OAuth client_id is not configured",
+        )
+
     # Build OAuth URL
     scopes = "https://www.googleapis.com/auth/drive.appdata"
     auth_base_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    state = _new_oauth_state()
 
     params = {
         "client_id": client_id,
@@ -59,18 +88,22 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
         "scope": scopes,
         "access_type": "offline",
         "prompt": "consent",
+        "state": state,
     }
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    return {"auth_url": f"{auth_base_url}?{query_string}"}
+    return {"auth_url": f"{auth_base_url}?{urlencode(params)}"}
 
 
 @router.get("/callback", response_class=HTMLResponse)
 async def oauth_callback(
     code: str = Query(..., description="Authorization code from Google"),
+    state: str | None = Query(None, description="OAuth state token"),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Handle Google OAuth 2.0 loopback redirection, exchange code, and save tokens."""
+    if not _consume_oauth_state(state):
+        return _render_error_page("Invalid or expired OAuth state. Please retry connection.")
+
     # 1. Resolve client credentials
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "google_drive"))
     config = result.scalar_one_or_none()
@@ -79,13 +112,17 @@ async def oauth_callback(
     client_id = default_id
     client_secret = default_secret
 
+    stored_creds: dict[str, str] = {}
     if config:
         try:
-            creds = json.loads(decrypt(config.credentials_encrypted))
-            client_id = creds.get("client_id") or client_id
-            client_secret = creds.get("client_secret") or client_secret
+            stored_creds = json.loads(decrypt(config.credentials_encrypted))
+            client_id = stored_creds.get("client_id") or client_id
+            client_secret = stored_creds.get("client_secret") or client_secret
         except Exception:
             logger.warning("Failed to decrypt Google credentials for token exchange", exc_info=True)
+
+    if not client_id or not client_secret:
+        return _render_error_page("Google OAuth client_id/client_secret are not configured")
 
     # 2. Exchange authorization code for tokens
     async with httpx.AsyncClient() as client:
@@ -114,7 +151,7 @@ async def oauth_callback(
             "client_secret": client_secret,
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token")
-            or (creds.get("refresh_token") if config else None),
+            or (stored_creds.get("refresh_token") if config else None),
             "token_expiry": str(time.time() + token_data["expires_in"]),
         }
 
@@ -214,7 +251,7 @@ _SUCCESS_HTML_PAGE = """<!DOCTYPE html>
     <div class="card">
       <div class="logo">🎉</div>
       <h1>Google Drive Connected!</h1>
-      <p>Diarilinux has successfully authenticated and connected to your Google Drive account.</p>
+      <p>LifeLogr has successfully authenticated and connected to your Google Drive account.</p>
       <p>Your sync configurations are updated. You can now close this tab and return to writing.</p>
     </div>
   </body>

@@ -1,4 +1,4 @@
-# Technical Specification — Diarilinux
+# Technical Specification — LifeLogr
 
 > Phase 2: API-level specification derived from [REQUIREMENTS.md](../01-requirements/REQUIREMENTS.md).
 > Stack: FastAPI, SQLAlchemy 2.x (mapped dataclasses), Pydantic v2, SQLite.

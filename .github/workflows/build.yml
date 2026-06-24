@@ -43,13 +43,13 @@ jobs:
       - name: Prepare sidecar
         run: |
           mkdir -p desktop/src-tauri/binaries
-          cp desktop/dist/diarilinux-backend \
-            desktop/src-tauri/binaries/diarilinux-backend-x86_64-unknown-linux-gnu
-          chmod +x desktop/src-tauri/binaries/diarilinux-backend-x86_64-unknown-linux-gnu
+          cp desktop/dist/lifelogr-backend \
+            desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
+          chmod +x desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
 
       - name: Verify backend binary
         run: |
-          ./desktop/dist/diarilinux-backend --host 127.0.0.1 --port 18765 &
+          ./desktop/dist/lifelogr-backend --host 127.0.0.1 --port 18765 &
           PID=$!; sleep 5
           curl -sf http://127.0.0.1:18765/health | grep -q ok
           kill $PID 2>/dev/null || true
@@ -60,7 +60,7 @@ jobs:
           projectDir: desktop
           tauriScript: cargo tauri
           tagName: ${{ github.ref_name }}
-          releaseName: 'Diarilinux ${{ github.ref_name }}'
+          releaseName: 'LifeLogr ${{ github.ref_name }}'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -100,7 +100,7 @@ jobs:
       - name: Prepare sidecar
         run: |
           mkdir desktop\src-tauri\binaries
-          copy desktop\dist\diarilinux-backend.exe desktop\src-tauri\binaries\diarilinux-backend-x86_64-pc-windows-msvc.exe
+          copy desktop\dist\lifelogr-backend.exe desktop\src-tauri\binaries\lifelogr-backend-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri (MSI)
         uses: tauri-apps/tauri-action@v0
@@ -146,9 +146,9 @@ jobs:
       - name: Prepare sidecar
         run: |
           mkdir -p desktop/src-tauri/binaries
-          cp desktop/dist/diarilinux-backend \
-            desktop/src-tauri/binaries/diarilinux-backend-aarch64-apple-darwin
-          chmod +x desktop/src-tauri/binaries/diarilinux-backend-aarch64-apple-darwin
+          cp desktop/dist/lifelogr-backend \
+            desktop/src-tauri/binaries/lifelogr-backend-aarch64-apple-darwin
+          chmod +x desktop/src-tauri/binaries/lifelogr-backend-aarch64-apple-darwin
 
       - name: Build Tauri (DMG)
         uses: tauri-apps/tauri-action@v0

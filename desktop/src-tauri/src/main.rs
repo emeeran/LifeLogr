@@ -90,7 +90,7 @@ fn wait_for_sidecar(port: u16) {
 }
 
 fn init_logging(data_dir: &std::path::Path) {
-    let log_path = data_dir.join("dailybyte-desktop.log");
+    let log_path = data_dir.join("lifelogr-desktop.log");
     let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(env_logger::Target::Pipe(Box::new(log_file)))
@@ -121,12 +121,12 @@ fn main() {
             init_logging(&data_dir);
 
             let port = backend_port();
-            info!("Starting DailyByte desktop with backend port {port}");
+            info!("Starting LifeLogr desktop with backend port {port}");
 
             // Launch Python backend sidecar
             let sidecar_command = app
                 .shell()
-                .sidecar("diarilinux-backend")
+                .sidecar("lifelogr-backend")
                 .map_err(|e| format!("Failed to find sidecar binary: {e}"))?
                 .args([
                     "--host", "127.0.0.1",

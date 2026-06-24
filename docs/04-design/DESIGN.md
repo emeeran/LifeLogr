@@ -1,4 +1,4 @@
-# Architecture Design — Diarilinux
+# Architecture Design — LifeLogr
 
 > Phase 4: Design derived from [SPEC.md](../02-spec/SPEC.md) and [REVIEW.md](../03-review/REVIEW.md) (PASS).
 > Stack: FastAPI, SQLAlchemy 2.x, Pydantic v2, SQLite, `uv`.

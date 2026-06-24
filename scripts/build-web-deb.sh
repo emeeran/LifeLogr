@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build a .deb package for the Diarilinux web version (no Tauri desktop app).
+# Build a .deb package for the LifeLogr web version (no Tauri desktop app).
 # The backend serves both the API and frontend static files on port 8000.
 #
 # Usage: ./scripts/build-web-deb.sh
-# Output: dist/diarilinux-web_0.1.0_amd64.deb
+# Output: dist/lifelogr-web_0.1.0_amd64.deb
 
 set -euo pipefail
 
@@ -11,9 +11,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="$(grep '^version' "$ROOT/backend/pyproject.toml" | head -1 | sed 's/.*=.*\"\(.*\)\".*/\1/')"
 VERSION="${VERSION:-0.1.0}"
 ARCH="amd64"
-PKG_NAME="diarilinux-web"
+PKG_NAME="lifelogr-web"
 STAGE="$ROOT/dist/deb-stage"
-INSTALL_DIR="/opt/diarilinux"
+INSTALL_DIR="/opt/lifelogr"
 
 echo "=== Building ${PKG_NAME}_${VERSION}_${ARCH}.deb ==="
 
@@ -72,44 +72,44 @@ cp -r "$ROOT/frontend/dist"     "$STAGE$INSTALL_DIR/frontend/"
 cp -r "$ROOT/assets"            "$STAGE$INSTALL_DIR/"
 
 # Data directory for DB + media
-mkdir -p "$STAGE/var/lib/diarilinux"
-mkdir -p "$STAGE/var/lib/diarilinux/media"
+mkdir -p "$STAGE/var/lib/lifelogr"
+mkdir -p "$STAGE/var/lib/lifelogr/media"
 
 # Config directory
-mkdir -p "$STAGE/etc/diarilinux"
+mkdir -p "$STAGE/etc/lifelogr"
 
 # Create default .env with auto-generated SECRET_KEY
 GENERATED_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-cat > "$STAGE/etc/diarilinux/.env" << ENVEOF
+cat > "$STAGE/etc/lifelogr/.env" << ENVEOF
 APP_ENV=production
-DATABASE_URL=sqlite+aiosqlite:////var/lib/diarilinux/diarilinux.db
-MEDIA_DIR=/var/lib/diarilinux/media
-DATA_DIR=/var/lib/diarilinux
+DATABASE_URL=sqlite+aiosqlite:////var/lib/lifelogr/lifelogr.db
+MEDIA_DIR=/var/lib/lifelogr/media
+DATA_DIR=/var/lib/lifelogr
 SECRET_KEY=${GENERATED_SECRET}
 CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 ENVEOF
 
 # Systemd service
 mkdir -p "$STAGE/etc/systemd/system"
-cat > "$STAGE/etc/systemd/system/diarilinux.service" << 'SVCEOF'
+cat > "$STAGE/etc/systemd/system/lifelogr.service" << 'SVCEOF'
 [Unit]
-Description=Diarilinux Journal (Web)
+Description=LifeLogr Journal (Web)
 After=network.target
 
 [Service]
 Type=simple
-User=diarilinux
-Group=diarilinux
-WorkingDirectory=/opt/diarilinux/backend
-EnvironmentFile=/etc/diarilinux/.env
-ExecStart=/opt/diarilinux/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+User=lifelogr
+Group=lifelogr
+WorkingDirectory=/opt/lifelogr/backend
+EnvironmentFile=/etc/lifelogr/.env
+ExecStart=/opt/lifelogr/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/diarilinux
+ReadWritePaths=/var/lib/lifelogr
 PrivateTmp=true
 
 [Install]
@@ -118,7 +118,7 @@ SVCEOF
 
 # Nginx reverse proxy config (optional — serves on port 80)
 mkdir -p "$STAGE/etc/nginx/sites-available"
-cat > "$STAGE/etc/nginx/sites-available/diarilinux" << 'NGXEOF'
+cat > "$STAGE/etc/nginx/sites-available/lifelogr" << 'NGXEOF'
 server {
     listen 80;
     server_name _;
@@ -143,16 +143,16 @@ cat > "$STAGE/DEBIAN/control" << EOF
 Package: ${PKG_NAME}
 Version: ${VERSION}
 Architecture: ${ARCH}
-Maintainer: Meeran <me@diarilinux.dev>
+Maintainer: Meeran <me@lifelogr.dev>
 Depends: python3, python3-venv, libpango-1.0-0, libpangocairo-1.0-0, libgdk-pixbuf2.0-0, libffi-dev, libcairo2, shared-mime-info, tesseract-ocr
 Recommends: nginx, ollama
 Section: web
 Priority: optional
-Description: Diarilinux — Privacy-first journaling web app
+Description: LifeLogr — Privacy-first journaling web app
  FastAPI backend + Vue 3 frontend served as a single web application.
  Includes AI-assisted features via Ollama, encryption, markdown editing,
  media attachments, and voice recording with transcription.
-Homepage: https://github.com/diarilinux/diarilinux
+Homepage: https://github.com/lifelogr/lifelogr
 EOF
 
 # postinst — create user, set permissions, enable service
@@ -161,41 +161,41 @@ cat > "$STAGE/DEBIAN/postinst" << 'POSTEOF'
 set -e
 
 # Create service user if it doesn't exist
-if ! id -u diarilinux &>/dev/null; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin diarilinux
+if ! id -u lifelogr &>/dev/null; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin lifelogr
 fi
 
 # Set ownership
-chown -R diarilinux:diarilinux /var/lib/diarilinux
-chown -R diarilinux:diarilinux /opt/diarilinux
+chown -R lifelogr:lifelogr /var/lib/lifelogr
+chown -R lifelogr:lifelogr /opt/lifelogr
 
 # Make venv relocatable — fix shebangs to match install location
-INSTALL_DIR="/opt/diarilinux/backend"
+INSTALL_DIR="/opt/lifelogr/backend"
 # Fix any absolute paths in venv bin scripts to point to install location
-find /opt/diarilinux/backend/.venv/bin -type f -exec sed -i "s|^#!.*python|#!/usr/bin/python3|g" {} + 2>/dev/null || true
+find /opt/lifelogr/backend/.venv/bin -type f -exec sed -i "s|^#!.*python|#!/usr/bin/python3|g" {} + 2>/dev/null || true
 # Update pyvenv.cfg to point to system python
-sed -i "s|^home = .*|home = /usr/bin|g" /opt/diarilinux/backend/.venv/pyvenv.cfg 2>/dev/null || true
+sed -i "s|^home = .*|home = /usr/bin|g" /opt/lifelogr/backend/.venv/pyvenv.cfg 2>/dev/null || true
 
 # Enable and start service
 systemctl daemon-reload
-systemctl enable diarilinux
-systemctl restart diarilinux
+systemctl enable lifelogr
+systemctl restart lifelogr
 
 # Optionally enable nginx site
-if [ -d /etc/nginx/sites-enabled ] && [ -f /etc/nginx/sites-available/diarilinux ]; then
-    ln -sf /etc/nginx/sites-available/diarilinux /etc/nginx/sites-enabled/diarilinux
+if [ -d /etc/nginx/sites-enabled ] && [ -f /etc/nginx/sites-available/lifelogr ]; then
+    ln -sf /etc/nginx/sites-available/lifelogr /etc/nginx/sites-enabled/lifelogr
     nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || true
 fi
 
 echo ""
-echo "Diarilinux web app installed!"
-echo "  - Service:  systemctl status diarilinux"
-echo "  - Config:   /etc/diarilinux/.env"
-echo "  - Data:     /var/lib/diarilinux/"
-echo "  - Logs:     journalctl -u diarilinux -f"
+echo "LifeLogr web app installed!"
+echo "  - Service:  systemctl status lifelogr"
+echo "  - Config:   /etc/lifelogr/.env"
+echo "  - Data:     /var/lib/lifelogr/"
+echo "  - Logs:     journalctl -u lifelogr -f"
 echo ""
-echo "Edit /etc/diarilinux/.env to set SECRET_KEY, then:"
-echo "  sudo systemctl restart diarilinux"
+echo "Edit /etc/lifelogr/.env to set SECRET_KEY, then:"
+echo "  sudo systemctl restart lifelogr"
 echo ""
 POSTEOF
 chmod 755 "$STAGE/DEBIAN/postinst"
@@ -204,8 +204,8 @@ chmod 755 "$STAGE/DEBIAN/postinst"
 cat > "$STAGE/DEBIAN/prerm" << 'PREEOF'
 #!/bin/bash
 set -e
-systemctl stop diarilinux 2>/dev/null || true
-systemctl disable diarilinux 2>/dev/null || true
+systemctl stop lifelogr 2>/dev/null || true
+systemctl disable lifelogr 2>/dev/null || true
 PREEOF
 chmod 755 "$STAGE/DEBIAN/prerm"
 
@@ -214,9 +214,9 @@ cat > "$STAGE/DEBIAN/postrm" << 'POSTEOF'
 #!/bin/bash
 set -e
 if [ "$1" = "purge" ]; then
-    rm -rf /var/lib/diarilinux
-    rm -f /etc/nginx/sites-enabled/diarilinux
-    userdel diarilinux 2>/dev/null || true
+    rm -rf /var/lib/lifelogr
+    rm -f /etc/nginx/sites-enabled/lifelogr
+    userdel lifelogr 2>/dev/null || true
 fi
 POSTEOF
 chmod 755 "$STAGE/DEBIAN/postrm"

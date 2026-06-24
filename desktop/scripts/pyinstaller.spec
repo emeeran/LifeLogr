@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for the Diarilinux FastAPI backend.
+PyInstaller spec for the LifeLogr FastAPI backend.
 
 Build: cd desktop && make build-backend
-Output: dist/diarilinux-backend (single binary)
+Output: dist/lifelogr-backend (single binary)
 """
 
 import sys
@@ -116,7 +116,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='diarilinux-backend',
+    name='lifelogr-backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,

@@ -1,12 +1,12 @@
-# 📔 DailyByte (Diarilinux) Project Review & Enhancement Plan
+# 📔 LifeLogr (LifeLogr) Project Review & Enhancement Plan
 
-An Obsidian-ready, high-fidelity architectural review, quality audit, and technical enhancement plan for the **DailyByte (Diarilinux)** journaling application. Prepared for direct import into Obsidian using standard markdown, callouts, and `[[Internal Links]]`.
+An Obsidian-ready, high-fidelity architectural review, quality audit, and technical enhancement plan for the **LifeLogr (LifeLogr)** journaling application. Prepared for direct import into Obsidian using standard markdown, callouts, and `[[Internal Links]]`.
 
 ---
 
 ```
   ┌──────────────────────────────────────────────────────────┐
-  │                        DailyByte                         │
+  │                        LifeLogr                         │
   │            (Privacy-First, Offline-First Journal)        │
   └──────────────────────────────────────────────────────────┘
                                │
@@ -21,7 +21,7 @@ An Obsidian-ready, high-fidelity architectural review, quality audit, and techni
 ## 1. ⚡ Executive Summary (Compressed)
 
 > [!NOTE]
-> **DailyByte (Diarilinux)** is a high-fidelity, privacy-first, offline-first journaling application targeting Linux (Ubuntu 24.x LTS) with cross-platform packaging foundations. It replicates premium journal capabilities (rich editing, tags, media, audio transcription, cloud backups, local AI insights) while keeping all user data strictly local and secure.
+> **LifeLogr (LifeLogr)** is a high-fidelity, privacy-first, offline-first journaling application targeting Linux (Ubuntu 24.x LTS) with cross-platform packaging foundations. It replicates premium journal capabilities (rich editing, tags, media, audio transcription, cloud backups, local AI insights) while keeping all user data strictly local and secure.
 
 ### Tech Stack Overview
 | Layer | Technologies | Role & Details |
@@ -180,9 +180,9 @@ The desktop application is built with **Tauri v2** in Rust. The architecture run
                    │       Bundled via PyInstaller & UPX           │
                    └───────────────────────────────────────────────┘
 ```
-1.  **Backend PyInstaller Bundling:** A specialized spec file compile-packages the Python code into a single native binary (`dailybyte-backend`).
+1.  **Backend PyInstaller Bundling:** A specialized spec file compile-packages the Python code into a single native binary (`lifelogr-backend`).
 2.  **Rust sidecar management:** Tauri acts as the parent supervisor. It launches the sidecar on port `18765`, directs local IPC requests there, and cleans up the sidecar process on termination.
-3.  **Local storage mapping:** Databases and media directories are kept in OS-standard locations (`~/.local/share/com.dailybyte.desktop/` on Linux).
+3.  **Local storage mapping:** Databases and media directories are kept in OS-standard locations (`~/.local/share/com.lifelogr.desktop/` on Linux).
 
 ---
 
@@ -566,7 +566,7 @@ class CloudSyncService:
 
 ## 7. 🚀 Concluding Synthesis
 
-By executing this enhancement plan, the **DailyByte** project secures:
+By executing this enhancement plan, the **LifeLogr** project secures:
 1.  **Thread Concurrency:** Heavy audio Whisper decodes and Tesseract processes execute outside the event loops, keeping the GUI alive and operational.
 2.  **RAM Spikes Abolished:** Video decodes bypass memory arrays entirely.
 3.  **Optimal Database Scans:** Query parameters restrict the scope of vector matching routines at the SQL layer.

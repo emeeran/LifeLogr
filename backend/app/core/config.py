@@ -18,7 +18,7 @@ def _default_data_dir() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "diarilinux"
+    return base / "lifelogr"
 
 
 _logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
     # Check the platform-default data dir (what dev mode uses when no .env override)
     legacy_dir = _default_data_dir()
     candidates: list[Path] = [
-        legacy_dir / "diarilinux.db",
+        legacy_dir / "lifelogr.db",
     ]
 
     for candidate in candidates:
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    APP_NAME: str = "Diarilinux"
+    APP_NAME: str = "LifeLogr"
     APP_VERSION: str = "0.2.0"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     SECRET_KEY: str = "change-me-before-production"
@@ -123,7 +123,7 @@ class Settings(BaseSettings):
 
         # Derive DATABASE_URL if not explicitly set
         if not self.DATABASE_URL:
-            db_path = self.DATA_DIR / "diarilinux.db"
+            db_path = self.DATA_DIR / "lifelogr.db"
             self.DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
             # On first desktop run, migrate existing database from the
             # platform-default data dir (e.g. from dev/prior installs).

@@ -1,6 +1,6 @@
 # Track: Web App Enhancements & UI/UX Polish
 
-This track focuses on improving the user experience and visual polish of the Diarilinux web application (Tauri frontend).
+This track focuses on improving the user experience and visual polish of the LifeLogr web application (Tauri frontend).
 
 ## 🏁 Objectives
 - Improve editor UX with a more intuitive markdown preview toggle.

@@ -24,7 +24,7 @@ ifeq ($(OS),Windows_NT)
     EXE      := .exe
 endif
 
-SIDECAR := src-tauri/binaries/diarilinux-backend-$(TRIPLE)$(EXE)
+SIDECAR := src-tauri/binaries/lifelogr-backend-$(TRIPLE)$(EXE)
 
 # ── Prerequisites ──
 install:
@@ -48,9 +48,9 @@ build-backend:
 
 build-sidecar: build-backend
 	@mkdir -p src-tauri/binaries
-	cp dist/diarilinux-backend$(EXE) $(SIDECAR)
-	cp dist/diarilinux-backend$(EXE) src-tauri/diarilinux-backend-$(TRIPLE)$(EXE)
-	-chmod +x $(SIDECAR) src-tauri/diarilinux-backend-$(TRIPLE)$(EXE)
+	cp dist/lifelogr-backend$(EXE) $(SIDECAR)
+	cp dist/lifelogr-backend$(EXE) src-tauri/lifelogr-backend-$(TRIPLE)$(EXE)
+	-chmod +x $(SIDECAR) src-tauri/lifelogr-backend-$(TRIPLE)$(EXE)
 	@echo "Sidecar ready: $(SIDECAR)"
 
 build: build-frontend build-sidecar

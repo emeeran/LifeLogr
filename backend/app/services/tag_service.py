@@ -1,6 +1,6 @@
 """Business logic for tags."""
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,9 +78,7 @@ class TagService:
     async def dissociate(self, entry_id: int, tag_ids: list[int]) -> None:
         """Remove tag associations from an entry."""
         await self.db.execute(
-            EntryTag.__table__.delete().where(
-                EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(tag_ids)  # type: ignore[attr-defined]
-            )
+            delete(EntryTag).where(EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(tag_ids))
         )
         await self.db.flush()
 

@@ -1,4 +1,4 @@
-# Context Map — Diarilinux
+# Context Map — LifeLogr
 
 ## Bounded Context Diagram
 

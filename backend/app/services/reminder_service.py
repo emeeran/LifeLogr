@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 
 from sqlalchemy import select
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import NotFoundError
 from app.models.reminder import Reminder
 from app.schemas.reminder import ReminderCreate, ReminderUpdate
+
+logger = logging.getLogger(__name__)
 
 
 class ReminderService:
@@ -72,9 +75,9 @@ class ReminderService:
         """Send a desktop notification using notify-send (Linux)."""
         try:
             subprocess.Popen(
-                ["notify-send", "-a", "Diarilinux", title, message],
+                ["notify-send", "-a", "LifeLogr", title, message],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
-            pass  # notify-send not available
+            logger.warning("notify-send not available; desktop reminder notification skipped")

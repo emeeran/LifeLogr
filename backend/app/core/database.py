@@ -7,7 +7,12 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from sqlalchemy import event, func, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
@@ -15,7 +20,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _build_engine() -> tuple:
+def _build_engine() -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     """Create a new async engine and session factory.  Single source of truth for all params."""
     is_sqlite = settings.DATABASE_URL.startswith("sqlite")
     eng = create_async_engine(

@@ -1,6 +1,6 @@
-# DailyByte — Build, Update & Install Guide
+# LifeLogr — Build, Update & Install Guide
 
-Complete guide for building, updating, and installing DailyByte on **Linux**, **Windows**, and **macOS**.
+Complete guide for building, updating, and installing LifeLogr on **Linux**, **Windows**, and **macOS**.
 
 ---
 
@@ -58,9 +58,9 @@ make build     # Builds frontend + backend + native package
 ```
 
 The output goes to `desktop/src-tauri/target/release/bundle/`:
-- **Linux**: `appimage/DailyByte_0.2.0_amd64.AppImage` + `deb/DailyByte_0.2.0_amd64.deb`
-- **Windows**: `msi/DailyByte_0.2.0_x64_en-US.msi`
-- **macOS**: `dmg/DailyByte_0.2.0_aarch64.dmg`
+- **Linux**: `appimage/LifeLogr_0.2.0_amd64.AppImage` + `deb/LifeLogr_0.2.0_amd64.deb`
+- **Windows**: `msi/LifeLogr_0.2.0_x64_en-US.msi`
+- **macOS**: `dmg/LifeLogr_0.2.0_aarch64.dmg`
 
 > **Versioning:** the package version is sourced from `backend/pyproject.toml`, `desktop/src-tauri/Cargo.toml`, and `desktop/src-tauri/tauri.conf.json` — bump all three together. The version shown in the app's **About** tab comes from `APP_VERSION` in `backend/app/core/config.py` (served via the `/api/v1/settings` endpoint), so update that too or the UI will lag behind the package version. The artifact filenames above reflect whatever version you set.
 >
@@ -84,12 +84,12 @@ uv run pyinstaller ../desktop/scripts/pyinstaller.spec \
 # 3. Copy backend binary as Tauri sidecar
 #    Linux:
 mkdir -p ../desktop/src-tauri/binaries
-cp dist/dailybyte-backend ../desktop/src-tauri/binaries/dailybyte-backend-x86_64-unknown-linux-gnu
-chmod +x ../desktop/src-tauri/binaries/dailybyte-backend-x86_64-unknown-linux-gnu
+cp dist/lifelogr-backend ../desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
+chmod +x ../desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
 #    Windows:
-#      copy dist\dailybyte-backend.exe ..\desktop\src-tauri\binaries\dailybyte-backend-x86_64-pc-windows-msvc.exe
+#      copy dist\lifelogr-backend.exe ..\desktop\src-tauri\binaries\lifelogr-backend-x86_64-pc-windows-msvc.exe
 #    macOS (Apple Silicon):
-#      cp dist/dailybyte-backend ../desktop/src-tauri/binaries/dailybyte-backend-aarch64-apple-darwin
+#      cp dist/lifelogr-backend ../desktop/src-tauri/binaries/lifelogr-backend-aarch64-apple-darwin
 
 # 4. Build the native Tauri package
 cd ../desktop/src-tauri
@@ -149,16 +149,16 @@ cd desktop/src-tauri && cargo update
 
 ### Reinstalling the .deb over a running version
 
-`dpkg -i` replaces the on-disk binaries, but a **running** DailyByte keeps the old binary in memory and holds port 18765 — so the new version won't take effect until you fully restart. After installing a new `.deb`:
+`dpkg -i` replaces the on-disk binaries, but a **running** LifeLogr keeps the old binary in memory and holds port 18765 — so the new version won't take effect until you fully restart. After installing a new `.deb`:
 
 ```bash
-# Quit DailyByte from the UI first (save any open entry), then clear lingering procs:
-pkill -f diarilinux-backend
-pkill -f /usr/bin/dailybyte
+# Quit LifeLogr from the UI first (save any open entry), then clear lingering procs:
+pkill -f lifelogr-backend
+pkill -f /usr/bin/lifelogr
 # Relaunch from your application menu — it spawns the new backend on 18765
 ```
 
-If the **About** tab still shows the old version after reopening, a stale `diarilinux-backend` process is almost always the cause.
+If the **About** tab still shows the old version after reopening, a stale `lifelogr-backend` process is almost always the cause.
 
 ### Clean build (start fresh)
 
@@ -174,23 +174,23 @@ cd desktop && make clean && make build
 
 ```bash
 # 1. Download or copy the AppImage
-cp desktop/src-tauri/target/release/bundle/appimage/DailyByte_0.2.0_amd64.AppImage ~/Applications/
+cp desktop/src-tauri/target/release/bundle/appimage/LifeLogr_0.2.0_amd64.AppImage ~/Applications/
 
 # 2. Make it executable
-chmod +x ~/Applications/DailyByte_0.2.0_amd64.AppImage
+chmod +x ~/Applications/LifeLogr_0.2.0_amd64.AppImage
 
 # 3. Run it
-~/Applications/DailyByte_0.2.0_amd64.AppImage
+~/Applications/LifeLogr_0.2.0_amd64.AppImage
 ```
 
 To add to your application launcher:
 ```bash
 # Create a desktop entry
-cat > ~/.local/share/applications/dailybyte.desktop << 'EOF'
+cat > ~/.local/share/applications/lifelogr.desktop << 'EOF'
 [Desktop Entry]
-Name=DailyByte
-Exec=/home/YOUR_USER/Applications/DailyByte_0.2.0_amd64.AppImage
-Icon=dailybyte
+Name=LifeLogr
+Exec=/home/YOUR_USER/Applications/LifeLogr_0.2.0_amd64.AppImage
+Icon=lifelogr
 Type=Application
 Categories=Office;Utility;
 Comment=Privacy-first journaling app
@@ -200,10 +200,10 @@ EOF
 ### Option B: .deb package (Debian/Ubuntu)
 
 ```bash
-sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/DailyByte_0.2.0_amd64.deb
+sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/LifeLogr_0.2.0_amd64.deb
 
 # Then launch from your application menu, or:
-dailybyte
+lifelogr
 ```
 
 ### Option C: From source (development)
@@ -221,8 +221,8 @@ Open http://localhost:5173 in your browser.
 
 | Data | Path |
 |------|------|
-| Database | `~/.local/share/com.dailybyte.desktop/dailybyte.db` |
-| Media files | `~/.local/share/com.dailybyte.desktop/media/` |
+| Database | `~/.local/share/com.lifelogr.desktop/lifelogr.db` |
+| Media files | `~/.local/share/com.lifelogr.desktop/media/` |
 | Config | Set via `DIARI_DATA_DIR` env var |
 
 ---
@@ -231,10 +231,10 @@ Open http://localhost:5173 in your browser.
 
 ### From MSI installer
 
-1. Double-click `DailyByte_0.2.0_x64_en-US.msi`
+1. Double-click `LifeLogr_0.2.0_x64_en-US.msi`
 2. Follow the installer wizard
 3. If prompted about WebView2, allow the installer to download it
-4. Launch from **Start Menu → DailyByte**
+4. Launch from **Start Menu → LifeLogr**
 
 ### From source (development)
 
@@ -255,8 +255,8 @@ Open http://localhost:5173 in your browser.
 
 | Data | Path |
 |------|------|
-| Database | `%APPDATA%\dailybyte\dailybyte.db` |
-| Media files | `%APPDATA%\dailybyte\media\` |
+| Database | `%APPDATA%\lifelogr\lifelogr.db` |
+| Media files | `%APPDATA%\lifelogr\media\` |
 | Config | Set via `DIARI_DATA_DIR` env var |
 
 ### Building on Windows
@@ -265,7 +265,7 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri\target\release\bundle\msi\DailyByte_0.2.0_x64_en-US.msi
+# Output: src-tauri\target\release\bundle\msi\LifeLogr_0.2.0_x64_en-US.msi
 ```
 
 ---
@@ -274,8 +274,8 @@ make build
 
 ### From DMG
 
-1. Double-click `DailyByte_0.2.0_aarch64.dmg`
-2. Drag **DailyByte** to the **Applications** folder
+1. Double-click `LifeLogr_0.2.0_aarch64.dmg`
+2. Drag **LifeLogr** to the **Applications** folder
 3. Launch from Applications or Spotlight
 
 **Gatekeeper warning:** Since the app is unsigned, macOS will show a warning on first launch. To bypass:
@@ -297,8 +297,8 @@ Open http://localhost:5173 in your browser.
 
 | Data | Path |
 |------|------|
-| Database | `~/Library/Application Support/dailybyte/dailybyte.db` |
-| Media files | `~/Library/Application Support/dailybyte/media/` |
+| Database | `~/Library/Application Support/lifelogr/lifelogr.db` |
+| Media files | `~/Library/Application Support/lifelogr/media/` |
 | Config | Set via `DIARI_DATA_DIR` env var |
 
 ### Building on macOS
@@ -307,10 +307,10 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri/target/release/bundle/dmg/DailyByte_0.2.0_aarch64.dmg
+# Output: src-tauri/target/release/bundle/dmg/LifeLogr_0.2.0_aarch64.dmg
 ```
 
-> **Note:** The macOS build targets Apple Silicon (M1/M2/M3/M4) by default. Intel Mac users can run it via Rosetta 2 (transparent). To build for Intel specifically, change the sidecar filename to `dailybyte-backend-x86_64-apple-darwin`.
+> **Note:** The macOS build targets Apple Silicon (M1/M2/M3/M4) by default. Intel Mac users can run it via Rosetta 2 (transparent). To build for Intel specifically, change the sidecar filename to `lifelogr-backend-x86_64-apple-darwin`.
 
 ---
 
@@ -320,7 +320,7 @@ The app works out-of-the-box for core features (entries, tags, search, templates
 
 ### Using the built-in setup (Linux, Tauri app only)
 
-1. Launch DailyByte
+1. Launch LifeLogr
 2. Open **Settings** (gear icon in sidebar)
 3. Scroll to **System Setup** section
 4. Click **Install Missing Dependencies**
@@ -432,7 +432,7 @@ ollama pull nomic-embed-text
 
 ```bash
 # Linux/macOS
-DIARI_DATA_DIR=/path/to/data ./DailyByte_0.2.0_amd64.AppImage
+DIARI_DATA_DIR=/path/to/data ./LifeLogr_0.2.0_amd64.AppImage
 
 # Or set permanently
 export DIARI_DATA_DIR=/path/to/data
@@ -450,13 +450,13 @@ The Tauri app hardcodes the backend to port **18765**. For development mode, the
 
 ```bash
 # Make sure it's executable
-chmod +x DailyByte_0.2.0_amd64.AppImage
+chmod +x LifeLogr_0.2.0_amd64.AppImage
 
 # If FUSE is missing (some distros)
 sudo apt install libfuse2
 
 # Run with debug output
-./DailyByte_0.2.0_amd64.AppImage --verbose
+./LifeLogr_0.2.0_amd64.AppImage --verbose
 ```
 
 ### "Backend failed to start" error
@@ -465,7 +465,7 @@ The Python sidecar takes a few seconds to start. The frontend retries for 15 sec
 
 ```bash
 # Test the backend binary directly
-./desktop/dist/dailybyte-backend --host 127.0.0.1 --port 18765
+./desktop/dist/lifelogr-backend --host 127.0.0.1 --port 18765
 
 # Check if port is already in use
 lsof -i :18765
@@ -504,13 +504,13 @@ brew install tesseract            # macOS
 The MSI installer downloads WebView2 automatically. If it fails:
 1. Download from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
 2. Install the "Evergreen Bootstrapper"
-3. Re-run DailyByte
+3. Re-run LifeLogr
 
 ### macOS: "App is damaged and can't be opened"
 
 ```bash
 # Remove quarantine attribute
-xattr -cr /Applications/DailyByte.app
+xattr -cr /Applications/LifeLogr.app
 ```
 
 ### Build fails with "pyinstaller not found"

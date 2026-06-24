@@ -100,7 +100,7 @@ async def export_local_backup(
 
     tmpdir = tempfile.mkdtemp()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    archive_path = Path(tmpdir) / f"dailybyte-backup-{timestamp}.tar.gz"
+    archive_path = Path(tmpdir) / f"lifelogr-backup-{timestamp}.tar.gz"
 
     db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
@@ -129,7 +129,7 @@ async def export_local_backup(
     return FileResponse(
         path=str(archive_path),
         media_type="application/gzip",
-        filename=f"dailybyte-backup-{timestamp}.tar.gz",
+        filename=f"lifelogr-backup-{timestamp}.tar.gz",
     )
 
 
