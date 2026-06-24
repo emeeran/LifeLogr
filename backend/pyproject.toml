@@ -32,7 +32,6 @@ all = ["lifelogr[stt,ocr,pdf,tts,image,cloud]"]
 
 [dependency-groups]
 dev = [
-    "alembic>=1.18.4",
     "httpx>=0.28.1",
     "mypy>=2.0.0",
     "pyinstaller>=6.20.0",

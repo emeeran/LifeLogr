@@ -291,6 +291,13 @@ async def delete_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> Non
     await svc.soft_delete(entry_id)
 
 
+@router.post("/{entry_id}/restore", response_model=EntryResponse)
+async def restore_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Restore a previously soft-deleted entry (re-indexes it in FTS search)."""
+    svc = EntryService(db)
+    return _to_response(await svc.restore(entry_id))
+
+
 @router.post("/reset", response_model=dict)
 async def reset_database(db: AsyncSession = Depends(get_db)) -> Any:
     """Delete all entries, tags, and associated data. Irreversible."""

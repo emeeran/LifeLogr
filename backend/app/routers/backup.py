@@ -157,7 +157,17 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
                         status_code=400,
                         detail=f"Invalid archive: path traversal in '{member.name}'",
                     )
-            tar.extractall(tmpdir)
+            # filter="data" (PEP 706) strips symlinks/hardlinks/device files,
+            # closing the symlink-escape vector the name check above misses.
+            try:
+                tar.extractall(tmpdir, filter="data")
+            except tarfile.TarError as exc:
+                from fastapi import HTTPException
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid archive: {exc}",
+                ) from exc
 
         extracted_db = Path(tmpdir) / "diarium.diarium"
         # Backward compat: accept old archives that used "dev.db"
@@ -243,3 +253,33 @@ async def unschedule_backup(db: AsyncSession = Depends(get_db)) -> Any:
 
     svc = SchedulerService(db)
     return await svc.unschedule_backup()
+
+
+@router.post("/config/migrate-credentials")
+async def migrate_credential_encryption(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Upgrade all backup configs from legacy v1 to v2 (HKDF) token format.
+
+    Idempotent: v2 tokens pass through unchanged. Returns the number of tokens
+    upgraded so the v1 fallback path can be retired once this reports zero.
+    """
+    from app.core.security import reencrypt, token_version
+    from app.models.backup import BackupConfig
+    from sqlalchemy import select
+
+    result = await db.execute(select(BackupConfig))
+    configs = result.scalars().all()
+    upgraded = 0
+    for config in configs:
+        if token_version(config.credentials_encrypted) == 1:
+            config.credentials_encrypted = reencrypt(config.credentials_encrypted)
+            upgraded += 1
+    if upgraded:
+        await db.commit()
+    remaining = sum(1 for c in configs if token_version(c.credentials_encrypted) == 1)
+    return {
+        "checked": len(configs),
+        "upgraded": upgraded,
+        "remaining_v1": remaining,
+    }

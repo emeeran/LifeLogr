@@ -112,6 +112,26 @@ class EntryService:
 
         await self.db.commit()
 
+    async def restore(self, entry_id: int) -> Entry:
+        """Un-delete a soft-deleted entry.
+
+        The FTS ``fts_entry_restore`` trigger re-indexes the entry automatically.
+        Note: media files removed at soft-delete time are not restored (they
+        were permanently deleted); the entry's text content is fully recovered.
+        """
+        # Fetch even if soft-deleted by querying without the default filter.
+        result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
+        entry = result.scalar_one_or_none()
+        if entry is None:
+            raise NotFoundError(f"Entry {entry_id} not found")
+        if not entry.is_deleted:
+            return entry  # already live — idempotent
+        entry.is_deleted = False
+        entry.deleted_at = None
+        await self.db.commit()
+        await self.db.refresh(entry)
+        return entry
+
     async def get_calendar_month(self, year: int, month: int) -> list[Entry]:
         """Return all non-deleted entries for a given month."""
         start = date(year, month, 1)

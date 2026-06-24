@@ -30,6 +30,7 @@ class ReminderService:
         self.db.add(reminder)
         await self.db.commit()
         await self.db.refresh(reminder)
+        await self._resync_jobs()
         return reminder
 
     async def get(self, reminder_id: int) -> Reminder:
@@ -57,12 +58,28 @@ class ReminderService:
             reminder.is_active = data.is_active
         await self.db.commit()
         await self.db.refresh(reminder)
+        await self._resync_jobs()
         return reminder
 
     async def delete(self, reminder_id: int) -> None:
         reminder = await self.get(reminder_id)
         await self.db.delete(reminder)
         await self.db.commit()
+        await self._resync_jobs()
+
+    @staticmethod
+    async def _resync_jobs() -> None:
+        """Reconcile APScheduler reminder jobs with DB after a CRUD change.
+
+        Failures (e.g. scheduler not running in tests) are non-fatal: the
+        reminder is still persisted and will be picked up on next startup.
+        """
+        try:
+            from app.services.scheduler_service import SchedulerService
+
+            await SchedulerService.sync_reminders()
+        except Exception:
+            logger.debug("Reminder job resync skipped", exc_info=True)
 
     async def test_notification(self, reminder_id: int) -> dict[str, bool | str]:
         """Send a test desktop notification for the reminder."""

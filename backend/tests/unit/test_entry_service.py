@@ -99,3 +99,25 @@ class TestEntryDelete:
         )
         assert r.status_code == 201
         assert r.json()["body"] == "Restored"
+
+
+class TestEntryRestore:
+    async def test_restore_endpoint_un_deletes(self, client: AsyncClient):
+        entry = await _create_entry(client, body="recoverable text")
+        await client.delete(f"/api/v1/entries/{entry['id']}")
+        r = await client.post(f"/api/v1/entries/{entry['id']}/restore")
+        assert r.status_code == 200
+        assert r.json()["is_deleted"] is False
+        # Entry is visible again via normal GET
+        r = await client.get(f"/api/v1/entries/{entry['id']}")
+        assert r.status_code == 200
+
+    async def test_restore_missing_returns_404(self, client: AsyncClient):
+        r = await client.post("/api/v1/entries/9999/restore")
+        assert r.status_code == 404
+
+    async def test_restore_is_idempotent(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        # Restoring an already-live entry should not error.
+        r = await client.post(f"/api/v1/entries/{entry['id']}/restore")
+        assert r.status_code == 200

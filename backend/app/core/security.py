@@ -33,6 +33,19 @@ _v1_key = settings.SECRET_KEY.encode().ljust(32, b"\0")[:32]
 _VERSION_PREFIX = b"\x02"
 
 
+def token_version(token: str) -> int:
+    """Return the encryption format version of a stored token (1 or 2).
+
+    Useful for monitoring/migration: tokens that report v1 should be re-encrypted
+    via :func:`reencrypt` at the next write opportunity.
+    """
+    try:
+        raw = base64.b64decode(token)
+    except Exception:
+        return 1  # treat undecodable as legacy
+    return 2 if raw[:1] == _VERSION_PREFIX else 1
+
+
 def encrypt(plaintext: str) -> str:
     """Encrypt a string and return base64-encoded version prefix + nonce + ciphertext."""
     nonce = os.urandom(12)
@@ -50,3 +63,14 @@ def decrypt(token: str) -> str:
 
     # v1 legacy format: raw nonce + ciphertext with null-padded key
     return AESGCM(_v1_key).decrypt(raw[:12], raw[12:], None).decode()
+
+
+def reencrypt(token: str) -> str:
+    """Upgrade a legacy v1 token to the v2 HKDF format; v2 tokens pass through.
+
+    Call this whenever a credential is read-then-written back (e.g. on OAuth
+    token refresh) so the v1 fallback path can eventually be retired.
+    """
+    if token_version(token) == 2:
+        return token
+    return encrypt(decrypt(token))

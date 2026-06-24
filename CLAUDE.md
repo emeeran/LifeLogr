@@ -64,6 +64,9 @@ diary/
 - Commit docs artefacts (DOMAIN.md, SPEC.md, etc.) alongside code.
 - Each PR must include updated tests and passing lint.
 - SQLite uses WAL mode + FK enforcement automatically (see `database.py` event listener).
+- **Schema migrations are inline**, not Alembic: `database.py:_migrate_schema` (`_COLUMN_MIGRATIONS` + `_INDEX_MIGRATIONS`) is the canonical, idempotent desktop migration path. Add new columns/indexes there. (Alembic was removed to avoid drift between two competing systems.)
+- **Reminders are APScheduler-driven:** `SchedulerService.sync_reminders()` reconciles per-reminder cron jobs with the DB on startup and after every reminder CRUD op; `schedule_catchup` fires any reminder whose time passed while offline. Never schedule reminders manually — always go through `ReminderService` so jobs stay in sync.
+- **FTS5 setup runs in all builds** (including PyInstaller): the `pysqlite3` swap in `app/main.py` fixes the qualified-column bug that previously forced skipping FTS in frozen builds.
 - Plugin `entry_point` must be validated (regex + stdlib blocklist in `schemas/plugin.py`).
 - Never use silent `except: pass` — always log with context (`logger.warning`).
 - Backup import validates tar members for path traversal before extraction.
