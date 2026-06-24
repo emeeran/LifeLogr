@@ -32,7 +32,10 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev upx-ucl
 
       - name: Build frontend
-        run: cd frontend && npm ci && npm run build
+        run: |
+          VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
+          echo "VITE_APP_VERSION=$VER"
+          cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
       - name: Build backend binary
         run: |
@@ -90,7 +93,10 @@ jobs:
         run: choco install upx
 
       - name: Build frontend
-        run: cd frontend && npm ci && npm run build
+        run: |
+          VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
+          echo "VITE_APP_VERSION=$VER"
+          cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
       - name: Build backend binary
         run: |
@@ -136,7 +142,10 @@ jobs:
         run: brew install upx
 
       - name: Build frontend
-        run: cd frontend && npm ci && npm run build
+        run: |
+          VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
+          echo "VITE_APP_VERSION=$VER"
+          cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
       - name: Build backend binary
         run: |

@@ -38,7 +38,9 @@ dev:
 
 # ── Build steps ──
 build-frontend:
-	cd ../frontend && npm run build
+	@VER=$$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+		echo "Building frontend with VITE_APP_VERSION=$$VER"; \
+		cd ../frontend && VITE_APP_VERSION="$$VER" npm run build
 
 build-backend:
 	cd ../backend && uv run pyinstaller ../desktop/scripts/pyinstaller.spec \

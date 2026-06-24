@@ -4,6 +4,7 @@ import { entriesApi } from '../../../api/entries'
 import { useEntriesStore } from '../../../stores/entries'
 import { getSettings } from '../../../api/settings'
 import type { AppSettings } from '../../../api/settings'
+import { APP_VERSION } from '../../../version'
 import {
   AlertTriangle, Loader, Info as InfoIcon, Heart
 } from 'lucide-vue-next'
@@ -41,7 +42,7 @@ onMounted(() => { loadAppSettings() })
       <!-- Left half: app info -->
       <div class="flex-1 p-6 flex flex-col justify-center space-y-2.5 text-center">
         <div class="text-lg font-semibold text-text-primary">LifeLogr</div>
-        <div class="text-[11px] text-text-muted">Version {{ appSettings?.version ?? '0.2.0' }}</div>
+        <div class="text-[11px] text-text-muted">Version {{ appSettings?.version ?? APP_VERSION }}</div>
         <div class="text-[12px] text-text-secondary">Privacy-first, offline-first journaling for Linux</div>
         <div class="flex items-center justify-center gap-1 text-[11px] text-accent/80 italic pt-1">
           <Heart :size="11" /> Dedicated to my son Tariq Al Fayad
