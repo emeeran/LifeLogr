@@ -1,6 +1,10 @@
-# 📔 LifeLogr (LifeLogr)
+# 📔 LifeLogr 
 
 LifeLogr is a privacy-first, offline-first journaling application designed for Linux (Ubuntu 24.x LTS) with native packaging capabilities. It provides a highly premium writing experience with markdown support, media attachments, local voice transcription, local AI-assisted grammar checking and mood insights, end-to-end encrypted cloud sync, and a dynamic plugin architecture—keeping all user data strictly local and secure.
+
+![image-20260624232903522](/home/em/snap/typora/112/.config/Typora/typora-user-images/image-20260624232903522.png)
+
+![image-20260624233113273](/home/em/snap/typora/112/.config/Typora/typora-user-images/image-20260624233113273.png)
 
 ---
 
