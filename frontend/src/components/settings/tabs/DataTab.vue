@@ -177,7 +177,7 @@ const importing = ref(false)
 async function handleBackupDownload() {
   const resp = await fetch(backupApi.exportLocal())
   const blob = await resp.blob()
-  const defaultName = `dailybyte-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.tar.gz`
+  const defaultName = `lifelogr-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.tar.gz`
   const saved = await saveFile({ data: blob, defaultName, filters: [{ name: 'Tar Archive', extensions: ['tar.gz'] }] })
   if (saved) emit('toast', 'success', 'Backup saved')
 }
@@ -320,7 +320,7 @@ async function handleSyncFlush() {
 
 // ── Auto Backup ──
 const autoBackupEnabled = useLocalStorage<boolean>('diarium-auto-backup-enabled', false)
-const autoBackupPath = useLocalStorage<string>('diarium-auto-backup-path', '~/Backups/dailybyte')
+const autoBackupPath = useLocalStorage<string>('diarium-auto-backup-path', '~/Backups/lifelogr')
 const autoBackupFrequency = useLocalStorage<string>('diarium-auto-backup-freq', '0 2 * * *')
 const autoBackupRetention = useLocalStorage<number>('diarium-auto-backup-retention', 10)
 const autoBackupConfigId = useLocalStorage<number | null>('diarium-auto-backup-config-id', null)
@@ -574,7 +574,7 @@ onMounted(() => {
         <template v-if="!autoBackupConfigId">
           <div class="flex items-center gap-2">
             <span class="text-[11px] text-text-muted w-14">Folder</span>
-            <input v-model="autoBackupPath" placeholder="~/Backups/dailybyte"
+            <input v-model="autoBackupPath" placeholder="~/Backups/lifelogr"
               class="settings-input flex-1" />
             <button v-if="isTauri" @click="browseBackupFolder"
               class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer transition-colors">

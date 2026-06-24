@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for DailyByte",
+  "description": "Default capabilities for LifeLogr",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -10,7 +10,7 @@
     {
       "identifier": "shell:allow-spawn",
       "allow": [
-        { "name": "diarilinux-backend", "sidecar": true, "args": true }
+        { "name": "lifelogr-backend", "sidecar": true, "args": true }
       ]
     },
     "dialog:default",

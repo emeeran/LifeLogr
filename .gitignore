@@ -45,6 +45,8 @@ media/
 # Build artifacts
 .vite/
 package-lock.json
+frontend/test-results/
+frontend/playwright-report/
 
 # Packaging / distribution
 *.AppImage

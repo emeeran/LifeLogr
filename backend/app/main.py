@@ -10,7 +10,9 @@ try:
     if getattr(sys, "frozen", False):
         sys.modules["sqlite3"] = _pysqlite3
 except ImportError:
-    pass
+    import logging
+
+    logging.getLogger(__name__).debug("pysqlite3 not available; using stdlib sqlite3")
 
 import logging
 import time
@@ -36,7 +38,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger("diarilinux")
+logger = logging.getLogger("lifelogr")
 
 # Resolve project root (3 levels up from this file)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -47,7 +49,7 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database tables on startup, clean up on shutdown."""
-    logger.info("Starting %s (%s)", "DailyByte", settings.APP_ENV)
+    logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
     # Load persisted runtime settings (model selections, feature toggles)
     try:
         from app.routers.settings import load_persisted_settings
@@ -90,9 +92,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="DailyByte",
+    title=settings.APP_NAME,
     description="Your Day in Media & Minutes",
-    version="0.1.0",
+    version=settings.APP_VERSION,
     lifespan=lifespan,
     docs_url=None if settings.is_production else "/docs",
     redoc_url=None,
@@ -240,10 +242,10 @@ async def health_check() -> Any:
 
 @app.get("/api/v1/brand/logo")
 async def brand_logo() -> FileResponse:
-    """Return the Diarilinux logo."""
-    logo_path = _ASSETS_DIR / "diarilinux-logo.png"
+    """Return the LifeLogr logo."""
+    logo_path = _ASSETS_DIR / "lifelogr-logo.png"
     if not logo_path.exists():
-        logo_path = _ASSETS_DIR / "diarilinux-logo.svg"
+        logo_path = _ASSETS_DIR / "lifelogr-logo.svg"
         return FileResponse(path=str(logo_path), media_type="image/svg+xml")
     return FileResponse(path=str(logo_path), media_type="image/png")
 
@@ -269,7 +271,7 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    parser = argparse.ArgumentParser(description="Diarilinux backend server")
+    parser = argparse.ArgumentParser(description="LifeLogr backend server")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     parser.add_argument("--port", type=int, default=18765, help="Bind port")
     args = parser.parse_args()

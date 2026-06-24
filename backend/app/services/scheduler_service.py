@@ -8,18 +8,15 @@ import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-
-if TYPE_CHECKING:
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 logger = logging.getLogger(__name__)
 
 # Global scheduler instance
-_scheduler: "AsyncIOScheduler | None" = None
+_scheduler: Any = None
 
 
 class SchedulerService:
@@ -29,10 +26,10 @@ class SchedulerService:
         self.db = db
 
     @staticmethod
-    def get_scheduler() -> "AsyncIOScheduler":
+    def get_scheduler() -> Any:
         global _scheduler
         if _scheduler is None:
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
 
             _scheduler = AsyncIOScheduler()
         return _scheduler
@@ -77,7 +74,7 @@ class SchedulerService:
         if len(parts) != 5:
             raise ValueError(f"Invalid cron expression: {cron_expr}")
 
-        from apscheduler.triggers.cron import CronTrigger
+        from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped]
 
         trigger = CronTrigger(
             minute=parts[0],
@@ -173,7 +170,7 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    archive_path = path / f"dailybyte-backup-{timestamp}.tar.gz"
+    archive_path = path / f"lifelogr-backup-{timestamp}.tar.gz"
 
     db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
@@ -209,7 +206,10 @@ def _cleanup_old_backups(backup_dir: Path, retention: int) -> None:
     """Remove oldest backup files, keeping only the most recent `retention` count."""
     if retention <= 0:
         return
-    backups = sorted(backup_dir.glob("dailybyte-backup-*.tar.gz"), key=lambda p: p.stat().st_mtime)
+    backups = sorted(
+        backup_dir.glob("*-backup-*.tar.gz"),
+        key=lambda p: p.stat().st_mtime,
+    )
     if len(backups) > retention:
         for old in backups[:-retention]:
             old.unlink(missing_ok=True)

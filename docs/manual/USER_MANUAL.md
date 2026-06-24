@@ -1,4 +1,4 @@
-# DailyByte — User Manual
+# LifeLogr — User Manual
 
 > Privacy-first, offline-first daily journaling for Linux, Windows, macOS, Android, and iOS.
 
@@ -51,8 +51,8 @@
 **Option A — Run from source (developers)**
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/dailybyte.git
-cd dailybyte
+git clone https://github.com/your-org/lifelogr.git
+cd lifelogr
 
 # Launch both frontend and backend
 chmod +x dev.sh
@@ -62,7 +62,7 @@ chmod +x dev.sh
 The `dev.sh` script automatically finds available ports and starts both the FastAPI backend and Vite frontend. Press `Ctrl+C` to stop both servers.
 
 **Option B — Pre-built package**
-- **Linux**: Download the `.AppImage` or `.deb` file from releases. AppImages run without installation. DEB packages install via `sudo dpkg -i dailybyte_*.deb`.
+- **Linux**: Download the `.AppImage` or `.deb` file from releases. AppImages run without installation. DEB packages install via `sudo dpkg -i lifelogr_*.deb`.
 - **Windows**: Download the `.msi` installer and run it.
 - **macOS**: Download the `.dmg` file, drag to Applications.
 
@@ -79,7 +79,7 @@ docker compose up -d
 
 ### First Launch
 
-When you first open DailyByte:
+When you first open LifeLogr:
 
 1. The **calendar view** loads showing the current month
 2. A **new entry** is automatically opened in the right panel
@@ -90,7 +90,7 @@ When you first open DailyByte:
 
 ## 2. Interface Overview
 
-DailyByte uses a three-panel layout:
+LifeLogr uses a three-panel layout:
 
 ```
 ┌──────────┬──────────────────┬─────────────────────┐
@@ -208,7 +208,7 @@ Toggle between edit and preview mode to see how your markdown renders. The previ
 
 ### Switching Entries
 
-If you have unsaved changes and try to switch to another entry, DailyByte shows a **save prompt** with three options:
+If you have unsaved changes and try to switch to another entry, LifeLogr shows a **save prompt** with three options:
 - **Save** — save current changes, then switch
 - **Discard** — discard changes, then switch
 - **Cancel** — stay on the current entry
@@ -221,7 +221,7 @@ Templates let you pre-fill new entries with structured content.
 
 ### Built-in Templates
 
-DailyByte includes four built-in templates:
+LifeLogr includes four built-in templates:
 
 | Template | Structure |
 |----------|-----------|
@@ -294,7 +294,7 @@ Tags support parent-child relationships:
 
 ## 6. Markdown Guide
 
-DailyByte supports full **GitHub Flavored Markdown (GFM)**.
+LifeLogr supports full **GitHub Flavored Markdown (GFM)**.
 
 ### Basic Formatting
 
@@ -543,7 +543,7 @@ After recording (or uploading an audio file):
 
 ## 12. AI Writing Assistant
 
-DailyByte integrates with **Ollama** for local AI-powered writing assistance and intelligence features. All processing happens on your machine — no data is sent to external servers.
+LifeLogr integrates with **Ollama** for local AI-powered writing assistance and intelligence features. All processing happens on your machine — no data is sent to external servers.
 
 ### Prerequisites
 
@@ -618,7 +618,7 @@ Stuck writing? Click the **lightbulb button** in the editor toolbar. The AI gene
 
 ### Automatic AI Analysis (Enrichment Pipeline)
 
-Every time you save an entry, DailyByte runs AI analysis in the background. This is non-blocking — your save completes instantly, and analysis runs afterward.
+Every time you save an entry, LifeLogr runs AI analysis in the background. This is non-blocking — your save completes instantly, and analysis runs afterward.
 
 #### Sentiment Analysis
 Each entry is analyzed for emotional content:
@@ -795,14 +795,14 @@ AI-detected patterns across your journaling. Shows themes that appear across mul
 
 When a reminder triggers:
 - A system notification appears with the title and message
-- Clicking the notification opens DailyByte
+- Clicking the notification opens LifeLogr
 - Reminders only fire while the app is running
 
 ---
 
 ## 16. Version History
 
-DailyByte automatically saves revision snapshots of your entries.
+LifeLogr automatically saves revision snapshots of your entries.
 
 ### Viewing History
 
@@ -904,7 +904,7 @@ After importing, run **"Deduplicate"** from Settings to find and remove duplicat
 
 ### Cloud Backup
 
-DailyByte supports multiple cloud storage providers:
+LifeLogr supports multiple cloud storage providers:
 
 | Provider | Protocol |
 |----------|----------|
@@ -1032,7 +1032,7 @@ Access settings via the **gear icon** in the sidebar.
 
 ## 22. Plugins
 
-DailyByte supports a plugin architecture for extending functionality.
+LifeLogr supports a plugin architecture for extending functionality.
 
 ### Installing a Plugin
 
@@ -1120,10 +1120,10 @@ If you see database errors:
 
 | Platform | Database | Media |
 |----------|----------|-------|
-| Linux (Tauri) | `~/.local/share/com.dailybyte.desktop/dailybyte.db` | `~/.local/share/com.dailybyte.desktop/media/` |
-| Linux (dev) | `~/.local/share/diarilinux/diarilinux.db` | `~/.local/share/diarilinux/media/` |
-| Windows | `%APPDATA%\dailybyte\dailybyte.db` | `%APPDATA%\dailybyte\media\` |
-| macOS | `~/Library/Application Support/dailybyte/dailybyte.db` | `~/Library/Application Support/dailybyte/media/` |
+| Linux (Tauri) | `~/.local/share/com.lifelogr.desktop/lifelogr.db` | `~/.local/share/com.lifelogr.desktop/media/` |
+| Linux (dev) | `~/.local/share/lifelogr/lifelogr.db` | `~/.local/share/lifelogr/media/` |
+| Windows | `%APPDATA%\lifelogr\lifelogr.db` | `%APPDATA%\lifelogr\media\` |
+| macOS | `~/Library/Application Support/lifelogr/lifelogr.db` | `~/Library/Application Support/lifelogr/media/` |
 | Dev mode | `./dev.db` | `./media/` |
 
 ### Getting Help

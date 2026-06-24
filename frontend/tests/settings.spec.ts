@@ -129,7 +129,7 @@ test.describe('Settings UI verification', () => {
 
     // Plugins section
     await expect(page.locator('text=Plugins')).toBeVisible()
-    await expect(page.locator('text=Extend DailyByte with plugins')).toBeVisible()
+    await expect(page.locator('text=Extend LifeLogr with plugins')).toBeVisible()
   })
 
   // ── About Tab ──
@@ -139,7 +139,7 @@ test.describe('Settings UI verification', () => {
 
     await expect(page.locator('text=About')).toBeVisible()
     await expect(page.locator('text=App information and credits')).toBeVisible()
-    await expect(page.locator('text=DailyByte')).toBeVisible()
+    await expect(page.locator('text=LifeLogr')).toBeVisible()
 
     // Links
     await expect(page.locator('text=GitHub')).toBeVisible()

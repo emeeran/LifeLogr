@@ -1,6 +1,6 @@
-# 📔 DailyByte (Diarilinux)
+# 📔 LifeLogr (LifeLogr)
 
-DailyByte is a privacy-first, offline-first journaling application designed for Linux (Ubuntu 24.x LTS) with native packaging capabilities. It provides a highly premium writing experience with markdown support, media attachments, local voice transcription, local AI-assisted grammar checking and mood insights, end-to-end encrypted cloud sync, and a dynamic plugin architecture—keeping all user data strictly local and secure.
+LifeLogr is a privacy-first, offline-first journaling application designed for Linux (Ubuntu 24.x LTS) with native packaging capabilities. It provides a highly premium writing experience with markdown support, media attachments, local voice transcription, local AI-assisted grammar checking and mood insights, end-to-end encrypted cloud sync, and a dynamic plugin architecture—keeping all user data strictly local and secure.
 
 ---
 

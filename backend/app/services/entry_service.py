@@ -3,10 +3,11 @@
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.sql.expression import Select as Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.models.entry import Entry
 from app.models.tag import EntryTag
@@ -84,9 +85,7 @@ class EntryService:
                 self.db.add_all([EntryTag(entry_id=entry_id, tag_id=tid) for tid in to_add])
             if to_remove:
                 await self.db.execute(
-                    EntryTag.__table__.delete().where(
-                        EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(to_remove)  # type: ignore[attr-defined]
-                    )
+                    delete(EntryTag).where(EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(to_remove))
                 )
         await self.db.commit()
         await self.db.refresh(entry)
@@ -101,14 +100,15 @@ class EntryService:
 
         # Clean up media files for the soft-deleted entry
         from app.models.media import Media
-        from app.services.media_service import MediaService
 
         media_result = await self.db.execute(select(Media).where(Media.entry_id == entry_id))
         media_list = media_result.scalars().all()
         if media_list:
-            media_svc = MediaService(self.db)
             for media in media_list:
-                await media_svc.delete(media.id)
+                full_path = settings.MEDIA_DIR / media.storage_path
+                if full_path.exists():
+                    full_path.unlink()
+                await self.db.delete(media)
 
         await self.db.commit()
 

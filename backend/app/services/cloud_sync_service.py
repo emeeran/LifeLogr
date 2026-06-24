@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any, Awaitable, Callable, Protocol, cast
 
 import httpx
 from sqlalchemy import func, select
@@ -107,7 +107,7 @@ class SyncProvider(Protocol):
 class LocalFileProvider:
     """Local filesystem sync provider (for testing/dev)."""
 
-    def __init__(self, base_dir: str = "/tmp/diarilinux-sync") -> None:
+    def __init__(self, base_dir: str = "/tmp/lifelogr-sync") -> None:
         from pathlib import Path
 
         self._base = Path(base_dir)
@@ -135,8 +135,8 @@ class LocalFileProvider:
             target.unlink()
 
     async def close(self) -> None:
-        """Safely release connection resources."""
-        pass
+        """Local provider has no open resources."""
+        return None
 
 
 # ── Nextcloud (WebDAV) provider ────────────────────────────────────────
@@ -211,12 +211,12 @@ class GoogleDriveProvider:
     """Google Drive sync provider with a shared httpx client."""
 
     def __init__(
-        self, credentials: dict[str, str], on_token_refresh: callable | None = None
+        self,
+        credentials: dict[str, str],
+        on_token_refresh: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> None:
-        self._client_id = (
-            credentials.get("client_id") or "diarilinux-client-id.apps.googleusercontent.com"
-        )
-        self._client_secret = credentials.get("client_secret") or "GOCSPX-diarilinux-secret"
+        self._client_id = credentials.get("client_id", "")
+        self._client_secret = credentials.get("client_secret", "")
         self._refresh_token = credentials.get("refresh_token")
         self._access_token = credentials.get("access_token")
         self._token_expiry = credentials.get("token_expiry")
@@ -238,6 +238,8 @@ class GoogleDriveProvider:
 
         if not self._refresh_token:
             raise ValueError("Refresh token missing from Google Drive credentials")
+        if not self._client_id or not self._client_secret:
+            raise ValueError("Google OAuth client credentials are not configured")
 
         client = self._get_client()
         resp = await client.post(
@@ -295,7 +297,7 @@ class GoogleDriveProvider:
             return path
         else:
             url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-            boundary = b"diarilinux_upload_boundary"
+            boundary = b"lifelogr_upload_boundary"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": f"multipart/related; boundary={boundary.decode()}",
@@ -369,19 +371,28 @@ class GoogleDriveProvider:
 # ── MEGA provider ──────────────────────────────────────────────────────
 
 
+class MegaClient(Protocol):
+    def create_folder(self, name: str, dest: str) -> object: ...
+    def upload(self, filename: str, dest: str, dest_filename: str) -> object: ...
+    def find(self, path: str) -> object: ...
+    def download(self, file_info: object, dest_path: str) -> object: ...
+    def get_files(self) -> dict[str, object]: ...
+    def delete(self, file_info: object) -> object: ...
+
+
 class MegaProvider:
     """MEGA cloud sync provider using mega.py library."""
 
     def __init__(self, email: str, password: str) -> None:
         self._email = email
         self._password = password
-        self._mega: object | None = None
+        self._mega: MegaClient | None = None
 
-    def _get_sync_client(self) -> object:
+    def _get_sync_client(self) -> MegaClient:
         """Get or create the synchronous MEGA client."""
         if self._mega is None:
             try:
-                from mega import Mega
+                from mega import Mega  # type: ignore[import-not-found]
             except ImportError as exc:
                 raise ImportError(
                     "MEGA cloud sync requires the 'cloud' extra. "
@@ -389,7 +400,7 @@ class MegaProvider:
                 ) from exc
 
             m = Mega()
-            self._mega = m.login(self._email, self._password)
+            self._mega = cast(MegaClient, m.login(self._email, self._password))
         return self._mega
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
@@ -440,14 +451,18 @@ class MegaProvider:
         mega = await asyncio.to_thread(self._get_sync_client)
         try:
             files = await asyncio.to_thread(mega.get_files)
-            return [
-                f["a"]["n"]
-                for f in files.values()
-                if isinstance(f, dict)
-                and "a" in f
-                and "n" in f.get("a", {})
-                and f["a"]["n"].startswith(prefix.split("/")[-1] if "/" in prefix else prefix)
-            ]
+            found: list[str] = []
+            needle = prefix.split("/")[-1] if "/" in prefix else prefix
+            for item in files.values():
+                if not isinstance(item, dict):
+                    continue
+                attrs = item.get("a")
+                if not isinstance(attrs, dict):
+                    continue
+                name = attrs.get("n")
+                if isinstance(name, str) and name.startswith(needle):
+                    found.append(name)
+            return found
         except Exception:
             logger.warning("Failed to list MEGA files", exc_info=True)
             return []
@@ -464,8 +479,8 @@ class MegaProvider:
             logger.warning("Failed to delete MEGA file: %s", path, exc_info=True)
 
     async def close(self) -> None:
-        """Safely release connection resources."""
-        pass
+        """MEGA provider uses short-lived sync calls and holds no async handles."""
+        return None
 
 
 # ── High-level orchestration ───────────────────────────────────────────
@@ -493,7 +508,7 @@ class CloudSyncService:
         pushed = 0
         for item in pending:
             data = item.payload.encode()
-            path = f"diarilinux/{item.entity_type}/{item.entity_id}/{item.operation}.json"
+            path = f"lifelogr/{item.entity_type}/{item.entity_id}/{item.operation}.json"
 
             if passphrase:
                 from app.services.encryption_service import EncryptionService
@@ -511,7 +526,7 @@ class CloudSyncService:
 
     async def pull(self, passphrase: str | None = None) -> dict[str, int]:
         """Pull changes from cloud provider."""
-        files = await self.provider.list_files("diarilinux/")
+        files = await self.provider.list_files("lifelogr/")
         pulled = 0
         for path in files:
             data = await self.provider.download(path)

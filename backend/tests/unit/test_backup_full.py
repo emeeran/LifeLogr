@@ -581,7 +581,7 @@ class TestScheduledBackupExecution:
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
-        db_file = data_dir / "diarilinux.db"
+        db_file = data_dir / "lifelogr.db"
         _make_valid_db(db_file)
 
         backup_dir = tmp_path / "backups"
@@ -602,7 +602,7 @@ class TestScheduledBackupExecution:
             config_mod.settings.DATABASE_URL = original_db_url
             config_mod.settings.MEDIA_DIR = original_media_dir
 
-        archives = list(backup_dir.glob("dailybyte-backup-*.tar.gz"))
+        archives = list(backup_dir.glob("lifelogr-backup-*.tar.gz"))
         assert len(archives) == 1
 
         with tarfile.open(str(archives[0]), "r:gz") as tar:
@@ -615,14 +615,14 @@ class TestScheduledBackupExecution:
 
         # Create 5 fake backup files with distinct mtimes
         for i in range(5):
-            f = tmp_path / f"dailybyte-backup-2025010{i+1}-000000.tar.gz"
+            f = tmp_path / f"lifelogr-backup-2025010{i+1}-000000.tar.gz"
             f.write_bytes(f"backup-{i}".encode())
             # Ensure distinct mtime so sorting is deterministic
             os.utime(str(f), (1000 + i, 1000 + i))
 
         _cleanup_old_backups(tmp_path, retention=2)
-        remaining = sorted(tmp_path.glob("dailybyte-backup-*.tar.gz"))
+        remaining = sorted(tmp_path.glob("lifelogr-backup-*.tar.gz"))
         assert len(remaining) == 2
         # Keeps the two newest (by mtime): 04 and 05
-        assert remaining[0].name == "dailybyte-backup-20250104-000000.tar.gz"
-        assert remaining[1].name == "dailybyte-backup-20250105-000000.tar.gz"
+        assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
+        assert remaining[1].name == "lifelogr-backup-20250105-000000.tar.gz"

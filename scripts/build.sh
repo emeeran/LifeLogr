@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build orchestrator for Diarilinux
+# Build orchestrator for LifeLogr
 # Usage: ./scripts/build.sh [target]
 # Targets: linux, windows, mac, android, ios, all-desktop, all
 
 TARGET="${1:-linux}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "=== Diarilinux Build: $TARGET ==="
+echo "=== LifeLogr Build: $TARGET ==="
 
 # ── Prerequisite checks ────────────────────────────────────────────────
 need_cmd() {
@@ -39,7 +39,7 @@ build_backend_binary() {
     --noconfirm \
     --distpath dist/backend \
     --workpath build/backend
-  echo "Backend binary: dist/backend/diarilinux-backend/"
+  echo "Backend binary: dist/backend/lifelogr-backend/"
 }
 
 build_tauri() {
@@ -55,14 +55,14 @@ build_tauri() {
 
   cd "$ROOT/desktop"
 
-  # PyInstaller onefile outputs: dist/backend/diarilinux-backend (single binary)
+  # PyInstaller onefile outputs: dist/backend/lifelogr-backend (single binary)
   # Tauri sidecar expects the binary next to tauri.conf.json with target-triple suffix
   local target_triple
   target_triple="$(rustc -vV | grep host | cut -d' ' -f2)"
-  cp "dist/backend/diarilinux-backend" "src-tauri/diarilinux-backend-${target_triple}"
-  chmod +x "src-tauri/diarilinux-backend-${target_triple}"
+  cp "dist/backend/lifelogr-backend" "src-tauri/lifelogr-backend-${target_triple}"
+  chmod +x "src-tauri/lifelogr-backend-${target_triple}"
 
-  echo "Sidecar ready: src-tauri/diarilinux-backend-${target_triple}"
+  echo "Sidecar ready: src-tauri/lifelogr-backend-${target_triple}"
   cd src-tauri && cargo tauri build
   echo "Packages: src-tauri/target/release/bundle/"
 }

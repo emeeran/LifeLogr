@@ -39,7 +39,7 @@ async def export_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=diarilinux-export.pdf"},
+        headers={"Content-Disposition": "attachment; filename=lifelogr-export.pdf"},
     )
 
 
@@ -55,5 +55,5 @@ async def export_markdown(
     return Response(
         content=zip_bytes,
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=dailybyte-obsidian-vault.zip"},
+        headers={"Content-Disposition": "attachment; filename=lifelogr-obsidian-vault.zip"},
     )

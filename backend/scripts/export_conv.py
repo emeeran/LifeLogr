@@ -18,7 +18,7 @@ markdown_lines = [
     "",
     "**Conversation ID:** `e138153a-122b-4a7c-81f1-0978913669de`  ",
     "**Date:** 2026-05-23/24  ",
-    "**Topic:** Google Drive Sync & Backup Integration in Diarilinux",
+    "**Topic:** Google Drive Sync & Backup Integration in LifeLogr",
     "",
     "---",
     "",

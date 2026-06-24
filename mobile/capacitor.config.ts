@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.diarilinux.app',
-  appName: 'Diarilinux',
+  appId: 'com.lifelogr.app',
+  appName: 'LifeLogr',
   webDir: '../frontend/dist',
   server: {
     // In dev, proxy API calls to the local backend

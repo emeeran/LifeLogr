@@ -4,6 +4,7 @@ import io
 import logging
 import uuid
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,7 +120,7 @@ class MediaService:
             return file_data, False
 
         try:
-            img = Image.open(io.BytesIO(file_data))
+            img: Any = Image.open(io.BytesIO(file_data))
 
             # Strip EXIF orientation and convert to RGB if needed
             if hasattr(img, "transpose"):
@@ -129,7 +130,8 @@ class MediaService:
 
             # Resize if larger than max dimension
             if max(img.size) > _MAX_IMAGE_DIMENSION:
-                img.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), Image.LANANCZOS)
+                resampling = getattr(Image, "Resampling", Image)
+                img.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), resampling.LANCZOS)
 
             # Convert to RGB for WebP (handles RGBA, palette, etc.)
             if img.mode in ("RGBA", "LA", "P"):

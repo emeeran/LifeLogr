@@ -1,7 +1,7 @@
-# Diarilinux Review & Deep Dive
+# LifeLogr Review & Deep Dive
 
 ## Executive Summary
-Diarilinux is an open-source, offline-first journaling application designed primarily for Linux desktop users. Emulating the well-known "Diarium" app, it enables users to record text entries, voice memos, and rich media (up to 25MB) locally with robust data ownership and privacy. It extends functionality with local AI (Ollama) integrations, background cloud backups, and broad platform accessibility through a shared web-based architecture.
+LifeLogr is an open-source, offline-first journaling application designed primarily for Linux desktop users. Emulating the well-known "Diarium" app, it enables users to record text entries, voice memos, and rich media (up to 25MB) locally with robust data ownership and privacy. It extends functionality with local AI (Ollama) integrations, background cloud backups, and broad platform accessibility through a shared web-based architecture.
 
 ## Technical Architecture Deep Dive
 
@@ -37,4 +37,4 @@ The client application is built with a modern Vue.js and Vite stack.
 - **Offline-First & Local-First:** Privacy is paramount. Media storage is local, voice transcription is local, AI analysis is handled by local LLM models (Ollama). Cloud interactions are strictly limited to encrypted backups.
 
 ## Conclusion
-Diarilinux is a highly sophisticated, production-grade template for a privacy-centric personal application. The separation of concerns between its FastAPI backend and Vue/Tauri frontend provides an excellent foundation. The ambitious local AI implementation stands out as a distinguishing feature that aligns perfectly with the offline-first mandate.
+LifeLogr is a highly sophisticated, production-grade template for a privacy-centric personal application. The separation of concerns between its FastAPI backend and Vue/Tauri frontend provides an excellent foundation. The ambitious local AI implementation stands out as a distinguishing feature that aligns perfectly with the offline-first mandate.

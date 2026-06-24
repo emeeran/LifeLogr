@@ -2,7 +2,7 @@
 
 ---
 
-# Gate Review — Diarilinux SPEC.md
+# Gate Review — LifeLogr SPEC.md
 
 **Reviewer:** Principal Engineer (automated SDD gate)
 **Date:** 2026-05-08

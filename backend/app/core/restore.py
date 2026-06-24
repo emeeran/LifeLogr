@@ -70,6 +70,8 @@ async def checkpoint_wal(db_path: Path) -> None:
     async with engine.begin() as conn:
         result = await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
         row = result.fetchone()
+        if row is None:
+            raise RuntimeError("WAL checkpoint returned no result row")
         # row: (busy, log, checkpointed) — busy != 0 means the checkpoint
         # could not complete because readers are still active.
         if row[0] != 0:

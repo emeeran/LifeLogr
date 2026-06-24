@@ -56,7 +56,7 @@ class _DiaryPDF(FPDF):
         if self.page_no() > 1:
             self.set_font("Helvetica", "I", 8)
             self.set_text_color(150, 150, 150)
-            self.cell(0, 10, "Diarilinux Export", align="C")
+            self.cell(0, 10, "LifeLogr Export", align="C")
             self.ln(5)
 
     def footer(self) -> None:
@@ -117,7 +117,7 @@ class ExportService:
             )
 
         content = "\n".join(parts)
-        return _HTML_TEMPLATE.format(title="Diarilinux Export", content=content)
+        return _HTML_TEMPLATE.format(title="LifeLogr Export", content=content)
 
     async def export_pdf(
         self, start_date: date | None = None, end_date: date | None = None
@@ -208,7 +208,7 @@ class ExportService:
                 tags = [assoc.tag.name for assoc in entry.tag_associations if assoc.tag]
 
                 # 2. Gather attachments and copy files to Zip
-                attachments_meta = []
+                attachments_meta: list[dict[str, object]] = []
                 for media in entry.media:
                     local_file_path = settings.MEDIA_DIR / media.storage_path
                     if local_file_path.exists():
@@ -222,7 +222,7 @@ class ExportService:
                         })
 
                 # 3. Create frontmatter manually to avoid PyYAML dependency
-                metadata = {
+                metadata: dict[str, object] = {
                     "date": str(entry.entry_date),
                     "title": entry.title,
                     "mood": entry.mood,
@@ -239,23 +239,26 @@ class ExportService:
                 # 4. Format entry body with relative links
                 body_content = entry.body or ""
                 
-                unread_attachments = []
+                unread_attachments: list[dict[str, object]] = []
                 for attachment in attachments_meta:
-                    if attachment["filename"] not in body_content:
+                    filename = str(attachment.get("filename", ""))
+                    if filename and filename not in body_content:
                         unread_attachments.append(attachment)
                 
                 if unread_attachments:
                     body_content += "\n\n## Attachments\n"
                     for attachment in unread_attachments:
-                        rel_path = f"../../attachments/{entry.entry_date}/{attachment['filename']}"
-                        if attachment["type"] == "image":
-                            body_content += f"![{attachment['filename']}]({rel_path})\n"
-                        elif attachment["type"] == "audio":
+                        filename = str(attachment.get("filename", "attachment"))
+                        media_type = str(attachment.get("type", "document"))
+                        rel_path = f"../../attachments/{entry.entry_date}/{filename}"
+                        if media_type == "image":
+                            body_content += f"![{filename}]({rel_path})\n"
+                        elif media_type == "audio":
                             body_content += f'<audio controls src="{rel_path}"></audio>\n'
-                        elif attachment["type"] == "video":
+                        elif media_type == "video":
                             body_content += f'<video controls src="{rel_path}"></video>\n'
                         else:
-                            body_content += f"[{attachment['filename']}]({rel_path})\n"
+                            body_content += f"[{filename}]({rel_path})\n"
 
                 full_markdown = f"---\n{frontmatter_block}\n---\n\n{body_content}"
 
@@ -268,7 +271,7 @@ class ExportService:
         return zip_buffer.getvalue()
 
     @staticmethod
-    def _dump_yaml(data: dict) -> str:
+    def _dump_yaml(data: dict[str, object]) -> str:
         """Helper to serialize a simple dictionary to YAML format manually."""
         lines = []
         for k, v in data.items():
