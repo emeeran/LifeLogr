@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useBackupStore } from '../../../stores/backup'
 import { backupApi } from '../../../api/backup'
 import { entriesApi } from '../../../api/entries'
-import { exportHtml, getExportPdfUrl, exportDiarium } from '../../../api/export'
+import { exportHtml, getExportPdfUrl, exportDiarium, getExportDiariumDbUrl } from '../../../api/export'
 import { useEntriesStore } from '../../../stores/entries'
 import { useSyncStore } from '../../../stores/sync'
 import { getSettings, vacuumDatabase, checkIntegrity } from '../../../api/settings'
@@ -91,6 +91,7 @@ const exportFrom = ref('')
 const exportTo = ref('')
 const exportingHtml = ref(false)
 const exportingDiarium = ref(false)
+const exportingDiariumDb = ref(false)
 const exportDisabled = computed(() => exportRange.value === 'range' && (!exportFrom.value || !exportTo.value))
 
 async function downloadMarkdown() {
@@ -127,6 +128,20 @@ async function downloadDiarium() {
     await saveFile({ data: blob, defaultName: 'diarium-export.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
   } catch (e: unknown) { emit('toast', 'error', `Diarium export failed: ${errMsg(e)}`) }
   finally { exportingDiarium.value = false }
+}
+
+async function downloadDiariumDb() {
+  const url = exportRange.value === 'range' && exportFrom.value && exportTo.value
+    ? getExportDiariumDbUrl(exportFrom.value, exportTo.value)
+    : getExportDiariumDbUrl()
+  exportingDiariumDb.value = true
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`Diarium DB export failed: ${resp.status}`)
+    const blob = await resp.blob()
+    await saveFile({ data: blob, defaultName: 'lifelogr-export.diary', filters: [{ name: 'Diarium', extensions: ['diary'] }] })
+  } catch (e: unknown) { emit('toast', 'error', `Diarium DB export failed: ${errMsg(e)}`) }
+  finally { exportingDiariumDb.value = false }
 }
 
 // ── Maintenance ──
@@ -502,6 +517,9 @@ onMounted(() => {
         <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
           :disabled="exportingDiarium || exportDisabled" @click="downloadDiarium">
           <Loader v-if="exportingDiarium" :size="10" class="animate-spin inline" /> Diarium</button>
+        <button class="px-2 py-0.5 rounded-md text-[11px] bg-surface-hover text-text-primary hover:text-accent cursor-pointer disabled:opacity-50 transition-colors"
+          :disabled="exportingDiariumDb || exportDisabled" @click="downloadDiariumDb">
+          <Loader v-if="exportingDiariumDb" :size="10" class="animate-spin inline" /> .diary</button>
       </div>
     </div>
   </SettingsSection>
