@@ -9,7 +9,9 @@ const RecordingPanel = defineAsyncComponent(() => import('../recordings/Recordin
 const AttachmentsPanel = defineAsyncComponent(() => import('../entry/AttachmentsPanel.vue'))
 import SearchPalette from '../search/SearchPalette.vue'
 import ScribblePad from '../scribble/ScribblePad.vue'
+const WhatsNewDialog = defineAsyncComponent(() => import('../settings/dialogs/WhatsNewDialog.vue'))
 import { useEntriesStore } from '../../stores/entries'
+import { useUpdateChecker } from '../../composables/useUpdateChecker'
 import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { AlertTriangle, Save, Trash2, X, Sparkles, Mic, Paperclip } from 'lucide-vue-next'
 import type { Component } from 'vue'
@@ -49,6 +51,20 @@ function onGlobalKeydown(e: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
+
+// ── First-run "What's New" dialog + weekly auto update check ──
+const { hasUnseenVersion, maybeAutoCheck } = useUpdateChecker()
+const showWhatsNew = ref(false)
+onMounted(() => {
+  // Show the changelog dialog once per version upgrade (or on fresh install).
+  if (hasUnseenVersion) {
+    // Defer a tick so the app shell renders first.
+    setTimeout(() => { showWhatsNew.value = true }, 300)
+  }
+  // Best-effort weekly background check (opt-in via General settings).
+  // Fire-and-forget — must never interrupt startup or the user.
+  void maybeAutoCheck()
+})
 
 // ── Save prompt actions ──
 async function handleSave() {
@@ -184,6 +200,9 @@ function onAttachmentView(index: number) {
 
     <!-- Global search palette -->
     <SearchPalette v-if="ui.searchPaletteOpen" />
+
+    <!-- First-run / upgrade "What's New" dialog -->
+    <WhatsNewDialog v-model="showWhatsNew" />
   </div>
 </template>
 

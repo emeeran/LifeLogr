@@ -5,16 +5,20 @@ import { useUiStore } from '../../../stores/ui'
 import { useSearchStore } from '../../../stores/search'
 import { useTemplatesStore } from '../../../stores/templates'
 import {
-  Sun, Moon, Type, Sliders, Clock, Eye, Search, MapPin, LayoutTemplate, Keyboard
+  Sun, Moon, Type, Sliders, Clock, Eye, Search, MapPin, LayoutTemplate, Keyboard, RefreshCw
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
 import ToggleSwitch from '../shared/ToggleSwitch.vue'
 import AccordionItem from '../shared/AccordionItem.vue'
+import { useUpdateChecker } from '../../../composables/useUpdateChecker'
 
 const ui = useUiStore()
 const searchStore = useSearchStore()
 const templatesStore = useTemplatesStore()
+
+// Update preferences (shared with the About / What's New tabs).
+const { autoCheckEnabled } = useUpdateChecker()
 
 // Fetch templates so the "Default template" dropdown is populated
 onMounted(() => { templatesStore.fetchAll() })
@@ -147,6 +151,18 @@ function resetEditorDefaults() {
         </select>
       </SettingRow>
     </div>
+  </SettingsSection>
+
+  <!-- Updates -->
+  <SettingsSection title="Updates" :icon="RefreshCw" description="Version checks and release notifications"
+    card-class="p-3 space-y-2">
+    <SettingRow :icon="RefreshCw" label="Check for updates weekly">
+      <ToggleSwitch v-model="autoCheckEnabled" />
+    </SettingRow>
+    <p class="text-[10.5px] text-text-muted leading-relaxed pl-[18px]">
+      When enabled, LifeLogr quietly checks GitHub Releases once a week for a
+      newer version. Off by default — turn it on if you'd like update notices.
+    </p>
   </SettingsSection>
 
   <!-- Keyboard Shortcuts (collapsible) -->
