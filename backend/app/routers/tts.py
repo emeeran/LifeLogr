@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -13,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.entry import Entry
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/tts", tags=["tts"])
 
@@ -116,10 +119,21 @@ class SpeakRequest(BaseModel):
 @router.post("/speak")
 async def speak_text(req: SpeakRequest) -> Response:
     """Generate speech audio from arbitrary text and stream it back as MP3."""
+    from fastapi import HTTPException
+
     text = _clean_markdown(req.text)
 
     if not text:
         return Response(content=b"", media_type="audio/mpeg")
 
-    audio = await _generate_audio(text, req.voice, _rate_str(req.rate), _volume_str(req.volume))
+    try:
+        audio = await _generate_audio(text, req.voice, _rate_str(req.rate), _volume_str(req.volume))
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("TTS generation failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Text-to-speech failed: {exc}. Edge TTS needs internet access.",
+        ) from exc
     return StreamingResponse(io.BytesIO(audio), media_type="audio/mpeg")

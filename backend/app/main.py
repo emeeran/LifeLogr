@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         sched = SchedulerService.get_scheduler()
         if sched.running:
             from datetime import datetime, timedelta
-            from apscheduler.triggers.date import DateTrigger  # type: ignore[import-untyped]
+            from apscheduler.triggers.date import DateTrigger
 
             sched.add_job(
                 SchedulerService.schedule_catchup,

@@ -27,6 +27,14 @@ async def upload_recording(
     """Upload a voice recording and attach to an entry."""
     svc = VoiceRecordingService(db)
     file_data = await file.read()
+    # Reject empty uploads — a 0-byte recording produces a broken file that
+    # can never play ("NotSupportedError" in the player). The frontend also
+    # guards this, but defend in depth.
+    if not file_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Recording is empty (0 bytes). The microphone may not have captured audio.",
+        )
     return await svc.upload(entry_id, file.filename or "recording.mp3", file_data)
 
 

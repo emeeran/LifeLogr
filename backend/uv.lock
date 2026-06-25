@@ -1267,6 +1267,7 @@ dependencies = [
     { name = "apscheduler" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "faster-whisper" },
     { name = "fpdf2" },
     { name = "httpx" },
     { name = "markdown-it-py" },
@@ -1282,7 +1283,6 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "edge-tts" },
-    { name = "faster-whisper" },
     { name = "mega-py" },
     { name = "pillow" },
     { name = "pytesseract" },
@@ -1300,9 +1300,6 @@ ocr = [
 ]
 pdf = [
     { name = "weasyprint" },
-]
-stt = [
-    { name = "faster-whisper" },
 ]
 tts = [
     { name = "edge-tts" },
@@ -1327,7 +1324,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=48.0.0" },
     { name = "edge-tts", marker = "extra == 'tts'", specifier = ">=7.2.8" },
     { name = "fastapi", specifier = ">=0.136.1" },
-    { name = "faster-whisper", marker = "extra == 'stt'", specifier = ">=1.2.1" },
+    { name = "faster-whisper", specifier = ">=1.2.1" },
     { name = "fpdf2", specifier = ">=2.8.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lifelogr", extras = ["stt", "ocr", "pdf", "tts", "image", "cloud"], marker = "extra == 'all'" },

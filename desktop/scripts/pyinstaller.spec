@@ -9,14 +9,34 @@ Output: dist/lifelogr-backend (single binary)
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_dynamic_libs
 
 # Project root (two levels up from this file)
 ROOT = Path(SPECPATH).resolve().parent.parent
 
 # Auto-discover all app.* submodules — future-proof against additions
 _app_hiddenimports = collect_submodules('app')
+
+# STT stack — faster-whisper + its native deps (CTranslate2, onnxruntime,
+# tokenizers, numpy). These are collected so voice transcription works out of
+# the box in the packaged app. torch is NOT required (faster-whisper uses
+# CTranslate2 for inference), keeping the size delta to ~150 MB.
+_faster_whisper_submodules = collect_submodules('faster_whisper')
+_ctranslate2_submodules = collect_submodules('ctranslate2')
+_ctranslate2_binaries = collect_dynamic_libs('ctranslate2')
+_onnxruntime_submodules = collect_submodules('onnxruntime')
+_onnxruntime_binaries = collect_dynamic_libs('onnxruntime')
+_tokenizers_submodules = collect_submodules('tokenizers')
+
+# TTS stack — Edge TTS + aiohttp + certifi (with its cacert.pem data file, so
+# HTTPS to the Microsoft TTS service works in the frozen build). Without
+# certifi's CA bundle the TLS handshake fails and Read Aloud returns 500.
+import os as _os
 _edge_tts_hiddenimports = collect_submodules('edge_tts')
+_aiohttp_submodules = collect_submodules('aiohttp')
+_certifi_submodules = collect_submodules('certifi')
+import certifi as _certifi_mod
+_certifi_data = [(_os.path.join(_os.path.dirname(_certifi_mod.__file__), 'cacert.pem'), 'certifi')]
 
 # pysqlite3-binary ships its own libsqlite3 and C extension — include both
 # so that PyInstaller builds use a known-good sqlite3 instead of the one
@@ -33,9 +53,19 @@ for _so in _glob.glob(_site + '/pysqlite3_binary.libs/libsqlite3*.so*'):
 a = Analysis(
     [str(ROOT / 'backend' / 'app' / 'main.py')],
     pathex=[str(ROOT / 'backend')],
-    binaries=_pysqlite3_binaries,
+    binaries=[
+        *_pysqlite3_binaries,
+        *_ctranslate2_binaries,
+        *_onnxruntime_binaries,
+    ],
     datas=[
         (str(ROOT / 'backend' / 'app'), 'app'),
+        # Build-time-predownloaded Whisper model — enables fully offline
+        # transcription with no first-run download. Staged by
+        # desktop/scripts/download-whisper-model.sh.
+        (str(ROOT / 'backend' / 'models'), 'models'),
+        # certifi CA bundle — required for Edge TTS HTTPS in the frozen build.
+        *_certifi_data,
     ],
     hiddenimports=[
         # Auto-discovered app modules
@@ -66,20 +96,35 @@ a = Analysis(
         'pysqlite3',
         # TTS — Edge TTS for Read Aloud
         *_edge_tts_hiddenimports,
+        *_aiohttp_submodules,
+        'certifi',
+        *_certifi_submodules,
+        'aiohttp',
+        # STT — faster-whisper + native inference deps for voice transcription
+        'faster_whisper',
+        *_faster_whisper_submodules,
+        'ctranslate2',
+        *_ctranslate2_submodules,
+        'onnxruntime',
+        *_onnxruntime_submodules,
+        'tokenizers',
+        *_tokenizers_submodules,
+        'numpy',
+        'numpy.core',
+        'yaml',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Heavy optional deps — excluded for size; install via [group] extras
-        'faster_whisper',
+        # Heavy optional deps NOT needed by the STT stack — excluded for size.
+        # (faster-whisper uses CTranslate2, not torch.)
         'weasyprint',
         'mega',
         'PIL',
         'PIL.Image',
         'pytesseract',
         'torch',
-        'numpy',
         'scipy',
         'matplotlib',
         # Unused Python stdlib — strip for size

@@ -10,7 +10,7 @@ from app.schemas.tag import TagBrief
 class EntryCreate(BaseModel):
     entry_date: date
     title: str | None = Field(default=None, max_length=255, description="Entry title")
-    body: str = Field(min_length=1, max_length=1_000_000, description="Markdown body")
+    body: str = Field(default="", max_length=1_000_000, description="Markdown body (may be empty for title-only/recording-only entries)")
     mood: str | None = Field(default=None, max_length=50, description="Mood label")
     tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to associate")
 
@@ -31,7 +31,7 @@ class EntryUpdate(BaseModel):
     title: str | None = Field(
         default=None, max_length=255, description="Updated title; null to clear"
     )
-    body: str | None = Field(default=None, min_length=1, description="Updated Markdown body")
+    body: str | None = Field(default=None, max_length=1_000_000, description="Updated Markdown body; may be empty for title-only/recording-only entries")
     mood: str | None = Field(default=None, max_length=50, description="Updated mood; null to clear")
     tag_ids: list[int] | None = Field(
         default=None, description="Tag IDs to associate; null to keep existing"

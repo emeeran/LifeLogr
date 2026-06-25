@@ -37,6 +37,9 @@ jobs:
           echo "VITE_APP_VERSION=$VER"
           cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
+      - name: Pre-download Whisper model (offline transcription)
+        run: bash desktop/scripts/download-whisper-model.sh
+
       - name: Build backend binary
         run: |
           cd backend && uv sync
@@ -45,10 +48,9 @@ jobs:
 
       - name: Prepare sidecar
         run: |
-          mkdir -p desktop/src-tauri/binaries
           cp desktop/dist/lifelogr-backend \
-            desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
-          chmod +x desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
+            desktop/src-tauri/lifelogr-backend-x86_64-unknown-linux-gnu
+          chmod +x desktop/src-tauri/lifelogr-backend-x86_64-unknown-linux-gnu
 
       - name: Verify backend binary
         run: |
@@ -98,6 +100,9 @@ jobs:
           echo "VITE_APP_VERSION=$VER"
           cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
+      - name: Pre-download Whisper model (offline transcription)
+        run: bash desktop/scripts/download-whisper-model.sh
+
       - name: Build backend binary
         run: |
           cd backend && uv sync
@@ -105,8 +110,7 @@ jobs:
 
       - name: Prepare sidecar
         run: |
-          mkdir desktop\src-tauri\binaries
-          copy desktop\dist\lifelogr-backend.exe desktop\src-tauri\binaries\lifelogr-backend-x86_64-pc-windows-msvc.exe
+          copy desktop\dist\lifelogr-backend.exe desktop\src-tauri\lifelogr-backend-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri (MSI)
         uses: tauri-apps/tauri-action@v0
@@ -147,6 +151,9 @@ jobs:
           echo "VITE_APP_VERSION=$VER"
           cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
+      - name: Pre-download Whisper model (offline transcription)
+        run: bash desktop/scripts/download-whisper-model.sh
+
       - name: Build backend binary
         run: |
           cd backend && uv sync
@@ -154,10 +161,9 @@ jobs:
 
       - name: Prepare sidecar
         run: |
-          mkdir -p desktop/src-tauri/binaries
           cp desktop/dist/lifelogr-backend \
-            desktop/src-tauri/binaries/lifelogr-backend-aarch64-apple-darwin
-          chmod +x desktop/src-tauri/binaries/lifelogr-backend-aarch64-apple-darwin
+            desktop/src-tauri/lifelogr-backend-aarch64-apple-darwin
+          chmod +x desktop/src-tauri/lifelogr-backend-aarch64-apple-darwin
 
       - name: Build Tauri (DMG)
         uses: tauri-apps/tauri-action@v0

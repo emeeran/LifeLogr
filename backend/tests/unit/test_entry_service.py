@@ -30,9 +30,23 @@ class TestEntryCreate:
         assert len(entry["tags"]) == 1
         assert entry["tags"][0]["name"] == "travel"
 
-    async def test_create_empty_body_returns_422(self, client: AsyncClient):
+    async def test_create_empty_body_allowed(self, client: AsyncClient):
+        """An entry with empty body is valid (title-only / recording-only entries).
+
+        Previously rejected with 422, which blocked the voice-recording flow:
+        openRecording() saves first, and a body-less entry couldn't persist.
+        """
         r = await client.post("/api/v1/entries", json={"entry_date": "2026-05-08", "body": ""})
-        assert r.status_code == 422
+        assert r.status_code == 201
+        assert r.json()["body"] == ""
+
+    async def test_create_title_only_allowed(self, client: AsyncClient):
+        """A title with empty body should also be accepted."""
+        r = await client.post(
+            "/api/v1/entries", json={"entry_date": "2026-05-08", "title": "Just a title", "body": ""}
+        )
+        assert r.status_code == 201
+        assert r.json()["title"] == "Just a title"
 
 
 class TestEntryRead:

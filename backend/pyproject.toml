@@ -9,6 +9,7 @@ dependencies = [
     "apscheduler>=3.11.2",
     "cryptography>=48.0.0",
     "fastapi>=0.136.1",
+    "faster-whisper>=1.2.1",
     "fpdf2>=2.8.3",
     "httpx>=0.28.1",
     "markdown-it-py>=4.2.0",
@@ -22,7 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-stt = ["faster-whisper>=1.2.1"]
+# faster-whisper is now a required dep (transcription works out of the box);
+# the `stt` extra is kept as a no-op for backwards compatibility.
+stt = []
 ocr = ["pytesseract>=0.3.13", "pillow>=12.2.0"]
 pdf = ["weasyprint>=68.1"]
 tts = ["edge-tts>=7.2.8"]
@@ -52,6 +55,11 @@ target-version = "py311"
 
 [tool.mypy]
 strict = true
+
+# Third-party libs without type stubs — silence import-untyped errors.
+[[tool.mypy.overrides]]
+module = ["faster_whisper", "faster_whisper.*", "edge_tts", "apscheduler.*"]
+ignore_missing_imports = true
 
 [tool.uv]
 override-dependencies = ["pathlib ; sys_platform == 'never'"]

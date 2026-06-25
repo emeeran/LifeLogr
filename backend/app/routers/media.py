@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -101,13 +101,20 @@ async def get_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Any:
 
 @router.get("/{media_id}/file")
 async def download_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Response:
-    """Download the raw media file."""
+    """Stream the raw media file with HTTP range support.
+
+    ``FileResponse`` serves from disk and honours ``Range`` requests, which is
+    required for <video>/<audio> playback and seeking. Returning the whole blob
+    as a single ``Response(content=data)`` breaks media playback.
+    """
     svc = MediaService(db)
-    data, content_type, filename = await svc.get_file(media_id)
-    return Response(
-        content=data,
+    path, content_type, filename = await svc.get_file_path(media_id)
+    return FileResponse(
+        path=str(path),
         media_type=content_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        filename=filename,
+        # `inline` lets the browser render/play rather than force-download.
+        content_disposition_type="inline",
     )
 
 
