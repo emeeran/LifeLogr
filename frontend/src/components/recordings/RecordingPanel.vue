@@ -51,19 +51,31 @@ async function startRecording() {
     return
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // Mono, echo-cancelled, denoised capture: smaller files and markedly
+    // better transcription accuracy than the raw default.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    })
+    const mimeType = pickMimeType()
     let recorder: MediaRecorder
     try {
-      recorder = new MediaRecorder(stream)
-    } catch (mrErr: any) {
-      stream.getTracks().forEach(t => t.stop())
-      alert(
-        `MediaRecorder could not start: ${mrErr?.message || mrErr}\n\n` +
-        'This usually means the WebKit/GStreamer audio encoder is unavailable.\n' +
-        'On Linux run System Setup (Settings → Features) or:\n' +
-        '  sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav'
-      )
-      return
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    } catch {
+      // isTypeSupported can report a codec the engine then fails to construct
+      // (a half-installed GStreamer plugin). Retry once with the engine default
+      // before giving up — this try/fallback is the real safety net.
+      try {
+        recorder = new MediaRecorder(stream)
+      } catch (mrErr: any) {
+        stream.getTracks().forEach(t => t.stop())
+        alert(
+          `MediaRecorder could not start: ${mrErr?.message || mrErr}\n\n` +
+          'This usually means the WebKit/GStreamer audio encoder is unavailable.\n' +
+          'On Linux run System Setup (Settings → Features) or:\n' +
+          '  sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav'
+        )
+        return
+      }
     }
     const chunks: Blob[] = []
 
@@ -161,8 +173,15 @@ async function transcribe(rec: VoiceRecordingResponse) {
     const updated = await recordingsApi.transcribe(rec.id)
     const idx = recordings.value.findIndex(r => r.id === rec.id)
     if (idx >= 0) recordings.value[idx] = updated
-    if (updated.transcription) {
+    if (updated.transcription && updated.transcription.trim()) {
       emit('transcribed', updated.transcription)
+    } else {
+      // STT ran but produced nothing (a silent recording). Tell the user
+      // instead of silently doing nothing while showing a "transcribed" tick.
+      alert(
+        'No speech was detected in this recording.\n\n' +
+        'Try speaking louder and closer to the microphone, then record again.'
+      )
     }
   } catch (e: any) {
     alert(`Transcription failed: ${e.message}`)
@@ -248,6 +267,38 @@ function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
   const sec = s % 60
   return `${m}:${String(sec).padStart(2, '0')}`
+}
+
+/**
+ * Pick the best audio MIME type the current engine can actually encode.
+ *
+ * On WebKit2GTK (Linux/Tauri) `new MediaRecorder(stream)` with no mimeType
+ * often selects a codec the installed GStreamer encoders can't produce,
+ * yielding a 0-byte / undecodable recording — the root cause of silent
+ * recordings, empty transcriptions, and broken playback. Probing
+ * `isTypeSupported` and passing the result explicitly lands us on a working
+ * codec: webm/opus when the GStreamer plugins are present, falling back to
+ * raw WAV (universally decodable PCM) otherwise.
+ *
+ * Returns '' when nothing reports as supported; the caller then lets the engine
+ * choose, and a construction-time try/catch is the final safety net
+ * (isTypeSupported can still lie when a plugin is half-installed).
+ */
+function pickMimeType(): string {
+  const candidates = [
+    'audio/webm;codecs=opus', // smallest + best for Whisper; needs gst good+bad
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4', // WebKit/Safari fallback
+    'audio/x-wav', // raw PCM — universally decodable, common WebKit2GTK output
+    'audio/wav',
+  ]
+  for (const t of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(t)) return t
+    } catch { /* isTypeSupported not implemented for this type */ }
+  }
+  return ''
 }
 
 /**

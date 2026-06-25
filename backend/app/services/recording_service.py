@@ -116,95 +116,31 @@ class VoiceRecordingService:
         return rec
 
     async def transcribe(self, recording_id: int) -> VoiceRecording:
-        """Run local speech-to-text; append transcription to entry body.
+        """Run local speech-to-text and persist the result on the recording.
 
-        The transcription result is committed independently of the entry body
-        update, so even if the FTS update trigger raises "SQL logic error"
-        (a pysqlite3 quirk), the transcribed text is never lost. The body
-        append is retried once with an FTS row rebuild on failure.
+        The recording record is the single source of truth for the spoken
+        text. The entry *body* is the frontend editor's responsibility — the
+        UI appends a ``[Transcription]`` block to the live editor (and
+        autosaves) — so this method deliberately does NOT mutate the entry as
+        a side-effect of transcription. (The text is never lost regardless of
+        what the UI does: it is committed here on the recording.)
         """
         rec = await self.get(recording_id)
         if rec.is_transcribed:
             raise ConflictError(f"Recording {recording_id} already transcribed")
 
         audio_bytes, _, _ = await self.media_svc.get_file(rec.media_id)
-        text = await asyncio.to_thread(self._run_stt, audio_bytes, rec.audio_format)
+        # Normalise: an empty/whitespace result means no speech was detected
+        # (common with a silent recording). We mark the recording transcribed
+        # either way; the frontend surfaces a "no speech detected" notice.
+        text = (await asyncio.to_thread(self._run_stt, audio_bytes, rec.audio_format) or "").strip()
 
-        # 1. Persist the transcription on the recording record first.
         rec.transcription = text
         rec.is_transcribed = True
         await self.db.commit()
 
-        # 2. Best-effort append to the entry body. A failure here must NOT
-        #    lose the transcription (already committed above).
-        try:
-            await self._append_transcription_to_entry(rec.entry_id, text)
-        except Exception:
-            logger.warning(
-                "Could not append transcription to entry body (FTS trigger); "
-                "transcription is still saved on the recording.",
-                exc_info=True,
-            )
-
         await self.db.refresh(rec)
         return rec
-
-    async def _append_transcription_to_entry(self, entry_id: int, text: str) -> None:
-        """Append the transcription block to the entry body.
-
-        Tolerates the FTS AFTER UPDATE trigger failing by dropping+recreating
-        the row's FTS index entry, then retrying the body update once.
-        """
-        block = f"\n\n[Transcription]\n{text}"
-        entry_result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
-        entry = entry_result.scalar_one()
-        entry.body += block
-        try:
-            await self.db.commit()
-            return
-        except Exception:
-            await self.db.rollback()
-
-        # FTS trigger choked — rebuild this row's FTS entry, then retry the
-        # body update with the trigger temporarily sidestepped.
-        logger.warning("Entry body update hit FTS error; rebuilding FTS row", exc_info=True)
-        await self._rebuild_fts_row(entry_id)
-        entry_result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
-        entry = entry_result.scalar_one()
-        entry.body += block
-        await self.db.commit()
-
-    async def _rebuild_fts_row(self, entry_id: int) -> None:
-        """Force-refresh a single entry's FTS index row.
-
-        Used as a recovery path when the AFTER UPDATE trigger fails. Deletes any
-        stale FTS row then re-inserts the current content. Uses a fresh session
-        so a poisoned parent transaction can't interfere.
-        """
-        from sqlalchemy import text
-
-        from app.core.database import async_session
-
-        async with async_session() as session:
-            try:
-                await session.execute(
-                    text(
-                        "INSERT INTO entries_fts(entries_fts, rowid, title, body) "
-                        "VALUES ('delete', :id, '', '')"
-                    ),
-                    {"id": entry_id},
-                )
-            except Exception:
-                logger.debug("FTS row delete-before-rebuild skipped (row absent)")
-                await session.rollback()
-            await session.execute(
-                text(
-                    "INSERT INTO entries_fts(rowid, title, body) "
-                    "SELECT id, COALESCE(title, ''), body FROM entries WHERE id = :id"
-                ),
-                {"id": entry_id},
-            )
-            await session.commit()
 
     async def delete(self, recording_id: int) -> None:
         """Delete recording and associated media."""
