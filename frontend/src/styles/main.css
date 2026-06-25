@@ -279,3 +279,68 @@ textarea:focus-visible,
 .btn-danger:hover {
   background-color: color-mix(in srgb, var(--color-danger) 25%, transparent);
 }
+
+/* ── Settings: shared design tokens & components ─────────────────────── */
+/* Provides a consistent type scale so settings surfaces aren't a flat wall
+   of 10–12px muted text. Section titles anchor at 13px semibold primary;
+   row labels 13px; helpers 11px. Reusable .sbtn kills the proliferation of
+   inline button class strings across the settings tabs. */
+
+.sbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+  border: 1px solid transparent;
+}
+.sbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sbtn-sm { padding: 3px 8px; font-size: 11px; }
+.sbtn-xs { padding: 2px 7px; font-size: 10.5px; }
+
+.sbtn-primary { background: var(--color-accent); color: #fff; }
+.sbtn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+
+.sbtn-ghost {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  border-color: transparent;
+}
+.sbtn-ghost:hover:not(:disabled) { color: var(--color-accent); }
+
+.sbtn-outline {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+.sbtn-outline:hover:not(:disabled) { border-color: color-mix(in srgb, var(--color-accent) 50%, transparent); color: var(--color-accent); }
+
+.sbtn-accent-soft {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+.sbtn-accent-soft:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 25%, transparent); }
+
+.sbtn-danger-soft {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+.sbtn-danger-soft:hover:not(:disabled) { background: color-mix(in srgb, var(--color-danger) 25%, transparent); }
+
+.sbtn-danger { background: var(--color-danger); color: #fff; }
+.sbtn-danger:hover:not(:disabled) { background: #dc2626; }
+
+/* Highlight pulse for settings search "jump to" target. */
+@keyframes settings-highlight {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+}
+.settings-highlight {
+  animation: settings-highlight 1.6s ease-out;
+  border-radius: 6px;
+}

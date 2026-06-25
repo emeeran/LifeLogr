@@ -6,16 +6,16 @@ export type ViewType = 'calendar' | 'timeline' | 'search' | 'on-this-day' | 'ana
 export type DrawerPanel = 'ai' | 'recording' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {
-  const activeView = useLocalStorage<ViewType>('diarium-view', 'calendar')
-  const sidebarCollapsed = useLocalStorage('diarium-sidebar-collapsed', false)
+  const activeView = useLocalStorage<ViewType>('lifelogr-view', 'calendar')
+  const sidebarCollapsed = useLocalStorage('lifelogr-sidebar-collapsed', false)
   const detailPanelOpen = ref(true)
   const editingEntryId = ref<number | null>(null)
   const newEntryDate = ref<string | null>(null)
-  const darkMode = useLocalStorage('diarium-dark', true)
-  const fontFamily = useLocalStorage<string>('diarium-font', 'system-ui')
-  const fontSize = useLocalStorage<number>('diarium-font-size', 14)
-  const rightPanelWidth = useLocalStorage<number>('diarium-right-panel-width', 480)
-  const defaultTitle = useLocalStorage<string>('diarium-default-title', '')
+  const darkMode = useLocalStorage('lifelogr-dark', true)
+  const fontFamily = useLocalStorage<string>('lifelogr-font', 'system-ui')
+  const fontSize = useLocalStorage<number>('lifelogr-font-size', 14)
+  const rightPanelWidth = useLocalStorage<number>('lifelogr-right-panel-width', 480)
+  const defaultTitle = useLocalStorage<string>('lifelogr-default-title', '')
 
   // Pending switch (used by save-prompt dialog)
   const pendingSwitch = ref<{ entryId: number; date?: string } | null>(null)
@@ -31,7 +31,7 @@ export const useUiStore = defineStore('ui', () => {
   const activeDrawer = ref<DrawerPanel | null>(null)
 
   // Scribble pad
-  const scribbleOpen = useLocalStorage('diarium-scribble-open', false)
+  const scribbleOpen = useLocalStorage('lifelogr-scribble-open', false)
 
   function openSearchPalette() { searchPaletteOpen.value = true }
   function closeSearchPalette() { searchPaletteOpen.value = false }

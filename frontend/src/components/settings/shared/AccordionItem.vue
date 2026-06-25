@@ -22,14 +22,14 @@ const isOpen = ref(props.defaultOpen)
       class="w-full flex items-center gap-1.5 text-[11px] font-medium text-text-muted uppercase tracking-wide cursor-pointer select-none hover:text-text-secondary transition-colors rounded-sm"
       :aria-expanded="isOpen"
     >
-      <component v-if="icon" :is="icon" :size="12" />
-      {{ title }}
-      <ChevronDown :size="12" class="ml-auto text-text-muted transition-transform duration-200" :class="isOpen ? 'rotate-180' : ''" />
+      <component v-if="icon" :is="icon" :size="13" aria-hidden="true" />
+      <span class="text-[12px] font-semibold text-text-secondary tracking-tight">{{ title }}</span>
+      <ChevronDown :size="13" class="ml-auto text-text-muted transition-transform duration-200" :class="isOpen ? 'rotate-180' : ''" aria-hidden="true" />
     </button>
     <div class="grid transition-all duration-200 ease-in-out"
       :class="isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
       <div class="overflow-hidden">
-        <div class="pt-1.5">
+        <div class="pt-1.5" :role="isOpen ? 'region' : undefined">
           <div class="bg-surface rounded-md p-3 border border-border">
             <slot />
           </div>

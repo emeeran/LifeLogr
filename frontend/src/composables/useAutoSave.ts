@@ -29,7 +29,7 @@ export function useAutoSave(options: {
   let saveTimer: ReturnType<typeof setTimeout> | null = null
 
   const autosaveMs = computed(() => {
-    const secs = parseInt(localStorage.getItem('diarium-autosave-interval') || '2')
+    const secs = parseInt(localStorage.getItem('lifelogr-autosave-interval') || '2')
     return (isNaN(secs) ? 2 : secs) * 1000
   })
 
