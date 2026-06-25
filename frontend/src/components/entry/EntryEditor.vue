@@ -59,7 +59,7 @@ const typewriterMode = ref(false)
 const showToolbar = ref(false)
 const showContextMenu = ref(false)
 const contextMenuPos = ref({ x: 0, y: 0 })
-const defaultTemplateId = useLocalStorage<number | null>('diarium-default-template', null)
+const defaultTemplateId = useLocalStorage<number | null>('lifelogr-default-template', null)
 
 // ── Composables (early — no dependencies on later functions) ──
 const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(body, textarea)

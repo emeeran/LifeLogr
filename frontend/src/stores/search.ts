@@ -11,10 +11,10 @@ export const useSearchStore = defineStore('search', () => {
   const total = ref(0)
   const loading = ref(false)
   const activeTagIds = ref<number[]>([])
-  const searchMode = useLocalStorage<SearchMode>('diarium-search-mode', 'hybrid')
+  const searchMode = useLocalStorage<SearchMode>('lifelogr-search-mode', 'hybrid')
   const dateFrom = ref('')
   const dateTo = ref('')
-  const searchHistory = useLocalStorage<string[]>('diarium-search-history', [])
+  const searchHistory = useLocalStorage<string[]>('lifelogr-search-history', [])
   const queryDuration = ref(0)
 
   async function search(query: string, params?: { tag_ids?: string; date_from?: string; date_to?: string; mood?: string; offset?: number; limit?: number }) {

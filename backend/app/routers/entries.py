@@ -350,7 +350,21 @@ async def export_diarium_db(
                 )
 
         conn.commit()
-        buf = io.BytesIO(conn.serialize())
+        # Serialize to a binary SQLite file. We can't use Connection.serialize()
+        # because the PyInstaller build swaps stdlib sqlite3 for pysqlite3
+        # (for FTS5), and pysqlite3's Connection does not implement
+        # serialize()/iterdump(). backup() to a file connection works in both
+        # and yields a byte-identical SQLite database file.
+        import tempfile
+        from pathlib import Path as _Path
+        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
+        tmp.close()
+        try:
+            with sqlite3.connect(tmp.name) as out:
+                conn.backup(out)
+            buf = io.BytesIO(_Path(tmp.name).read_bytes())
+        finally:
+            _Path(tmp.name).unlink(missing_ok=True)
     finally:
         conn.close()
 

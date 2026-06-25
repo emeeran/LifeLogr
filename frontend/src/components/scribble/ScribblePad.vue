@@ -5,7 +5,7 @@ import { StickyNote, Trash2, Eye, Edit3, X } from 'lucide-vue-next'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
-const content = useLocalStorage<string>('diarium-scribble', '')
+const content = useLocalStorage<string>('lifelogr-scribble', '')
 const showPreview = ref(false)
 
 const charCount = computed(() => content.value.length)

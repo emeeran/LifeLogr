@@ -6,11 +6,11 @@ export const ttsApi = {
   },
 
   getSpeed(): number {
-    return parseFloat(localStorage.getItem('diarium-tts-speed') || '1.0')
+    return parseFloat(localStorage.getItem('lifelogr-tts-speed') || '1.0')
   },
 
   getVolume(): number {
-    return parseInt(localStorage.getItem('diarium-tts-volume') || '100')
+    return parseInt(localStorage.getItem('lifelogr-tts-volume') || '100')
   },
 
   entryUrl(entryId: number): string {
