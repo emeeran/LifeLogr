@@ -3,12 +3,13 @@ import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import {
   CheckCircle2, AlertTriangle, X, Info,
-  Brain, Sparkles, HardDrive, Sliders, Search
+  Brain, Sparkles, HardDrive, Sliders, Search, Newspaper
 } from 'lucide-vue-next'
 import GeneralTab from './tabs/GeneralTab.vue'
 import AITab from './tabs/AITab.vue'
 import DataTab from './tabs/DataTab.vue'
 import FeaturesTab from './tabs/FeaturesTab.vue'
+import WhatsNewTab from './tabs/WhatsNewTab.vue'
 import AboutTab from './tabs/AboutTab.vue'
 
 // ── Tab navigation ──
@@ -18,6 +19,7 @@ const tabs = [
   { id: 'ai', label: 'AI', icon: Brain },
   { id: 'data', label: 'Data', icon: HardDrive },
   { id: 'features', label: 'Features', icon: Sparkles },
+  { id: 'whats-new', label: "What's New", icon: Newspaper },
   { id: 'about', label: 'About', icon: Info },
 ] as const
 
@@ -30,6 +32,7 @@ const tabKeywords: Record<string, string> = {
   ai: 'ai ollama model embeddings tag suggestions sentiment analysis summarization reflection prompts writer block pull themes insights',
   data: 'storage database entries media import export deduplicate backup cloud webdav google drive mega onedrive dropbox nas sync push pull flush auto backup schedule cron',
   features: 'read aloud tts voice speed volume notifications reminders plugins marketplace system setup tesseract dependencies recording',
+  'whats-new': "what's new changelog release notes version update check latest upgrade",
   about: 'about version credits github license reset database danger',
 }
 
@@ -95,6 +98,7 @@ function showToast(type: 'success' | 'error' | 'info', message: string) {
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
         <DataTab v-if="activeTab === 'data'" @toast="showToast" />
         <FeaturesTab v-if="activeTab === 'features'" @toast="showToast" />
+        <WhatsNewTab v-if="activeTab === 'whats-new'" @toast="showToast" />
         <AboutTab v-if="activeTab === 'about'" @toast="showToast" />
 
       </div>

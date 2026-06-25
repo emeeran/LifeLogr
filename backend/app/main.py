@@ -307,12 +307,19 @@ async def health_check() -> Any:
 
 @app.get("/api/v1/brand/logo")
 async def brand_logo() -> FileResponse:
-    """Return the LifeLogr logo."""
-    logo_path = _ASSETS_DIR / "lifelogr-logo.png"
-    if not logo_path.exists():
-        logo_path = _ASSETS_DIR / "lifelogr-logo.svg"
-        return FileResponse(path=str(logo_path), media_type="image/svg+xml")
-    return FileResponse(path=str(logo_path), media_type="image/png")
+    """Return the LifeLogr logo (PNG preferred, SVG fallback).
+
+    In packaged desktop builds the source ``assets/`` directory is not on
+    disk (it is baked into the frontend bundle instead), so both candidates
+    may be absent — in that case return a clean 404 rather than crashing.
+    """
+    png = _ASSETS_DIR / "lifelogr-logo.png"
+    svg = _ASSETS_DIR / "lifelogr-logo.svg"
+    if png.exists():
+        return FileResponse(path=str(png), media_type="image/png")
+    if svg.exists():
+        return FileResponse(path=str(svg), media_type="image/svg+xml")
+    raise NotFoundError("Brand logo not available in this build")
 
 
 # Serve built frontend in production — MUST be registered AFTER all API routes
