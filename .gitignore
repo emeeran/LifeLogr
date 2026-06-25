@@ -67,3 +67,6 @@ node_modules/
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+
+# Pre-downloaded Whisper model (build artifact, ~148MB — never commit)
+backend/models/

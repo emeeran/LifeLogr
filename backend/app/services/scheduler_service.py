@@ -29,7 +29,7 @@ class SchedulerService:
     def get_scheduler() -> Any:
         global _scheduler
         if _scheduler is None:
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
             _scheduler = AsyncIOScheduler()
         return _scheduler
@@ -76,7 +76,7 @@ class SchedulerService:
         if len(parts) != 5:
             raise ValueError(f"Invalid cron expression: {cron_expr}")
 
-        from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped]
+        from apscheduler.triggers.cron import CronTrigger
 
         trigger = CronTrigger(
             minute=parts[0],

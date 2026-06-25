@@ -167,7 +167,11 @@ class MediaService:
         return media
 
     async def get_file(self, media_id: int) -> tuple[bytes, str, str]:
-        """Return (file_bytes, content_type, filename) from disk."""
+        """Return (file_bytes, content_type, filename) from disk.
+
+        Kept for backwards compatibility; prefer :meth:`get_file_path` which
+        avoids loading the whole file into memory.
+        """
         media = await self.get(media_id)
         full_path = settings.MEDIA_DIR / media.storage_path
         content_type = self._content_type_from_ext(media.storage_path, media.media_type)
@@ -175,6 +179,21 @@ class MediaService:
         if media.storage_path.endswith(".webp"):
             content_type = "image/webp"
         return full_path.read_bytes(), content_type, media.filename
+
+    async def get_file_path(self, media_id: int) -> tuple[Path, str, str]:
+        """Return (disk_path, content_type, filename) for streaming.
+
+        Used by the download endpoint so the file is served directly from disk
+        with HTTP range support (required for video/audio playback & seeking).
+        """
+        media = await self.get(media_id)
+        full_path = settings.MEDIA_DIR / media.storage_path
+        if not full_path.is_file():
+            raise NotFoundError(f"Media file for {media_id} missing on disk")
+        content_type = self._content_type_from_ext(media.storage_path, media.media_type)
+        if media.storage_path.endswith(".webp"):
+            content_type = "image/webp"
+        return full_path, content_type, media.filename
 
     async def delete(self, media_id: int) -> None:
         """Delete media record and remove file from disk."""
@@ -245,20 +264,36 @@ class MediaService:
 
     @staticmethod
     def _media_content_type(media_type: str) -> str:
-        """Return a MIME type hint for the media category."""
+        """Return a MIME type hint for the media category.
+
+        Accepts either a bare category ("audio") or a full MIME ("audio/webm")
+        so the fallback is always a playable type rather than octet-stream.
+        """
+        category = media_type.split("/", 1)[0]  # "audio/webm" -> "audio"
         return {"image": "image/jpeg", "video": "video/mp4", "audio": "audio/mpeg"}.get(
-            media_type, "application/octet-stream"
+            category, "application/octet-stream"
         )
 
     @staticmethod
     def _content_type_from_ext(storage_path: str, media_type: str) -> str:
-        """Return accurate MIME type based on actual file extension."""
+        """Return accurate MIME type based on actual file extension.
+
+        ``media_type`` may be either a bare category ("audio") or a full MIME
+        ("audio/webm") depending on the upload path, so we normalise to the
+        category prefix before mapping. Serving e.g. a .webm recording as
+        ``audio/mpeg`` makes browsers refuse to play it, which is the bug this
+        guards against.
+        """
         ext = storage_path.rsplit(".", 1)[-1].lower() if "." in storage_path else ""
+        category = media_type.split("/", 1)[0]  # "audio/webm" -> "audio"
+        # Normalise legacy/variant MIME spellings to canonical playable ones.
+        if media_type in ("audio/x-wav", "audio/wav", "audio/wave"):
+            return "audio/wav"
         audio_map = {
             "webm": "audio/webm", "ogg": "audio/ogg", "mp3": "audio/mpeg",
             "mp4": "audio/mp4", "wav": "audio/wav", "m4a": "audio/mp4",
             "opus": "audio/opus",
         }
-        if media_type == "audio" and ext in audio_map:
+        if category == "audio" and ext in audio_map:
             return audio_map[ext]
         return MediaService._media_content_type(media_type)

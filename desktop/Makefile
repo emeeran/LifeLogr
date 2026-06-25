@@ -24,7 +24,11 @@ ifeq ($(OS),Windows_NT)
     EXE      := .exe
 endif
 
-SIDECAR := src-tauri/binaries/lifelogr-backend-$(TRIPLE)$(EXE)
+# Tauri resolves `externalBin` ("lifelogr-backend") relative to the src-tauri/
+# directory root, appending the target triple. The sidecar MUST live at
+# src-tauri/lifelogr-backend-<triple> — not under binaries/ — or the stale
+# build gets bundled. Keep both paths for backwards compat with older docs.
+SIDECAR := src-tauri/lifelogr-backend-$(TRIPLE)$(EXE)
 
 # ── Prerequisites ──
 install:
@@ -43,13 +47,13 @@ build-frontend:
 		cd ../frontend && VITE_APP_VERSION="$$VER" npm run build
 
 build-backend:
+	@bash scripts/download-whisper-model.sh
 	cd ../backend && uv run pyinstaller ../desktop/scripts/pyinstaller.spec \
 	    --noconfirm \
 	    --distpath ../desktop/dist \
 	    --workpath ../desktop/build/pyinstaller
 
 build-sidecar: build-backend
-	@mkdir -p src-tauri/binaries
 	cp dist/lifelogr-backend$(EXE) $(SIDECAR)
 	-chmod +x $(SIDECAR)
 	@echo "Sidecar ready: $(SIDECAR)"

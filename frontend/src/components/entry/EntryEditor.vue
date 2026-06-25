@@ -490,7 +490,11 @@ async function save() {
       ui.detailPanelOpen = true
       ui.startEditing(null)
     } else {
-      if (!body.value.trim()) { alert('Body cannot be empty'); return }
+      // Allow empty body if a title is present (title-only / recording-only entries).
+      if (!body.value.trim() && !title.value.trim()) {
+        alert('Add a title or some text before saving')
+        return
+      }
       await entries.updateEntry(ui.editingEntryId!, { title: title.value || null, body: body.value, tag_ids: tagIds.value })
       snapshot()
       entries.refreshAll()
