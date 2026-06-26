@@ -25,7 +25,6 @@ class VideoNote(Base):
     storage_path: Mapped[str] = mapped_column(String, nullable=False)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    transcription: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

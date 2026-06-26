@@ -19,7 +19,13 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.models.entry import Entry
 from app.models.tag import EntryTag
-from app.schemas.entry import EntryCreate, EntryListResponse, EntryResponse, EntryUpdate
+from app.schemas.entry import (
+    CalendarEntryResponse,
+    EntryCreate,
+    EntryListResponse,
+    EntryResponse,
+    EntryUpdate,
+)
 from app.schemas.tag import TagBrief
 from app.services.entry_service import EntryService
 
@@ -75,11 +81,15 @@ async def list_entries(
     )
 
 
-@router.get("/calendar/{year}/{month}", response_model=list[EntryResponse])
+@router.get("/calendar/{year}/{month}", response_model=list[CalendarEntryResponse])
 async def calendar_view(year: int, month: int, db: AsyncSession = Depends(get_db)) -> Any:
-    """Return entries for a specific month."""
+    """Return lightweight entry projections for a calendar month.
+
+    Excludes body/media fields to keep the payload small — the grid only
+    needs id, date, title, mood, and tags.
+    """
     svc = EntryService(db)
-    return [_to_response(e) for e in await svc.get_calendar_month(year, month)]
+    return await svc.get_calendar_month_light(year, month)
 
 
 @router.get("/search", response_model=EntryListResponse)

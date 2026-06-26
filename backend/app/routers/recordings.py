@@ -38,28 +38,39 @@ async def upload_recording(
     return await svc.upload(entry_id, file.filename or "recording.mp3", file_data)
 
 
+@router.post("/start")
+async def start_recording_route(
+    entry_id: int = Form(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Begin capturing the microphone via the backend sidecar.
+
+    Used by the desktop app where the webview's (WebKit2GTK) MediaRecorder is
+    unreliable. Capture runs here in the backend process (PulseAudio/ALSA).
+    """
+    svc = VoiceRecordingService(db)
+    try:
+        await svc.start_recording(entry_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"ok": True, "entry_id": entry_id}
+
+
+@router.post("/stop", response_model=VoiceRecordingResponse)
+async def stop_recording_route(db: AsyncSession = Depends(get_db)) -> Any:
+    """Stop the active capture and persist the recording as a WAV."""
+    svc = VoiceRecordingService(db)
+    try:
+        return await svc.stop_recording()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/entry/{entry_id}", response_model=list[VoiceRecordingResponse])
 async def list_by_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """List all recordings for an entry."""
     result = await db.execute(select(VoiceRecording).where(VoiceRecording.entry_id == entry_id))
     return result.scalars().all()
-
-
-@router.post("/{recording_id}/transcribe", response_model=VoiceRecordingResponse)
-async def transcribe_recording(recording_id: int, db: AsyncSession = Depends(get_db)) -> Any:
-    """Transcribe a voice recording locally."""
-    svc = VoiceRecordingService(db)
-    try:
-        return await svc.transcribe(recording_id)
-    except ImportError as exc:
-        logger.error("Transcription failed — STT dependency missing: %s", exc)
-        raise HTTPException(
-            status_code=501,
-            detail="Speech-to-text is not available. Install the STT extra: uv pip install -e '.[stt]'",
-        ) from exc
-    except RuntimeError as exc:
-        logger.error("Transcription failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/{recording_id}", response_model=VoiceRecordingResponse)

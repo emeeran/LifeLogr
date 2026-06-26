@@ -75,7 +75,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const { isDragging, handlers: dragHandlers } = useDragDrop()
 
 // Auto-save composable
-const { triggerAutosave, saving: saveActive } = useAutoSave({
+const { triggerAutosave, saveState: saveActive } = useAutoSave({
   isNew,
   hasEntry,
   body,
@@ -221,7 +221,7 @@ const fmt = {
   highlight: () => wrap('<mark>', '</mark>', 'highlighted text'),
 }
 
-const { renderedPreview } = useMarkdownPreview(() => body.value)
+const { renderedPreview } = useMarkdownPreview(() => body.value, () => showPreview.value)
 
 // ── Load entry data ──
 async function loadEntry() {
@@ -927,7 +927,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
   <!-- Status bar + Bottom controls -->
   <div class="border-t border-border" v-if="!focusMode">
       <!-- Stats bar -->
-      <EditorStatusBar :stats="stats" :saving="saveActive" :saved="!!body.trim()" />
+      <EditorStatusBar :stats="stats" :save-state="saveActive" :has-content="!!body.trim()" />
 
       <!-- Controls bar: Edit/Preview + Tags + Save -->
       <div class="flex items-center gap-1.5 px-3 py-1.5 relative">

@@ -70,6 +70,22 @@ class EntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CalendarEntryResponse(BaseModel):
+    """Lightweight entry projection for calendar grid rendering.
+
+    Excludes ``body``, ``summary``, ``media_count``, timestamps, and
+    location — fields the calendar grid never reads. This keeps the
+    ``/calendar/{year}/{month}`` payload small even for months with many
+    long entries.
+    """
+    id: int
+    entry_date: date
+    title: str | None
+    mood: str | None
+    is_encrypted: bool = False
+    tags: list[TagBrief]
+
+
 class EntryListResponse(BaseModel):
     items: list[EntryResponse]
     total: int

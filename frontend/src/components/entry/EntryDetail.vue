@@ -135,7 +135,6 @@ async function toggleTTS() {
           <FileAudio :size="14" class="text-accent shrink-0" />
           <span class="text-xs text-text-secondary flex-1">
             Voice memo
-            <span v-if="rec.is_transcribed" class="text-green-400 ml-1">&#10003; transcribed</span>
           </span>
         </div>
       </div>

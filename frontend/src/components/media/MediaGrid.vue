@@ -54,7 +54,7 @@ function openViewer(idx: number) { viewerIndex.value = idx; viewerOpen.value = t
 
         <!-- Image -->
         <img v-if="isImage(m.media_type)" :src="mediaApi.fileUrl(m.id)" :alt="m.filename"
-          class="w-full h-full object-cover" loading="lazy" />
+          class="w-full h-full object-cover" loading="lazy" decoding="async" />
 
         <!-- Video -->
         <template v-else-if="isVideo(m.media_type)">

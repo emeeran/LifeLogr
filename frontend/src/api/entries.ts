@@ -1,5 +1,5 @@
 import { request, API_ORIGIN } from './client'
-import type { EntryResponse, EntryListResponse, EntryCreate, EntryUpdate, EntryListParams } from '../types'
+import type { EntryResponse, EntryListResponse, EntryCreate, EntryUpdate, EntryListParams, CalendarEntryResponse } from '../types'
 
 export const entriesApi = {
   create(data: EntryCreate): Promise<EntryResponse> {
@@ -54,7 +54,7 @@ export const entriesApi = {
     return request('/entries/deduplicate', { method: 'POST' })
   },
 
-  calendarMonth(year: number, month: number): Promise<EntryResponse[]> {
+  calendarMonth(year: number, month: number): Promise<CalendarEntryResponse[]> {
     return request(`/entries/calendar/${year}/${month}`)
   },
 

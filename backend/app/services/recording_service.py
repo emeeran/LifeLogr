@@ -1,18 +1,16 @@
-"""Business logic for voice recordings."""
+"""Business logic for voice/audio-note recordings."""
 
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
-import sys
-import tempfile
-from pathlib import Path
+import threading
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.entry import Entry
 from app.models.recording import VoiceRecording
@@ -20,64 +18,64 @@ from app.services.media_service import MediaService
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded Whisper model singleton
-_whisper_model = None
+# ── Live microphone capture (backend sidecar) ───────────────────────────────
+# Audio notes are captured here in the backend process via sounddevice/PortAudio
+# (PulseAudio/ALSA), not the webview's MediaRecorder, which is unreliable in the
+# packaged WebKit2GTK build (0-byte files). Captures are encoded to Ogg/Vorbis
+# on stop — ~7-10× smaller than raw WAV at voice quality.
+
+_RECORD_SAMPLE_RATE = 16000  # voice-quality; keeps files compact
+_RECORD_CHANNELS = 1
 
 
-def _bundled_whisper_path() -> Path | None:
-    """Locate a build-time-bundled Whisper model directory, if present.
+class _LiveRecording:
+    """A single in-progress microphone capture (not DB-backed)."""
 
-    The desktop build pre-downloads the model into ``backend/models/faster-whisper-<name>``
-    and PyInstaller bundles it. In dev it lives under the repo root; in a frozen
-    build it is extracted next to the executable. Returning a path here lets us
-    transcribe fully offline with ``local_files_only=True``.
+    def __init__(self, entry_id: int) -> None:
+        self.entry_id = entry_id
+        self.frames: list[Any] = []
+        self.stream: Any = None
+        self.lock = threading.Lock()
+
+
+# One active capture at a time — the desktop app is single-user.
+_active_recording: _LiveRecording | None = None
+_active_lock = threading.Lock()
+
+
+def _open_input_stream(rec: _LiveRecording) -> Any:
+    """Open and start a 16kHz mono float32 InputStream on the default mic.
+
+    sounddevice is imported lazily so the module (and the app) still load when
+    the library is absent; the failure is surfaced only when recording starts.
     """
-    name = settings.WHISPER_MODEL
-    candidates = [
-        # Frozen (PyInstaller): bundled at <exe_dir>/models/...
-        Path(sys.argv[0]).resolve().parent / "models" / f"faster-whisper-{name}",
-        # Dev: <repo>/backend/models/...
-        Path(__file__).resolve().parents[2] / "models" / f"faster-whisper-{name}",
-    ]
-    for p in candidates:
-        if (p / "model.bin").is_file():
-            return p
-    return None
+    import sounddevice as sd  # type: ignore[import-untyped]
+
+    def _on_chunk(indata: Any, _frames: int, _time: Any, _status: Any) -> None:
+        # Runs on PortAudio's audio thread — just buffer the float32 samples.
+        with rec.lock:
+            rec.frames.append(indata.copy())
+
+    stream = sd.InputStream(
+        samplerate=_RECORD_SAMPLE_RATE,
+        channels=_RECORD_CHANNELS,
+        dtype="float32",
+        callback=_on_chunk,
+    )
+    stream.start()
+    return stream
 
 
-def _get_whisper_model() -> Any:
-    """Lazy-load the faster-whisper model on first transcription call.
+def _frames_to_ogg(frames: list[Any], rate: int) -> bytes:
+    """Encode captured float32 frames into an Ogg/Vorbis stream in memory."""
+    import numpy as np
+    import soundfile as sf  # type: ignore[import-untyped]
 
-    Prefers a build-time-bundled model (offline, instant). Falls back to a
-    network download only if no bundle is present (dev without the model
-    staged).
-    """
-    global _whisper_model
-    if _whisper_model is None:
-        try:
-            from faster_whisper import WhisperModel
-        except ImportError as exc:
-            raise ImportError(
-                "Speech-to-text requires faster-whisper. "
-                'Install it with: uv pip install -e \".[stt]\"'
-            ) from exc
-
-        bundled = _bundled_whisper_path()
-        source = bundled if bundled else settings.WHISPER_MODEL
-        logger.info(
-            "Loading Whisper model '%s' on device '%s'%s...",
-            settings.WHISPER_MODEL,
-            settings.WHISPER_DEVICE,
-            " (bundled, offline)" if bundled else " (downloading on first use)",
-        )
-        _whisper_model = WhisperModel(
-            str(source) if bundled else settings.WHISPER_MODEL,
-            device=settings.WHISPER_DEVICE,
-            compute_type="int8",
-            local_files_only=bundled is not None,
-        )
-        logger.info("Whisper model loaded.")
-    return _whisper_model
+    audio = np.concatenate(frames, axis=0) if frames else np.empty((0, 1), dtype="float32")
+    buf = io.BytesIO()
+    # libsndfile writes Ogg/Vorbis — ~7-10× smaller than WAV, voice-quality.
+    sf.write(buf, audio, rate, format="OGG", subtype="VORBIS")
+    return buf.getvalue()
 
 
 class VoiceRecordingService:
@@ -86,7 +84,7 @@ class VoiceRecordingService:
         self.media_svc = MediaService(db)
 
     async def upload(self, entry_id: int, filename: str, file_data: bytes) -> VoiceRecording:
-        """Store audio file, create media + recording records."""
+        """Store an audio file, create media + recording records."""
         entry_result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
         if not entry_result.scalar_one_or_none():
             raise NotFoundError(f"Entry {entry_id} not found")
@@ -105,6 +103,71 @@ class VoiceRecordingService:
         await self.db.refresh(recording)
         return recording
 
+    async def start_recording(self, entry_id: int) -> None:
+        """Begin capturing the default microphone for an entry."""
+        global _active_recording
+        entry_result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
+        if not entry_result.scalar_one_or_none():
+            raise NotFoundError(f"Entry {entry_id} not found")
+
+        with _active_lock:
+            if _active_recording is not None:
+                raise ConflictError("A recording is already in progress")
+            rec = _LiveRecording(entry_id)
+            try:
+                rec.stream = await asyncio.to_thread(_open_input_stream, rec)
+            except Exception as exc:
+                logger.error("Failed to open microphone: %s", exc)
+                raise RuntimeError(f"Could not open microphone: {exc}") from exc
+            _active_recording = rec
+
+    async def stop_recording(self) -> VoiceRecording:
+        """Stop the active capture, encode it to Ogg/Vorbis, and persist it."""
+        global _active_recording
+        with _active_lock:
+            rec = _active_recording
+            _active_recording = None
+        if rec is None:
+            raise NotFoundError("No active recording")
+
+        if rec.stream is not None:
+            try:
+                await asyncio.to_thread(rec.stream.stop)
+                await asyncio.to_thread(rec.stream.close)
+            except Exception:
+                logger.warning("Error stopping audio stream", exc_info=True)
+
+        with rec.lock:
+            frames = list(rec.frames)
+        if not frames:
+            raise RuntimeError(
+                "No audio was captured. Check that a microphone is connected and "
+                "not in use by another app, then try again."
+            )
+
+        ogg_bytes = await asyncio.to_thread(_frames_to_ogg, frames, _RECORD_SAMPLE_RATE)
+        # A real Vorbis capture is at least a few hundred bytes; anything tiny
+        # means effectively nothing was captured.
+        if len(ogg_bytes) < 200:
+            raise RuntimeError(
+                "No audio was captured. Check that a microphone is connected and "
+                "not in use by another app, then try again."
+            )
+
+        media = await self.media_svc.upload(
+            rec.entry_id, "recording.ogg", "audio/ogg", ogg_bytes
+        )
+        recording = VoiceRecording(
+            entry_id=rec.entry_id,
+            media_id=media.id,
+            duration_seconds=0.0,
+            audio_format="ogg",
+        )
+        self.db.add(recording)
+        await self.db.commit()
+        await self.db.refresh(recording)
+        return recording
+
     async def get(self, recording_id: int) -> VoiceRecording:
         """Return recording metadata."""
         result = await self.db.execute(
@@ -113,33 +176,6 @@ class VoiceRecordingService:
         rec = result.scalar_one_or_none()
         if not rec:
             raise NotFoundError(f"Recording {recording_id} not found")
-        return rec
-
-    async def transcribe(self, recording_id: int) -> VoiceRecording:
-        """Run local speech-to-text and persist the result on the recording.
-
-        The recording record is the single source of truth for the spoken
-        text. The entry *body* is the frontend editor's responsibility — the
-        UI appends a ``[Transcription]`` block to the live editor (and
-        autosaves) — so this method deliberately does NOT mutate the entry as
-        a side-effect of transcription. (The text is never lost regardless of
-        what the UI does: it is committed here on the recording.)
-        """
-        rec = await self.get(recording_id)
-        if rec.is_transcribed:
-            raise ConflictError(f"Recording {recording_id} already transcribed")
-
-        audio_bytes, _, _ = await self.media_svc.get_file(rec.media_id)
-        # Normalise: an empty/whitespace result means no speech was detected
-        # (common with a silent recording). We mark the recording transcribed
-        # either way; the frontend surfaces a "no speech detected" notice.
-        text = (await asyncio.to_thread(self._run_stt, audio_bytes, rec.audio_format) or "").strip()
-
-        rec.transcription = text
-        rec.is_transcribed = True
-        await self.db.commit()
-
-        await self.db.refresh(rec)
         return rec
 
     async def delete(self, recording_id: int) -> None:
@@ -156,30 +192,3 @@ class VoiceRecordingService:
         """Detect audio format from filename extension."""
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp3"
         return ext if ext in ("mp3", "mp4", "webm", "ogg", "wav", "m4a", "opus") else "mp3"
-
-    @staticmethod
-    def _run_stt(audio_data: bytes | Path, audio_format: str = "webm") -> str:
-        """Run local speech-to-text using faster-whisper from bytes or a file path."""
-        try:
-            model = _get_whisper_model()
-        except Exception as exc:
-            logger.error("Failed to load Whisper model: %s", exc)
-            raise RuntimeError(f"Speech-to-text unavailable: {exc}") from exc
-
-        if isinstance(audio_data, Path):
-            segments, _info = model.transcribe(str(audio_data), beam_size=5)
-            return " ".join(segment.text.strip() for segment in segments)
-
-        # Use proper extension so faster-whisper can detect the codec
-        allowed_exts = ("webm", "ogg", "wav", "mp3", "mp4", "m4a", "opus")
-        suffix = f".{audio_format}" if audio_format in allowed_exts else ".webm"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(audio_data)
-            tmp_path = tmp.name
-
-        try:
-            segments, _info = model.transcribe(tmp_path, beam_size=5)
-            text = " ".join(segment.text.strip() for segment in segments)
-            return text
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)

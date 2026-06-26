@@ -9,12 +9,20 @@ export const recordingsApi = {
     return formDataRequest('/recordings', fd)
   },
 
-  listByEntry(entryId: number): Promise<VoiceRecordingResponse[]> {
-    return request(`/recordings/entry/${entryId}`)
+  /** Begin backend-side microphone capture (sounddevice/PortAudio). */
+  start(entryId: number): Promise<{ ok: boolean; entry_id: number }> {
+    const fd = new FormData()
+    fd.append('entry_id', String(entryId))
+    return formDataRequest('/recordings/start', fd)
   },
 
-  transcribe(id: number): Promise<VoiceRecordingResponse> {
-    return request(`/recordings/${id}/transcribe`, { method: 'POST' })
+  /** Stop the active capture; the backend encodes it to Ogg/Vorbis and returns it. */
+  stop(): Promise<VoiceRecordingResponse> {
+    return request('/recordings/stop', { method: 'POST' })
+  },
+
+  listByEntry(entryId: number): Promise<VoiceRecordingResponse[]> {
+    return request(`/recordings/entry/${entryId}`)
   },
 
   get(id: number): Promise<VoiceRecordingResponse> {

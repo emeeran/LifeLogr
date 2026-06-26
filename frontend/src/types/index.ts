@@ -35,6 +35,16 @@ export interface EntryResponse {
   updated_at: string
 }
 
+/** Lightweight entry projection for calendar grid (excludes body/media). */
+export interface CalendarEntryResponse {
+  id: number
+  entry_date: string
+  title: string | null
+  mood: string | null
+  is_encrypted: boolean
+  tags: TagBrief[]
+}
+
 export interface EntryListResponse {
   items: EntryResponse[]
   total: number
@@ -81,8 +91,6 @@ export interface VoiceRecordingResponse {
   media_id: number
   duration_seconds: number
   audio_format: string
-  transcription: string | null
-  is_transcribed: boolean
   created_at: string
 }
 
@@ -249,7 +257,6 @@ export interface VideoNoteResponse {
   filename: string
   duration_seconds: number | null
   thumbnail_path: string | null
-  transcription: string | null
   created_at: string
 }
 

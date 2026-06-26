@@ -7,6 +7,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
+
 from app.core.config import settings
 from app.schemas.ai import (
     AIStatusResponse,
@@ -22,6 +24,29 @@ logger = logging.getLogger(__name__)
 _last_status_check: datetime | None = None
 _cached_status: AIStatusResponse | None = None
 _STATUS_CACHE_TTL_SECONDS = 60
+
+# Module-level shared httpx client. Every OllamaService() instance
+# previously opened its own ``AsyncClient`` (new TCP connection pool per
+# call). For a long-lived desktop process with repeated embed/analyse calls,
+# a single shared client reuses connections and avoids the overhead of
+# creating/tearing down a pool on every request.
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the shared httpx client, creating it on first call."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS)
+    return _shared_client
+
+
+async def close_shared_client() -> None:
+    """Close the shared client (call on app shutdown)."""
+    global _shared_client
+    if _shared_client is not None and not _shared_client.is_closed:
+        await _shared_client.aclose()
+    _shared_client = None
 
 
 class OllamaService:
@@ -40,25 +65,23 @@ class OllamaService:
         temperature: float | None = None,
     ) -> str:
         """Send a generate request to Ollama and return the response text."""
-        import httpx
-
         options: dict[str, Any] = {"num_predict": num_predict}
         if temperature is not None:
             options["temperature"] = temperature
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": model or self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": options,
-                },
-            )
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-            return str(data.get("response", ""))
+        client = _get_client()
+        response = await client.post(
+            f"{self.base_url}/api/generate",
+            json={
+                "model": model or self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": options,
+            },
+        )
+        response.raise_for_status()
+        data: dict[str, Any] = response.json()
+        return str(data.get("response", ""))
 
     async def grammar_check(self, text: str, language: str = "en") -> GrammarCheckResponse:
         """Check grammar and spelling, returning suggestions and corrected text."""
@@ -121,24 +144,22 @@ class OllamaService:
                 return _cached_status
 
         try:
-            import httpx
+            client = _get_client()
+            response = await client.get(f"{self.base_url}/api/tags")
+            response.raise_for_status()
+            data: dict[str, Any] = response.json()
+            models = [m.get("name", "") for m in data.get("models", [])]
+            model_loaded = any(self.model in m for m in models)
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
-                response.raise_for_status()
-                data: dict[str, Any] = response.json()
-                models = [m.get("name", "") for m in data.get("models", [])]
-                model_loaded = any(self.model in m for m in models)
-
-                result = AIStatusResponse(
-                    ollama_available=True,
-                    model_name=self.model,
-                    model_loaded=model_loaded,
-                    model_names=models,
-                    error=None
+            result = AIStatusResponse(
+                ollama_available=True,
+                model_name=self.model,
+                model_loaded=model_loaded,
+                model_names=models,
+                error=None
                     if model_loaded
                     else f"Model '{self.model}' not found. Available: {models}",
-                )
+            )
         except Exception as exc:
             result = AIStatusResponse(
                 ollama_available=False,
@@ -156,15 +177,13 @@ class OllamaService:
 
     async def embed(self, text: str) -> list[float]:
         """Get text embedding via Ollama /api/embeddings."""
-        import httpx
-
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/api/embeddings",
-                json={"model": settings.OLLAMA_EMBED_MODEL, "prompt": text},
-            )
-            response.raise_for_status()
-            return list(response.json()["embedding"])
+        client = _get_client()
+        response = await client.post(
+            f"{self.base_url}/api/embeddings",
+            json={"model": settings.OLLAMA_EMBED_MODEL, "prompt": text},
+        )
+        response.raise_for_status()
+        return list(response.json()["embedding"])
 
     # ── Combined analysis (sentiment + summary + prompts) ──────────────
 

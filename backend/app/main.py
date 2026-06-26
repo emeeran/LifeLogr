@@ -102,6 +102,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Database engine disposed")
     except Exception:
         logger.warning("Failed to dispose database engine", exc_info=True)
+    # Close shared Ollama HTTP client
+    try:
+        from app.services.ollama_service import close_shared_client
+
+        await close_shared_client()
+    except Exception:
+        logger.warning("Failed to close Ollama client", exc_info=True)
 
 
 app = FastAPI(

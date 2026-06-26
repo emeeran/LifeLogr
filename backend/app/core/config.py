@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
-    APP_VERSION: str = "0.3.1"  # in-app version; keep in sync with pyproject.toml
+    APP_VERSION: str = "0.4.1"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     SECRET_KEY: str = "change-me-before-production"
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty
@@ -102,10 +102,6 @@ class Settings(BaseSettings):
 
     # OCR
     OCR_ENGINE: str = "tesseract"
-
-    # Whisper (voice-to-text)
-    WHISPER_MODEL: str = "base"
-    WHISPER_DEVICE: str = "cpu"
 
     # Connection pool (for production PostgreSQL)
     DB_POOL_SIZE: int = 5

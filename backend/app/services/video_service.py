@@ -1,8 +1,7 @@
-"""VideoService — upload, transcribe, thumbnail, and delete video notes."""
+"""VideoService — upload, thumbnail, and delete video notes."""
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from pathlib import Path
 
@@ -64,22 +63,6 @@ class VideoService:
             select(VideoNote).where(VideoNote.entry_id == entry_id).order_by(VideoNote.created_at)
         )
         return list(result.scalars().all())
-
-    async def transcribe(self, video_id: int) -> VideoNote:
-        """Transcribe video audio using Whisper and save transcription."""
-        note = await self.get(video_id)
-
-        from app.services.recording_service import VoiceRecordingService
-
-        recording_svc = VoiceRecordingService(self.db)
-
-        file_path = self._media_dir / note.storage_path
-        text = await asyncio.to_thread(recording_svc._run_stt, file_path)
-
-        note.transcription = text
-        await self.db.commit()
-        await self.db.refresh(note)
-        return note
 
     async def delete(self, video_id: int) -> None:
         """Delete a video note and its file."""
