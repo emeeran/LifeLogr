@@ -6,7 +6,7 @@ import { useUiStore } from '../../stores/ui'
 import {
   X, Eye, Edit3, Minimize2, Maximize2,
   Search, ChevronUp, ChevronDown,
-  Sparkles, Plus, Lock, Trash2, Tag, Mic, Volume2, Paperclip, LayoutTemplate,
+  Sparkles, Plus, Lock, Trash2, Tag, Volume2, Paperclip, LayoutTemplate,
   Loader, Pause
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
@@ -29,12 +29,27 @@ import { useFindReplace } from '../../composables/useFindReplace'
 import { useAiTools } from '../../composables/useAiTools'
 import { useAttachments } from '../../composables/useAttachments'
 import { useAutoSave } from '../../composables/useAutoSave'
+import { useRecordings, provideRecordings } from '../../composables/useRecordings'
+import FloatingRecorder from '../recordings/FloatingRecorder.vue'
+import EntryRecordings from '../recordings/EntryRecordings.vue'
+import FloatingPlayback from '../recordings/FloatingPlayback.vue'
 
 const entries = useEntriesStore()
 const ui = useUiStore()
 
 const isNew = computed(() => ui.editingEntryId === -1)
 const hasEntry = computed(() => ui.editingEntryId != null && ui.editingEntryId > 0)
+
+// ── Voice recordings: floating recorder + embedded memo list + floating player ──
+// One shared instance (provided below) keeps all three UI pieces in sync. Capture
+// itself runs in the backend; this only drives the UI + local playback <audio>.
+async function ensureSavedForRecording(): Promise<boolean> {
+  if (hasEntry.value) return true
+  await save()
+  return hasEntry.value
+}
+const recordingsState = useRecordings(() => ui.editingEntryId, ensureSavedForRecording)
+provideRecordings(recordingsState)
 const title = ref('')
 const body = ref('')
 const tagIds = ref<number[]>([])
@@ -553,15 +568,6 @@ function applyToSelection(newText: string) {
   })
 }
 
-async function openRecording() {
-  if (ui.activeDrawer === 'recording') { ui.closeDrawer(); return }
-  if (!hasEntry.value) {
-    await save()
-    if (!hasEntry.value) return
-  }
-  ui.activeDrawer = 'recording'
-}
-
 async function onDropFiles(e: DragEvent) {
   const accepted = dragHandlers.onDrop(e)
   if (!accepted?.length) return
@@ -755,7 +761,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
 
 <template>
   <div
-    class="flex flex-col h-full"
+    class="flex flex-col h-full relative"
     :class="[
       fullscreen ? 'fixed inset-0 z-[100] bg-editor' : '',
       focusMode ? 'bg-editor' : ''
@@ -924,6 +930,9 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
     </div>
   </div>
 
+  <!-- Voice memos embedded at the bottom of the entry -->
+  <EntryRecordings v-if="!focusMode" />
+
   <!-- Status bar + Bottom controls -->
   <div class="border-t border-border" v-if="!focusMode">
       <!-- Stats bar -->
@@ -995,12 +1004,6 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         >
           <Sparkles :size="13" />
         </button>
-        <button
-          class="p-1 rounded cursor-pointer transition-colors"
-          :class="ui.activeDrawer === 'recording' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
-          @click="openRecording"
-          title="Voice Recording"
-        ><Mic :size="13" /></button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
           :class="ui.activeDrawer === 'attachments' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
@@ -1092,6 +1095,10 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       @apply-tool-param="(value: string) => applyToolParam(value)"
       @close-result="clearAiResult"
     />
+
+    <!-- Floating voice recorder + playback player -->
+    <FloatingRecorder v-if="!focusMode" />
+    <FloatingPlayback v-if="!focusMode" />
   </div>
 </template>
 

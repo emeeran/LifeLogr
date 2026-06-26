@@ -78,7 +78,8 @@ class Settings(BaseSettings):
     MEDIA_DIR: Path = Path("")  # derived from DATA_DIR if empty
     DATA_DIR: Path = Path("")  # set by Tauri sidecar or defaults to platform dir
     CORS_ORIGINS: str = (
-        "http://localhost:5173,tauri://localhost,https://tauri.localhost,http://127.0.0.1:18765"
+        "http://localhost:5173,tauri://localhost,"
+        "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"
     )
     MAX_MEDIA_SIZE_BYTES: int = 26_214_400  # 25 MB
 
