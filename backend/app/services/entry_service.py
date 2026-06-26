@@ -1,5 +1,6 @@
 """Business logic for journal entries."""
 
+import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -10,9 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.models.entry import Entry
-from app.models.tag import EntryTag
-from app.schemas.entry import EntryCreate, EntryUpdate
+from app.models.tag import EntryTag, Tag
+from app.schemas.entry import CalendarEntryResponse, EntryCreate, EntryUpdate
+from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
+
+logger = logging.getLogger(__name__)
 
 
 class EntryService:
@@ -146,8 +150,94 @@ class EntryService:
         )
         return list(result.scalars().all())
 
+    async def get_calendar_month_light(self, year: int, month: int) -> list[CalendarEntryResponse]:
+        """Return lightweight entry projections for a calendar grid.
+
+        Unlike ``get_calendar_month``, this **excludes the body** (which can
+        be kilobytes per entry) and loads only the fields the grid needs:
+        id, entry_date, title, mood, and tags (batched in a second query to
+        avoid N+1). For a month with many long entries this dramatically
+        reduces JSON payload and parse time.
+        """
+        start = date(year, month, 1)
+        end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+
+        entries_result = await self.db.execute(
+            select(Entry.id, Entry.entry_date, Entry.title, Entry.mood, Entry.is_encrypted)
+            .where(Entry.is_deleted == False, Entry.entry_date >= start, Entry.entry_date < end)  # noqa: E712
+            .order_by(Entry.entry_date)
+        )
+        rows = entries_result.all()
+        if not rows:
+            return []
+
+        entry_ids = [r.id for r in rows]
+        tags_result = await self.db.execute(
+            select(EntryTag.entry_id, Tag.id, Tag.name)
+            .join(Tag, EntryTag.tag_id == Tag.id)
+            .where(EntryTag.entry_id.in_(entry_ids))
+        )
+        tags_map: dict[int, list[TagBrief]] = {}
+        for tr in tags_result.all():
+            tags_map.setdefault(tr.entry_id, []).append(TagBrief(id=tr.id, name=tr.name))
+
+        return [
+            CalendarEntryResponse(
+                id=r.id,
+                entry_date=r.entry_date,
+                title=r.title,
+                mood=r.mood,
+                is_encrypted=r.is_encrypted,
+                tags=tags_map.get(r.id, []),
+            )
+            for r in rows
+        ]
+
     async def search(self, query: str, offset: int, limit: int) -> tuple[list[Entry], int]:
-        """Full-text search on entry body; return matches and total count."""
+        """Full-text search via FTS5 index (falls back to ILIKE on error).
+
+        FTS5 uses the dedicated ``entries_fts`` virtual table maintained by
+        triggers, so this is index-backed and sargable — unlike the previous
+        ``ILIKE '%..%'`` which forced a full table scan.
+        """
+        from sqlalchemy import text as sa_text
+
+        # Sanitise the query for FTS5 MATCH: quote each token so special
+        # characters / operators don't break the parser.
+        fts_query = " ".join(f'"{tok}"' for tok in query.split() if tok.strip())
+
+        try:
+            fts_sql = sa_text(
+                """
+                SELECT e.id FROM entries_fts fts
+                JOIN entries e ON e.id = fts.rowid
+                WHERE entries_fts MATCH :q AND e.is_deleted = 0
+                ORDER BY bm25(entries_fts)
+                LIMIT :lim OFFSET :off
+                """
+            )
+            rows = (
+                await self.db.execute(fts_sql, {"q": fts_query, "lim": limit, "off": offset})
+            ).fetchall()
+            entry_ids = [r[0] for r in rows]
+            if entry_ids:
+                count_sql = sa_text(
+                    "SELECT COUNT(*) FROM entries_fts fts JOIN entries e ON e.id = fts.rowid "
+                    "WHERE entries_fts MATCH :q AND e.is_deleted = 0"
+                )
+                total = (await self.db.execute(count_sql, {"q": fts_query})).scalar_one()
+                result = await self.db.execute(
+                    select(Entry).where(Entry.id.in_(entry_ids))
+                )
+                # Preserve FTS order
+                entry_map = {e.id: e for e in result.scalars().all()}
+                return [entry_map[eid] for eid in entry_ids if eid in entry_map], total
+            # FTS returned 0 rows — fall through to ILIKE fallback (handles
+            # the case where FTS triggers aren't installed, e.g. test DB).
+        except Exception:
+            logger.warning("FTS search failed, falling back to ILIKE", exc_info=True)
+
+        # FTS unavailable — ILIKE fallback (rare; e.g. corrupt index)
         pattern = f"%{query}%"
         base = select(Entry).where(
             Entry.is_deleted == False,  # noqa: E712
@@ -169,13 +259,29 @@ class EntryService:
         year: int | None,
         month: int | None,
     ) -> Select[Any]:
-        """Apply common filters to an entry query."""
+        """Apply common filters to an entry query.
+
+        Date filters use **sargable** range bounds (``>= date(...) AND
+        < date(...+1)``) so SQLite can use ``ix_entries_deleted_date``.
+        The previous ``strftime('%Y', entry_date)`` formulation wrapped the
+        column in a function, defeating the index and forcing a full scan.
+        When only ``month`` is given (no year) — a rare any-year query —
+        we fall back to ``strftime`` since a range is impossible without a year.
+        """
         if tag_ids:
             q = q.join(EntryTag).where(EntryTag.tag_id.in_(tag_ids))
         if mood:
             q = q.where(Entry.mood == mood)
-        if year:
-            q = q.where(func.strftime("%Y", Entry.entry_date) == str(year))
-        if month:
+        if year and month:
+            start = date(year, month, 1)
+            end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+            q = q.where(Entry.entry_date >= start, Entry.entry_date < end)
+        elif year:
+            q = q.where(
+                Entry.entry_date >= date(year, 1, 1),
+                Entry.entry_date < date(year + 1, 1, 1),
+            )
+        elif month:
+            # Month-only (any year) — rare; strftime is the only option.
             q = q.where(func.strftime("%m", Entry.entry_date) == str(month).zfill(2))
         return q

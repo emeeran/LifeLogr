@@ -1,9 +1,17 @@
-import { computed, type Ref } from 'vue'
+import { ref, computed, type Ref } from 'vue'
 
 /**
  * Composable for auto-saving journal entries with debounce.
- * Extracts the save timer and debounce logic from EntryEditor.
+ *
+ * Exposes a tri-state ``saveState`` so the UI can show meaningful feedback:
+ *   - ``idle``  — no pending changes
+ *   - ``pending`` — dirty; waiting for the debounce timer to fire
+ *   - ``saving`` — the network request is in flight
+ *   - ``saved``  — just saved successfully (reverts to ``idle`` after 3s)
  */
+
+export type SaveState = 'idle' | 'pending' | 'saving' | 'saved'
+
 export function useAutoSave(options: {
   isNew: Ref<boolean>
   hasEntry: Ref<boolean>
@@ -24,14 +32,23 @@ export function useAutoSave(options: {
     body: string
     tag_ids: number[]
   }) => Promise<unknown>
-  setEditingEntryId: (id: number | null) => void
+  setEditingEntryId: (id: number) => void
 }) {
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let savedTimer: ReturnType<typeof setTimeout> | null = null
+
+  const saveState = ref<SaveState>('idle')
 
   const autosaveMs = computed(() => {
     const secs = parseInt(localStorage.getItem('lifelogr-autosave-interval') || '2')
     return (isNaN(secs) ? 2 : secs) * 1000
   })
+
+  function _setSaved() {
+    saveState.value = 'saved'
+    if (savedTimer) clearTimeout(savedTimer)
+    savedTimer = setTimeout(() => { saveState.value = 'idle' }, 3000)
+  }
 
   function cancelSave() {
     if (saveTimer) {
@@ -44,9 +61,11 @@ export function useAutoSave(options: {
     cancelSave()
     if (!options.body.value.trim()) return
 
+    saveState.value = 'pending'
     saveTimer = setTimeout(async () => {
-      if (options.isNew.value) {
-        try {
+      saveState.value = 'saving'
+      try {
+        if (options.isNew.value) {
           const entry = await options.createEntry({
             entry_date: options.entryDate.value,
             title: options.title.value || null,
@@ -55,25 +74,27 @@ export function useAutoSave(options: {
           })
           options.setEditingEntryId(entry.id)
           options.snapshot()
-        } catch {
-          /* ignore auto-save failures */
+        } else {
+          await options.updateEntry(options.editingEntryId.value as number, {
+            title: options.title.value || null,
+            body: options.body.value,
+            tag_ids: options.tagIds.value,
+          })
         }
-      } else {
-        await options.updateEntry(options.editingEntryId.value as number, {
-          title: options.title.value || null,
-          body: options.body.value,
-          tag_ids: options.tagIds.value,
-        })
+        _setSaved()
+      } catch {
+        saveState.value = 'idle'
+        /* ignore auto-save failures */
+      } finally {
+        saveTimer = null
       }
     }, autosaveMs.value)
   }
-
-  const saving = computed(() => saveTimer !== null)
 
   return {
     autosaveMs,
     triggerAutosave,
     cancelSave,
-    saving,
+    saveState,
   }
 }

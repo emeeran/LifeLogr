@@ -9,7 +9,7 @@ Output: dist/lifelogr-backend (single binary)
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_submodules, collect_dynamic_libs, collect_data_files
 
 # Project root (two levels up from this file)
 ROOT = Path(SPECPATH).resolve().parent.parent
@@ -17,16 +17,18 @@ ROOT = Path(SPECPATH).resolve().parent.parent
 # Auto-discover all app.* submodules — future-proof against additions
 _app_hiddenimports = collect_submodules('app')
 
-# STT stack — faster-whisper + its native deps (CTranslate2, onnxruntime,
-# tokenizers, numpy). These are collected so voice transcription works out of
-# the box in the packaged app. torch is NOT required (faster-whisper uses
-# CTranslate2 for inference), keeping the size delta to ~150 MB.
-_faster_whisper_submodules = collect_submodules('faster_whisper')
-_ctranslate2_submodules = collect_submodules('ctranslate2')
-_ctranslate2_binaries = collect_dynamic_libs('ctranslate2')
-_onnxruntime_submodules = collect_submodules('onnxruntime')
-_onnxruntime_binaries = collect_dynamic_libs('onnxruntime')
-_tokenizers_submodules = collect_submodules('tokenizers')
+# Audio capture/encode — sounddevice + bundled PortAudio (libportaudio) for
+# microphone capture, and soundfile + libsndfile for Ogg/Vorbis encoding. Audio
+# notes are recorded in the backend (the webview's MediaRecorder is unreliable
+# in the packaged WebKit2GTK build). The transcription/STT stack
+# (faster-whisper + CTranslate2/onnxruntime/tokenizers + the model bundle) was
+# removed when transcription was dropped.
+_sounddevice_submodules = collect_submodules('sounddevice')
+_sounddevice_binaries = collect_dynamic_libs('sounddevice')
+_sounddevice_datas = collect_data_files('sounddevice')
+_soundfile_submodules = collect_submodules('soundfile')
+_soundfile_binaries = collect_dynamic_libs('soundfile')
+_soundfile_datas = collect_data_files('soundfile')
 
 # TTS stack — Edge TTS + aiohttp + certifi (with its cacert.pem data file, so
 # HTTPS to the Microsoft TTS service works in the frozen build). Without
@@ -55,17 +57,16 @@ a = Analysis(
     pathex=[str(ROOT / 'backend')],
     binaries=[
         *_pysqlite3_binaries,
-        *_ctranslate2_binaries,
-        *_onnxruntime_binaries,
+        *_sounddevice_binaries,
+        *_soundfile_binaries,
     ],
     datas=[
         (str(ROOT / 'backend' / 'app'), 'app'),
-        # Build-time-predownloaded Whisper model — enables fully offline
-        # transcription with no first-run download. Staged by
-        # desktop/scripts/download-whisper-model.sh.
-        (str(ROOT / 'backend' / 'models'), 'models'),
         # certifi CA bundle — required for Edge TTS HTTPS in the frozen build.
         *_certifi_data,
+        # sounddevice's bundled PortAudio + soundfile's libsndfile libraries.
+        *_sounddevice_datas,
+        *_soundfile_datas,
     ],
     hiddenimports=[
         # Auto-discovered app modules
@@ -100,18 +101,17 @@ a = Analysis(
         'certifi',
         *_certifi_submodules,
         'aiohttp',
-        # STT — faster-whisper + native inference deps for voice transcription
-        'faster_whisper',
-        *_faster_whisper_submodules,
-        'ctranslate2',
-        *_ctranslate2_submodules,
-        'onnxruntime',
-        *_onnxruntime_submodules,
-        'tokenizers',
-        *_tokenizers_submodules,
         'numpy',
         'numpy.core',
         'yaml',
+        # Audio capture/encode — sounddevice (mic capture) + soundfile/_soundfile
+        # (Ogg/Vorbis encode via libsndfile) + cffi (their C bindings)
+        'sounddevice',
+        *_sounddevice_submodules,
+        'soundfile',
+        *_soundfile_submodules,
+        '_soundfile',
+        'cffi',
     ],
     hookspath=[],
     hooksconfig={},

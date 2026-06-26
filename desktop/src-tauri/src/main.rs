@@ -89,6 +89,56 @@ fn wait_for_sidecar(port: u16) {
     warn!("Backend sidecar did not become ready within 30s on port {port}");
 }
 
+/// Whether anything is currently listening on 127.0.0.1:port.
+fn port_is_listening(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{port}");
+    TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300)).is_ok()
+}
+
+/// Reclaim the sidecar port if a stale backend holds it.
+///
+/// A previous LifeLogr that crashed or was force-killed can leave its backend
+/// sidecar running on our port. The new sidecar then fails to bind and exits —
+/// but `wait_for_sidecar` only TCP-probes the port, so it sees the *stale*
+/// process as healthy and the app silently talks to an outdated backend (the
+/// cause of "405 Method Not Allowed" on new endpoints). Single-instance is
+/// enforced, so anything on our port at startup is stale — kill it before
+/// spawning ours. Best-effort and no-op when the port is already free.
+fn reclaim_port(port: u16) {
+    if !port_is_listening(port) {
+        return; // port free — nothing to reclaim
+    }
+    warn!(
+        "Port {port} is already in use — reclaiming it from a stale backend sidecar"
+    );
+    // fuser kills exactly the process holding the port (psmisc, standard on
+    // Debian/Ubuntu); fall back to matching the sidecar name if fuser is absent.
+    let port_arg = format!("{port}/tcp");
+    let reclaimed = std::process::Command::new("fuser")
+        .arg("-k")
+        .arg(&port_arg)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+        || std::process::Command::new("pkill")
+            .args(["-f", "lifelogr-backend"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+    if !reclaimed {
+        warn!("Could not reclaim port {port} (no fuser/pkill) — sidecar may fail to bind");
+    }
+    // Wait for the port to actually free up before we spawn our sidecar.
+    for _ in 0..20 {
+        if !port_is_listening(port) {
+            info!("Port {port} reclaimed");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    warn!("Port {port} still in use after reclaim attempt");
+}
+
 fn init_logging(data_dir: &std::path::Path) {
     let log_path = data_dir.join("lifelogr-desktop.log");
     let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
@@ -122,6 +172,10 @@ fn main() {
 
             let port = backend_port();
             info!("Starting LifeLogr desktop with backend port {port}");
+
+            // Reclaim the port from any stale sidecar left by a previous run,
+            // so OUR sidecar can bind it (see reclaim_port).
+            reclaim_port(port);
 
             // Launch Python backend sidecar
             let sidecar_command = app

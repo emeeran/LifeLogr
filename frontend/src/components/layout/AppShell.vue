@@ -83,13 +83,6 @@ function handleCancel() {
 }
 
 // ── Drawer panel callbacks ──
-function onTranscribed(text: string) {
-  if (editorRef.value) {
-    editorRef.value.body += `\n\n[Transcription]\n${text}`
-    editorRef.value.onInput()
-  }
-}
-
 function onAttachmentView(index: number) {
   editorRef.value?.openViewer?.(index)
 }
@@ -107,9 +100,13 @@ function onAttachmentView(index: number) {
       </div>
     </Transition>
 
-    <!-- Center panel (hidden when drawer is open so editor + drawer get full space) -->
-    <main v-if="!showDrawer" class="flex-1 flex flex-col min-w-0 bg-surface relative">
-      <router-view />
+    <!-- Center panel (kept mounted even when drawer is open; just narrows) -->
+    <main v-show="!showDrawer" class="flex-1 flex flex-col min-w-0 bg-surface relative">
+      <router-view v-slot="{ Component }">
+        <Transition name="route-fade" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </router-view>
 
       <!-- Save prompt overlay -->
       <Transition name="prompt">
@@ -173,7 +170,6 @@ function onAttachmentView(index: number) {
         <RecordingPanel
           v-if="ui.activeDrawer === 'recording'"
           :entry-id="editorRef?.entryId ?? 0"
-          @transcribed="onTranscribed"
         />
         <AttachmentsPanel
           v-if="ui.activeDrawer === 'attachments'"
@@ -232,5 +228,15 @@ function onAttachmentView(index: number) {
 .scribble-slide-leave-to {
   opacity: 0;
   width: 0;
+}
+
+/* Route transition — smooth fade between views */
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.route-fade-enter-from,
+.route-fade-leave-to {
+  opacity: 0;
 }
 </style>

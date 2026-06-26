@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { EntryResponse } from '../../types'
+import type { CalendarEntryResponse } from '../../types'
 import EntryPicker from './EntryPicker.vue'
 
 const props = defineProps<{
   date: number
   dateStr: string
   isCurrentMonth: boolean
-  entries: EntryResponse[]
+  entries: CalendarEntryResponse[]
   isToday: boolean
   isSelected: boolean
 }>()
@@ -67,7 +67,7 @@ function handleNewEntry(dateStr: string) {
       class="mt-0.5 w-full rounded-sm overflow-hidden"
     >
       <p class="text-[10px] text-text-secondary/90 leading-snug line-clamp-2">
-        {{ entries[0].title || (entries[0].is_encrypted ? 'Encrypted' : entries[0].body.slice(0, 40) + '...') }}
+        {{ entries[0].title || (entries[0].is_encrypted ? 'Encrypted' : 'Journal entry') }}
       </p>
     </div>
 

@@ -58,13 +58,6 @@ async def download_video(video_id: int, db: AsyncSession = Depends(get_db)) -> R
     )
 
 
-@router.post("/{video_id}/transcribe", response_model=VideoNoteResponse)
-async def transcribe_video(video_id: int, db: AsyncSession = Depends(get_db)) -> Any:
-    """Transcribe video audio using Whisper."""
-    svc = VideoService(db)
-    return await svc.transcribe(video_id)
-
-
 @router.delete("/{video_id}", status_code=204)
 async def delete_video(video_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """Delete a video note and its file."""

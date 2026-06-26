@@ -47,7 +47,6 @@ build-frontend:
 		cd ../frontend && VITE_APP_VERSION="$$VER" npm run build
 
 build-backend:
-	@bash scripts/download-whisper-model.sh
 	cd ../backend && uv run pyinstaller ../desktop/scripts/pyinstaller.spec \
 	    --noconfirm \
 	    --distpath ../desktop/dist \

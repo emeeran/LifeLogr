@@ -1,108 +1,112 @@
-"""Tests for voice recording transcription — STT persisted on the recording."""
+"""Tests for audio-note recording — backend-side capture (start/stop) → Ogg/Vorbis."""
 
 from unittest.mock import patch
 
+import pytest
 from httpx import AsyncClient
 
 
-async def _make_recording(client: AsyncClient, body: str = "") -> dict:
-    """Create an entry + a recording and return the recording payload."""
-    import io
-    import wave
+@pytest.fixture(autouse=True)
+def _reset_active_recording():
+    """The active-capture slot is module-global; clear it around every test."""
+    from app.services import recording_service as rs
 
+    rs._active_recording = None
+    yield
+    rs._active_recording = None
+
+
+class _FakeStream:
+    """Stand-in for a sounddevice InputStream — records start/stop/close."""
+
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+        self.closed = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+async def _make_entry(client: AsyncClient, body: str = "") -> int:
     r = await client.post(
-        "/api/v1/entries", json={"entry_date": "2026-06-25", "title": "stt", "body": body}
+        "/api/v1/entries", json={"entry_date": "2026-06-26", "title": "note", "body": body}
     )
-    entry_id = r.json()["id"]
-
-    buf = io.BytesIO()
-    w = wave.open(buf, "wb")
-    w.setnchannels(1)
-    w.setsampwidth(2)
-    w.setframerate(16000)
-    w.writeframes(b"\x00\x00" * 16000)  # 1s silence
-    w.close()
-
-    r = await client.post(
-        "/api/v1/recordings",
-        files={"file": ("r.wav", buf.getvalue(), "audio/wav")},
-        data={"entry_id": str(entry_id)},
-    )
-    assert r.status_code == 201, r.text
-    return r.json()
+    return r.json()["id"]
 
 
-class TestTranscribe:
-    async def test_transcribe_succeeds_and_sets_text(self, client: AsyncClient):
-        """A successful STT run marks the recording transcribed with text."""
-        rec = await _make_recording(client)
+class TestStartStop:
+    """Backend-side microphone capture (sounddevice) via /start + /stop."""
 
-        with patch("app.services.recording_service._get_whisper_model") as mock_model:
-            # Stub a model whose transcribe() yields one segment.
-            class _Seg:
-                def __init__(self, t: str) -> None:
-                    self.text = t
-            mock_model.return_value.transcribe.return_value = (
-                [_Seg("hello world")],
-                None,
-            )
+    async def test_start_stop_creates_ogg_recording(self, client: AsyncClient):
+        """Start then stop persists a valid, non-empty Ogg/Vorbis recording."""
+        import io
 
-            r = await client.post(f"/api/v1/recordings/{rec['id']}/transcribe")
+        import numpy as np
+        import soundfile as sf
+
+        eid = await _make_entry(client)
+        fake = _FakeStream()
+
+        def fake_open(rec):  # noqa: ANN001
+            # 1s of a 440 Hz tone as float32 mono — real enough for Vorbis to encode.
+            t = np.linspace(0, 1, 16000, endpoint=False)
+            rec.frames.append((0.3 * np.sin(2 * np.pi * 440 * t)).astype("float32").reshape(-1, 1))
+            return fake
+
+        with patch("app.services.recording_service._open_input_stream", side_effect=fake_open):
+            r = await client.post("/api/v1/recordings/start", data={"entry_id": str(eid)})
+            assert r.status_code == 200, r.text
+            assert r.json() == {"ok": True, "entry_id": eid}
+            r = await client.post("/api/v1/recordings/stop")
 
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["is_transcribed"] is True
-        assert "hello world" in data["transcription"]
+        assert data["audio_format"] == "ogg"
+        assert data["entry_id"] == eid
+        assert fake.stopped and fake.closed
 
-    async def test_transcribe_twice_conflicts(self, client: AsyncClient):
-        """Re-transcribing an already-transcribed recording is a 409."""
-        rec = await _make_recording(client)
-        with patch("app.services.recording_service._get_whisper_model") as mock_model:
-            class _Seg:
-                def __init__(self, t: str) -> None:
-                    self.text = t
-            mock_model.return_value.transcribe.return_value = ([_Seg("one")], None)
-            await client.post(f"/api/v1/recordings/{rec['id']}/transcribe")
-            r = await client.post(f"/api/v1/recordings/{rec['id']}/transcribe")
-        assert r.status_code == 409
+        # The stored file is a valid Ogg/Vorbis that soundfile can decode.
+        media = await client.get(f"/api/v1/media/{data['media_id']}/file")
+        assert media.status_code == 200
+        arr, sr = sf.read(io.BytesIO(media.content))
+        assert sr == 16000 and arr.size > 0
 
-    async def test_transcribe_does_not_mutate_entry_body(self, client: AsyncClient):
-        """The recording is the single source of truth for the spoken text.
-        Transcribing must NOT append a [Transcription] block to the entry body
-        server-side — that is the frontend editor's job."""
-        rec = await _make_recording(client, body="Original body text.")
+    async def test_double_start_conflicts(self, client: AsyncClient):
+        """Starting while a capture is already running is a 409."""
+        eid = await _make_entry(client)
+        with patch(
+            "app.services.recording_service._open_input_stream", return_value=_FakeStream()
+        ):
+            r1 = await client.post("/api/v1/recordings/start", data={"entry_id": str(eid)})
+            assert r1.status_code == 200
+            r2 = await client.post("/api/v1/recordings/start", data={"entry_id": str(eid)})
+        assert r2.status_code == 409
 
-        with patch("app.services.recording_service._get_whisper_model") as mock_model:
-            class _Seg:
-                def __init__(self, t: str) -> None:
-                    self.text = t
-            mock_model.return_value.transcribe.return_value = ([_Seg("hello world")], None)
+    async def test_stop_with_no_active_is_404(self, client: AsyncClient):
+        """Stopping when nothing is recording is a 404."""
+        r = await client.post("/api/v1/recordings/stop")
+        assert r.status_code == 404
 
-            r = await client.post(f"/api/v1/recordings/{rec['id']}/transcribe")
+    async def test_start_mic_unavailable_is_500(self, client: AsyncClient):
+        """If the microphone can't be opened, /start returns 500."""
+        eid = await _make_entry(client)
+        with patch(
+            "app.services.recording_service._open_input_stream", side_effect=OSError("no device")
+        ):
+            r = await client.post("/api/v1/recordings/start", data={"entry_id": str(eid)})
+        assert r.status_code == 500
 
-        assert r.status_code == 200, r.text
-        assert r.json()["is_transcribed"] is True
-        assert "hello world" in r.json()["transcription"]
-
-        # Body untouched — no server-side [Transcription] append.
-        entry = (await client.get(f"/api/v1/entries/{rec['entry_id']}")).json()
-        assert entry["body"] == "Original body text."
-
-    async def test_transcribe_empty_result_is_marked_transcribed(self, client: AsyncClient):
-        """No speech detected (empty STT) is normalised to "" but still marks the
-        recording transcribed — the frontend surfaces a "no speech" notice."""
-        rec = await _make_recording(client)
-
-        with patch("app.services.recording_service._get_whisper_model") as mock_model:
-            class _Seg:
-                def __init__(self, t: str) -> None:
-                    self.text = t
-            # Whisper returns only whitespace (a silent clip).
-            mock_model.return_value.transcribe.return_value = ([_Seg("   ")], None)
-
-            r = await client.post(f"/api/v1/recordings/{rec['id']}/transcribe")
-
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["is_transcribed"] is True
-        assert data["transcription"] == ""
+    async def test_transcribe_endpoint_removed(self, client: AsyncClient):
+        """Transcription was removed — the endpoint no longer exists (405/404)."""
+        eid = await _make_entry(client)
+        # No recording id 999, but the route itself is gone: any id → not 200.
+        r = await client.post("/api/v1/recordings/999/transcribe")
+        assert r.status_code in (404, 405, 422)
+        assert eid  # keep the entry creation meaningful

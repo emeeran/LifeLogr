@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { EntryResponse } from '../../types'
+import type { CalendarEntryResponse } from '../../types'
 import { useEntriesStore } from '../../stores/entries'
 import { useCalendar } from '../../composables/useCalendar'
 import { Pencil, Plus, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
-  entries: EntryResponse[]
+  entries: CalendarEntryResponse[]
   dateStr: string
 }>()
 
@@ -20,11 +20,7 @@ const entriesStore = useEntriesStore()
 const cal = useCalendar()
 const deletingId = ref<number | null>(null)
 
-function preview(body: string): string {
-  return body.slice(0, 60) + (body.length > 60 ? '...' : '')
-}
-
-async function handleDelete(e: MouseEvent, entry: EntryResponse) {
+async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
   e.stopPropagation()
   if (deletingId.value !== null) return
   if (!confirm(`Delete "${entry.title || 'Untitled'}"?`)) return
@@ -60,7 +56,7 @@ async function handleDelete(e: MouseEvent, entry: EntryResponse) {
       <Pencil :size="11" class="text-accent mt-0.5 shrink-0" />
       <div class="min-w-0 flex-1">
         <div class="text-xs font-medium text-text-primary truncate">{{ entry.title || 'Untitled' }}</div>
-        <div v-if="!entry.is_encrypted" class="text-[10px] text-text-secondary truncate">{{ preview(entry.body) }}</div>
+        <div v-if="!entry.is_encrypted" class="text-[10px] text-text-secondary truncate">{{ entry.title ? '' : 'Journal entry' }}</div>
         <div v-else class="text-[10px] text-text-muted">Encrypted</div>
       </div>
       <button

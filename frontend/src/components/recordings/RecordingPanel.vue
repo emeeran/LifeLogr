@@ -1,32 +1,38 @@
 <script setup lang="ts">
-import { Mic, Square, Loader, FileAudio, Trash2, Sparkles, Play, Pause } from 'lucide-vue-next'
+import { Mic, Square, Loader, FileAudio, Trash2, Play, Pause } from 'lucide-vue-next'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { recordingsApi } from '../../api/recordings'
 import { API_ORIGIN } from '../../api/client'
 import type { VoiceRecordingResponse } from '../../types'
 
 const props = defineProps<{ entryId: number }>()
-const emit = defineEmits<{ transcribed: [text: string] }>()
 
-/** A real, persisted entry id is required before we can record/upload. */
+/** A real, persisted entry id is required before we can record. */
 const hasValidEntry = computed(() => props.entryId != null && props.entryId > 0)
 
 const recording = ref(false)
 const elapsed = ref(0)
-const mediaRecorder = ref<MediaRecorder | null>(null)
 const recordings = ref<VoiceRecordingResponse[]>([])
 const uploading = ref(false)
-const transcribingId = ref<number | null>(null)
 const playingId = ref<number | null>(null)
 let timerInterval: ReturnType<typeof setInterval> | null = null
 let currentAudio: HTMLAudioElement | null = null
 
 onMounted(loadRecordings)
 onUnmounted(() => {
-  if (timerInterval) clearInterval(timerInterval)
-  stopRecording()
+  clearTimer()
   stopPlayback()
+  // If a capture is mid-flight, tell the backend to stop so it doesn't keep
+  // recording after the panel closes (fire-and-forget — the panel is gone).
+  if (recording.value) {
+    recording.value = false
+    void recordingsApi.stop().catch(() => { /* panel unmounted */ })
+  }
 })
+
+function clearTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
+}
 
 async function loadRecordings() {
   try {
@@ -39,154 +45,37 @@ async function startRecording() {
     alert('Please save this entry first, then record.')
     return
   }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    alert('Audio recording is not available in this environment.\n\nOn Linux (Tauri desktop app), this requires:\n' +
-      '1. gstreamer1.0-plugins-bad: sudo apt install gstreamer1.0-plugins-bad\n' +
-      '2. Run System Setup from Settings > Features\n\n' +
-      'After installing, restart the app.')
-    return
-  }
-  if (typeof MediaRecorder === 'undefined') {
-    alert('MediaRecorder is not supported in this browser engine. On Linux, ensure GStreamer plugins are installed:\n\nsudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-plugins-bad')
-    return
-  }
+  // Capture runs in the BACKEND (sounddevice → PulseAudio/ALSA), NOT the
+  // webview's MediaRecorder. The webview's MediaRecorder is unreliable in the
+  // packaged WebKit2GTK build (0-byte files); capturing server-side behaves
+  // identically in the browser (dev) and the desktop app (prod). We just tell
+  // the backend to start, then run a local timer for the UI.
+  recording.value = true
+  elapsed.value = 0
+  timerInterval = setInterval(() => { elapsed.value++ }, 1000)
   try {
-    // Mono, echo-cancelled, denoised capture: smaller files and markedly
-    // better transcription accuracy than the raw default.
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-    })
-    const mimeType = pickMimeType()
-    let recorder: MediaRecorder
-    try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-    } catch {
-      // isTypeSupported can report a codec the engine then fails to construct
-      // (a half-installed GStreamer plugin). Retry once with the engine default
-      // before giving up — this try/fallback is the real safety net.
-      try {
-        recorder = new MediaRecorder(stream)
-      } catch (mrErr: any) {
-        stream.getTracks().forEach(t => t.stop())
-        alert(
-          `MediaRecorder could not start: ${mrErr?.message || mrErr}\n\n` +
-          'This usually means the WebKit/GStreamer audio encoder is unavailable.\n' +
-          'On Linux run System Setup (Settings → Features) or:\n' +
-          '  sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav'
-        )
-        return
-      }
-    }
-    const chunks: Blob[] = []
-
-    recorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunks.push(e.data)
-    }
-    recorder.onerror = (ev: Event) => {
-      const err = (ev as ErrorEvent).error || (recorder as any).state
-      alert(
-        `Recording error: ${err?.message || 'capture stopped unexpectedly'}.\n` +
-        'This is often a GStreamer encoder issue — try System Setup (Settings → Features).'
-      )
-      recording.value = false
-      if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
-      stream.getTracks().forEach(t => t.stop())
-    }
-    recorder.onstop = async () => {
-      const { ext, mime } = audioFormatFor(recorder.mimeType)
-      const blob = new Blob(chunks, { type: mime })
-      stream.getTracks().forEach(t => t.stop())
-      // Guard against 0-byte recordings (the cause of "Playback failed /
-      // NotSupportedError"): if no audio data was captured, don't upload an
-      // empty file — tell the user and let them retry.
-      if (blob.size === 0) {
-        alert(
-          'No audio was captured (0 bytes). The microphone may not be working\n' +
-          'or the encoder produced no data. Please try again, and speak loudly.\n' +
-          'If it persists, run System Setup (Settings → Features).'
-        )
-        return
-      }
-      const file = new File([blob], `recording-${Date.now()}.${ext}`, { type: mime })
-      await uploadRecording(file)
-    }
-
-    mediaRecorder.value = recorder
-    // Start WITHOUT a timeslice; WebKit2GTK flushes all encoded data on stop
-    // via requestData, which is more reliable than timed chunks (timed slices
-    // can arrive empty if the encoder hasn't produced a frame yet).
-    recorder.start()
-    recording.value = true
-    elapsed.value = 0
-    timerInterval = setInterval(() => { elapsed.value++ }, 1000)
+    await recordingsApi.start(props.entryId)
   } catch (e: any) {
-    if (e?.name === 'NotAllowedError') {
-      alert(
-        'Microphone permission denied.\n\n' +
-        'On Linux, allow microphone access for LifeLogr in your system privacy settings,\n' +
-        'then restart the app. (Desktop build auto-grants this, but your OS/portal may block it.)'
-      )
-    } else if (e?.name === 'NotFoundError' || e?.name === 'DevicesNotFoundError') {
-      alert('No microphone found. Please connect a microphone and try again.')
-    } else if (e?.name === 'NotReadableError') {
-      alert(
-        'Microphone is busy or unreadable. Another app may be using it.\n' +
-        'Close other recording apps and try again.'
-      )
-    } else {
-      alert(`Recording failed [${e?.name || 'Error'}]: ${e?.message || e}\n\nPlease report this error.`)
-    }
+    clearTimer()
+    recording.value = false
+    alert(`Could not start recording: ${e?.message || e}\n\nCheck that a microphone is connected.`)
   }
 }
 
-function stopRecording() {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null }
-  const rec = mediaRecorder.value
-  if (rec && rec.state === 'recording') {
-    // Flush any buffered audio frames BEFORE stop so ondataavailable fires
-    // with real data before onstop runs (prevents 0-byte recordings).
-    try { rec.requestData() } catch { /* ignore — stop() will flush anyway */ }
-    rec.stop()
-  }
+async function stopRecording() {
+  clearTimer()
+  const wasRecording = recording.value
   recording.value = false
-}
-
-async function uploadRecording(file: File) {
-  if (!hasValidEntry.value) {
-    alert('Cannot upload recording: this entry is not saved yet.')
-    return
-  }
+  if (!wasRecording) return
+  // The backend stops the capture and encodes an Ogg/Vorbis audio note; we add it.
   uploading.value = true
   try {
-    const rec = await recordingsApi.upload(props.entryId, file)
+    const rec = await recordingsApi.stop()
     recordings.value.push(rec)
   } catch (e: any) {
-    alert(`Upload failed: ${e.message}`)
+    alert(`Recording failed: ${e?.message || e}`)
   } finally {
     uploading.value = false
-  }
-}
-
-async function transcribe(rec: VoiceRecordingResponse) {
-  transcribingId.value = rec.id
-  try {
-    const updated = await recordingsApi.transcribe(rec.id)
-    const idx = recordings.value.findIndex(r => r.id === rec.id)
-    if (idx >= 0) recordings.value[idx] = updated
-    if (updated.transcription && updated.transcription.trim()) {
-      emit('transcribed', updated.transcription)
-    } else {
-      // STT ran but produced nothing (a silent recording). Tell the user
-      // instead of silently doing nothing while showing a "transcribed" tick.
-      alert(
-        'No speech was detected in this recording.\n\n' +
-        'Try speaking louder and closer to the microphone, then record again.'
-      )
-    }
-  } catch (e: any) {
-    alert(`Transcription failed: ${e.message}`)
-  } finally {
-    transcribingId.value = null
   }
 }
 
@@ -268,61 +157,6 @@ function fmtTime(s: number): string {
   const sec = s % 60
   return `${m}:${String(sec).padStart(2, '0')}`
 }
-
-/**
- * Pick the best audio MIME type the current engine can actually encode.
- *
- * On WebKit2GTK (Linux/Tauri) `new MediaRecorder(stream)` with no mimeType
- * often selects a codec the installed GStreamer encoders can't produce,
- * yielding a 0-byte / undecodable recording — the root cause of silent
- * recordings, empty transcriptions, and broken playback. Probing
- * `isTypeSupported` and passing the result explicitly lands us on a working
- * codec: webm/opus when the GStreamer plugins are present, falling back to
- * raw WAV (universally decodable PCM) otherwise.
- *
- * Returns '' when nothing reports as supported; the caller then lets the engine
- * choose, and a construction-time try/catch is the final safety net
- * (isTypeSupported can still lie when a plugin is half-installed).
- */
-function pickMimeType(): string {
-  const candidates = [
-    'audio/webm;codecs=opus', // smallest + best for Whisper; needs gst good+bad
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/mp4', // WebKit/Safari fallback
-    'audio/x-wav', // raw PCM — universally decodable, common WebKit2GTK output
-    'audio/wav',
-  ]
-  for (const t of candidates) {
-    try {
-      if (MediaRecorder.isTypeSupported(t)) return t
-    } catch { /* isTypeSupported not implemented for this type */ }
-  }
-  return ''
-}
-
-/**
- * Map a MediaRecorder mimeType to a { ext, mime } pair so the saved file's
- * extension matches its actual encoded bytes.
- *
- * WebKit2GTK (Linux/Tauri) commonly reports `audio/x-wav` or `audio/webm`
- * depending on the installed GStreamer encoders. The previous code defaulted
- * any non-webm type to `.ogg`, which produced WAV bytes named `.ogg` — and
- * the backend then served them as `audio/ogg`, so playback failed.
- */
-function audioFormatFor(mimeType: string): { ext: string; mime: string } {
-  const mt = (mimeType || '').toLowerCase()
-  if (mt.includes('webm')) return { ext: 'webm', mime: 'audio/webm' }
-  if (mt.includes('wav'))  return { ext: 'wav',  mime: 'audio/wav' }
-  if (mt.includes('ogg'))  return { ext: 'ogg',  mime: 'audio/ogg' }
-  if (mt.includes('mp4') || mt.includes('m4a')) return { ext: 'm4a', mime: 'audio/mp4' }
-  if (mt.includes('mpeg') || mt.includes('mp3')) return { ext: 'mp3', mime: 'audio/mpeg' }
-  if (mt.includes('opus')) return { ext: 'opus', mime: 'audio/ogg' }
-  // WebKit2GTK default when no codec info is exposed — wav is the safest
-  // portable guess (PCM, universally decodable) and matches GStreamer's
-  // common `audio/x-wav` output.
-  return { ext: 'wav', mime: mt || 'audio/wav' }
-}
 </script>
 
 <template>
@@ -347,7 +181,7 @@ function audioFormatFor(mimeType: string): { ext: string; mime: string } {
       </button>
       <span v-if="recording" class="text-[10px] text-danger font-mono">{{ fmtTime(elapsed) }}</span>
       <span v-if="uploading" class="flex items-center gap-1 text-[10px] text-text-muted">
-        <Loader :size="10" class="animate-spin" /> Uploading...
+        <Loader :size="10" class="animate-spin" /> Saving...
       </span>
     </div>
 
@@ -369,26 +203,12 @@ function audioFormatFor(mimeType: string): { ext: string; mime: string } {
         <FileAudio :size="10" class="text-accent shrink-0" />
         <span class="text-text-secondary flex-1 truncate">{{ rec.audio_format.toUpperCase() }}</span>
         <button
-          v-if="!rec.is_transcribed"
-          class="p-px rounded hover:bg-accent/15 text-text-muted hover:text-accent cursor-pointer transition-colors disabled:opacity-50"
-          :disabled="transcribingId === rec.id"
-          title="Transcribe"
-          @click="transcribe(rec)"
-        >
-          <Loader v-if="transcribingId === rec.id" :size="10" class="animate-spin" />
-          <Sparkles v-else :size="10" />
-        </button>
-        <span v-else class="text-[8px] text-green-400" title="Transcribed">&#10003;</span>
-        <button
           class="p-px rounded hover:bg-danger/15 text-text-muted hover:text-danger cursor-pointer transition-colors"
           title="Delete"
           @click="deleteRecording(rec)"
         >
           <Trash2 :size="10" />
         </button>
-      </div>
-      <div v-if="recordings.some(r => r.is_transcribed)" class="text-[9px] text-text-muted px-1">
-        Transcription appended to entry body.
       </div>
     </div>
   </div>

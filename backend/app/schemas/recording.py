@@ -11,8 +11,6 @@ class VoiceRecordingResponse(BaseModel):
     media_id: int
     duration_seconds: float
     audio_format: str
-    transcription: str | None
-    is_transcribed: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
