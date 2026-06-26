@@ -81,10 +81,6 @@ const providerFields: Record<string, { label: string; placeholder: string }[]> =
     { label: 'Refresh Token', placeholder: '0.ARoxxxx' },
   ],
   dropbox: [{ label: 'Access Token', placeholder: 'sl.xxxxx' }],
-  mega: [
-    { label: 'Email', placeholder: 'user@example.com' },
-    { label: 'Password', placeholder: 'MEGA account password' },
-  ],
   nas: [
     { label: 'Host', placeholder: '192.168.1.100' },
     { label: 'Share Path', placeholder: '/volume1/backup' },
@@ -356,7 +352,6 @@ onMounted(() => {
         <select v-model="newProvider" class="settings-select" @change="resetNewCredentials">
           <option value="webdav">WebDAV</option>
           <option value="google_drive">Google Drive</option>
-          <option value="mega">MEGA</option>
           <option value="onedrive">OneDrive</option>
           <option value="dropbox">Dropbox</option>
           <option value="nas">NAS</option>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useUiStore } from '../../stores/ui'
+import { mediaApi } from '../../api/media'
 import Sidebar from './Sidebar.vue'
 import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
@@ -85,6 +86,20 @@ function handleCancel() {
 // ── Drawer panel callbacks ──
 function onAttachmentView(index: number) {
   editorRef.value?.openViewer?.(index)
+}
+
+async function onExtractText(id: number) {
+  try {
+    const { text } = await mediaApi.extractText(id)
+    if (text.trim() && editorRef.value) {
+      editorRef.value.body += `\n\n${text.trim()}`
+      editorRef.value.onInput()
+    } else {
+      alert('No text was detected in this image.')
+    }
+  } catch (e: any) {
+    alert(`OCR failed: ${e?.message || e}`)
+  }
 }
 </script>
 
@@ -177,6 +192,7 @@ function onAttachmentView(index: number) {
           @add="editorRef?.triggerFileInput?.()"
           @remove="(id: number) => editorRef?.removeAttachment?.(id)"
           @view="onAttachmentView"
+          @extract-text="onExtractText"
         />
       </div>
     </Transition>

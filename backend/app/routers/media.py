@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import io
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +16,7 @@ from app.schemas.media import MediaResponse, MediaTimelineItem, MediaTimelineRes
 from app.services.media_service import MediaService
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=MediaResponse, status_code=201)
@@ -97,6 +101,36 @@ async def get_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """Get media metadata."""
     svc = MediaService(db)
     return await svc.get(media_id)
+
+
+@router.post("/{media_id}/ocr")
+async def ocr_media(media_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    """Extract text from an image attachment via OCR (tesseract/pytesseract)."""
+    svc = MediaService(db)
+    media = await svc.get(media_id)
+    if not (media.media_type == "image" or media.media_type.startswith("image/")):
+        raise HTTPException(status_code=400, detail="OCR is only available for images.")
+
+    file_data, _content_type, _filename = await svc.get_file(media.id)
+    try:
+        import pytesseract  # type: ignore[import-untyped]
+        from PIL import Image
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=f"OCR unavailable: {exc}") from exc
+
+    try:
+        text = await asyncio.to_thread(
+            pytesseract.image_to_string, Image.open(io.BytesIO(file_data))
+        )
+    except Exception as exc:
+        # Most common cause: the `tesseract` system binary isn't installed.
+        logger.error("OCR failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="OCR failed — is the `tesseract` binary installed? "
+            "Run System Setup (Settings → Features) or: sudo apt install tesseract-ocr",
+        ) from exc
+    return {"text": text.strip()}
 
 
 @router.get("/{media_id}/file")

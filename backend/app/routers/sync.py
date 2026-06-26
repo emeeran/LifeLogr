@@ -101,13 +101,26 @@ async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
             username=creds.get("username", ""),
             password=creds.get("password", ""),
         )
-    elif provider_name == "mega":
-        from app.services.cloud_sync_service import MegaProvider
+    elif provider_name == "onedrive":
+        from app.services.cloud_sync_service import OneDriveProvider
 
-        return MegaProvider(
-            email=creds.get("email", ""),
-            password=creds.get("password", ""),
-        )
+        async def on_refresh_od(new_access_token: str, new_expiry: str) -> None:
+            creds["access_token"] = new_access_token
+            creds["token_expiry"] = new_expiry
+            config.credentials_encrypted = encrypt(json.dumps(creds))
+            await db.flush()
+
+        return OneDriveProvider(creds, on_token_refresh=on_refresh_od)
+    elif provider_name == "dropbox":
+        from app.services.cloud_sync_service import DropboxProvider
+
+        async def on_refresh_db(new_access_token: str, new_expiry: str) -> None:
+            creds["access_token"] = new_access_token
+            creds["token_expiry"] = new_expiry
+            config.credentials_encrypted = encrypt(json.dumps(creds))
+            await db.flush()
+
+        return DropboxProvider(creds, on_token_refresh=on_refresh_db)
     else:
         raise ValueError(f"Unsupported cloud sync provider: {provider_name}")
 

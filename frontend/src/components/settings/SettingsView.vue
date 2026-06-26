@@ -75,7 +75,7 @@ const index: SearchEntry[] = [
 
   { tab: 'backup', label: 'Local backup', keywords: ['local backup', 'archive', 'tar', 'manual backup'] },
   { tab: 'backup', label: 'Scheduled backup', keywords: ['auto backup', 'scheduled', 'schedule', 'automatic', 'cron'] },
-  { tab: 'backup', label: 'Cloud backup', keywords: ['cloud', 'google drive', 'webdav', 'onedrive', 'dropbox', 'mega', 'nas', 'sync'] },
+  { tab: 'backup', label: 'Cloud backup', keywords: ['cloud', 'google drive', 'webdav', 'onedrive', 'dropbox', 'nas', 'sync'] },
   { tab: 'backup', label: 'Sync queue', keywords: ['sync', 'sync queue', 'push', 'pull', 'flush'] },
 
   { tab: 'about', label: 'Version', keywords: ['version', 'about', 'release notes', 'changelog'] },

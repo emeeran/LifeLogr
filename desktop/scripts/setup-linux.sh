@@ -40,7 +40,8 @@ install_system_deps() {
                 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info \
                 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
                 gstreamer1.0-plugins-bad \
-                libportaudio2
+                libportaudio2 \
+                tesseract-ocr tesseract-ocr-eng
             ;;
         fedora|rhel|centos)
             dnf install -y pango cairo gdk-pixbuf2 libffi shared-mime-info

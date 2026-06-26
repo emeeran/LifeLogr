@@ -45,6 +45,33 @@ _ENTRY_HTML = """
 """
 
 
+# fpdf2's built-in core fonts render the Latin-1 (ISO-8859-1) range only, so map
+# common Unicode punctuation (em/en dash, smart quotes, ellipsis, …) to ASCII and
+# clip anything else outside Latin-1 — otherwise PDF export raises
+# FPDFUnicodeEncodingException on entries containing those characters.
+_PDF_TEXT_REPLACEMENTS = {
+    "—": "-",   # em dash
+    "–": "-",   # en dash
+    "‘": "'",   # left single quote
+    "’": "'",   # right single quote / apostrophe
+    "“": '"',   # left double quote
+    "”": '"',   # right double quote
+    "…": "...",  # ellipsis
+    "•": "*",   # bullet
+    " ": " ",   # non-breaking space
+    "™": "(TM)",
+    "®": "(R)",
+}
+
+
+def _pdf_text(text: str) -> str:
+    """Coerce text into the Latin-1 range fpdf2's core fonts can render."""
+    for src, dst in _PDF_TEXT_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+    # Replace any remaining non-Latin-1 code points (e.g. CJK, emoji) with "?".
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
 class _DiaryPDF(FPDF):
     """Custom PDF with Georgia-like font and branded styling."""
 
@@ -138,7 +165,7 @@ class ExportService:
 
             pdf.set_font("Helvetica", "B", 16)
             pdf.set_text_color(44, 62, 80)  # #2c3e50
-            pdf.cell(0, 12, title_text, new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 12, _pdf_text(title_text), new_x="LMARGIN", new_y="NEXT")
 
             # Blue divider line
             pdf.set_draw_color(52, 152, 219)  # #3498db
@@ -157,7 +184,7 @@ class ExportService:
             if meta_parts:
                 pdf.set_font("Helvetica", "I", 10)
                 pdf.set_text_color(102, 102, 102)  # #666
-                pdf.cell(0, 6, "  |  ".join(meta_parts), new_x="LMARGIN", new_y="NEXT")
+                pdf.cell(0, 6, _pdf_text("  |  ".join(meta_parts)), new_x="LMARGIN", new_y="NEXT")
                 pdf.ln(4)
 
             # Body — strip markdown to plain text for PDF
@@ -170,7 +197,7 @@ class ExportService:
             plain = re.sub(r"<[^>]+>", "", body_text)
             plain = plain.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
             plain = plain.replace("&#39;", "'").replace("&quot;", '"')
-            pdf.multi_cell(0, 6, plain)
+            pdf.multi_cell(0, 6, _pdf_text(plain))
 
         return bytes(pdf.output())
 
