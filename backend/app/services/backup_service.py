@@ -38,7 +38,13 @@ class BackupService:
 
     async def test_connection(self, config_id: int) -> bool:
         """Validate stored credentials by connecting to the provider."""
-        from app.services.cloud_sync_service import GoogleDriveProvider, NextcloudProvider, SyncProvider
+        from app.services.cloud_sync_service import (
+            DropboxProvider,
+            GoogleDriveProvider,
+            NextcloudProvider,
+            OneDriveProvider,
+            SyncProvider,
+        )
 
         config = await self._get_config(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
@@ -59,6 +65,16 @@ class BackupService:
                 )
                 # Just do a simple listing to verify connection
                 await provider.list_files("lifelogr-backup-")
+                return True
+            if config.provider == "onedrive":
+                od = OneDriveProvider(creds)
+                provider = od
+                await od._ensure_valid_token()
+                return True
+            if config.provider == "dropbox":
+                db = DropboxProvider(creds)
+                provider = db
+                await db._ensure_valid_token()
                 return True
             raise ValueError(f"Unsupported backup provider: {config.provider}")
         finally:
@@ -97,7 +113,13 @@ class BackupService:
 
     async def run_backup(self, config_id: int) -> BackupSnapshot:
         """Perform incremental backup; transfer new/modified data since last sync."""
-        from app.services.cloud_sync_service import GoogleDriveProvider, NextcloudProvider, SyncProvider
+        from app.services.cloud_sync_service import (
+            DropboxProvider,
+            GoogleDriveProvider,
+            NextcloudProvider,
+            OneDriveProvider,
+            SyncProvider,
+        )
 
         config = await self._get_config(config_id)
         # Check for already-running backup
@@ -139,6 +161,18 @@ class BackupService:
                     password=creds.get("password", ""),
                 )
                 await provider.upload(filename, archive_data, encrypted=False)
+            elif config.provider in ("onedrive", "dropbox"):
+                provider_cls: type[OneDriveProvider] | type[DropboxProvider] = (
+                    OneDriveProvider if config.provider == "onedrive" else DropboxProvider
+                )
+
+                async def on_refresh(new_access_token: str, new_expiry: str) -> None:
+                    creds["access_token"] = new_access_token
+                    creds["token_expiry"] = new_expiry
+                    config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+                provider = provider_cls(creds, on_token_refresh=on_refresh)
+                await provider.upload(filename, archive_data, encrypted=False)
             else:
                 raise ValueError(f"Unsupported backup provider: {config.provider}")
 
@@ -162,7 +196,13 @@ class BackupService:
 
     async def restore(self, config_id: int) -> dict[str, int]:
         """Atomically replace local data with cloud backup; rollback on failure."""
-        from app.services.cloud_sync_service import GoogleDriveProvider, NextcloudProvider, SyncProvider
+        from app.services.cloud_sync_service import (
+            DropboxProvider,
+            GoogleDriveProvider,
+            NextcloudProvider,
+            OneDriveProvider,
+            SyncProvider,
+        )
 
         config = await self._get_config(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
@@ -201,6 +241,22 @@ class BackupService:
                 files = await provider.list_files("lifelogr-backup-")
                 if not files:
                     raise ConflictError("No backups found in WebDAV")
+                latest_backup = sorted(files)[-1]
+                archive_data = await provider.download(latest_backup)
+            elif config.provider in ("onedrive", "dropbox"):
+                provider_cls: type[OneDriveProvider] | type[DropboxProvider] = (
+                    OneDriveProvider if config.provider == "onedrive" else DropboxProvider
+                )
+
+                async def on_refresh(new_access_token: str, new_expiry: str) -> None:
+                    creds["access_token"] = new_access_token
+                    creds["token_expiry"] = new_expiry
+                    config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+                provider = provider_cls(creds, on_token_refresh=on_refresh)
+                files = await provider.list_files("lifelogr-backup-")
+                if not files:
+                    raise ConflictError("No cloud backups found")
                 latest_backup = sorted(files)[-1]
                 archive_data = await provider.download(latest_backup)
             else:

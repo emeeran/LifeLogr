@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Trash2, Image, Film, Music, FileText } from 'lucide-vue-next'
+import { Trash2, Image, Film, Music, FileText, Sparkles } from 'lucide-vue-next'
 import { mediaApi } from '../../api/media'
 import { formatFileSize } from '../../composables/useFormat'
 import type { MediaResponse } from '../../types'
@@ -12,6 +12,7 @@ const emit = defineEmits<{
   add: []
   remove: [id: number]
   view: [index: number]
+  extractText: [id: number]
 }>()
 
 function mediaIcon(type: string) {
@@ -42,6 +43,14 @@ function mediaIcon(type: string) {
         <component v-else :is="mediaIcon(m.media_type)" :size="16" class="text-accent shrink-0" />
         <span class="text-xs text-text-primary truncate flex-1">{{ m.filename }}</span>
         <span class="text-[10px] text-text-muted shrink-0">{{ formatFileSize(m.file_size) }}</span>
+        <button
+          v-if="m.media_type === 'image' || m.media_type.startsWith('image/')"
+          class="p-0.5 text-text-muted hover:text-accent cursor-pointer"
+          @click.stop="emit('extractText', m.id)"
+          title="Extract text (OCR)"
+        >
+          <Sparkles :size="12" />
+        </button>
         <button class="p-0.5 text-text-muted hover:text-red-400 cursor-pointer" @click.stop="emit('remove', m.id)" title="Remove">
           <Trash2 :size="12" />
         </button>

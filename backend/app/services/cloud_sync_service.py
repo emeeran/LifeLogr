@@ -368,6 +368,245 @@ class GoogleDriveProvider:
             logger.info("Google Drive provider HTTP client closed.")
 
 
+# ── OneDrive (Microsoft Graph app folder) provider ─────────────────────
+
+
+class OneDriveProvider:
+    """OneDrive sync provider via the Microsoft Graph API (app root folder)."""
+
+    GRAPH = "https://graph.microsoft.com/v1.0/me/drive/special/approot"
+    TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+
+    def __init__(
+        self,
+        credentials: dict[str, str],
+        on_token_refresh: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> None:
+        self._client_id = credentials.get("client_id", "")
+        self._client_secret = credentials.get("client_secret", "")
+        self._refresh_token = credentials.get("refresh_token")
+        self._access_token = credentials.get("access_token")
+        self._token_expiry = credentials.get("token_expiry")
+        self._on_token_refresh = on_token_refresh
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def _ensure_valid_token(self) -> str:
+        import time
+
+        now = time.time()
+        if self._access_token and self._token_expiry and float(self._token_expiry) > now + 60:
+            return self._access_token
+        if not self._refresh_token:
+            raise ValueError("Refresh token missing from OneDrive credentials")
+        if not self._client_id or not self._client_secret:
+            raise ValueError("OneDrive OAuth client credentials are not configured")
+
+        client = self._get_client()
+        resp = await client.post(
+            self.TOKEN_URL,
+            data={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "refresh_token": self._refresh_token,
+                "grant_type": "refresh_token",
+                "scope": "Files.ReadWrite.AppFolder offline_access",
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._access_token = data["access_token"]
+        self._token_expiry = str(now + data["expires_in"])
+        if data.get("refresh_token"):
+            self._refresh_token = data["refresh_token"]  # OneDrive may rotate it
+        if self._on_token_refresh:
+            await self._on_token_refresh(self._access_token, self._token_expiry)
+        return self._access_token
+
+    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+        from urllib.parse import quote
+
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.put(
+            f"{self.GRAPH}:{quote(path)}:/content",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
+            content=data,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return path
+
+    async def download(self, path: str) -> bytes:
+        from urllib.parse import quote
+
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.GRAPH}:{quote(path)}:/content",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    async def list_files(self, prefix: str) -> list[str]:
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.GRAPH}/children?$select=name",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        names = [v.get("name", "") for v in resp.json().get("value", [])]
+        return [n for n in names if n.startswith(prefix)]
+
+    async def delete(self, path: str) -> None:
+        from urllib.parse import quote
+
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.delete(
+            f"{self.GRAPH}:{quote(path)}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            logger.info("OneDrive provider HTTP client closed.")
+
+
+# ── Dropbox provider ───────────────────────────────────────────────────
+
+
+class DropboxProvider:
+    """Dropbox sync provider via the Dropbox API (offline token refresh)."""
+
+    TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
+    API = "https://api.dropboxapi.com/2"
+    CONTENT = "https://content.dropboxapi.com/2"
+
+    def __init__(
+        self,
+        credentials: dict[str, str],
+        on_token_refresh: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> None:
+        self._client_id = credentials.get("client_id", "")
+        self._client_secret = credentials.get("client_secret", "")
+        self._refresh_token = credentials.get("refresh_token")
+        self._access_token = credentials.get("access_token")
+        self._token_expiry = credentials.get("token_expiry")
+        self._on_token_refresh = on_token_refresh
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def _ensure_valid_token(self) -> str:
+        import time
+
+        now = time.time()
+        if self._access_token and self._token_expiry and float(self._token_expiry) > now + 60:
+            return self._access_token
+        if not self._refresh_token or not self._client_id or not self._client_secret:
+            raise ValueError("Dropbox OAuth client credentials / refresh token not configured")
+
+        client = self._get_client()
+        resp = await client.post(
+            self.TOKEN_URL,
+            data={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "refresh_token": self._refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._access_token = data["access_token"]
+        self._token_expiry = str(now + data["expires_in"])
+        if self._on_token_refresh:
+            await self._on_token_refresh(self._access_token, self._token_expiry)
+        return self._access_token
+
+    def _api_arg(self, path: str, **extra: object) -> str:
+        import json as _json
+
+        return _json.dumps({"path": f"/{path}", **extra})
+
+    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.post(
+            f"{self.CONTENT}/files/upload",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Dropbox-API-Arg": self._api_arg(path, mode="overwrite"),
+                "Content-Type": "application/octet-stream",
+            },
+            content=data,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return path
+
+    async def download(self, path: str) -> bytes:
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.post(
+            f"{self.CONTENT}/files/download",
+            headers={"Authorization": f"Bearer {token}", "Dropbox-API-Arg": self._api_arg(path)},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    async def list_files(self, prefix: str) -> list[str]:
+        import json as _json
+
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.post(
+            f"{self.API}/files/list_folder",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            content=_json.dumps({"path": "", "recursive": True}),
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        names = [
+            e.get("name", "") for e in resp.json().get("entries", []) if e.get(".tag") == "file"
+        ]
+        return [n for n in names if n.startswith(prefix)]
+
+    async def delete(self, path: str) -> None:
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.post(
+            f"{self.API}/files/delete_v2",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            content=self._api_arg(path),
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            logger.info("Dropbox provider HTTP client closed.")
+
+
 # ── MEGA provider ──────────────────────────────────────────────────────
 
 

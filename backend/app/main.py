@@ -211,6 +211,8 @@ from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
+from app.routers.dropbox import router as dropbox_router  # noqa: E402
+from app.routers.onedrive import router as onedrive_router  # noqa: E402
 from app.routers.encryption import (  # noqa: E402
     router as encryption_router,
     global_router as encryption_global_router,
@@ -238,6 +240,8 @@ app.include_router(media_router)
 app.include_router(recordings_router)
 app.include_router(backup_router)
 app.include_router(google_drive_router)
+app.include_router(onedrive_router)
+app.include_router(dropbox_router)
 app.include_router(prompts_router)
 app.include_router(encryption_router)
 app.include_router(encryption_global_router)

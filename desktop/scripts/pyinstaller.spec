@@ -30,6 +30,12 @@ _soundfile_submodules = collect_submodules('soundfile')
 _soundfile_binaries = collect_dynamic_libs('soundfile')
 _soundfile_datas = collect_data_files('soundfile')
 
+# Image handling + OCR — Pillow (webp compression/thumbnails + OCR image input)
+# and pytesseract. Pillow's native imaging libs are pulled in by its contrib hook;
+# collect_submodules ensures all the format plugins (PNG/JPEG/WebP/...) ship.
+_pil_submodules = collect_submodules('PIL')
+_pil_binaries = collect_dynamic_libs('PIL')
+
 # TTS stack — Edge TTS + aiohttp + certifi (with its cacert.pem data file, so
 # HTTPS to the Microsoft TTS service works in the frozen build). Without
 # certifi's CA bundle the TLS handshake fails and Read Aloud returns 500.
@@ -59,6 +65,7 @@ a = Analysis(
         *_pysqlite3_binaries,
         *_sounddevice_binaries,
         *_soundfile_binaries,
+        *_pil_binaries,
     ],
     datas=[
         (str(ROOT / 'backend' / 'app'), 'app'),
@@ -112,18 +119,18 @@ a = Analysis(
         *_soundfile_submodules,
         '_soundfile',
         'cffi',
+        # Image + OCR — Pillow (webp compression + OCR image input) + pytesseract
+        'PIL',
+        *_pil_submodules,
+        'pytesseract',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Heavy optional deps NOT needed by the STT stack — excluded for size.
-        # (faster-whisper uses CTranslate2, not torch.)
+        # Heavy optional deps NOT needed — excluded for size.
         'weasyprint',
         'mega',
-        'PIL',
-        'PIL.Image',
-        'pytesseract',
         'torch',
         'scipy',
         'matplotlib',

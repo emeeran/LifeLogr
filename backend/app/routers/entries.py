@@ -470,7 +470,6 @@ async def reset_database(db: AsyncSession = Depends(get_db)) -> Any:
         "media",
         "voice_recordings",
         "video_notes",
-        "ocr_results",
         "entries",
         "tags",
         "sync_queue",

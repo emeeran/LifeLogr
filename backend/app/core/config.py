@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
-    APP_VERSION: str = "0.4.1"  # in-app version; keep in sync with pyproject.toml
+    APP_VERSION: str = "0.4.2"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     SECRET_KEY: str = "change-me-before-production"
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty
@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+
+    # Microsoft OneDrive OAuth
+    ONEDRIVE_CLIENT_ID: str = ""
+    ONEDRIVE_CLIENT_SECRET: str = ""
+
+    # Dropbox OAuth
+    DROPBOX_CLIENT_ID: str = ""
+    DROPBOX_CLIENT_SECRET: str = ""
 
     # Ollama (AI assistance)
     OLLAMA_BASE_URL: str = "http://localhost:11434"

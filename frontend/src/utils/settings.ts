@@ -13,7 +13,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   google_drive: 'Google Drive',
   onedrive: 'OneDrive',
   dropbox: 'Dropbox',
-  mega: 'MEGA',
   nas: 'NAS',
   local_file: 'Local File',
 }
