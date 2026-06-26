@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
 export type ViewType = 'calendar' | 'timeline' | 'search' | 'on-this-day' | 'analytics' | 'reminders' | 'media' | 'settings'
-export type DrawerPanel = 'ai' | 'recording' | 'attachments'
+export type DrawerPanel = 'ai' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {
   const activeView = useLocalStorage<ViewType>('lifelogr-view', 'calendar')

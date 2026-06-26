@@ -16,9 +16,14 @@ export const recordingsApi = {
     return formDataRequest('/recordings/start', fd)
   },
 
-  /** Stop the active capture; the backend encodes it to Ogg/Vorbis and returns it. */
+  /** Stop the active capture; the backend encodes it to Ogg/Vorbis and returns it.
+   *
+   * Sent as FormData (a CORS "simple" request) — deliberately matching `start`.
+   * A body-less `Content-Type: application/json` POST would trigger a CORS
+   * preflight, which WebKit2GTK (the Tauri webview) mishandles for loopback,
+   * surfacing as "Load failed". FormData avoids the preflight entirely. */
   stop(): Promise<VoiceRecordingResponse> {
-    return request('/recordings/stop', { method: 'POST' })
+    return formDataRequest('/recordings/stop', new FormData())
   },
 
   listByEntry(entryId: number): Promise<VoiceRecordingResponse[]> {

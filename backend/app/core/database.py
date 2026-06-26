@@ -180,6 +180,22 @@ _COLUMN_MIGRATIONS = [
     ("entries", "location_name", "ALTER TABLE entries ADD COLUMN location_name VARCHAR(255)"),
     ("entries", "created_at", "ALTER TABLE entries ADD COLUMN created_at DATETIME DEFAULT '1970-01-01 00:00:00'"),
     ("entries", "updated_at", "ALTER TABLE entries ADD COLUMN updated_at DATETIME DEFAULT '1970-01-01 00:00:00'"),
+    # voice_recordings: legacy transcription columns. Older databases already
+    # have these (is_transcribed is NOT NULL there); databases created after
+    # transcription was removed lack them. Add if missing so every DB converges
+    # to the same shape. Without this, recording INSERTs fail on old DBs
+    # (NOT NULL, no default) and SELECTs fail on new DBs once the model declares
+    # the column. Idempotent — skipped when the column already exists.
+    (
+        "voice_recordings",
+        "is_transcribed",
+        "ALTER TABLE voice_recordings ADD COLUMN is_transcribed BOOLEAN NOT NULL DEFAULT 0",
+    ),
+    (
+        "voice_recordings",
+        "transcription",
+        "ALTER TABLE voice_recordings ADD COLUMN transcription VARCHAR",
+    ),
 ]
 
 _INDEX_MIGRATIONS = [
@@ -220,33 +236,60 @@ async def _migrate_schema(conn: Any) -> None:
             await conn.execute(text(sql))
 
 
+# Bump to force a one-time rebuild of the FTS5 index on every existing database
+# (tracked via ``PRAGMA user_version``). Needed because the FTS5 ``'delete'``
+# sync command requires the supplied column values to *exactly* match the row in
+# the index — once the index drifts out of sync with ``entries`` (a historical
+# issue), every ``UPDATE entries`` (soft-delete, edits, AI enrichment) fails with
+# "SQL logic error". A clean rebuild re-aligns the index so the sync triggers
+# keep it consistent from then on.
+_FTS_REBUILD_VERSION = 1
+
+
 async def _setup_fts() -> None:
     """Create FTS5 virtual table if missing, populate, and install sync triggers."""
     try:
         async with engine.begin() as conn:
-            # Check if FTS table already exists
             exists = (
                 await conn.execute(
                     text("SELECT name FROM sqlite_master WHERE type='table' AND name='entries_fts'")
                 )
             ).scalar()
+            user_version = int((await conn.execute(text("PRAGMA user_version"))).scalar() or 0)
+            force_rebuild = user_version < _FTS_REBUILD_VERSION
 
-            if not exists:
-                logger.info("Creating FTS5 index and populating...")
-                await conn.execute(
-                    text("""
-                    CREATE VIRTUAL TABLE entries_fts
-                    USING fts5(title, body)
-                """)
-                )
+            if not exists or force_rebuild:
+                # Fresh index, or a one-time forced rebuild to self-heal drift.
+                if force_rebuild and exists:
+                    logger.info(
+                        "Forcing FTS5 rebuild (user_version %d < %d) to heal index drift...",
+                        user_version,
+                        _FTS_REBUILD_VERSION,
+                    )
+                else:
+                    logger.info("Creating FTS5 index and populating...")
+                # Drop sync triggers + table so repopulation starts clean.
+                for name in (
+                    "fts_entry_ai",
+                    "fts_entry_au",
+                    "fts_entry_ad",
+                    "fts_entry_soft_del",
+                    "fts_entry_restore",
+                ):
+                    await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
+                await conn.execute(text("DROP TABLE IF EXISTS entries_fts"))
+                await conn.execute(text("CREATE VIRTUAL TABLE entries_fts USING fts5(title, body)"))
                 await conn.execute(
                     text("""
                     INSERT INTO entries_fts(rowid, title, body)
                     SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
                 """)
                 )
+                if force_rebuild:
+                    await conn.execute(text(f"PRAGMA user_version = {_FTS_REBUILD_VERSION}"))
             else:
-                # Verify integrity — try a simple query
+                # Index exists and is at the current rebuild version — verify it
+                # isn't missing/extra rows (cheap), rebuild if so.
                 try:
                     count = int(
                         (await conn.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar() or 0
@@ -259,7 +302,7 @@ async def _setup_fts() -> None:
                         ).scalar()
                         or 0
                     )
-                    if count < entry_count:
+                    if count != entry_count:
                         logger.info("FTS index stale (%d/%d rows), rebuilding...", count, entry_count)
                         await conn.execute(text("DELETE FROM entries_fts"))
                         await conn.execute(
@@ -271,15 +314,16 @@ async def _setup_fts() -> None:
                 except Exception:
                     logger.warning("FTS index corrupt, rebuilding...")
                     try:
-                        for name in ("fts_entry_ai", "fts_entry_au", "fts_entry_ad", "fts_entry_soft_del"):
+                        for name in (
+                            "fts_entry_ai",
+                            "fts_entry_au",
+                            "fts_entry_ad",
+                            "fts_entry_soft_del",
+                            "fts_entry_restore",
+                        ):
                             await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
                         await conn.execute(text("DROP TABLE IF EXISTS entries_fts"))
-                        await conn.execute(
-                            text("""
-                            CREATE VIRTUAL TABLE entries_fts
-                            USING fts5(title, body)
-                        """)
-                        )
+                        await conn.execute(text("CREATE VIRTUAL TABLE entries_fts USING fts5(title, body)"))
                         await conn.execute(
                             text("""
                             INSERT INTO entries_fts(rowid, title, body)
@@ -316,17 +360,23 @@ async def _setup_fts() -> None:
                     END
                 """)
                 )
-                # Use delete+insert (not UPDATE) so this is correct even when the
+                # Remove+reinsert (not UPDATE) so this is correct even when the
                 # row was previously removed from FTS (e.g. after a soft delete
                 # followed by content edits) — a plain UPDATE would be a no-op.
                 # Guarded to 0→0 so it can't overlap the soft-del/restore triggers.
+                #
+                # NOTE: we use ``DELETE FROM entries_fts WHERE rowid = ...`` rather
+                # than the FTS5 ``'delete'`` command (``INSERT INTO ft(ft,...)
+                # VALUES('delete',...)``). The latter throws "SQL logic error" in
+                # the bundled SQLite/pysqlite3 build, which would fail every
+                # ``UPDATE entries`` (edits, soft-delete, AI enrichment).
+                # DELETE-by-rowid is equivalent and works reliably.
                 await conn.execute(
                     text("""
                     CREATE TRIGGER fts_entry_au AFTER UPDATE ON entries
                     WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 0
                     BEGIN
-                        INSERT INTO entries_fts(entries_fts, rowid, title, body)
-                        VALUES ('delete', NEW.id, COALESCE(OLD.title, ''), OLD.body);
+                        DELETE FROM entries_fts WHERE rowid = NEW.id;
                         INSERT INTO entries_fts(rowid, title, body)
                         VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
                     END
@@ -336,8 +386,7 @@ async def _setup_fts() -> None:
                     text("""
                     CREATE TRIGGER fts_entry_ad AFTER DELETE ON entries
                     BEGIN
-                        INSERT INTO entries_fts(entries_fts, rowid, title, body)
-                        VALUES ('delete', OLD.id, COALESCE(OLD.title, ''), OLD.body);
+                        DELETE FROM entries_fts WHERE rowid = OLD.id;
                     END
                 """)
                 )
@@ -347,8 +396,7 @@ async def _setup_fts() -> None:
                     CREATE TRIGGER fts_entry_soft_del AFTER UPDATE ON entries
                     WHEN NEW.is_deleted = 1 AND OLD.is_deleted = 0
                     BEGIN
-                        INSERT INTO entries_fts(entries_fts, rowid, title, body)
-                        VALUES ('delete', NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                        DELETE FROM entries_fts WHERE rowid = NEW.id;
                     END
                 """)
                 )

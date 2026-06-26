@@ -6,7 +6,6 @@ import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
 import EntryEditor from '../entry/EntryEditor.vue'
 const AiDrawerPanel = defineAsyncComponent(() => import('../entry/AiDrawerPanel.vue'))
-const RecordingPanel = defineAsyncComponent(() => import('../recordings/RecordingPanel.vue'))
 const AttachmentsPanel = defineAsyncComponent(() => import('../entry/AttachmentsPanel.vue'))
 import SearchPalette from '../search/SearchPalette.vue'
 import ScribblePad from '../scribble/ScribblePad.vue'
@@ -14,7 +13,7 @@ const WhatsNewDialog = defineAsyncComponent(() => import('../settings/dialogs/Wh
 import { useEntriesStore } from '../../stores/entries'
 import { useUpdateChecker } from '../../composables/useUpdateChecker'
 import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
-import { AlertTriangle, Save, Trash2, X, Sparkles, Mic, Paperclip } from 'lucide-vue-next'
+import { AlertTriangle, Save, Trash2, X, Sparkles, Paperclip } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 const ui = useUiStore()
@@ -28,7 +27,6 @@ const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
 const drawerTitle = computed(() => {
   switch (ui.activeDrawer) {
     case 'ai': return 'AI Assistant'
-    case 'recording': return 'Voice Recording'
     case 'attachments': return 'Attachments'
     default: return ''
   }
@@ -37,7 +35,6 @@ const drawerTitle = computed(() => {
 const drawerIcon = computed<Component>(() => {
   switch (ui.activeDrawer) {
     case 'ai': return Sparkles
-    case 'recording': return Mic
     case 'attachments': return Paperclip
     default: return Sparkles
   }
@@ -181,10 +178,6 @@ async function onExtractText(id: number) {
           :apply-text="(t: string) => { editorRef?.applyToSelection?.(t) }"
           :has-entry="!!editorRef?.hasEntry"
           :entry-id="editorRef?.entryId ?? null"
-        />
-        <RecordingPanel
-          v-if="ui.activeDrawer === 'recording'"
-          :entry-id="editorRef?.entryId ?? 0"
         />
         <AttachmentsPanel
           v-if="ui.activeDrawer === 'attachments'"

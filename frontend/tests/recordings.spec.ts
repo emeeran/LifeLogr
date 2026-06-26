@@ -18,7 +18,7 @@ async function dismissWhatsNew(page: Page) {
 }
 
 test.describe('Voice recording', () => {
-  test('recording drawer opens and renders from the editor toolbar', async ({ page }) => {
+  test('floating recorder renders and arms once the entry is saved', async ({ page }) => {
     await page.goto('/')
     await dismissWhatsNew(page)
 
@@ -27,15 +27,13 @@ test.describe('Voice recording', () => {
     // saved entry before it will capture).
     const body = page.getByPlaceholder('Write your thoughts...')
     await body.waitFor({ state: 'visible', timeout: 5000 })
-    await body.fill('smoke test body for the recording drawer')
+    await body.fill('smoke test body for the floating recorder')
     await page.waitForTimeout(3000) // autosave (2s debounce) creates the entry
 
-    // Open the Voice Recording drawer from the editor toolbar.
-    await page.locator('button[title="Voice Recording"]').click()
-
-    // The drawer header shows and the async-loaded RecordingPanel mounts with
-    // its Record control (guards against the panel failing to load/render).
-    await expect(page.getByText('Voice Recording').first()).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Record$/ })).toBeVisible()
+    // The floating recorder FAB lives bottom-right of the editor. Its title
+    // flips from "Save the entry, then record" to "Record voice memo" once the
+    // entry is persisted — so the armed state also proves the entry was saved.
+    const fab = page.locator('button[title="Record voice memo"]')
+    await expect(fab).toBeVisible({ timeout: 5000 })
   })
 })

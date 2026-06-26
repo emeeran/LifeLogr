@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import type { CalendarEntryResponse } from '../../types'
 import { useEntriesStore } from '../../stores/entries'
+import { useUiStore } from '../../stores/ui'
 import { useCalendar } from '../../composables/useCalendar'
 import { Pencil, Plus, Trash2 } from 'lucide-vue-next'
 
@@ -17,6 +18,7 @@ const emit = defineEmits<{
 }>()
 
 const entriesStore = useEntriesStore()
+const ui = useUiStore()
 const cal = useCalendar()
 const deletingId = ref<number | null>(null)
 
@@ -27,9 +29,16 @@ async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
   deletingId.value = entry.id
   try {
     await entriesStore.deleteEntry(entry.id)
+    // If the deleted entry is open in the editor, close it so the editor
+    // doesn't keep showing a now-deleted entry. The calendar refresh below
+    // already drops it from the grid — this keeps the two in sync.
+    if (ui.editingEntryId === entry.id) {
+      ui.editorIsDirty = false
+      ui.startEditing(null)
+    }
     await entriesStore.fetchCalendarMonth(cal.year.value, cal.month.value)
     // If no entries left on this date, close the picker
-    const remaining = props.entries.filter(e => e.id !== entry.id)
+    const remaining = props.entries.filter(en => en.id !== entry.id)
     if (remaining.length === 0) {
       emit('close')
     }
