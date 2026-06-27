@@ -40,7 +40,7 @@ Thumbs.db
 *.db-wal
 *.sqlite3
 *.diary
-media/
+backend/media/
 
 # Build artifacts
 .vite/
