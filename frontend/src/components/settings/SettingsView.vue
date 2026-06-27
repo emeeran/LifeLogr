@@ -3,13 +3,14 @@ import { ref, computed, nextTick, provide } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import {
   CheckCircle2, AlertTriangle, X, Info,
-  Brain, Sparkles, HardDrive, Sliders, Search, Cloud,
+  Brain, Sparkles, HardDrive, Sliders, Search, Cloud, Heart,
 } from 'lucide-vue-next'
 import GeneralTab from './tabs/GeneralTab.vue'
 import AITab from './tabs/AITab.vue'
 import DataTab from './tabs/DataTab.vue'
 import BackupTab from './tabs/BackupTab.vue'
 import FeaturesTab from './tabs/FeaturesTab.vue'
+import DedicationTab from './tabs/DedicationTab.vue'
 import AboutTab from './tabs/AboutTab.vue'
 
 // ── Tab navigation ──
@@ -20,6 +21,7 @@ const tabs = [
   { id: 'features', label: 'Features', icon: Sparkles },
   { id: 'data', label: 'Data', icon: HardDrive },
   { id: 'backup', label: 'Backup', icon: Cloud },
+  { id: 'dedication', label: 'Dedication', icon: Heart },
   { id: 'about', label: 'About', icon: Info },
 ] as const
 
@@ -77,6 +79,9 @@ const index: SearchEntry[] = [
   { tab: 'backup', label: 'Scheduled backup', keywords: ['auto backup', 'scheduled', 'schedule', 'automatic', 'cron'] },
   { tab: 'backup', label: 'Cloud backup', keywords: ['cloud', 'google drive', 'webdav', 'onedrive', 'dropbox', 'nas', 'sync'] },
   { tab: 'backup', label: 'Sync queue', keywords: ['sync', 'sync queue', 'push', 'pull', 'flush'] },
+
+  { tab: 'dedication', label: 'Memorial', keywords: ['dedication', 'memorial', 'remembrance', 'remember', 'tribute', 'in loving memory', 'candle', 'reflection', 'in memory'] },
+  { tab: 'dedication', label: 'Reflection', keywords: ['reflection', 'reflect', 'personal note', 'remembrance'] },
 
   { tab: 'about', label: 'Version', keywords: ['version', 'about', 'release notes', 'changelog'] },
   { tab: 'about', label: 'Reset database', keywords: ['reset', 'reset database', 'erase', 'danger', 'clear', 'delete all'] },
@@ -167,12 +172,14 @@ provide('settings-highlight', highlightKey)
         </div>
       </nav>
 
-      <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+      <div class="flex-1 min-h-0"
+        :class="activeTab === 'dedication' ? 'overflow-hidden' : 'overflow-y-auto px-5 py-4 space-y-4'">
         <GeneralTab v-if="activeTab === 'general'" @toast="showToast" />
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
         <FeaturesTab v-if="activeTab === 'features'" @toast="showToast" />
         <DataTab v-if="activeTab === 'data'" @toast="showToast" />
         <BackupTab v-if="activeTab === 'backup'" @toast="showToast" />
+        <DedicationTab v-if="activeTab === 'dedication'" />
         <AboutTab v-if="activeTab === 'about'" @toast="showToast" />
       </div>
     </div>

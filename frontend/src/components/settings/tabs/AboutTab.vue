@@ -15,8 +15,6 @@ import {
 import SettingsSection from '../shared/SettingsSection.vue'
 import UpdateStatus from '../shared/UpdateStatus.vue'
 import SButton from '../shared/SButton.vue'
-import MemorialTribute from '../MemorialTribute.vue'
-import memorialImg from '../../../assets/tariq-memorial.jpg'
 
 // Bake the changelog into the bundle — always offline-available.
 import changelogRaw from '../../../../../CHANGELOG.md?raw'
@@ -125,9 +123,6 @@ onMounted(() => { loadAppSettings() })
     <div class="changelog markdown-body px-4 py-3 max-h-[460px] overflow-y-auto text-[12px] text-text-secondary"
       v-html="renderedChangelog" />
   </SettingsSection>
-
-  <!-- Dedication / In Loving Memory -->
-  <MemorialTribute :image="memorialImg" />
 
   <!-- Danger Zone -->
   <SettingsSection title="Danger Zone" :icon="InfoIcon" description="Irreversible maintenance actions" setting-key="Reset database"
