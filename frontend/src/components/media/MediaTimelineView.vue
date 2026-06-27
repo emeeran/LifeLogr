@@ -13,11 +13,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { mediaApi } from '../../api/media'
 import { usePagination } from '../../composables/usePagination'
 import { formatEntryDate, formatFileSize } from '../../composables/useFormat'
+import { useUiStore } from '../../stores/ui'
 import {
   ChevronLeft, ChevronRight, Film, Music, FileText, Play, ImageIcon, FolderOpen,
+  Eye, Trash2, ExternalLink,
 } from 'lucide-vue-next'
 import MediaViewer from './MediaViewer.vue'
 import type { MediaTimelineItem, MediaResponse } from '../../types'
+
+const ui = useUiStore()
 
 const pagination = usePagination(40)
 const items = ref<MediaTimelineItem[]>([])
@@ -39,10 +43,10 @@ const filters = computed(() => [
 ])
 
 const dateGroups = computed(() => {
-  const groups: Record<string, { date: string; title: string | null; items: MediaTimelineItem[] }> = {}
+  const groups: Record<string, { entry_id: number; date: string; title: string | null; items: MediaTimelineItem[] }> = {}
   for (const item of items.value) {
     const key = `${item.entry_date}-${item.entry_id}`
-    if (!groups[key]) groups[key] = { date: item.entry_date, title: item.entry_title, items: [] }
+    if (!groups[key]) groups[key] = { entry_id: item.entry_id, date: item.entry_date, title: item.entry_title, items: [] }
     groups[key].items.push(item)
   }
   return Object.values(groups)
@@ -76,6 +80,22 @@ function setFilter(key: string) {
   filter.value = key
   pagination.offset.value = 0
   load()
+}
+
+async function remove(item: MediaTimelineItem) {
+  if (!confirm(`Delete "${item.filename}"?`)) return
+  try {
+    await mediaApi.delete(item.id)
+    items.value = items.value.filter(i => i.id !== item.id)
+    pagination.total.value = Math.max(0, pagination.total.value - 1)
+  } catch {
+    alert('Failed to delete media. It may have already been removed.')
+  }
+}
+
+/** Open the journal entry this media belongs to in the editor. */
+function openEntry(entryId: number, date: string) {
+  ui.requestEdit(entryId, date)
 }
 
 onMounted(load)
@@ -123,6 +143,20 @@ watch(() => filter.value, load)
             <div v-for="(item, idx) in group.items" :key="item.id"
               class="media-tile group relative rounded-lg overflow-hidden border border-border/60 bg-surface-hover cursor-pointer aspect-square flex items-center justify-center transition-all hover:border-accent/50 hover:shadow-md"
               @click="openViewer(group.items, idx)">
+
+              <!-- Quick actions: View + Delete -->
+              <div class="absolute top-1 right-1 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button type="button" title="View"
+                  class="flex items-center justify-center w-6 h-6 rounded-full bg-black/60 text-white hover:bg-accent transition-colors cursor-pointer"
+                  @click.stop="openViewer(group.items, idx)">
+                  <Eye :size="12" />
+                </button>
+                <button type="button" title="Delete"
+                  class="flex items-center justify-center w-6 h-6 rounded-full bg-black/60 text-white hover:bg-danger transition-colors cursor-pointer"
+                  @click.stop="remove(item)">
+                  <Trash2 :size="12" />
+                </button>
+              </div>
 
               <!-- Image -->
               <img v-if="isImage(item.media_type)" :src="mediaApi.fileUrl(item.id)" :alt="item.filename"
@@ -176,6 +210,15 @@ watch(() => filter.value, load)
                 <p class="text-white/70 text-[8.5px]">{{ formatFileSize(item.file_size) }}</p>
               </div>
             </div>
+          </div>
+
+          <!-- Jump to the journal entry this group belongs to -->
+          <div class="mt-2 flex justify-end">
+            <button type="button"
+              class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] text-text-secondary hover:text-accent hover:bg-accent/10 border border-border/60 transition-colors cursor-pointer"
+              @click="openEntry(group.entry_id, group.date)">
+              <ExternalLink :size="11" /> Open in editor
+            </button>
           </div>
         </div>
       </template>

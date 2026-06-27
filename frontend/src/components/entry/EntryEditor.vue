@@ -15,6 +15,7 @@ import EditorStatusBar from './EditorStatusBar.vue'
 import EditorContextMenu from './EditorContextMenu.vue'
 import TagList from '../tags/TagList.vue'
 import MediaViewer from '../media/MediaViewer.vue'
+import MediaGrid from '../media/MediaGrid.vue'
 import TemplatePicker from '../templates/TemplatePicker.vue'
 import EmojiPicker from '../common/EmojiPicker.vue'
 import { useTemplatesStore } from '../../stores/templates'
@@ -207,6 +208,37 @@ function insertTable() {
   insertAtCursor('\n| Header | Header |\n|--------|--------|\n| Cell   | Cell   |\n')
 }
 
+// Build a horizontal-rule divider of `char`s sized to fill the textarea's
+// content width on a single line. We measure with a hidden ruler that mirrors
+// the editor's actual computed font (not canvas measureText, whose font-shorthand
+// parsing can silently fall back when fontFamily is a comma-separated stack), so
+// the count matches what the browser really renders — full width, no wrapping.
+function makeDivider(char = '*'): string {
+  const el = textarea.value
+  if (!el) return char.repeat(40)
+  const style = window.getComputedStyle(el)
+  const ruler = document.createElement('span')
+  Object.assign(ruler.style, {
+    position: 'absolute',
+    visibility: 'hidden',
+    whiteSpace: 'pre',
+    fontFamily: style.fontFamily,
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+  })
+  const SAMPLE = 40
+  ruler.textContent = char.repeat(SAMPLE)
+  document.body.appendChild(ruler)
+  const unit = (ruler.getBoundingClientRect().width / SAMPLE) || parseFloat(style.fontSize) || 8
+  ruler.remove()
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+  const usable = el.clientWidth - padding
+  // Fill the line; the 1px guard stops sub-pixel rounding from pushing the last
+  // asterisk onto a wrapped second line.
+  const count = Math.max(8, Math.floor((usable - 1) / unit))
+  return char.repeat(count)
+}
+
 function insertCheckbox() {
   prependLine('- [ ] ')
 }
@@ -224,7 +256,7 @@ const fmt = {
   codeBlock: () => wrap('\n```\n', '\n```\n', 'code block'),
   link: () => wrap('[', '](url)', 'link text'),
   image: () => wrap('![', '](url)', 'alt text'),
-  hr: () => insertAtCursor('\n\n────────────────────────────────\n\n'),
+  hr: () => insertAtCursor('\n\n' + makeDivider() + '\n\n'),
   table: insertTable,
   checkbox: insertCheckbox,
   undo: doUndo,
@@ -932,6 +964,16 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
 
   <!-- Voice memos embedded at the bottom of the entry -->
   <EntryRecordings v-if="!focusMode" />
+
+  <!-- Media attachment thumbnails, pinned at the bottom of the entry -->
+  <div v-if="!focusMode && hasEntry && !isEncrypted && attachments.length"
+       class="px-3 pt-2 border-t border-border">
+    <MediaGrid
+      :entry-id="ui.editingEntryId ?? 0"
+      :media-count="attachments.length"
+      @deleted="loadAttachments"
+    />
+  </div>
 
   <!-- Status bar + Bottom controls -->
   <div class="border-t border-border" v-if="!focusMode">
