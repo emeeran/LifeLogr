@@ -90,7 +90,7 @@ test.describe('Settings UI verification', () => {
   })
 
   // ── Data Tab ──
-  test('Data tab: sections, descriptions, skeleton loading', async ({ page }) => {
+  test('Data tab: sections and descriptions', async ({ page }) => {
     await tab(page, 'Data').click()
     await page.waitForTimeout(800)
 
@@ -101,23 +101,28 @@ test.describe('Settings UI verification', () => {
     // Import / Export section
     await expect(page.getByText('Import / Export', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Bring entries in or export your journal')).toBeVisible()
+  })
 
-    // Backup section (.first(): "Backup" also appears as an action label)
-    await expect(page.getByText('Backup', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Local archive and scheduled backups')).toBeVisible()
+  // ── Backup Tab ──
+  test('Backup tab: local, scheduled, cloud, and sync sections', async ({ page }) => {
+    await tab(page, 'Backup').click()
+    await page.waitForTimeout(800)
 
-    // Cloud section with description
-    await expect(page.getByText('Cloud', { exact: true }).first()).toBeVisible()
+    // Local + scheduled backup sections
+    await expect(page.getByText('Local Backup', { exact: true })).toBeVisible()
+    await expect(page.getByText('Scheduled Backup', { exact: true })).toBeVisible()
+
+    // Cloud section
+    await expect(page.getByText('Cloud Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Sync your journal to cloud storage')).toBeVisible()
 
-    // Sync section
-    await expect(page.getByText('Sync', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Manage data synchronization queue')).toBeVisible()
+    // Sync queue section
+    await expect(page.getByText('Sync Queue', { exact: true })).toBeVisible()
+    await expect(page.getByText('Manage pending synchronization operations')).toBeVisible()
 
-    // Cloud empty state (if no configs)
+    // Cloud empty state on a fresh database (no configs yet)
     const emptyState = page.getByText('No cloud backups configured')
     if (await emptyState.isVisible().catch(() => false)) {
-      // Should have a hint below
       await expect(page.getByText('Click Add to connect a cloud provider')).toBeVisible()
     }
   })
