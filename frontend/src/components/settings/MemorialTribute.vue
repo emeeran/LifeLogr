@@ -30,11 +30,13 @@ const tributeLines = useLocalStorage<string[]>('lifelogr-memorial-tributes', [
   'Cherished today, tomorrow, always.',
 ])
 const candleLit = useLocalStorage<boolean>('lifelogr-memorial-candle-lit', true)
+const memorialTitle = useLocalStorage<boolean>('lifelogr-memorial-title', true)
 // Dock position stored as the dock *centre* in % of the container.
 const dockPos = useLocalStorage<{ x: number; y: number }>('lifelogr-memorial-dock-pos', { x: 50, y: 90 })
 
 // ── Personalize sheet ──
 const showPersonalize = ref(false)
+const flash = ref(false)
 const newTribute = ref('')
 function addTribute() {
   const t = newTribute.value.trim()
@@ -132,7 +134,13 @@ function onDragEnd() {
   window.removeEventListener('pointermove', onDragMove)
 }
 
-onMounted(() => { nextTick(clampDock) })
+onMounted(() => {
+  nextTick(() => {
+    clampDock()
+    // Play the title flash once per load (when the title is enabled).
+    if (memorialTitle.value) flash.value = true
+  })
+})
 onUnmounted(() => {
   stopRotation()
   window.removeEventListener('pointermove', onDragMove)
@@ -142,15 +150,22 @@ onUnmounted(() => {
 
 <template>
   <div ref="memorialEl"
-    class="memorial relative h-full w-full overflow-hidden bg-stone-950 flex items-center justify-center p-5 sm:p-8 lg:p-10"
+    class="memorial relative h-full w-full overflow-hidden bg-stone-950 flex flex-col p-5 sm:p-8 lg:p-10"
     :class="{ lit: candleLit }">
 
+    <!-- Dedication title (flashes once on load) -->
+    <div v-if="memorialTitle" class="title-area shrink-0 text-center pb-2 sm:pb-3">
+      <h2 class="memorial-title" :class="{ flash }">Ever in memory of you</h2>
+    </div>
+
     <!-- Tribute image (contained, full artwork visible — nothing cropped) -->
-    <img v-if="image" :src="image"
-      alt="In Loving Remembrance — Tariq Al Fayad (1997–2020)"
-      class="art relative z-0 max-w-full max-h-full object-contain rounded-md shadow-2xl"
-      style="filter: drop-shadow(0 12px 40px rgba(0,0,0,0.6));"
-      draggable="false" />
+    <div class="image-area flex-1 min-h-0 flex items-center justify-center">
+      <img v-if="image" :src="image"
+        alt="In Loving Remembrance — Tariq Al Fayad (1997–2020)"
+        class="art max-w-full max-h-full object-contain rounded-md"
+        style="filter: drop-shadow(0 12px 40px rgba(0,0,0,0.6));"
+        draggable="false" />
+    </div>
 
     <!-- Warm candlelight wash -->
     <div class="warm-glow" :class="{ on: candleLit }" aria-hidden="true" />
@@ -267,6 +282,29 @@ onUnmounted(() => {
 }
 .warm-glow.on { opacity: 1; }
 
+/* ── Dedication title (flashes once on load) ── */
+.memorial-title {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: clamp(1.05rem, 3vw, 1.55rem);
+  letter-spacing: 0.02em;
+  color: #f4d6a3;
+  text-shadow: 0 0 18px rgba(255,180,80,0.45), 0 1px 6px rgba(0,0,0,0.6);
+  opacity: 0;
+}
+.memorial-title.flash { animation: title-flash 2.6s ease-out forwards; }
+@keyframes title-flash {
+  0%   { opacity: 0; filter: blur(10px); letter-spacing: 0.32em; }
+  12%  { opacity: 1; filter: blur(0) brightness(2.4); text-shadow: 0 0 40px rgba(255,205,130,0.95), 0 0 8px rgba(255,235,180,0.9); }
+  26%  { opacity: 1; filter: brightness(0.85); text-shadow: 0 0 12px rgba(255,180,80,0.4), 0 1px 6px rgba(0,0,0,0.6); }
+  42%  { opacity: 1; filter: brightness(2.2); text-shadow: 0 0 36px rgba(255,205,130,0.9); }
+  58%  { opacity: 1; filter: brightness(0.9); text-shadow: 0 0 14px rgba(255,180,80,0.45); }
+  74%  { opacity: 1; filter: brightness(1.6); text-shadow: 0 0 26px rgba(255,205,130,0.75); }
+  100% { opacity: 1; filter: brightness(1); letter-spacing: 0.02em; text-shadow: 0 0 18px rgba(255,180,80,0.45), 0 1px 6px rgba(0,0,0,0.6); }
+}
+
 /* ── Auto-hiding, draggable dock ── */
 .dock {
   transform: translate(-50%, -50%);
@@ -366,6 +404,8 @@ onUnmounted(() => {
 /* ── Respect reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   .art { animation: none; }
+  .memorial-title { opacity: 1; }
+  .memorial-title.flash { animation: none; }
   .candle .flame, .candle .flame-inner, .candle .glow { animation: none; }
 }
 </style>

@@ -67,6 +67,7 @@ const index: SearchEntry[] = [
   { tab: 'features', label: 'Preview voice', keywords: ['preview', 'test voice'] },
   { tab: 'features', label: 'Reminders', keywords: ['reminder', 'reminders', 'notification', 'alert', 'notify'] },
   { tab: 'features', label: 'System setup', keywords: ['system setup', 'dependencies', 'ollama install', 'gstreamer', 'audio recording'] },
+  { tab: 'features', label: 'Memorial title', keywords: ['memorial', 'dedication', 'remembrance', 'ever in memory', 'tribute', 'title', 'flash'] },
 
   { tab: 'data', label: 'Storage', keywords: ['storage', 'disk', 'database size', 'usage', 'entries count', 'media'] },
   { tab: 'data', label: 'Import entries', keywords: ['import', 'import entries', 'zip', 'json', 'html', 'diarium import'] },

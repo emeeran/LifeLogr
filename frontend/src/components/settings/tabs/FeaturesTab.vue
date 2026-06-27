@@ -7,12 +7,13 @@ import { ttsApi } from '../../../api/tts'
 import type { ReminderResponse } from '../../../types'
 import {
   Trash2, Pencil, AlertTriangle, CheckCircle2, X,
-  Loader, Volume2, Bell, Wrench, MonitorCheck, Play,
+  Loader, Volume2, Bell, Wrench, MonitorCheck, Play, Heart,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
 import AccordionItem from '../shared/AccordionItem.vue'
 import SButton from '../shared/SButton.vue'
+import ToggleSwitch from '../shared/ToggleSwitch.vue'
 
 interface TTSVoice { short_name: string; locale: string; gender: string }
 
@@ -45,6 +46,9 @@ const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: 
 function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 const remindersStore = useRemindersStore()
+
+// ── Memorial dedication title ──
+const memorialTitle = useLocalStorage<boolean>('lifelogr-memorial-title', true)
 
 // ── System Setup (Tauri desktop only) ──
 const isTauri = !!(window as any).__TAURI_INTERNALS__
@@ -291,6 +295,13 @@ onMounted(() => { remindersStore.fetchAll(); loadVoices(); checkSystemDeps() })
       <p class="text-[11px] text-text-secondary">No reminders set.</p>
       <p class="text-[10px] text-text-muted mt-0.5">Create one above to get writing prompts.</p>
     </div>
+  </SettingsSection>
+
+  <SettingsSection title="Memorial" :icon="Heart" description="Dedication tribute on the Dedication tab" setting-key="Memorial title">
+    <SettingRow :icon="Heart" label="Memorial title"
+      description="Show “Ever in memory of you” above the portrait, with a gentle flash each time you open the Dedication.">
+      <ToggleSwitch v-model="memorialTitle" />
+    </SettingRow>
   </SettingsSection>
 
   <AccordionItem v-if="isTauri" title="System Setup" :icon="Wrench" description="Check and install system dependencies">
