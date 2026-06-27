@@ -1,185 +1,301 @@
 <script setup lang="ts">
 /**
- * MemorialTribute — an elegant, dynamic "In Loving Memory" panel.
+ * MemorialTribute — a minimal, full-page dedication.
  *
- * Designed to be the emotional focal point of the About tab. It is:
+ * The tribute image is shown in full on a dark matting (nothing cropped, so
+ * the dates and message stay visible), with generous padding around it. A
+ * single glass dock holds the participatory elements and is **draggable** —
+ * place it anywhere over the memorial; the position persists. The dock fades
+ * in on hover / keyboard focus and hides otherwise, leaving the artwork
+ * undisturbed.
  *
- *  • Dynamic  — a CSS-animated flickering candle (the universal symbol of
- *    remembrance) with a warm glow, a slow Ken-Burns drift on the memorial
- *    photo, gently rising embers, and tribute messages that fade-rotate so
- *    the panel feels alive rather than static.
- *  • Resizable — a Compact / Default / Expanded control lets the user choose
- *    how prominent the memorial is; the choice persists across sessions via
- *    localStorage. Respects accessibility: `prefers-reduced-motion` disables
- *    the candle flicker and Ken-Burns drift.
- *  • Reusable  — all copy is props with sensible defaults, so the same
- *    component can power a first-run tribute or a dedicated memorial view.
+ *  • Interactive candle — click to light or extinguish (a ritual of
+ *    remembrance). When lit, a warm glow washes the scene. Persists.
+ *  • Rotating tributes — your own short lines fade-rotate in the dock;
+ *    editable via Personalize, persisted locally.
+ *  • Respects `prefers-reduced-motion`.
  */
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-import { Heart, Flame } from 'lucide-vue-next'
+import { Pencil, Check, Plus, X, Move } from 'lucide-vue-next'
 
-const props = withDefaults(defineProps<{
-  name?: string
-  years?: string
-  /** Rotating short tributes shown beneath the name. */
-  tributes?: string[]
-  /** Primary dedication line. */
-  message?: string
-  image?: string
-}>(), {
-  name: 'Tariq Al Fayad',
-  years: '1997 — 2020',
-  message: 'LifeLogr is lovingly dedicated to the memory of my son, Tariq — a reminder to cherish every day, and to write it down.',
-  image: undefined,
-  tributes: () => [
+defineProps<{ image?: string }>()
+
+// ── Persisted content ──
+const tributeLines = useLocalStorage<string[]>('lifelogr-memorial-tributes', [
+  'Forever in our hearts.',
+  'Gone from our sight, never from our love.',
+  'Your light still guides us.',
+  'In every page written, you are remembered.',
+  'Cherished today, tomorrow, always.',
+])
+const candleLit = useLocalStorage<boolean>('lifelogr-memorial-candle-lit', true)
+// Dock position stored as the dock *centre* in % of the container.
+const dockPos = useLocalStorage<{ x: number; y: number }>('lifelogr-memorial-dock-pos', { x: 50, y: 90 })
+
+// ── Personalize sheet ──
+const showPersonalize = ref(false)
+const newTribute = ref('')
+function addTribute() {
+  const t = newTribute.value.trim()
+  if (t) { tributeLines.value = [...tributeLines.value, t]; newTribute.value = '' }
+}
+function removeTribute(i: number) {
+  tributeLines.value = tributeLines.value.filter((_, idx) => idx !== i)
+}
+function moveTribute(i: number, dir: -1 | 1) {
+  const arr = [...tributeLines.value]
+  const j = i + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  tributeLines.value = arr
+}
+function resetTributes() {
+  tributeLines.value = [
     'Forever in our hearts.',
     'Gone from our sight, never from our love.',
     'Your light still guides us.',
     'In every page written, you are remembered.',
     'Cherished today, tomorrow, always.',
-  ],
-})
-
-// ── Resizable: three prominence presets persisted to localStorage ──
-type SizeKey = 'compact' | 'default' | 'expanded'
-const sizeKey = useLocalStorage<SizeKey>('lifelogr-memorial-size', 'default')
-const SIZES: Record<SizeKey, { label: string; scale: number }> = {
-  compact:  { label: 'Compact',  scale: 0.78 },
-  default:  { label: 'Default',  scale: 1.0 },
-  expanded: { label: 'Expanded', scale: 1.25 },
+  ]
 }
-const scale = computed(() => SIZES[sizeKey.value].scale)
 
-// ── Rotating tributes ──
+// ── Rotating tributes (non-empty lines only) ──
+const tributes = computed(() => tributeLines.value.map(t => t.trim()).filter(Boolean))
 const tributeIndex = ref(0)
 let timer: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
-  // Respect reduced motion: no auto-rotation of messages.
+function stopRotation() { if (timer) { clearInterval(timer); timer = null } }
+function startRotation() {
+  stopRotation()
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  if (!reduce && props.tributes.length > 1) {
+  if (!reduce && tributes.value.length > 1) {
     timer = setInterval(() => {
-      tributeIndex.value = (tributeIndex.value + 1) % props.tributes.length
+      tributeIndex.value = (tributeIndex.value + 1) % tributes.value.length
     }, 5000)
   }
+}
+onMounted(startRotation)
+onUnmounted(stopRotation)
+watch(tributes, () => {
+  if (tributeIndex.value >= tributes.value.length) tributeIndex.value = 0
+  startRotation()
 })
-onUnmounted(() => { if (timer) clearInterval(timer) })
 
-// ── Embers: deterministic positions so they don't jump on re-render ──
-const embers = Array.from({ length: 14 }, (_, i) => ({
-  left: 8 + ((i * 37) % 84),        // % horizontal spread
-  delay: (i * 1.3) % 8,             // s stagger
-  duration: 7 + ((i * 5) % 6),      // s rise time
-  size: 2 + ((i * 3) % 3),          // px
-}))
+function toggleCandle() { candleLit.value = !candleLit.value }
+
+// ── Draggable dock ──
+const memorialEl = ref<HTMLElement | null>(null)
+const dockEl = ref<HTMLElement | null>(null)
+const dragging = ref(false)
+const dragOffset = { x: 0, y: 0 }   // pointer offset from dock centre (px)
+
+function clampDock() {
+  const cont = memorialEl.value, dock = dockEl.value
+  if (!cont || !dock) return
+  const cw = cont.clientWidth, ch = cont.clientHeight, dw = dock.offsetWidth, dh = dock.offsetHeight
+  const halfW = (dw / 2 / cw) * 100, halfH = (dh / 2 / ch) * 100
+  const x = Math.max(halfW, Math.min(dockPos.value.x, 100 - halfW))
+  const y = Math.max(halfH, Math.min(dockPos.value.y, 100 - halfH))
+  if (x !== dockPos.value.x || y !== dockPos.value.y) dockPos.value = { x, y }
+}
+
+function onDragStart(e: PointerEvent) {
+  const cont = memorialEl.value, dock = dockEl.value
+  if (!cont || !dock) return
+  e.preventDefault()
+  const dRect = dock.getBoundingClientRect()
+  const cx = dRect.left + dRect.width / 2
+  const cy = dRect.top + dRect.height / 2
+  dragOffset.x = e.clientX - cx
+  dragOffset.y = e.clientY - cy
+  dragging.value = true
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragEnd, { once: true })
+}
+function onDragMove(e: PointerEvent) {
+  const cont = memorialEl.value
+  if (!cont || !dragging.value) return
+  const cRect = cont.getBoundingClientRect()
+  const dock = dockEl.value!
+  const halfW = dock.offsetWidth / 2, halfH = dock.offsetHeight / 2
+  let cx = e.clientX - dragOffset.x
+  let cy = e.clientY - dragOffset.y
+  cx = Math.max(cRect.left + halfW, Math.min(cx, cRect.right - halfW))
+  cy = Math.max(cRect.top + halfH, Math.min(cy, cRect.bottom - halfH))
+  dockPos.value = {
+    x: ((cx - cRect.left) / cRect.width) * 100,
+    y: ((cy - cRect.top) / cRect.height) * 100,
+  }
+}
+function onDragEnd() {
+  dragging.value = false
+  window.removeEventListener('pointermove', onDragMove)
+}
+
+onMounted(() => { nextTick(clampDock) })
+onUnmounted(() => {
+  stopRotation()
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragEnd)
+})
 </script>
 
 <template>
-  <section class="memorial relative overflow-hidden rounded-lg border border-amber-500/30"
-    :style="{ '--scale': scale }">
+  <div ref="memorialEl"
+    class="memorial relative h-full w-full overflow-hidden bg-stone-950 flex items-center justify-center p-5 sm:p-8 lg:p-10"
+    :class="{ lit: candleLit }">
 
-    <!-- Memorial photo backdrop with slow Ken-Burns drift -->
-    <div class="absolute inset-0 overflow-hidden">
-      <img v-if="image" :src="image" :alt="`In Loving Remembrance — ${name}`"
-        class="kb w-full h-full object-cover" />
-    </div>
-    <div class="absolute inset-0 bg-gradient-to-br from-black/92 via-black/78 to-black/55" />
+    <!-- Tribute image (contained, full artwork visible — nothing cropped) -->
+    <img v-if="image" :src="image"
+      alt="In Loving Remembrance — Tariq Al Fayad (1997–2020)"
+      class="art relative z-0 max-w-full max-h-full object-contain rounded-md shadow-2xl"
+      style="filter: drop-shadow(0 12px 40px rgba(0,0,0,0.6));"
+      draggable="false" />
 
-    <!-- Rising embers -->
-    <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <span v-for="(e, i) in embers" :key="i" class="ember"
-        :style="{ left: e.left + '%', animationDelay: e.delay + 's', animationDuration: e.duration + 's', width: e.size + 'px', height: e.size + 'px' }" />
-    </div>
+    <!-- Warm candlelight wash -->
+    <div class="warm-glow" :class="{ on: candleLit }" aria-hidden="true" />
 
-    <!-- Warm candle glow halo behind the content -->
-    <div class="candle-glow absolute pointer-events-none" aria-hidden="true" />
+    <!-- Draggable, auto-hiding dock -->
+    <div ref="dockEl"
+      class="dock absolute z-10 w-max max-w-[92%]"
+      :class="{ 'force-show': showPersonalize || dragging }"
+      :style="{ left: dockPos.x + '%', top: dockPos.y + '%' }">
+      <div class="glass rounded-2xl flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5"
+        :class="dragging ? 'cursor-grabbing' : ''">
+        <!-- Drag handle -->
+        <button type="button"
+          class="dock-handle shrink-0 flex items-center justify-center w-5 h-8 rounded text-white/40 hover:text-white/80 cursor-grab"
+          :class="{ 'text-white/80': dragging }"
+          title="Drag to move" @pointerdown="onDragStart">
+          <Move :size="13" />
+        </button>
+        <span class="w-px h-6 bg-white/15 shrink-0" />
 
-    <div class="relative memorial-body flex items-center gap-5 sm:gap-7 px-6 sm:px-8">
-      <!-- Candle (the remembrance flame) -->
-      <div class="shrink-0 candle-wrap" aria-hidden="true">
-        <div class="candle">
-          <div class="flame">
-            <div class="flame-inner" />
+        <!-- Interactive candle -->
+        <button type="button" class="candle-wrap shrink-0" :aria-pressed="candleLit"
+          :title="candleLit ? 'Extinguish candle' : 'Light a candle'" @click="toggleCandle">
+          <div class="candle">
+            <template v-if="candleLit">
+              <div class="flame"><div class="flame-inner" /></div>
+              <div class="glow" />
+            </template>
+            <div class="wick" />
+            <div class="wax" />
           </div>
-          <div class="glow" />
-          <div class="wick" />
-          <div class="wax" />
+          <span class="candle-hint">{{ candleLit ? 'Extinguish' : 'Light' }}</span>
+        </button>
+
+        <!-- Rotating tribute -->
+        <div class="flex-1 min-w-0 text-center px-1">
+          <Transition name="tribute-fade" mode="out-in">
+            <p v-if="tributes.length" :key="tributeIndex"
+              class="tribute italic font-medium text-white/95 leading-snug">
+              &ldquo;{{ tributes[tributeIndex] }}&rdquo;
+            </p>
+            <p v-else key="empty" class="tribute italic text-white/60">Add a personal tribute…</p>
+          </Transition>
         </div>
-      </div>
 
-      <!-- Framed portrait -->
-      <div class="shrink-0 portrait-wrap hidden sm:block">
-        <div class="portrait ring-2 ring-white/40 shadow-lg overflow-hidden">
-          <img v-if="image" :src="image" :alt="name" class="w-full h-full object-cover" />
-        </div>
-      </div>
-
-      <!-- Text content -->
-      <div class="flex-1 min-w-0 text-white">
-        <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-          <Heart :size="10" class="text-rose-300 fill-rose-300" />
-          <span class="text-[9.5px] font-medium uppercase tracking-wider text-white/80">In Loving Memory</span>
-        </div>
-        <h3 class="mt-2 name text-lg font-semibold leading-tight">{{ name }}</h3>
-        <p class="years text-[11px] text-white/70 mt-0.5 italic">{{ years }}</p>
-
-        <!-- Rotating tribute (fade transition) -->
-        <Transition name="tribute-fade" mode="out-in">
-          <p :key="tributeIndex" class="tribute text-white/85 font-medium italic">
-            “{{ tributes[tributeIndex] }}”
-          </p>
-        </Transition>
-
-        <p class="message text-white/80 mt-2 max-w-md leading-relaxed">{{ message }}</p>
+        <!-- Personalize -->
+        <button type="button"
+          class="dock-btn shrink-0"
+          :class="showPersonalize ? 'bg-white text-stone-900' : 'bg-white/15 text-white/85 hover:bg-white/25'"
+          :title="showPersonalize ? 'Done' : 'Personalize tributes'"
+          @click="showPersonalize = !showPersonalize">
+          <component :is="showPersonalize ? Check : Pencil" :size="12" />
+        </button>
       </div>
     </div>
 
-    <!-- Resize control -->
-    <div class="relative flex items-center justify-center gap-1 pb-3 pt-1">
-      <span class="flex items-center gap-1 text-[9px] uppercase tracking-wider text-white/50 mr-1.5">
-        <Flame :size="9" /> Memorial size
-      </span>
-      <button v-for="(s, key) in SIZES" :key="key" type="button"
-        @click="sizeKey = key as SizeKey"
-        class="px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors cursor-pointer"
-        :class="sizeKey === key
-          ? 'bg-white text-black'
-          : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'">
-        {{ s.label }}
-      </button>
-    </div>
-  </section>
+    <!-- ── Personalize sheet (tribute lines) ── -->
+    <Transition name="sheet">
+      <div v-if="showPersonalize" class="sheet personalize-sheet absolute z-20">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <Pencil :size="12" class="text-amber-200" />
+            <h4 class="text-[12px] font-semibold text-white">Tribute lines</h4>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" @click="resetTributes" class="text-[10px] text-white/50 hover:text-rose-300 cursor-pointer">Reset</button>
+            <button type="button" @click="showPersonalize = false" class="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/10 cursor-pointer"><X :size="14" /></button>
+          </div>
+        </div>
+        <p class="text-[11px] text-white/70 mb-2">These rotate in the dock. They stay private on your device.</p>
+        <div class="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
+          <div v-for="(line, i) in tributeLines" :key="i" class="flex items-center gap-1.5">
+            <input :value="line" @input="tributeLines[i] = ($event.target as HTMLInputElement).value"
+              class="edit-input flex-1" />
+            <button type="button" @click="moveTribute(i, -1)" :disabled="i === 0"
+              class="p-1 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 cursor-pointer" title="Move up">▲</button>
+            <button type="button" @click="moveTribute(i, 1)" :disabled="i === tributeLines.length - 1"
+              class="p-1 rounded text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 cursor-pointer" title="Move down">▼</button>
+            <button type="button" @click="removeTribute(i)"
+              class="p-1 rounded text-white/60 hover:text-rose-300 hover:bg-rose-400/15 cursor-pointer" title="Remove"><X :size="12" /></button>
+          </div>
+        </div>
+        <div class="mt-2 flex items-center gap-1.5">
+          <input v-model="newTribute" class="edit-input flex-1" placeholder="Add a tribute line…"
+            @keydown.enter.prevent="addTribute" />
+          <button type="button" @click="addTribute" :disabled="!newTribute.trim()"
+            class="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-amber-400 text-stone-900 hover:bg-amber-300 disabled:opacity-40 cursor-pointer transition-colors">
+            <Plus :size="11" /> Add
+          </button>
+        </div>
+      </div>
+    </Transition>
+  </div>
 </template>
 
 <style scoped>
-/* ── Scale driven by the resize control ── */
-.memorial-body { padding-top: calc(1.75rem * var(--scale)); padding-bottom: calc(0.75rem * var(--scale)); }
-.name      { font-size: calc(1.125rem * var(--scale)); }
-.years     { font-size: calc(0.7rem * var(--scale)); }
-.tribute   { font-size: calc(0.8rem * var(--scale)); margin-top: calc(0.5rem * var(--scale)); }
-.message   { font-size: calc(0.75rem * var(--scale)); }
-.candle-wrap { transform: scale(var(--scale)); transform-origin: bottom center; }
-.portrait  { width: calc(5rem * var(--scale)); height: calc(5rem * var(--scale)); border-radius: 9999px; }
-.candle-glow {
-  width: calc(220px * var(--scale)); height: calc(220px * var(--scale));
-  left: 28px; top: -40px;
-  background: radial-gradient(circle, rgba(255,170,70,0.18) 0%, transparent 65%);
+/* ── Glass ── */
+.glass {
+  background: rgba(20, 16, 12, 0.55);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Image (subtle life) ── */
+.art { animation: breathe 20s ease-in-out infinite alternate; }
+@keyframes breathe { 0% { transform: scale(1.0); } 100% { transform: scale(1.025); } }
+
+/* ── Warm candlelight wash ── */
+.warm-glow {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1s ease;
+  background: radial-gradient(70% 60% at 50% 100%, rgba(255,170,70,0.16) 0%, transparent 65%);
+}
+.warm-glow.on { opacity: 1; }
+
+/* ── Auto-hiding, draggable dock ── */
+.dock {
+  transform: translate(-50%, -50%);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+.memorial:hover .dock,
+.memorial:focus-within .dock,
+.dock.force-show { opacity: 1; pointer-events: auto; }
+.dock-handle { touch-action: none; }
+
+.dock-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 9999px; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 /* ── Candle ── */
-.candle {
-  position: relative; width: 26px; height: 54px;
-  display: flex; flex-direction: column; align-items: center;
-}
+.candle-wrap { background: none; border: none; padding: 0; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+.candle-hint { margin-top: 0.35rem; font-size: 8px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255,255,255,0.55); white-space: nowrap; }
+.candle { position: relative; width: 24px; height: 46px; display: flex; flex-direction: column; align-items: center; }
 .candle .wax {
-  width: 22px; height: 46px; margin-top: auto;
+  width: 20px; height: 40px; margin-top: auto;
   background: linear-gradient(180deg, #f3ede0 0%, #e6dcc4 100%);
   border-radius: 4px 4px 6px 6px;
   box-shadow: inset -3px 0 6px rgba(0,0,0,0.15), inset 3px 0 4px rgba(255,255,255,0.4);
 }
 .candle .wick { width: 2px; height: 6px; background: #2b2b2b; border-radius: 1px; margin-bottom: -2px; z-index: 2; }
 .candle .flame {
-  position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
   width: 12px; height: 20px;
   background: radial-gradient(ellipse at 50% 80%, #fff3b0 0%, #ffcf4d 35%, #ff8a1e 65%, #ff5a1e 100%);
   border-radius: 50% 50% 30% 30%;
@@ -194,8 +310,8 @@ const embers = Array.from({ length: 14 }, (_, i) => ({
   animation: flicker 1.3s ease-in-out infinite alternate-reverse;
 }
 .candle .glow {
-  position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
-  width: 50px; height: 50px; border-radius: 50%;
+  position: absolute; top: -30px; left: 50%; transform: translateX(-50%);
+  width: 48px; height: 48px; border-radius: 50%;
   background: radial-gradient(circle, rgba(255,180,80,0.5) 0%, transparent 70%);
   animation: glow-pulse 2.2s ease-in-out infinite alternate;
   z-index: 1;
@@ -212,36 +328,44 @@ const embers = Array.from({ length: 14 }, (_, i) => ({
   to   { opacity: 1;   transform: translateX(-50%) scale(1.12); }
 }
 
-/* ── Ken Burns drift on the backdrop ── */
-.kb { animation: kenburns 26s ease-in-out infinite alternate; transform: scale(1.12); }
-@keyframes kenburns {
-  0%   { transform: scale(1.12) translate(0, 0); }
-  100% { transform: scale(1.22) translate(-2%, -2%); }
-}
-
-/* ── Rising embers ── */
-.ember {
-  position: absolute; bottom: -8px; border-radius: 9999px;
-  background: radial-gradient(circle, rgba(255,190,90,0.9) 0%, rgba(255,120,40,0) 70%);
-  animation-name: rise; animation-timing-function: ease-in; animation-iteration-count: infinite;
-  opacity: 0;
-}
-@keyframes rise {
-  0%   { transform: translateY(0) scale(1); opacity: 0; }
-  10%  { opacity: 0.9; }
-  90%  { opacity: 0.5; }
-  100% { transform: translateY(-220px) scale(0.4) translateX(14px); opacity: 0; }
-}
-
-/* ── Tribute rotation fade ── */
+/* ── Rotating tribute ── */
+.tribute { font-size: clamp(0.8rem, 2.2vw, 1.02rem); }
 .tribute-fade-enter-active, .tribute-fade-leave-active { transition: opacity 0.6s ease, transform 0.6s ease; }
-.tribute-fade-enter-from { opacity: 0; transform: translateY(4px); }
-.tribute-fade-leave-to   { opacity: 0; transform: translateY(-4px); }
+.tribute-fade-enter-from { opacity: 0; transform: translateY(5px); }
+.tribute-fade-leave-to   { opacity: 0; transform: translateY(-5px); }
+
+/* ── Personalize sheet ── */
+.sheet {
+  background: rgba(18, 14, 10, 0.78);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 12px 48px -10px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  left: 50%; top: 1.25rem; transform: translateX(-50%);
+  width: min(92%, 30rem);
+}
+.sheet-enter-active, .sheet-leave-active { transition: opacity 0.28s ease, transform 0.28s ease; }
+.sheet-enter-from, .sheet-leave-to { opacity: 0; transform: translate(-50%, 12px); }
+.sheet-enter-to, .sheet-leave-from { opacity: 1; transform: translateX(-50%); }
+
+/* ── Edit inputs (on glass) ── */
+.edit-input {
+  width: 100%; padding: 0.35rem 0.55rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  font-size: 12px; color: #fff; outline: none;
+  transition: border-color 0.15s ease;
+}
+.edit-input:focus { border-color: rgba(255, 255, 255, 0.45); }
+.edit-input::placeholder { color: rgba(255, 255, 255, 0.4); }
 
 /* ── Respect reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
+  .art { animation: none; }
   .candle .flame, .candle .flame-inner, .candle .glow { animation: none; }
-  .kb { animation: none; transform: scale(1.12); }
-  .ember { display: none; }
 }
 </style>
