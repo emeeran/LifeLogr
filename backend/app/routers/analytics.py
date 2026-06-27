@@ -58,13 +58,10 @@ async def get_mood_distribution(db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.get("/heatmap", response_model=HeatmapResponse)
-async def get_heatmap(year: int | None = Query(None)) -> Any:
+async def get_heatmap(year: int | None = Query(None), db: AsyncSession = Depends(get_db)) -> Any:
     """Year-long contribution heatmap."""
-    from app.core.database import async_session
-
-    async with async_session() as db:
-        svc = AnalyticsService(db)
-        return await svc.heatmap(year)
+    svc = AnalyticsService(db)
+    return await svc.heatmap(year)
 
 
 @router.get("/media", response_model=MediaStatsResponse)
