@@ -5,6 +5,12 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# contents: write — build-linux creates the GitHub Release + tag on version tags.
+# actions: write — actions/upload-artifact@v4 needs it on every job.
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   # ── Linux Desktop (AppImage + deb) ──
   build-linux:
@@ -61,10 +67,14 @@ jobs:
 
       - name: Build Tauri (AppImage + deb)
         uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: desktop
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
+          # Only create/publish a Release on real version tags; on a manual
+          # workflow_dispatch this is empty, so we just build + upload the artifact.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: 'LifeLogr ${{ github.ref_name }}'
 
       - uses: actions/upload-artifact@v4
