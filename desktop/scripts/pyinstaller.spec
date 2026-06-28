@@ -47,16 +47,26 @@ import certifi as _certifi_mod
 _certifi_data = [(_os.path.join(_os.path.dirname(_certifi_mod.__file__), 'cacert.pem'), 'certifi')]
 
 # pysqlite3-binary ships its own libsqlite3 and C extension — include both
-# so that PyInstaller builds use a known-good sqlite3 instead of the one
-# statically compiled into uv's libpython (which breaks qualified col refs).
-_site = str(ROOT / 'backend' / '.venv' / 'lib' / 'python3.11' / 'site-packages')
-_pysqlite3_binaries = [
-    (_site + '/pysqlite3/_sqlite3.cpython-311-x86_64-linux-gnu.so', 'pysqlite3'),
-]
-# Find the vendored libsqlite3 shared lib (name includes a hash, so glob it)
+# so frozen Linux builds use a known-good sqlite3 (the qualified-column fix).
+# It's Linux-only (no Windows/macOS wheels), so collection is guarded by
+# import: where pysqlite3 is absent, app/main.py falls back to stdlib sqlite3
+# and we bundle nothing here. Paths are resolved from the installed package
+# (not a hardcoded Linux venv path) so this works on any platform.
 import glob as _glob
-for _so in _glob.glob(_site + '/pysqlite3_binary.libs/libsqlite3*.so*'):
-    _pysqlite3_binaries.append((_so, 'pysqlite3_binary.libs'))
+_pysqlite3_binaries = []
+_pysqlite3_hiddenimports = []
+try:
+    import pysqlite3 as _pysqlite3_mod
+    _pkg = _os.path.dirname(_pysqlite3_mod.__file__)
+    # Compiled extension: _sqlite3.<ext> (.so on Linux, .pyd on Windows).
+    for _ext in _glob.glob(_os.path.join(_pkg, '_sqlite3.*')):
+        _pysqlite3_binaries.append((_ext, 'pysqlite3'))
+    # Vendored libsqlite3 lives in a sibling .libs dir (hash in the name).
+    for _lib in _glob.glob(_os.path.join(_pkg, '..', 'pysqlite3_binary.libs', 'libsqlite3*')):
+        _pysqlite3_binaries.append((_lib, 'pysqlite3_binary.libs'))
+    _pysqlite3_hiddenimports.append('pysqlite3')
+except ImportError:
+    pass  # pysqlite3 not installed (Windows/macOS) — stdlib sqlite3 fallback
 
 a = Analysis(
     [str(ROOT / 'backend' / 'app' / 'main.py')],
@@ -100,8 +110,8 @@ a = Analysis(
         'sqlalchemy.ext.asyncio',
         'sqlalchemy.orm',
         'fpdf',
-        # pysqlite3 — bundles a reliable sqlite3 with FTS5
-        'pysqlite3',
+        # pysqlite3 — bundles a reliable sqlite3 with FTS5 (Linux only)
+        *_pysqlite3_hiddenimports,
         # TTS — Edge TTS for Read Aloud
         *_edge_tts_hiddenimports,
         *_aiohttp_submodules,
