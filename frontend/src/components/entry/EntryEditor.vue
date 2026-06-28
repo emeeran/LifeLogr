@@ -76,6 +76,10 @@ const showToolbar = ref(false)
 const showContextMenu = ref(false)
 const contextMenuPos = ref({ x: 0, y: 0 })
 const defaultTemplateId = useLocalStorage<number | null>('lifelogr-default-template', null)
+// Which template the current entry was created from. Captured at creation
+// (default auto-apply or explicit pick) and sent once on create, powering the
+// Timeline template filter. null = blank / no template.
+const selectedTemplateId = ref<number | null>(null)
 
 // ── Composables (early — no dependencies on later functions) ──
 const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(body, textarea)
@@ -98,6 +102,7 @@ const { triggerAutosave, saveState: saveActive } = useAutoSave({
   title,
   entryDate,
   tagIds,
+  templateId: () => selectedTemplateId.value,
   editingEntryId: computed(() => ui.editingEntryId),
   snapshot,
   createEntry: (data) => entries.createEntry(data),
@@ -275,6 +280,7 @@ async function loadEntry() {
   body.value = ''
   title.value = ''
   tagIds.value = []
+  selectedTemplateId.value = null
 
   if (isNew.value) {
     if (ui.newEntryDate) {
@@ -297,6 +303,7 @@ async function loadEntry() {
         if (tmpl) {
           body.value = tmpl.body
           if (!title.value) title.value = tmpl.name
+          selectedTemplateId.value = tmpl.id
         }
       }
     } catch { /* ignore */ }
@@ -317,6 +324,7 @@ async function loadEntry() {
       }
       tagIds.value = entry.tags.map(t => t.id)
       entryDate.value = entry.entry_date
+      selectedTemplateId.value = entry.template_id
     }
   }
   pushHistory()
@@ -530,6 +538,7 @@ async function save() {
         title: title.value || null,
         body: body.value,
         tag_ids: tagIds.value.length ? tagIds.value : undefined,
+        template_id: selectedTemplateId.value,
       })
       snapshot()
       entries.refreshAll()
@@ -717,7 +726,8 @@ async function handleDelete() {
   ui.startEditing(null)
 }
 
-function onTemplateSelect(t: { name: string; body: string }) {
+function onTemplateSelect(t: { id: number; name: string; body: string }) {
+  selectedTemplateId.value = t.id
   if (!title.value.trim()) {
     title.value = t.name
   }

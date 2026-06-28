@@ -25,7 +25,13 @@ class EntryService:
 
     async def create(self, data: EntryCreate) -> Entry:
         """Create a new journal entry."""
-        entry = Entry(entry_date=data.entry_date, title=data.title, body=data.body, mood=data.mood)
+        entry = Entry(
+            entry_date=data.entry_date,
+            title=data.title,
+            body=data.body,
+            mood=data.mood,
+            template_id=data.template_id,
+        )
         self.db.add(entry)
         await self.db.flush()
         if data.tag_ids:
@@ -54,16 +60,18 @@ class EntryService:
         mood: str | None = None,
         year: int | None = None,
         month: int | None = None,
+        template_id: int | None = None,
     ) -> tuple[list[Entry], int]:
         """Return paginated entries matching optional filters and total count."""
         base_q = select(Entry).where(Entry.is_deleted.is_(False))
-        base_q = self._apply_filters(base_q, tag_ids, mood, year, month)
+        base_q = self._apply_filters(base_q, tag_ids, mood, year, month, template_id)
         count_q = self._apply_filters(
             select(func.count()).select_from(Entry).where(Entry.is_deleted.is_(False)),
             tag_ids,
             mood,
             year,
             month,
+            template_id,
         )
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
@@ -258,6 +266,7 @@ class EntryService:
         mood: str | None,
         year: int | None,
         month: int | None,
+        template_id: int | None = None,
     ) -> Select[Any]:
         """Apply common filters to an entry query.
 
@@ -272,6 +281,8 @@ class EntryService:
             q = q.join(EntryTag).where(EntryTag.tag_id.in_(tag_ids))
         if mood:
             q = q.where(Entry.mood == mood)
+        if template_id is not None:
+            q = q.where(Entry.template_id == template_id)
         if year and month:
             start = date(year, month, 1)
             end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)

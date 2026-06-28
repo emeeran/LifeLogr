@@ -50,6 +50,7 @@ def _to_response(entry: Entry) -> EntryResponse:
         latitude=entry.latitude,
         longitude=entry.longitude,
         location_name=entry.location_name,
+        template_id=entry.template_id,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
     )
@@ -70,12 +71,15 @@ async def list_entries(
     mood: str | None = None,
     year: int | None = None,
     month: int | None = None,
+    template_id: int | None = Query(None, description="Only entries created from this template"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """List entries with optional filters and pagination."""
     svc = EntryService(db)
     parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
-    entries, total = await svc.list_entries(offset, limit, parsed_tag_ids, mood, year, month)
+    entries, total = await svc.list_entries(
+        offset, limit, parsed_tag_ids, mood, year, month, template_id
+    )
     return EntryListResponse(
         items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit
     )

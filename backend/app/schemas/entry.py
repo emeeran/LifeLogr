@@ -13,6 +13,9 @@ class EntryCreate(BaseModel):
     body: str = Field(default="", max_length=1_000_000, description="Markdown body (may be empty for title-only/recording-only entries)")
     mood: str | None = Field(default=None, max_length=50, description="Mood label")
     tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to associate")
+    template_id: int | None = Field(
+        default=None, description="ID of the template this entry was created from, if any"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -64,6 +67,7 @@ class EntryResponse(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     location_name: str | None = None
+    template_id: int | None = None
     created_at: datetime
     updated_at: datetime
 

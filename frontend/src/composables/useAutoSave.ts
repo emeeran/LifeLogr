@@ -19,6 +19,7 @@ export function useAutoSave(options: {
   title: Ref<string>
   entryDate: Ref<string>
   tagIds: Ref<number[]>
+  templateId: () => number | null
   editingEntryId: Ref<number | null | undefined>
   snapshot: () => void
   createEntry: (data: {
@@ -26,6 +27,7 @@ export function useAutoSave(options: {
     title: string | null
     body: string
     tag_ids?: number[]
+    template_id?: number | null
   }) => Promise<{ id: number }>
   updateEntry: (id: number, data: {
     title: string | null
@@ -71,6 +73,7 @@ export function useAutoSave(options: {
             title: options.title.value || null,
             body: options.body.value,
             tag_ids: options.tagIds.value,
+            template_id: options.templateId(),
           })
           options.setEditingEntryId(entry.id)
           options.snapshot()

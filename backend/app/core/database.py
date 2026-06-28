@@ -223,6 +223,17 @@ async def _migrate_schema(conn: Any) -> None:
             logger.info("Adding column %s.%s ...", table, column)
             await conn.execute(text(sql))
 
+    # entries.template_id (FK -> templates.id). Handled outside
+    # _COLUMN_MIGRATIONS so the one-time content-match backfill runs atomically
+    # with the column's first creation — and never again on later startups.
+    entries_cols = {
+        row[1] for row in (await conn.execute(text("PRAGMA table_info(entries)"))).fetchall()
+    }
+    if "template_id" not in entries_cols:
+        logger.info("Adding column entries.template_id ...")
+        await conn.execute(text("ALTER TABLE entries ADD COLUMN template_id INTEGER NULL"))
+        await _backfill_entry_templates(conn)
+
     # Ensure performance indexes exist
     existing_indexes = {
         row[1]
@@ -234,6 +245,40 @@ async def _migrate_schema(conn: Any) -> None:
         if idx_name not in existing_indexes:
             logger.info("Creating index %s ...", idx_name)
             await conn.execute(text(sql))
+
+
+async def _backfill_entry_templates(conn: Any) -> None:
+    """One-time best-effort link of existing entries to a template.
+
+    Assigns ``template_id`` to entries whose body starts with a template's body
+    — the signature of "created from this template". Runs only when
+    ``entries.template_id`` is first added. Longest template bodies are tried
+    first so a specific template wins over a shorter/prefix one; template
+    bodies shorter than 15 chars are ignored to avoid matching everything.
+    """
+    min_body = 15
+    templates = (await conn.execute(text("SELECT id, body FROM templates"))).fetchall()
+    candidates = [
+        (row[0], row[1])
+        for row in templates
+        if len((row[1] or "").strip()) >= min_body
+    ]
+    candidates.sort(key=lambda item: len(item[1]), reverse=True)  # most specific first
+    if not candidates:
+        return
+
+    rows = (await conn.execute(text("SELECT id, body FROM entries"))).fetchall()
+    for entry_id, body in rows:
+        if not body:
+            continue
+        for template_id, template_body in candidates:
+            if body.startswith(template_body):
+                await conn.execute(
+                    text("UPDATE entries SET template_id = :tid WHERE id = :eid"),
+                    {"tid": template_id, "eid": entry_id},
+                )
+                break
+    logger.info("Backfilled entries.template_id by content match.")
 
 
 # Bump to force a one-time rebuild of the FTS5 index on every existing database

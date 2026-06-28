@@ -5,9 +5,10 @@ import { mediaApi } from '../../api/media'
 import { useUiStore } from '../../stores/ui'
 import { useEntriesStore } from '../../stores/entries'
 import { useTagsStore } from '../../stores/tags'
+import { useTemplatesStore } from '../../stores/templates'
 import { usePagination } from '../../composables/usePagination'
 import { formatEntryDate } from '../../composables/useFormat'
-import { ChevronLeft, ChevronRight, Tag, X, Calendar } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Tag, X, Calendar, LayoutTemplate } from 'lucide-vue-next'
 import GoToDateModal from '../common/GoToDateModal.vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { EntryResponse } from '../../types'
@@ -15,10 +16,13 @@ import type { EntryResponse } from '../../types'
 const ui = useUiStore()
 const store = useEntriesStore()
 const tagsStore = useTagsStore()
+const templatesStore = useTemplatesStore()
 const pagination = usePagination(20)
 const entries = ref<EntryResponse[]>([])
 const filterTagId = ref<number | null>(null)
 const showTagMenu = ref(false)
+const filterTemplateId = ref<number | null>(null)
+const showTemplateMenu = ref(false)
 const showGoToDate = ref(false)
 
 const filteredEntries = computed(() =>
@@ -40,7 +44,11 @@ const virtualizer = useVirtualizer(
 const thumbnailMap = reactive<Record<number, string>>({})
 
 async function load() {
-  const res = await entriesApi.list({ offset: pagination.offset.value, limit: pagination.limit.value })
+  const res = await entriesApi.list({
+    offset: pagination.offset.value,
+    limit: pagination.limit.value,
+    ...(filterTemplateId.value != null ? { template_id: filterTemplateId.value } : {}),
+  })
   entries.value = res.items
   pagination.total.value = res.total
   // Lazy-load thumbnails for entries with media
@@ -59,7 +67,7 @@ async function loadThumbnail(entryId: number) {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { load(); tagsStore.fetchTree() })
+onMounted(() => { load(); tagsStore.fetchTree(); templatesStore.fetchAll() })
 watch(() => store.lastUpdated, load)
 
 function openEntry(entry: EntryResponse) {
@@ -69,6 +77,19 @@ function openEntry(entry: EntryResponse) {
 const activeTagName = () => {
   if (filterTagId.value === null) return null
   return tagsStore.tags.find(t => t.id === filterTagId.value)?.name ?? null
+}
+
+const activeTemplateName = () => {
+  if (filterTemplateId.value === null) return null
+  return templatesStore.templates.find(t => t.id === filterTemplateId.value)?.name ?? null
+}
+
+// Template filter is server-side: re-query and reset to the first page so the
+// list + page count reflect only entries from that template.
+function applyTemplateFilter(id: number | null) {
+  filterTemplateId.value = id
+  pagination.offset.value = 0
+  load()
 }
 
 const shortDateOpts: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
@@ -82,7 +103,13 @@ function bodyPreview(body: string): string {
 async function onGoToDate(dateStr: string) {
   const [y, m] = dateStr.split('-').map(Number)
   pagination.offset.value = 0
-  const res = await entriesApi.list({ offset: 0, limit: pagination.limit.value, year: y, month: m })
+  const res = await entriesApi.list({
+    offset: 0,
+    limit: pagination.limit.value,
+    year: y,
+    month: m,
+    ...(filterTemplateId.value != null ? { template_id: filterTemplateId.value } : {}),
+  })
   entries.value = res.items
   pagination.total.value = res.total
 }
@@ -99,46 +126,91 @@ async function onGoToDate(dateStr: string) {
       >
         <Calendar :size="11" /> Go to
       </button>
-      <!-- Tag filter -->
-      <div v-if="tagsStore.tags.length" class="flex items-center gap-1.5 relative ml-auto">
-        <button
-          class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
-          :class="filterTagId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
-          @click="showTagMenu = !showTagMenu"
-        >
-          <Tag :size="11" />
-          <span v-if="activeTagName()">#{{ activeTagName() }}</span>
-          <span v-else>Filter</span>
-        </button>
-        <button
-          v-if="filterTagId !== null"
-          class="text-text-muted hover:text-text-primary cursor-pointer"
-          @click="filterTagId = null"
-          title="Clear filter"
-        >
-          <X :size="12" />
-        </button>
-        <!-- Tag dropdown -->
-        <div
-          v-if="showTagMenu"
-          class="absolute top-full right-0 mt-1 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[140px] max-h-[200px] overflow-y-auto z-50"
-        >
+      <!-- Filters -->
+      <div v-if="tagsStore.tags.length || templatesStore.templates.length" class="flex items-center gap-1.5 ml-auto">
+        <!-- Template filter (server-side) -->
+        <div v-if="templatesStore.templates.length" class="relative flex items-center gap-1.5">
           <button
-            v-for="tag in tagsStore.tags"
-            :key="tag.id"
-            class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
-            :class="filterTagId === tag.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
-            @click="filterTagId = tag.id; showTagMenu = false"
+            class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
+            :class="filterTemplateId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
+            @click="showTemplateMenu = !showTemplateMenu"
           >
-            #{{ tag.name }}
+            <LayoutTemplate :size="11" />
+            <span v-if="activeTemplateName()">{{ activeTemplateName() }}</span>
+            <span v-else>Template</span>
           </button>
-          <div class="border-t border-border my-0.5" />
           <button
-            class="w-full text-left px-3 py-1 text-[11px] text-text-muted hover:bg-surface-hover hover:text-text-primary cursor-pointer"
-            @click="filterTagId = null; showTagMenu = false"
+            v-if="filterTemplateId !== null"
+            class="text-text-muted hover:text-text-primary cursor-pointer"
+            @click="applyTemplateFilter(null)"
+            title="Clear template filter"
           >
-            Show all
+            <X :size="12" />
           </button>
+          <div
+            v-if="showTemplateMenu"
+            class="absolute top-full right-0 mt-1 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[140px] max-h-[200px] overflow-y-auto z-50"
+          >
+            <button
+              v-for="t in templatesStore.templates"
+              :key="t.id"
+              class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
+              :class="filterTemplateId === t.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
+              @click="applyTemplateFilter(t.id); showTemplateMenu = false"
+            >
+              {{ t.name }}
+            </button>
+            <div class="border-t border-border my-0.5" />
+            <button
+              class="w-full text-left px-3 py-1 text-[11px] text-text-muted hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+              @click="applyTemplateFilter(null); showTemplateMenu = false"
+            >
+              Show all
+            </button>
+          </div>
+        </div>
+
+        <!-- Tag filter (client-side, current page) -->
+        <div v-if="tagsStore.tags.length" class="relative flex items-center gap-1.5">
+          <button
+            class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
+            :class="filterTagId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
+            @click="showTagMenu = !showTagMenu"
+          >
+            <Tag :size="11" />
+            <span v-if="activeTagName()">#{{ activeTagName() }}</span>
+            <span v-else>Filter</span>
+          </button>
+          <button
+            v-if="filterTagId !== null"
+            class="text-text-muted hover:text-text-primary cursor-pointer"
+            @click="filterTagId = null"
+            title="Clear filter"
+          >
+            <X :size="12" />
+          </button>
+          <!-- Tag dropdown -->
+          <div
+            v-if="showTagMenu"
+            class="absolute top-full right-0 mt-1 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[140px] max-h-[200px] overflow-y-auto z-50"
+          >
+            <button
+              v-for="tag in tagsStore.tags"
+              :key="tag.id"
+              class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
+              :class="filterTagId === tag.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
+              @click="filterTagId = tag.id; showTagMenu = false"
+            >
+              #{{ tag.name }}
+            </button>
+            <div class="border-t border-border my-0.5" />
+            <button
+              class="w-full text-left px-3 py-1 text-[11px] text-text-muted hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+              @click="filterTagId = null; showTagMenu = false"
+            >
+              Show all
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, Index, String, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -32,6 +32,12 @@ class Entry(Base):
     latitude: Mapped[float | None] = mapped_column(nullable=True)
     longitude: Mapped[float | None] = mapped_column(nullable=True)
     location_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Which template this entry was created from (null = none/blank). Set at
+    # creation; SET NULL if the template is ever deleted (templates are
+    # hard-deleted in template_service). Enables the Timeline template filter.
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("templates.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
