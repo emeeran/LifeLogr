@@ -37,9 +37,6 @@ jobs:
           echo "VITE_APP_VERSION=$VER"
           cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
-      - name: Pre-download Whisper model (offline transcription)
-        run: bash desktop/scripts/download-whisper-model.sh
-
       - name: Build backend binary
         run: |
           cd backend && uv sync
@@ -101,9 +98,6 @@ jobs:
           echo "VITE_APP_VERSION=$VER"
           cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
 
-      - name: Pre-download Whisper model (offline transcription)
-        run: bash desktop/scripts/download-whisper-model.sh
-
       - name: Build backend binary
         run: |
           cd backend && uv sync
@@ -151,9 +145,6 @@ jobs:
           VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
           echo "VITE_APP_VERSION=$VER"
           cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
-
-      - name: Pre-download Whisper model (offline transcription)
-        run: bash desktop/scripts/download-whisper-model.sh
 
       - name: Build backend binary
         run: |
