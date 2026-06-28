@@ -38,7 +38,7 @@ export const useEntriesStore = defineStore('entries', () => {
     }
   }
 
-  async function createEntry(data: { entry_date: string; title?: string | null; body: string; tag_ids?: number[] }) {
+  async function createEntry(data: { entry_date: string; title?: string | null; body: string; tag_ids?: number[]; template_id?: number | null }) {
     error.value = null
     try {
       return await entriesApi.create(data)

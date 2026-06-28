@@ -17,6 +17,7 @@ export const entriesApi = {
     if (params?.tag_ids?.length) params.tag_ids.forEach(t => sp.append('tag_ids', String(t)))
     if (params?.year) sp.set('year', String(params.year))
     if (params?.month) sp.set('month', String(params.month))
+    if (params?.template_id != null) sp.set('template_id', String(params.template_id))
     const qs = sp.toString()
     return request(`/entries${qs ? `?${qs}` : ''}`)
   },

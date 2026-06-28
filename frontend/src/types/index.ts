@@ -33,6 +33,7 @@ export interface EntryResponse {
   has_recording: boolean
   created_at: string
   updated_at: string
+  template_id: number | null
 }
 
 /** Lightweight entry projection for calendar grid (excludes body/media). */
@@ -57,6 +58,7 @@ export interface EntryCreate {
   title?: string | null
   body: string
   tag_ids?: number[]
+  template_id?: number | null
 }
 
 export interface EntryUpdate {
@@ -129,6 +131,7 @@ export interface EntryListParams extends PaginatedParams {
   tag_ids?: number[]
   year?: number
   month?: number
+  template_id?: number
 }
 
 // ── AI (Ollama) ──────────────────────────────────────────────────────
