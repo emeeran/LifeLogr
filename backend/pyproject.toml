@@ -17,7 +17,7 @@ dependencies = [
     "pillow>=12.2.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.0",
-    "pysqlite3-binary>=0.5.4.post2",
+    "pysqlite3-binary>=0.5.4.post2; sys_platform == 'linux'",
     "pytesseract>=0.3.13",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.18",

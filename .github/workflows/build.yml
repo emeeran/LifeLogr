@@ -95,6 +95,7 @@ jobs:
         run: choco install upx
 
       - name: Build frontend
+        shell: bash
         run: |
           VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
           echo "VITE_APP_VERSION=$VER"
