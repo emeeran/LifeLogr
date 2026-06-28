@@ -255,7 +255,7 @@ backend/app/
 | Transcription | `whisper` (OpenAI local model) via subprocess | Runs on-device, no API key needed, matches FR-018 |
 | Encryption | AES-256-GCM via `cryptography` library | Standard, audited, matches NFR-005 |
 | Error handling | Service layer raises domain exceptions; routers catch and map to HTTP | Clean separation; services never import FastAPI |
-| Config | `pydantic-settings` reading `.env` | Type-safe config with validation, matches CLAUDE.md convention |
+| Config | `pydantic-settings` reading `.env` | Type-safe config with validation, matches AGENTS.md convention |
 
 ---
 

@@ -1,4 +1,4 @@
-# LifeLogr — Claude Context
+# LifeLogr — Agent Context
 
 ## Project Purpose
 > LifeLogr is a privacy-first, offline-first daily journaling application for Linux. It provides a rich writing experience with markdown support, media attachments, voice recording with local transcription, AI-assisted grammar checking via Ollama, end-to-end encrypted cloud sync, and a plugin architecture — all while keeping user data local and private.
@@ -54,7 +54,7 @@ diary/
 ├── docs/                    # SDD artefacts
 ├── prompts/                 # Prompt templates
 ├── raw_idea.txt
-├── CLAUDE.md                # ← You are here
+├── AGENTS.md                # ← You are here
 └── Makefile
 ```
 

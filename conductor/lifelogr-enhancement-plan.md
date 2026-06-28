@@ -126,7 +126,7 @@ This overhaul touches every layer of the application:
 - `backend/app/core/config.py` — Add `APP_NAME: str = "LifeLogr"`
 - `backend/app/main.py` — Update `title="LifeLogr"`, description
 - `backend/pyproject.toml` — Update `name = "lifelogr"`
-- `CLAUDE.md` — Update project purpose section
+- `AGENTS.md` — Update project purpose section
 - `docs/` — Update all SDD artifacts to reference "LifeLogr"
 
 **Logo:**
