@@ -6,6 +6,7 @@ const router = createRouter({
     { path: '/', redirect: '/calendar' },
     { path: '/calendar', name: 'calendar', component: () => import('./components/calendar/CalendarGrid.vue') },
     { path: '/timeline', name: 'timeline', component: () => import('./components/timeline/TimelineView.vue') },
+    { path: '/notes', name: 'notes', component: () => import('./components/notes/NotesView.vue') },
     { path: '/search', name: 'search', component: () => import('./components/search/SearchView.vue') },
     { path: '/analytics', name: 'analytics', component: () => import('./components/analytics/AnalyticsView.vue') },
     { path: '/reminders', name: 'reminders', component: () => import('./components/reminders/RemindersView.vue') },

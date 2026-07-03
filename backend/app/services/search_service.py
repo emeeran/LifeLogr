@@ -6,11 +6,12 @@ import json
 import logging
 from datetime import date
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.embedding import EntryEmbedding
 from app.models.entry import Entry
+from app.models.note import Note, NoteTag
 from app.schemas.search import SearchResultEntry, SearchMode
 
 logger = logging.getLogger(__name__)
@@ -31,19 +32,125 @@ class SearchService:
         limit: int = 20,
         mode: SearchMode = "hybrid",
     ) -> tuple[list[SearchResultEntry], int]:
-        """Search entries using the specified mode."""
+        """Search entries (via the requested mode) and union in keyword-matched notes.
+
+        Notes are keyword-only in v1 (no embeddings). They are appended after
+        entries in the merged stream, with windowed pagination so the combined
+        page respects ``offset``/``limit`` and ``total`` is the entry+note count.
+        """
         if mode == "keyword":
-            return await self._keyword_search(
+            entry_items, entry_total = await self._keyword_search(
                 query, mood, tag_ids, date_from, date_to, offset, limit
             )
         elif mode == "semantic":
-            return await self._semantic_search(
+            entry_items, entry_total = await self._semantic_search(
                 query, mood, tag_ids, date_from, date_to, offset, limit
             )
         else:
-            return await self._hybrid_search(
+            entry_items, entry_total = await self._hybrid_search(
                 query, mood, tag_ids, date_from, date_to, offset, limit
             )
+
+        # Notes occupy stream positions after all entries. Fetch only the slice
+        # of notes that falls within the requested [offset, offset+limit) window.
+        entries_on_page = len(entry_items)
+        note_offset = max(0, offset - entry_total)
+        note_limit = max(0, limit - entries_on_page)
+        note_items, note_total = await self._notes_keyword_search(
+            query, tag_ids, note_offset, note_limit
+        )
+        return entry_items + note_items, entry_total + note_total
+
+    async def _notes_keyword_search(
+        self,
+        query: str,
+        tag_ids: list[int] | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[SearchResultEntry], int]:
+        """Keyword search over notes (FTS5 with ILIKE fallback).
+
+        The ILIKE fallback covers the test DB (whose ``notes_fts`` has no sync
+        triggers and is therefore empty) and any production moment where the
+        FTS index is unavailable.
+        """
+        # ── FTS5 path ──
+        try:
+            fts_q = text("""
+                SELECT n.id, n.folder_id, n.updated_at, n.title,
+                       snippet(notes_fts, 1, '<mark>', '</mark>', '...', 20) AS snippet,
+                       bm25(notes_fts) AS rank
+                FROM notes_fts
+                JOIN notes n ON n.id = notes_fts.rowid
+                WHERE notes_fts MATCH :query AND n.is_deleted = 0
+            """)
+            params: dict[str, object] = {"query": query}
+            if tag_ids:
+                placeholders = ", ".join(f":tag_{i}" for i in range(len(tag_ids)))
+                fts_q = text(
+                    str(fts_q)
+                    + f" AND n.id IN (SELECT nt.note_id FROM note_tags nt WHERE nt.tag_id IN ({placeholders}))"
+                )
+                for i, tid in enumerate(tag_ids):
+                    params[f"tag_{i}"] = tid
+            total = (
+                await self.db.execute(text(f"SELECT COUNT(*) FROM ({str(fts_q)})"), params)
+            ).scalar_one()
+            if total > 0:
+                paginated = text(str(fts_q) + " ORDER BY rank LIMIT :lim OFFSET :off")
+                params["lim"] = limit
+                params["off"] = offset
+                rows = (await self.db.execute(paginated, params)).fetchall()
+                return [
+                    SearchResultEntry(
+                        type="note",
+                        id=row.id,
+                        entry_date=None,
+                        folder_id=row.folder_id,
+                        updated_at=row.updated_at,
+                        title=row.title,
+                        snippet=row.snippet,
+                        rank=row.rank,
+                    )
+                    for row in rows
+                ], total
+        except Exception:
+            logger.warning("Note FTS search failed, falling back to ILIKE", exc_info=True)
+
+        # ── ILIKE fallback ──
+        pattern = f"%{query}%"
+        base = (
+            select(Note.id, Note.folder_id, Note.updated_at, Note.title, Note.body)
+            .where(
+                Note.is_deleted == False,  # noqa: E712
+                (Note.title.ilike(pattern)) | (Note.body.ilike(pattern)),
+            )
+        )
+        if tag_ids:
+            base = base.where(
+                Note.id.in_(select(NoteTag.note_id).where(NoteTag.tag_id.in_(tag_ids)))
+            )
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        rows = (
+            await self.db.execute(
+                base.order_by(Note.updated_at.desc()).offset(offset).limit(limit)
+            )
+        ).all()
+        return [
+            SearchResultEntry(
+                type="note",
+                id=r.id,
+                entry_date=None,
+                folder_id=r.folder_id,
+                updated_at=r.updated_at,
+                title=r.title,
+                snippet=(r.body[:200] + "..." if len(r.body) > 200 else r.body),
+                rank=0.0,
+            )
+            for r in rows
+        ], total
 
     async def _keyword_search(
         self,

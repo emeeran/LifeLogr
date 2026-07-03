@@ -202,6 +202,17 @@ _INDEX_MIGRATIONS = [
     ("ix_entries_deleted_date", "CREATE INDEX IF NOT EXISTS ix_entries_deleted_date ON entries (is_deleted, entry_date)"),
     ("ix_entries_deleted_mood", "CREATE INDEX IF NOT EXISTS ix_entries_deleted_mood ON entries (is_deleted, mood)"),
     ("ix_entry_tags_tag_id", "CREATE INDEX IF NOT EXISTS ix_entry_tags_tag_id ON entry_tags (tag_id)"),
+    # Notes (also model-declared; listed for parity with entries + idempotent safety).
+    (
+        "ix_notes_folder_pinned_updated",
+        "CREATE INDEX IF NOT EXISTS ix_notes_folder_pinned_updated ON notes (is_deleted, folder_id, is_pinned, updated_at)",
+    ),
+    (
+        "ix_notes_deleted_updated",
+        "CREATE INDEX IF NOT EXISTS ix_notes_deleted_updated ON notes (is_deleted, updated_at)",
+    ),
+    ("ix_note_tags_tag_id", "CREATE INDEX IF NOT EXISTS ix_note_tags_tag_id ON note_tags (tag_id)"),
+    ("ix_note_folders_deleted", "CREATE INDEX IF NOT EXISTS ix_note_folders_deleted ON note_folders (is_deleted)"),
 ]
 
 
@@ -414,6 +425,90 @@ async def _setup_fts() -> None:
                 )
     except Exception:
         logger.warning("FTS5 setup failed — full-text search unavailable", exc_info=True)
+
+    # Notes FTS — mirrors the entries block but simpler: notes_fts is a fresh
+    # table with no historical drift to heal, so a clean create-once + trigger
+    # install is enough. Isolated in its own try/except so a notes FTS failure
+    # can never break the entries index.
+    try:
+        async with engine.begin() as conn:
+            exists = (
+                await conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='notes_fts'")
+                )
+            ).scalar()
+            if not exists:
+                logger.info("Creating notes FTS index and populating...")
+                await conn.execute(text("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body)"))
+                await conn.execute(
+                    text("""
+                    INSERT INTO notes_fts(rowid, title, body)
+                    SELECT notes.id, COALESCE(notes.title, ''), notes.body FROM notes WHERE notes.is_deleted = 0
+                """)
+                )
+
+            # Triggers (DROP + CREATE for idempotency). Same conventions as the
+            # entries triggers: UPDATE does DELETE-by-rowid then INSERT (NOT the
+            # FTS5 'delete' command, which throws in bundled pysqlite3).
+            for name in (
+                "fts_note_ai",
+                "fts_note_au",
+                "fts_note_ad",
+                "fts_note_soft_del",
+                "fts_note_restore",
+            ):
+                await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
+
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_ai AFTER INSERT ON notes
+                WHEN NEW.is_deleted = 0
+                BEGIN
+                    INSERT INTO notes_fts(rowid, title, body)
+                    VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                END
+            """)
+            )
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_au AFTER UPDATE ON notes
+                WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 0
+                BEGIN
+                    DELETE FROM notes_fts WHERE rowid = NEW.id;
+                    INSERT INTO notes_fts(rowid, title, body)
+                    VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                END
+            """)
+            )
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_ad AFTER DELETE ON notes
+                BEGIN
+                    DELETE FROM notes_fts WHERE rowid = OLD.id;
+                END
+            """)
+            )
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_soft_del AFTER UPDATE ON notes
+                WHEN NEW.is_deleted = 1 AND OLD.is_deleted = 0
+                BEGIN
+                    DELETE FROM notes_fts WHERE rowid = NEW.id;
+                END
+            """)
+            )
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_restore AFTER UPDATE ON notes
+                WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 1
+                BEGIN
+                    INSERT INTO notes_fts(rowid, title, body)
+                    VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                END
+            """)
+            )
+    except Exception:
+        logger.warning("Notes FTS5 setup failed — notes full-text search unavailable", exc_info=True)
 
 
 async def _seed_builtin_templates() -> None:

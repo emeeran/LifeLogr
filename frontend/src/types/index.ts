@@ -65,6 +65,94 @@ export interface EntryUpdate {
   tag_ids?: number[] | null
 }
 
+// ── Notes ──────────────────────────────────────────────────────────────
+
+export interface NoteFolderResponse {
+  id: number
+  name: string
+  parent_id: number | null
+  color: string | null
+  sort_order: number
+  note_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NoteFolderCreate {
+  name: string
+  parent_id?: number | null
+  color?: string | null
+  sort_order?: number
+}
+
+export interface NoteFolderUpdate {
+  name?: string
+  color?: string | null
+  sort_order?: number
+}
+
+export interface NoteResponse {
+  id: number
+  folder_id: number | null
+  title: string | null
+  body: string
+  is_pinned: boolean
+  color: string | null
+  is_encrypted: boolean
+  encrypted_at: string | null
+  tags: TagBrief[]
+  created_at: string
+  updated_at: string
+}
+
+export interface NoteCreate {
+  title?: string | null
+  body?: string
+  folder_id?: number | null
+  tag_ids?: number[]
+  color?: string | null
+  is_pinned?: boolean
+}
+
+export interface NoteUpdate {
+  title?: string | null
+  body?: string | null
+  folder_id?: number | null
+  clear_folder?: boolean
+  tag_ids?: number[] | null
+  is_pinned?: boolean | null
+  color?: string | null
+}
+
+export interface NoteListResponse {
+  items: NoteResponse[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export interface NoteListParams extends PaginatedParams {
+  folder_id?: number | null
+  tag_ids?: number[]
+  is_pinned?: boolean
+}
+
+export interface NoteEncryptionStatusResponse {
+  note_id: number
+  is_encrypted: boolean
+  encrypted_at: string | null
+}
+
+export interface NoteMediaResponse {
+  id: number
+  note_id: number
+  filename: string
+  media_type: string
+  file_size: number
+  caption: string | null
+  created_at: string
+}
+
 export interface MediaResponse {
   id: number
   entry_id: number
@@ -264,10 +352,14 @@ export interface VideoNoteResponse {
 
 export interface SearchResultEntry {
   id: number
-  entry_date: string
+  type: 'entry' | 'note'
+  entry_date: string | null
+  folder_id?: number | null
+  updated_at?: string | null
   title: string | null
   snippet: string
   rank: number
+  similarity_score?: number | null
 }
 
 export interface GlobalSearchResponse {

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSearchStore } from '../../stores/search'
 import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
-import { Search as SearchIcon, Calendar, Hash, ArrowRight, Clock } from 'lucide-vue-next'
+import { useNotesStore } from '../../stores/notes'
+import { Search as SearchIcon, Calendar, Hash, ArrowRight, Clock, NotebookPen } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
 import type { SearchResultEntry } from '../../types'
 import SearchFilters from './SearchFilters.vue'
@@ -11,6 +13,8 @@ import SearchFilters from './SearchFilters.vue'
 const searchStore = useSearchStore()
 const ui = useUiStore()
 const tagsStore = useTagsStore()
+const router = useRouter()
+const notesStore = useNotesStore()
 
 const query = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -37,11 +41,25 @@ function openEntry(item: SearchResultEntry) {
   ui.closeSearchPalette()
 }
 
+function openResult(item: SearchResultEntry) {
+  if (item.type === 'note') {
+    notesStore.selectNote(item.id)
+    router.push('/notes')
+    ui.closeSearchPalette()
+    return
+  }
+  openEntry(item)
+}
+
+function formatDateTime(d: string) {
+  return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') { ui.closeSearchPalette(); return }
   if (e.key === 'ArrowDown') { e.preventDefault(); selectedIndex.value = Math.min(selectedIndex.value + 1, results.value.length - 1); return }
   if (e.key === 'ArrowUp') { e.preventDefault(); selectedIndex.value = Math.max(selectedIndex.value - 1, 0); return }
-  if (e.key === 'Enter' && results.value.length) { openEntry(results.value[selectedIndex.value]); return }
+  if (e.key === 'Enter' && results.value.length) { openResult(results.value[selectedIndex.value]); return }
 }
 
 const shortDateOpts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
@@ -75,7 +93,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           ref="inputRef"
           v-model="query"
           class="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-          placeholder="Search entries... (Ctrl+K)"
+          placeholder="Search entries & notes... (Ctrl+K)"
           @keydown="onKeydown"
         />
         <!-- Search mode toggle -->
@@ -135,22 +153,27 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
         </div>
 
         <div v-else-if="!query && !showHistory" class="px-4 py-6 text-center text-text-muted text-xs">
-          Type to search across all entries
+          Type to search across all entries and notes
         </div>
 
         <div
           v-for="(item, i) in results"
-          :key="item.id"
+          :key="item.type + '-' + item.id"
           class="flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors"
           :class="i === selectedIndex ? 'bg-accent/10' : 'hover:bg-surface-hover'"
-          @click="openEntry(item)"
+          @click="openResult(item)"
           @mouseenter="selectedIndex = i"
         >
-          <Calendar :size="13" class="text-text-muted mt-0.5 shrink-0" />
+          <component :is="item.type === 'note' ? NotebookPen : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-medium text-text-primary">{{ formatDate(item.entry_date) }}</span>
-              <span v-if="item.title" class="text-xs text-text-secondary truncate">{{ item.title }}</span>
+              <span class="text-xs font-medium text-text-primary">
+                {{ item.type === 'note'
+                  ? (item.title || 'Untitled note')
+                  : (item.entry_date ? formatDate(item.entry_date) : '') }}
+              </span>
+              <span v-if="item.type === 'note' && item.updated_at" class="text-[10px] text-text-muted truncate">{{ formatDateTime(item.updated_at) }}</span>
+              <span v-else-if="item.title" class="text-xs text-text-secondary truncate">{{ item.title }}</span>
             </div>
             <p class="text-[11px] text-text-muted leading-relaxed mt-0.5 line-clamp-2" v-html="sanitize(item.snippet)" />
             <div class="flex items-center gap-2 mt-1">

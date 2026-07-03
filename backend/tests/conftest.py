@@ -16,6 +16,7 @@ from app.main import app
 
 _FTS_DDL = [
     "CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(title, body)",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body)",
 ]
 
 

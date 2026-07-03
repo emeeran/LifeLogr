@@ -2,7 +2,7 @@ import { API_ORIGIN } from './client'
 
 export const ttsApi = {
   getVoice(): string {
-    return localStorage.getItem('tts-voice') || 'en-US-AvaNeural'
+    return localStorage.getItem('lifelogr-tts-voice') || 'en-US-AvaNeural'
   },
 
   getSpeed(): number {

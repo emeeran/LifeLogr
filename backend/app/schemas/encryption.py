@@ -29,6 +29,14 @@ class EncryptionStatusResponse(BaseModel):
     encrypted_at: datetime | None = None
 
 
+class NoteEncryptionStatusResponse(BaseModel):
+    """Shows whether a note is encrypted."""
+
+    note_id: int
+    is_encrypted: bool
+    encrypted_at: datetime | None = None
+
+
 class EntryDecryptedResponse(BaseModel):
     """An entry with its content decrypted."""
 

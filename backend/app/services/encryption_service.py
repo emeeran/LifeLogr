@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models.entry import Entry
+from app.models.note import Note
 
 # 12-byte nonce is standard for AES-GCM
 _NONCE_SIZE = 12
@@ -108,3 +109,49 @@ class EncryptionService:
         if not entry:
             raise NotFoundError(f"Entry {entry_id} not found")
         return entry
+
+    # ── Notes ──────────────────────────────────────────────────────────────
+
+    async def encrypt_note(self, note_id: int, passphrase: str) -> Note:
+        """Encrypt a note's body in-place. Title is kept readable (like entries)."""
+        note = await self._get_note(note_id)
+        if note.is_encrypted:
+            raise ValueError("Note is already encrypted")
+        key = self._derive_key(passphrase)
+        note.body = self._encrypt(note.body.encode(), key)
+        note.is_encrypted = True
+        note.encrypted_at = datetime.now(timezone.utc)
+        await self.db.commit()
+        await self.db.refresh(note)
+        return note
+
+    async def decrypt_note(self, note_id: int, passphrase: str) -> Note:
+        """Decrypt a note's body in-place."""
+        note = await self._get_note(note_id)
+        if not note.is_encrypted:
+            raise ValueError("Note is not encrypted")
+        key = self._derive_key(passphrase)
+        note.body = self._decrypt(note.body, key).decode()
+        note.is_encrypted = False
+        note.encrypted_at = None
+        await self.db.commit()
+        await self.db.refresh(note)
+        return note
+
+    async def get_note_encryption_status(self, note_id: int) -> dict[str, object]:
+        """Return encryption status for a note."""
+        note = await self._get_note(note_id)
+        return {
+            "note_id": note.id,
+            "is_encrypted": note.is_encrypted,
+            "encrypted_at": note.encrypted_at,
+        }
+
+    async def _get_note(self, note_id: int) -> Note:
+        result = await self.db.execute(
+            select(Note).where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
+        )
+        note = result.scalar_one_or_none()
+        if not note:
+            raise NotFoundError(f"Note {note_id} not found")
+        return note
