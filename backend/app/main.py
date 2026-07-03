@@ -216,8 +216,10 @@ from app.routers.onedrive import router as onedrive_router  # noqa: E402
 from app.routers.encryption import (  # noqa: E402
     router as encryption_router,
     global_router as encryption_global_router,
+    notes_router as encryption_notes_router,
 )  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
+from app.routers.notes import router as notes_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
 from app.routers.prompts import router as prompts_router  # noqa: E402
@@ -234,6 +236,7 @@ from app.routers.settings import router as settings_router  # noqa: E402
 app.include_router(ai_router)
 app.include_router(analytics_router)
 app.include_router(entries_router)
+app.include_router(notes_router)
 app.include_router(tags_router)
 app.include_router(tts_router)
 app.include_router(media_router)
@@ -245,6 +248,7 @@ app.include_router(dropbox_router)
 app.include_router(prompts_router)
 app.include_router(encryption_router)
 app.include_router(encryption_global_router)
+app.include_router(encryption_notes_router)
 app.include_router(export_router)
 app.include_router(reminders_router)
 app.include_router(search_router)

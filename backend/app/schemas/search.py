@@ -1,6 +1,6 @@
 """Pydantic schemas for global search."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,10 +10,17 @@ SearchMode = Literal["keyword", "semantic", "hybrid"]
 
 
 class SearchResultEntry(BaseModel):
-    """A single search result."""
+    """A single search result.
+
+    ``type`` discriminates entries from notes. Notes have no ``entry_date``
+    (they are not date-bound); callers should read ``updated_at`` instead.
+    """
 
     id: int
-    entry_date: date
+    type: Literal["entry", "note"] = "entry"
+    entry_date: date | None = None
+    folder_id: int | None = None
+    updated_at: datetime | None = None
     title: str | None
     snippet: str
     rank: float

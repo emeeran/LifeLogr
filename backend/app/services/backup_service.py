@@ -341,13 +341,15 @@ class BackupService:
         await self.db.commit()
 
     async def count_all(self) -> dict[str, int]:
-        """Count total entries and media in the database."""
+        """Count total entries, media, and notes in the database."""
         from app.models.entry import Entry
         from app.models.media import Media
+        from app.models.note import Note
 
         entry_count = (await self.db.execute(select(func.count()).select_from(Entry))).scalar_one()
         media_count = (await self.db.execute(select(func.count()).select_from(Media))).scalar_one()
-        return {"entries": entry_count, "media": media_count}
+        note_count = (await self.db.execute(select(func.count()).select_from(Note))).scalar_one()
+        return {"entries": entry_count, "media": media_count, "notes": note_count}
 
     async def _get_config(self, config_id: int) -> BackupConfig:
         """Fetch a backup config or raise NotFoundError."""

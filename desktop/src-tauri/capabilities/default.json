@@ -17,6 +17,8 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-write-file",
-    "fs:allow-read-file"
+    "fs:allow-read-file",
+    "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-read-text"
   ]
 }

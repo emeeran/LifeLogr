@@ -11,6 +11,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.entry import Entry
+    from app.models.note import NoteTag
 
 
 class Tag(Base):
@@ -24,6 +25,9 @@ class Tag(Base):
 
     children: Mapped[list["Tag"]] = relationship()
     entry_associations: Mapped[list["EntryTag"]] = relationship(  # noqa: F821
+        back_populates="tag", cascade="all, delete-orphan"
+    )
+    note_associations: Mapped[list["NoteTag"]] = relationship(  # noqa: F821
         back_populates="tag", cascade="all, delete-orphan"
     )
 
