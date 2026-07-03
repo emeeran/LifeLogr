@@ -419,12 +419,6 @@ async function createAndAssignTag() {
     /* store surfaces error */
   }
 }
-
-const saveLabel = computed(() => {
-  if (saving.value) return 'Saving…'
-  if (savedAt.value) return 'Saved'
-  return ''
-})
 </script>
 
 <template>
@@ -472,69 +466,71 @@ const saveLabel = computed(() => {
       </button>
     </div>
 
-    <!-- Formatting toolbar -->
-    <div class="flex items-center gap-0.5 px-2 py-1 border-b border-border bg-editor/40 flex-wrap">
-      <button class="tb" title="Bold" @click="wrapSelection('**')"><Bold :size="13" /></button>
-      <button class="tb" title="Italic" @click="wrapSelection('*')"><Italic :size="13" /></button>
-      <span class="sep" />
-      <button class="tb" title="Heading 1" @click="prefixLines('# ')"><Heading1 :size="13" /></button>
-      <button class="tb" title="Heading 2" @click="prefixLines('## ')"><Heading2 :size="13" /></button>
-      <button class="tb" title="Bullet list" @click="prefixLines('- ')"><List :size="13" /></button>
-      <button class="tb" title="Quote" @click="prefixLines('> ')"><Quote :size="13" /></button>
-      <button class="tb" title="Link" @click="wrapSelection('[', '](url)')"><LinkIcon :size="13" /></button>
-      <div class="relative">
-        <button
-          class="tb"
-          :class="showTable ? 'text-accent' : ''"
-          title="Insert table"
-          @click="showTable = !showTable"
-        >
-          <Table :size="13" />
-        </button>
-        <div v-if="showTable" class="fixed inset-0 z-30" @click="showTable = false" />
-        <div
-          v-if="showTable"
-          class="absolute top-7 left-0 z-40 bg-surface border border-border rounded-lg shadow-xl p-2"
-          @mouseleave="tableHover = { rows: 0, cols: 0 }"
-        >
-          <div v-for="r in 5" :key="r" class="flex gap-0.5">
-            <button
-              v-for="c in 5"
-              :key="c"
-              class="w-5 h-5 rounded transition-colors"
-              :class="r <= tableHover.rows && c <= tableHover.cols ? 'bg-accent' : 'bg-surface-hover hover:bg-accent/40'"
-              @mouseenter="tableHover = { rows: r, cols: c }"
-              @click="insertTable(r, c)"
-            />
-          </div>
-          <div class="text-[9px] text-text-muted text-center mt-1">
-            {{ tableHover.rows }} × {{ tableHover.cols }}
+    <!-- Formatting toolbar (grouped: formatting left · view toggles right) -->
+    <div class="flex items-center px-2 py-1 border-b border-border bg-editor/40 flex-wrap">
+      <div class="flex items-center gap-0.5">
+        <button class="tb" title="Bold" @click="wrapSelection('**')"><Bold :size="13" /></button>
+        <button class="tb" title="Italic" @click="wrapSelection('*')"><Italic :size="13" /></button>
+        <span class="sep" />
+        <button class="tb" title="Heading 1" @click="prefixLines('# ')"><Heading1 :size="13" /></button>
+        <button class="tb" title="Heading 2" @click="prefixLines('## ')"><Heading2 :size="13" /></button>
+        <button class="tb" title="Bullet list" @click="prefixLines('- ')"><List :size="13" /></button>
+        <button class="tb" title="Quote" @click="prefixLines('> ')"><Quote :size="13" /></button>
+        <button class="tb" title="Link" @click="wrapSelection('[', '](url)')"><LinkIcon :size="13" /></button>
+        <div class="relative">
+          <button
+            class="tb"
+            :class="showTable ? 'text-accent' : ''"
+            title="Insert table"
+            @click="showTable = !showTable"
+          >
+            <Table :size="13" />
+          </button>
+          <div v-if="showTable" class="fixed inset-0 z-30" @click="showTable = false" />
+          <div
+            v-if="showTable"
+            class="absolute top-7 left-0 z-40 bg-surface border border-border rounded-lg shadow-xl p-2"
+            @mouseleave="tableHover = { rows: 0, cols: 0 }"
+          >
+            <div v-for="r in 5" :key="r" class="flex gap-0.5">
+              <button
+                v-for="c in 5"
+                :key="c"
+                class="w-5 h-5 rounded transition-colors"
+                :class="r <= tableHover.rows && c <= tableHover.cols ? 'bg-accent' : 'bg-surface-hover hover:bg-accent/40'"
+                @mouseenter="tableHover = { rows: r, cols: c }"
+                @click="insertTable(r, c)"
+              />
+            </div>
+            <div class="text-[9px] text-text-muted text-center mt-1">
+              {{ tableHover.rows }} × {{ tableHover.cols }}
+            </div>
           </div>
         </div>
       </div>
-      <span class="sep" />
-      <button
-        class="tb"
-        :class="showPreview ? 'text-accent' : ''"
-        title="Toggle preview"
-        @click="showPreview = !showPreview"
-      >
-        <Eye v-if="!showPreview" :size="13" />
-        <Pencil v-else :size="13" />
-      </button>
-      <button
-        class="tb"
-        :class="showAi ? 'text-accent' : ''"
-        title="AI tools"
-        @click="showAi = !showAi"
-      >
-        <Sparkles :size="13" />
-      </button>
-      <span class="flex-1" />
-      <span class="text-[10px] text-text-muted flex items-center gap-1">
-        <Loader v-if="saving" :size="10" class="animate-spin" />
-        {{ saveLabel }}
-      </span>
+
+      <div class="flex-1 min-w-2" />
+
+      <div class="flex items-center gap-0.5">
+        <button
+          class="tb"
+          :class="showPreview ? 'text-accent' : ''"
+          title="Toggle preview"
+          @click="showPreview = !showPreview"
+        >
+          <Eye v-if="!showPreview" :size="13" />
+          <Pencil v-else :size="13" />
+        </button>
+        <span class="sep" />
+        <button
+          class="tb"
+          :class="showAi ? 'text-accent' : ''"
+          title="AI tools"
+          @click="showAi = !showAi"
+        >
+          <Sparkles :size="13" />
+        </button>
+      </div>
     </div>
 
     <!-- Encrypted notice -->
@@ -638,7 +634,10 @@ const saveLabel = computed(() => {
         </div>
 
         <span class="flex-1" />
-        <span class="text-[10px] text-text-muted shrink-0">{{ wordCount }} words</span>
+        <span class="text-[10px] text-text-muted shrink-0 flex items-center gap-1">
+          <Loader v-if="saving" :size="10" class="animate-spin" />
+          {{ saving ? 'Saving…' : savedAt ? `Saved · ${wordCount} words` : `${wordCount} words` }}
+        </span>
       </div>
     </div>
 

@@ -28,8 +28,6 @@ const notesToShow = computed(() => {
   return base
 })
 
-const totalCount = computed(() => store.total)
-
 async function loadTags() {
   try {
     allTags.value = await tagsApi.list()
@@ -143,7 +141,7 @@ onMounted(async () => {
         <div class="flex items-center gap-1.5">
           <NotebookPen :size="14" class="text-accent" />
           <span class="text-sm font-semibold text-text-primary">Notes</span>
-          <span class="text-[10px] text-text-muted">({{ totalCount }})</span>
+          <span class="text-[10px] text-text-muted">({{ notesToShow.length }})</span>
         </div>
         <button
           @click="newNote"
@@ -166,9 +164,29 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Folders -->
-      <div class="px-1.5 py-1.5 border-b border-border space-y-0.5">
-        <div class="flex items-center justify-between px-1 pb-1">
+      <!-- Library + Folders -->
+      <div class="px-1.5 py-1.5 border-b border-border">
+        <!-- Library (system views) -->
+        <div class="px-1 pt-0.5 pb-1">
+          <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">Library</span>
+        </div>
+        <button
+          class="folder-btn"
+          :class="folderFilter === 'all' ? 'active' : ''"
+          @click="selectFolder('all')"
+        >
+          <Inbox :size="12" /> <span class="flex-1 text-left">All Notes</span>
+        </button>
+        <button
+          class="folder-btn"
+          :class="folderFilter === 'unfiled' ? 'active' : ''"
+          @click="selectFolder('unfiled')"
+        >
+          <FileText :size="12" /> <span class="flex-1 text-left">Unfiled</span>
+        </button>
+
+        <!-- Folders (user) -->
+        <div class="flex items-center justify-between px-1 pt-2 pb-1">
           <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">Folders</span>
           <button
             @click="startNewFolder"
@@ -205,13 +223,12 @@ onMounted(async () => {
           </button>
         </div>
 
-        <button
-          class="folder-btn"
-          :class="folderFilter === 'all' ? 'active' : ''"
-          @click="selectFolder('all')"
+        <div
+          v-if="!store.folders.length && !showNewFolder"
+          class="px-2 py-1.5 text-[10px] text-text-muted italic"
         >
-          <Inbox :size="12" /> All Notes
-        </button>
+          No folders yet — click + to create one.
+        </div>
 
         <div
           v-for="f in store.folders"
@@ -235,14 +252,6 @@ onMounted(async () => {
             <Trash2 :size="11" />
           </button>
         </div>
-
-        <button
-          class="folder-btn"
-          :class="folderFilter === 'unfiled' ? 'active' : ''"
-          @click="selectFolder('unfiled')"
-        >
-          <FileText :size="12" /> Unfiled
-        </button>
       </div>
 
       <!-- Note list -->
@@ -250,9 +259,11 @@ onMounted(async () => {
         <div v-if="store.loading" class="text-center text-[11px] text-text-muted py-6">Loading…</div>
         <div
           v-else-if="!notesToShow.length"
-          class="text-center text-[11px] text-text-muted py-8 px-3"
+          class="flex flex-col items-center text-center text-[11px] text-text-muted py-10 px-4 gap-2"
         >
-          No notes here yet. Click <span class="text-accent">New</span> to create one.
+          <NotebookPen :size="22" class="opacity-40" />
+          <span>No notes here yet.</span>
+          <button @click="newNote" class="text-accent hover:underline">Create your first note</button>
         </div>
         <NoteListItem
           v-for="n in notesToShow"
