@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import tarfile
 import tempfile
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,125 @@ logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 _scheduler: Any = None
+
+
+# ── Schedule persistence ─────────────────────────────────────────────────
+# APScheduler's default job store is in-memory, so the ``auto_backup`` job is
+# lost every time the process exits. We persist the active schedule to disk
+# and re-register it on startup (SchedulerService.start →
+# _restore_backup_schedule) so a daily backup survives app restarts.
+
+
+def _schedule_store_path() -> Path:
+    """Filesystem path to the persisted active backup schedule."""
+    from app.core.config import settings
+
+    return Path(settings.DATA_DIR) / ".backup-schedule.json"
+
+
+def _persist_schedule(entry: dict[str, object]) -> None:
+    """Write the active backup schedule to disk (best-effort)."""
+    try:
+        path = _schedule_store_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entry))
+    except Exception:
+        logger.warning("Failed to persist backup schedule", exc_info=True)
+
+
+def _load_schedule() -> dict[str, object] | None:
+    """Read the persisted active schedule, or None if absent/unreadable."""
+    path = _schedule_store_path()
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        logger.warning("Failed to load persisted backup schedule", exc_info=True)
+        return None
+
+
+def _clear_schedule() -> None:
+    """Remove the persisted schedule (best-effort)."""
+    try:
+        _schedule_store_path().unlink(missing_ok=True)
+    except Exception:
+        logger.warning("Failed to clear persisted backup schedule", exc_info=True)
+
+
+def _mark_backup_run() -> None:
+    """Stamp the schedule store with the time of the last successful run.
+
+    The startup catch-up sweep uses this to tell a missed backup from one that
+    already ran today.
+    """
+    entry = _load_schedule() or {}
+    entry["last_run"] = datetime.now(timezone.utc).isoformat()
+    _persist_schedule(entry)
+
+
+def _last_scheduled_occurrence(cron_expr: str, now: datetime) -> datetime | None:
+    """Most recent datetime ≤ *now* matching *cron_expr*.
+
+    Supports the daily/weekly/monthly forms the UI generates
+    (``minute hour day month day_of_week``). Day-of-week uses APScheduler's
+    convention (0=Monday … 6=Sunday, matching ``date.weekday()``). Returns
+    None for unparseable expressions.
+    """
+    parts = cron_expr.split()
+    if len(parts) != 5:
+        return None
+    try:
+        hour = int(parts[1])
+        minute = int(parts[0])
+    except ValueError:
+        return None
+    dom_field, month_field, dow_field = parts[2], parts[3], parts[4]
+
+    _DOW_NAMES = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+    def dom_ok(d: date) -> bool:
+        if dom_field == "*":
+            return True
+        if dom_field == "L":  # last day of month
+            last = (d.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+            return d.day == last.day
+        try:
+            return d.day == int(dom_field)
+        except ValueError:
+            return True  # unsupported form — don't constrain
+
+    def month_ok(d: date) -> bool:
+        if month_field == "*":
+            return True
+        try:
+            return d.month == int(month_field)
+        except ValueError:
+            return True
+
+    def dow_ok(d: date) -> bool:
+        if dow_field == "*":
+            return True
+        for tok in str(dow_field).split(","):
+            tok = tok.strip().lower()
+            if tok in _DOW_NAMES:
+                if d.weekday() == _DOW_NAMES[tok]:
+                    return True
+            else:
+                try:
+                    if d.weekday() == int(tok):
+                        return True
+                except ValueError:
+                    continue
+        return False
+
+    for back in range(37):
+        d = (now - timedelta(days=back)).date()
+        if dom_ok(d) and month_ok(d) and dow_ok(d):
+            cand = datetime(d.year, d.month, d.day, hour, minute)
+            if cand <= now:
+                return cand
+    return None
 
 
 class SchedulerService:
@@ -35,14 +155,82 @@ class SchedulerService:
         return _scheduler
 
     @staticmethod
+    def _cron_trigger(cron_expr: str) -> Any:
+        """Build an APScheduler CronTrigger from a 5-field cron expression."""
+        parts = cron_expr.split()
+        if len(parts) != 5:
+            raise ValueError(f"Invalid cron expression: {cron_expr}")
+        from apscheduler.triggers.cron import CronTrigger
+
+        return CronTrigger(
+            minute=parts[0],
+            hour=parts[1],
+            day=parts[2],
+            month=parts[3],
+            day_of_week=parts[4],
+        )
+
+    @staticmethod
+    def _register_backup_job(
+        trigger: Any,
+        *,
+        backup_path: str | None = None,
+        retention: int = 10,
+        config_id: int | None = None,
+    ) -> None:
+        """(Re)create the single ``auto_backup`` job for *trigger*.
+
+        ``coalesce`` collapses missed fires into one, and ``misfire_grace_time``
+        lets a slightly-late fire still run instead of being dropped.
+        """
+        sched = SchedulerService.get_scheduler()
+        if sched.get_job("auto_backup"):
+            sched.remove_job("auto_backup")
+        if config_id is not None:
+            sched.add_job(
+                _run_cloud_backup,
+                trigger=trigger,
+                id="auto_backup",
+                kwargs={"config_id": config_id},
+                replace_existing=True,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+        else:
+            if not backup_path:
+                raise ValueError("backup_path is required when config_id is not provided")
+            sched.add_job(
+                _run_backup,
+                trigger=trigger,
+                id="auto_backup",
+                kwargs={"backup_path": backup_path, "retention": retention},
+                replace_existing=True,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+
+    @staticmethod
     async def start() -> None:
-        """Start the global scheduler and (re)sync reminder jobs."""
+        """Start the global scheduler and (re)sync reminder/backup jobs."""
         sched = SchedulerService.get_scheduler()
         if not sched.running:
             sched.start()
             logger.info("Backup scheduler started")
         # (Re)register every active reminder so they fire after a restart.
         await SchedulerService.sync_reminders()
+        # Re-register the persisted backup schedule (lost on restart because
+        # APScheduler's job store is in-memory).
+        await SchedulerService._restore_backup_schedule()
+        # Run a missed backup shortly after boot, mirroring reminder catch-up.
+        if sched.running:
+            from apscheduler.triggers.date import DateTrigger
+
+            sched.add_job(
+                SchedulerService._backup_catchup,
+                trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=45)),
+                id="backup_catchup",
+                replace_existing=True,
+            )
 
     @staticmethod
     async def shutdown() -> None:
@@ -59,7 +247,7 @@ class SchedulerService:
         retention: int = 10,
         config_id: int | None = None,
     ) -> dict[str, str | int | None]:
-        """Schedule an automated backup job.
+        """Schedule an automated backup job and persist it across restarts.
 
         Args:
             cron_expr: Cron expression (e.g., "0 2 * * *" for 2am daily)
@@ -72,48 +260,30 @@ class SchedulerService:
         if not sched.running:
             sched.start()
             logger.info("Backup scheduler auto-started")
-        parts = cron_expr.split()
-        if len(parts) != 5:
-            raise ValueError(f"Invalid cron expression: {cron_expr}")
 
-        from apscheduler.triggers.cron import CronTrigger
-
-        trigger = CronTrigger(
-            minute=parts[0],
-            hour=parts[1],
-            day=parts[2],
-            month=parts[3],
-            day_of_week=parts[4],
+        trigger = SchedulerService._cron_trigger(cron_expr)
+        SchedulerService._register_backup_job(
+            trigger, backup_path=backup_path, retention=retention, config_id=config_id
         )
 
-        # Remove existing backup job if any
-        if sched.get_job("auto_backup"):
-            sched.remove_job("auto_backup")
-
+        # Persist so the job survives restarts. Preserve last_run if re-saving.
+        prev = _load_schedule() or {}
+        entry: dict[str, object] = {"cron": cron_expr}
+        if "last_run" in prev:
+            entry["last_run"] = prev["last_run"]
         if config_id is not None:
-            sched.add_job(
-                _run_cloud_backup,
-                trigger=trigger,
-                id="auto_backup",
-                kwargs={"config_id": config_id},
-                replace_existing=True,
-            )
+            entry["config_id"] = config_id
         else:
-            if not backup_path:
-                raise ValueError("backup_path is required when config_id is not provided")
-            sched.add_job(
-                _run_backup,
-                trigger=trigger,
-                id="auto_backup",
-                kwargs={"backup_path": backup_path, "retention": retention},
-                replace_existing=True,
-            )
+            entry["backup_path"] = backup_path
+            entry["retention"] = retention
+        _persist_schedule(entry)
 
+        job = sched.get_job("auto_backup")
         return {
             "job_id": "auto_backup",
             "cron": cron_expr,
             "config_id": config_id,
-            "next_run": str(sched.get_job("auto_backup").next_run_time),
+            "next_run": str(job.next_run_time) if job else None,
         }
 
     async def get_status(self) -> dict[str, bool | str | int | None]:
@@ -129,11 +299,124 @@ class SchedulerService:
         }
 
     async def unschedule_backup(self) -> dict[str, bool]:
-        """Remove the automated backup job."""
+        """Remove the automated backup job and its persisted schedule."""
         sched = self.get_scheduler()
         if sched.get_job("auto_backup"):
             sched.remove_job("auto_backup")
+        _clear_schedule()
         return {"removed": True}
+
+    @staticmethod
+    async def _restore_backup_schedule() -> None:
+        """Re-register the persisted backup job after a restart.
+
+        APScheduler's default job store is in-memory, so the ``auto_backup``
+        job vanishes when the process exits. ``schedule_backup`` persists the
+        active schedule to disk; this reads it back and re-adds the job so a
+        daily backup survives app restarts. No-op when nothing is persisted.
+        """
+        sched = SchedulerService.get_scheduler()
+        if not sched.running:
+            return
+        entry = _load_schedule()
+        if not entry:
+            return
+
+        cron = entry.get("cron")
+        if not cron:
+            return
+        config_id = entry.get("config_id")
+        backup_path = entry.get("backup_path")
+        retention = entry.get("retention", 10)
+
+        try:
+            if config_id is not None:
+                # Don't re-register a schedule whose config was deleted.
+                from sqlalchemy import select
+
+                from app.core.database import async_session
+                from app.models.backup import BackupConfig
+
+                async with async_session() as session:
+                    still_exists = (
+                        await session.execute(
+                            select(BackupConfig.id).where(BackupConfig.id == int(config_id))
+                        )
+                    ).scalar_one_or_none()
+                if still_exists is None:
+                    logger.info(
+                        "Persisted backup config %s no longer exists; clearing schedule",
+                        config_id,
+                    )
+                    _clear_schedule()
+                    return
+                SchedulerService._register_backup_job(
+                    SchedulerService._cron_trigger(cron), config_id=int(config_id)
+                )
+                logger.info(
+                    "Restored cloud backup schedule (config_id=%s, cron=%s)", config_id, cron
+                )
+            elif backup_path:
+                SchedulerService._register_backup_job(
+                    SchedulerService._cron_trigger(cron),
+                    backup_path=str(backup_path),
+                    retention=int(retention),
+                )
+                logger.info(
+                    "Restored local backup schedule (cron=%s, path=%s)", cron, backup_path
+                )
+            else:
+                _clear_schedule()
+        except Exception:
+            logger.warning("Failed to restore backup schedule", exc_info=True)
+
+    @staticmethod
+    async def _backup_catchup() -> None:
+        """Run a scheduled backup that was missed while the app was offline.
+
+        Fires once shortly after startup. If the most recent scheduled
+        occurrence has no matching successful run on record (and isn't too
+        stale), the backup runs immediately — so a laptop that was closed at
+        2am still gets its daily backup when opened the next morning.
+        """
+        entry = _load_schedule()
+        if not entry:
+            return
+        cron = entry.get("cron")
+        if not cron:
+            return
+
+        now_local = datetime.now()  # naive local time — schedules are local
+        last_occurrence = _last_scheduled_occurrence(cron, now_local)
+        if last_occurrence is None:
+            return
+
+        last_run_raw = entry.get("last_run")
+        last_run: datetime | None = None
+        if last_run_raw:
+            try:
+                parsed = datetime.fromisoformat(str(last_run_raw))
+                last_run = parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
+            except ValueError:
+                last_run = None
+
+        if last_run is not None and last_run >= last_occurrence:
+            return  # already backed up for the most recent scheduled occurrence
+        if (now_local - last_occurrence) > timedelta(hours=48):
+            return  # too stale to catch up automatically
+
+        config_id = entry.get("config_id")
+        try:
+            if config_id is not None:
+                logger.info("Running missed cloud backup (config_id=%s)", config_id)
+                await _run_cloud_backup(int(config_id))
+            else:
+                logger.info("Running missed local backup")
+                await _run_backup(
+                    str(entry.get("backup_path", "")), int(entry.get("retention", 10))
+                )
+        except Exception:
+            logger.warning("Backup catch-up failed", exc_info=True)
 
     # ── Reminder scheduling ──────────────────────────────────────────
     # Reminders recur weekly on selected days at a fixed time-of-day.
@@ -277,6 +560,8 @@ async def _run_cloud_backup(config_id: int) -> None:
                 snapshot.id,
                 snapshot.status,
             )
+            if snapshot.status == "completed":
+                _mark_backup_run()
     except Exception:
         logger.error(
             "Scheduled cloud backup failed (config_id=%d)", config_id, exc_info=True
@@ -315,6 +600,7 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
             if media_dir.exists():
                 tar.add(str(media_dir), arcname="media")
         logger.info(f"Backup complete: {archive_path}")
+        _mark_backup_run()
     except Exception:
         logger.error("Backup failed", exc_info=True)
         if archive_path.exists():

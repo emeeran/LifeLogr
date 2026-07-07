@@ -45,8 +45,8 @@ function handleNewEntry(dateStr: string) {
     class="relative min-h-[60px] border border-border/50 rounded-sm p-1.5 cursor-pointer transition-colors duration-150"
     :class="[
       isCurrentMonth ? (entries.length ? 'bg-accent/5' : 'bg-surface') : (entries.length ? 'bg-accent/5' : 'bg-sidebar/50'),
-      isToday ? 'ring-2 ring-accent bg-accent/10' : '',
-      isSelected ? 'ring-2 ring-accent/60 bg-accent/10' : '',
+      isToday && !isSelected ? 'ring-2 ring-green-500 bg-green-500/10' : '',
+      isSelected ? 'ring-2 ring-red-500 bg-red-500/10' : '',
       'hover:bg-surface-hover'
     ]"
     @click="handleClick"
@@ -55,7 +55,7 @@ function handleNewEntry(dateStr: string) {
       class="text-[11px] font-semibold"
       :class="[
         isCurrentMonth ? 'text-text-primary' : 'text-text-muted',
-        isToday ? 'text-accent' : ''
+        isToday ? 'text-green-600' : ''
       ]"
     >
       {{ date }}

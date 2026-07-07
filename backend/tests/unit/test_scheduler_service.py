@@ -2,24 +2,37 @@
 
 import json
 import time
-from unittest.mock import AsyncMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from app.core.security import encrypt
 from app.models.backup import BackupConfig
-from app.services.scheduler_service import SchedulerService, _run_cloud_backup
+from app.services.scheduler_service import (
+    SchedulerService,
+    _clear_schedule,
+    _last_scheduled_occurrence,
+    _load_schedule,
+    _mark_backup_run,
+    _persist_schedule,
+    _run_cloud_backup,
+)
 
 
 @pytest.fixture(autouse=True)
-def _clean_scheduler():
+def _clean_scheduler(tmp_path, monkeypatch):
     """Reset the global scheduler singleton before and after each test.
 
     APScheduler's AsyncIOScheduler binds to the current event loop, so
     the singleton MUST be reset between tests to avoid "Event loop is closed"
-    errors when pytest-asyncio creates a new loop per test.
+    errors when pytest-asyncio creates a new loop per test. The schedule
+    store is redirected to a temp path so tests never touch the real data dir.
     """
     import app.services.scheduler_service as mod
+
+    store = tmp_path / ".backup-schedule.json"
+    monkeypatch.setattr(mod, "_schedule_store_path", lambda: store)
 
     # Teardown any leftover state from previous test modules
     try:
@@ -37,6 +50,8 @@ def _clean_scheduler():
         if mod._scheduler is not None:
             if mod._scheduler.get_job("auto_backup"):
                 mod._scheduler.remove_job("auto_backup")
+            if mod._scheduler.get_job("backup_catchup"):
+                mod._scheduler.remove_job("backup_catchup")
             if mod._scheduler.running:
                 mod._scheduler.shutdown(wait=False)
     except Exception:
@@ -202,3 +217,190 @@ class TestRunCloudBackup:
 
             # Should NOT raise — errors are logged, not propagated
             await _run_cloud_backup(config_id=7)
+
+
+def _ensure_scheduler_running() -> None:
+    sched = SchedulerService.get_scheduler()
+    if not sched.running:
+        sched.start()
+
+
+class TestSchedulePersistence:
+    """The active schedule must survive app restarts (in-memory job store)."""
+
+    @pytest.mark.asyncio
+    async def test_schedule_local_persists_to_disk(self, db_session, _clean_scheduler):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(
+            cron_expr="0 2 * * *", backup_path="/tmp/x", retention=7
+        )
+        assert _load_schedule() == {
+            "cron": "0 2 * * *",
+            "backup_path": "/tmp/x",
+            "retention": 7,
+        }
+
+    @pytest.mark.asyncio
+    async def test_schedule_cloud_persists_to_disk(self, db_session, _clean_scheduler):
+        config = BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt("{}"),
+        )
+        db_session.add(config)
+        await db_session.commit()
+        await db_session.refresh(config)
+
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 3 * * *", config_id=config.id)
+        entry = _load_schedule()
+        assert entry == {"cron": "0 3 * * *", "config_id": config.id}
+
+    @pytest.mark.asyncio
+    async def test_unschedule_clears_disk(self, db_session, _clean_scheduler):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x")
+        assert _load_schedule() is not None
+
+        await svc.unschedule_backup()
+        assert _load_schedule() is None
+
+    @pytest.mark.asyncio
+    async def test_reschedule_preserves_last_run(self, db_session, _clean_scheduler):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x")
+        _mark_backup_run()
+        assert "last_run" in _load_schedule()
+
+        # Re-saving the schedule must not wipe the run history.
+        await svc.schedule_backup(cron_expr="30 3 * * *", backup_path="/tmp/x")
+        entry = _load_schedule()
+        assert entry["cron"] == "30 3 * * *"
+        assert "last_run" in entry
+
+
+class TestRestoreBackupSchedule:
+    """_restore_backup_schedule re-registers jobs after a restart."""
+
+    @pytest.mark.asyncio
+    async def test_noop_when_nothing_persisted(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        await SchedulerService._restore_backup_schedule()
+        assert SchedulerService.get_scheduler().get_job("auto_backup") is None
+
+    @pytest.mark.asyncio
+    async def test_restores_local_job(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        _persist_schedule(
+            {"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3}
+        )
+        await SchedulerService._restore_backup_schedule()
+        job = SchedulerService.get_scheduler().get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"backup_path": "/tmp/x", "retention": 3}
+
+    @pytest.mark.asyncio
+    async def test_restores_cloud_job_when_config_exists(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        _persist_schedule({"cron": "0 3 * * *", "config_id": 5})
+
+        result_mock = Mock()
+        result_mock.scalar_one_or_none = Mock(return_value=5)
+        session_mock = AsyncMock()
+        session_mock.execute = AsyncMock(return_value=result_mock)
+
+        with patch("app.core.database.async_session") as mock_sf:
+            mock_sf.return_value.__aenter__ = AsyncMock(return_value=session_mock)
+            mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+            await SchedulerService._restore_backup_schedule()
+
+        job = SchedulerService.get_scheduler().get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"config_id": 5}
+
+    @pytest.mark.asyncio
+    async def test_clears_when_config_gone(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        _persist_schedule({"cron": "0 3 * * *", "config_id": 9})
+
+        result_mock = Mock()
+        result_mock.scalar_one_or_none = Mock(return_value=None)
+        session_mock = AsyncMock()
+        session_mock.execute = AsyncMock(return_value=result_mock)
+
+        with patch("app.core.database.async_session") as mock_sf:
+            mock_sf.return_value.__aenter__ = AsyncMock(return_value=session_mock)
+            mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+            await SchedulerService._restore_backup_schedule()
+
+        assert SchedulerService.get_scheduler().get_job("auto_backup") is None
+        assert _load_schedule() is None  # stale schedule dropped
+
+
+class TestBackupCatchup:
+    """Missed backups should run once on next startup (desktop app offline)."""
+
+    @pytest.mark.asyncio
+    async def test_runs_local_when_stale(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        _persist_schedule(
+            {"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3}
+        )
+        with patch(
+            "app.services.scheduler_service._run_backup", new=AsyncMock()
+        ) as mock_run:
+            await SchedulerService._backup_catchup()
+            mock_run.assert_awaited_once_with("/tmp/x", 3)
+
+    @pytest.mark.asyncio
+    async def test_skips_when_already_ran(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        _persist_schedule(
+            {
+                "cron": "0 2 * * *",
+                "backup_path": "/tmp/x",
+                "last_run": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        with patch(
+            "app.services.scheduler_service._run_backup", new=AsyncMock()
+        ) as mock_run:
+            await SchedulerService._backup_catchup()
+            mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_runs_cloud_when_stale(self, _clean_scheduler):
+        _ensure_scheduler_running()
+        _persist_schedule({"cron": "0 3 * * *", "config_id": 11})
+        with patch(
+            "app.services.scheduler_service._run_cloud_backup", new=AsyncMock()
+        ) as mock_run:
+            await SchedulerService._backup_catchup()
+            mock_run.assert_awaited_once_with(11)
+
+
+class TestLastScheduledOccurrence:
+    """Cron → most-recent-past-fire math for the daily/weekly/monthly forms."""
+
+    def test_daily_after_time(self):
+        now = datetime(2026, 7, 7, 10, 0)
+        assert _last_scheduled_occurrence("0 2 * * *", now) == datetime(2026, 7, 7, 2, 0)
+
+    def test_daily_before_time_falls_to_yesterday(self):
+        now = datetime(2026, 7, 7, 1, 0)  # 01:00, before today's 02:00
+        assert _last_scheduled_occurrence("0 2 * * *", now) == datetime(2026, 7, 6, 2, 0)
+
+    def test_weekly_picks_correct_weekday(self):
+        now = datetime(2026, 7, 7, 12, 0)  # arbitrary Tuesday
+        res = _last_scheduled_occurrence("0 2 * * 0", now)  # 0 = Monday
+        assert res is not None
+        assert res <= now
+        assert res.weekday() == 0
+        assert (res.hour, res.minute) == (2, 0)
+        assert (res + timedelta(days=7)) > now  # truly the most recent
+
+    def test_monthly_first_of_month(self):
+        now = datetime(2026, 7, 15, 10, 0)
+        assert _last_scheduled_occurrence("0 2 1 * *", now) == datetime(2026, 7, 1, 2, 0)
+
+    def test_invalid_cron_returns_none(self):
+        assert _last_scheduled_occurrence("nope", datetime.now()) is None
