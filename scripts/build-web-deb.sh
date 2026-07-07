@@ -285,6 +285,10 @@ echo "          stop with: lifelogr --stop   ·   data: $DATA_DIR"
 LAUNCHEREOF
 chmod 755 "$STAGE$INSTALL_DIR/bin/lifelogr"
 
+# Expose the launcher as the `lifelogr` shell command (on PATH via /usr/local/bin).
+mkdir -p "$STAGE/usr/local/bin"
+ln -s "$INSTALL_DIR/bin/lifelogr" "$STAGE/usr/local/bin/lifelogr"
+
 # ── .desktop entries ──────────────────────────────────────────────────────
 cat > "$STAGE/usr/share/applications/LifeLogr.desktop" << EOF
 [Desktop Entry]

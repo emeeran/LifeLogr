@@ -254,14 +254,18 @@ async function saveAutoBackup() {
   finally { autoBackupSaving.value = false }
 }
 
-async function testAutoBackup() {
+async function runBackupNow() {
   try {
-    const { API_ORIGIN } = await import('../../../api/client')
-    const res = await fetch(`${API_ORIGIN}/api/v1/backup/export`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    await res.arrayBuffer()
-    emit('toast', 'success', 'Test backup completed')
-  } catch (e: unknown) { emit('toast', 'error', `Test backup failed: ${errMsg(e)}`) }
+    const { request } = await import('../../../api/client')
+    const r = await request<{ mode: string; path?: string; status?: string; error?: string }>('/backup/run-now', { method: 'POST' })
+    if (r.mode === 'cloud') {
+      emit('toast', r.status === 'completed' ? 'success' : 'error',
+        r.status === 'completed' ? 'Cloud backup completed' : `Backup failed: ${r.error ?? 'unknown'}`)
+    } else {
+      emit('toast', 'success', `Backup saved to ${r.path}`)
+    }
+    backup.fetchSnapshots()
+  } catch (e: unknown) { emit('toast', 'error', `Backup failed: ${errMsg(e)}`) }
 }
 
 async function loadAutoBackupStatus() {
@@ -335,7 +339,7 @@ onMounted(() => {
         <SButton variant="primary" :disabled="autoBackupSaving" @click="saveAutoBackup">
           <Loader v-if="autoBackupSaving" :size="12" class="animate-spin" /> Save Schedule
         </SButton>
-        <SButton variant="ghost" @click="testAutoBackup">Test</SButton>
+        <SButton variant="ghost" @click="runBackupNow">Run now</SButton>
       </div>
     </div>
   </SettingsSection>

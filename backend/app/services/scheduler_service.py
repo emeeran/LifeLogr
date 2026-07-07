@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
@@ -568,11 +569,37 @@ async def _run_cloud_backup(config_id: int) -> None:
         )
 
 
+async def _checkpoint_wal_robust(attempts: int = 5, delay: float = 0.5) -> bool:
+    """Best-effort WAL checkpoint that retries while the database is busy.
+
+    ``PRAGMA wal_checkpoint(TRUNCATE)`` returns ``(busy, log, checkpointed)``;
+    ``busy != 0`` means it couldn't complete because an active reader holds the
+    WAL. Retrying lets readers drain (which virtually always succeeds on an
+    idle app). Returns True once the checkpoint fully completes, False if it
+    stayed busy across all attempts.
+    """
+    from sqlalchemy import text
+
+    from app.core.database import engine
+
+    for attempt in range(attempts):
+        try:
+            async with engine.begin() as conn:
+                result = await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+                row = result.fetchone()
+            if row is None or row[0] == 0:
+                return True
+        except Exception:
+            logger.warning(
+                "WAL checkpoint attempt %d/%d errored", attempt + 1, attempts, exc_info=True
+            )
+        await asyncio.sleep(delay)
+    return False
+
+
 async def _run_backup(backup_path: str, retention: int = 10) -> None:
     """Execute the backup job — creates a .tar.gz archive of DB + media."""
     from app.core.config import settings
-    from app.core.database import engine
-    from sqlalchemy import text
 
     logger.info(f"Running scheduled backup to {backup_path}")
 
@@ -585,18 +612,29 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
     db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
 
-    # Checkpoint WAL for consistency
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-    except Exception:
-        logger.warning("WAL checkpoint failed before backup", exc_info=True)
+    # Checkpoint the WAL so the main .db file is fully up to date before we
+    # copy it. Retry on "busy" (an active reader holds the WAL); -wal/-shm are
+    # bundled below as a safety net for the rare case it can't finish.
+    if db_file.exists() and not await _checkpoint_wal_robust():
+        logger.warning(
+            "WAL checkpoint stayed busy; main DB may lag recent commits. "
+            "Archive still includes -wal/-shm for completeness."
+        )
 
     tmpdir = tempfile.mkdtemp()
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
             if db_file.exists():
                 tar.add(str(db_file), arcname="diarium.diarium")
+                # Belt-and-suspenders: bundle WAL/SHM so the archive is
+                # consistent even if the checkpoint couldn't fully finish, and
+                # opens correctly when extracted by external tools.
+                wal_file = db_file.with_suffix(db_file.suffix + "-wal")
+                shm_file = db_file.with_suffix(db_file.suffix + "-shm")
+                if wal_file.exists():
+                    tar.add(str(wal_file), arcname="diarium.diarium-wal")
+                if shm_file.exists():
+                    tar.add(str(shm_file), arcname="diarium.diarium-shm")
             if media_dir.exists():
                 tar.add(str(media_dir), arcname="media")
         logger.info(f"Backup complete: {archive_path}")
@@ -611,6 +649,7 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
 
     # Retention: remove oldest backups if exceeding limit
     _cleanup_old_backups(path, retention)
+    return str(archive_path)
 
 
 def _cleanup_old_backups(backup_dir: Path, retention: int) -> None:

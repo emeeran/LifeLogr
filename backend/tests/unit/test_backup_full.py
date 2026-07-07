@@ -40,10 +40,15 @@ from app.core.restore import (
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def _reset_scheduler():
+async def _reset_scheduler(tmp_path, monkeypatch):
     """Ensure the global scheduler is clean before and after every test."""
-    # Reset the global scheduler instance before each test
     import app.services.scheduler_service as sched_mod
+
+    # Isolate the persisted-schedule store so tests never touch the real
+    # ~/.local/share/lifelogr/.backup-schedule.json (e.g. via _mark_backup_run).
+    monkeypatch.setattr(sched_mod, "_schedule_store_path", lambda: tmp_path / ".schedule.json")
+
+    # Reset the global scheduler instance before each test
     if sched_mod._scheduler is not None and sched_mod._scheduler.running:
         sched_mod._scheduler.shutdown(wait=False)
     sched_mod._scheduler = None
@@ -658,6 +663,76 @@ class TestScheduledBackupExecution:
             names = [m.name for m in tar.getmembers()]
             assert "diarium.diarium" in names
 
+    async def test_run_backup_bundles_wal_and_shm(self, tmp_path: Path) -> None:
+        """_run_backup includes -wal/-shm sidecars in the archive when present."""
+        from app.services.scheduler_service import _run_backup
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        db_file = data_dir / "lifelogr.db"
+        _make_valid_db(db_file)
+        # Simulate the WAL/SHM sidecars SQLite produces in WAL mode.
+        (data_dir / "lifelogr.db-wal").write_bytes(b"WAL-DATA")
+        (data_dir / "lifelogr.db-shm").write_bytes(b"SHM-DATA")
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+
+        import app.core.config as config_mod
+
+        original_media_dir = config_mod.settings.MEDIA_DIR
+        original_db_url = config_mod.settings.DATABASE_URL
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = data_dir / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        try:
+            await _run_backup(str(backup_dir), retention=5)
+        finally:
+            config_mod.settings.DATABASE_URL = original_db_url
+            config_mod.settings.MEDIA_DIR = original_media_dir
+
+        archives = list(backup_dir.glob("lifelogr-backup-*.tar.gz"))
+        assert len(archives) == 1
+        with tarfile.open(str(archives[0]), "r:gz") as tar:
+            names = {m.name for m in tar.getmembers()}
+        assert "diarium.diarium" in names
+        assert "diarium.diarium-wal" in names
+        assert "diarium.diarium-shm" in names
+
+    async def test_run_now_writes_to_configured_destination(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """POST /backup/run-now runs the configured local backup immediately."""
+        db_file = tmp_path / "lifelogr.db"
+        _make_valid_db(db_file)
+
+        import app.core.config as config_mod
+
+        orig_url = config_mod.settings.DATABASE_URL
+        orig_media = config_mod.settings.MEDIA_DIR
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = tmp_path / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={"cron": "0 2 * * *", "backup_path": str(backup_dir), "retention": 5},
+            )
+            r = await client.post("/api/v1/backup/run-now")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["mode"] == "local"
+            assert data["path"] == str(backup_dir)
+            archives = list(backup_dir.glob("lifelogr-backup-*.tar.gz"))
+            assert len(archives) == 1
+        finally:
+            config_mod.settings.DATABASE_URL = orig_url
+            config_mod.settings.MEDIA_DIR = orig_media
+
     def test_retention_cleanup(self, tmp_path: Path) -> None:
         """_cleanup_old_backups keeps only N most recent archives."""
         from app.services.scheduler_service import _cleanup_old_backups
@@ -675,3 +750,49 @@ class TestScheduledBackupExecution:
         # Keeps the two newest (by mtime): 04 and 05
         assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
         assert remaining[1].name == "lifelogr-backup-20250105-000000.tar.gz"
+
+
+class _FakeCheckpointEngine:
+    """Minimal stand-in for the async engine: begin()→execute→fetchone()."""
+
+    def __init__(self, row: tuple) -> None:
+        self._row = row
+        self.execute_count = 0
+
+    def begin(self) -> "_FakeCheckpointEngine":
+        return self  # `async with engine.begin()` → `async with self`
+
+    async def __aenter__(self) -> "_FakeCheckpointEngine":
+        return self  # the connection
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+    async def execute(self, _stmt):
+        self.execute_count += 1
+        return self  # result object exposing fetchone()
+
+    def fetchone(self) -> tuple:
+        return self._row
+
+
+class TestCheckpointWalRobust:
+    """_checkpoint_wal_robust: succeeds on busy=0, retries then yields on busy=1."""
+
+    async def test_returns_true_when_not_busy(self, monkeypatch) -> None:
+        from app.services.scheduler_service import _checkpoint_wal_robust
+
+        engine = _FakeCheckpointEngine((0, 0, 0))
+        monkeypatch.setattr("app.core.database.engine", engine)
+
+        assert await _checkpoint_wal_robust(attempts=3, delay=0) is True
+        assert engine.execute_count == 1  # succeeded on first try, no retry
+
+    async def test_retries_then_gives_up_when_busy(self, monkeypatch) -> None:
+        from app.services.scheduler_service import _checkpoint_wal_robust
+
+        engine = _FakeCheckpointEngine((1, 0, 0))  # busy=1
+        monkeypatch.setattr("app.core.database.engine", engine)
+
+        assert await _checkpoint_wal_robust(attempts=3, delay=0) is False
+        assert engine.execute_count == 3  # retried all attempts

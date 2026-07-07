@@ -66,6 +66,41 @@ async def run_backup(
     return await svc.run_backup(request.config_id)
 
 
+@router.post("/run-now")
+async def run_configured_backup_now(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Run the configured backup job immediately.
+
+    Executes whatever the persisted schedule points at — a local folder
+    (``_run_backup``) or a cloud config (``BackupService.run_backup``) — so a
+    user can verify a schedule works without waiting for its cron time. This
+    actually writes the archive to the destination (unlike ``/export``, which
+    builds a throwaway copy).
+    """
+    from fastapi import HTTPException
+
+    from app.services.scheduler_service import _load_schedule, _run_backup
+
+    entry = _load_schedule()
+    if not entry:
+        raise HTTPException(status_code=404, detail="No backup schedule is configured")
+
+    config_id = entry.get("config_id")
+    if config_id is not None:
+        svc = BackupService(db)
+        snapshot = await svc.run_backup(int(config_id))
+        return {
+            "mode": "cloud",
+            "config_id": int(config_id),
+            "status": snapshot.status,
+            "error": snapshot.error_message,
+        }
+
+    backup_path = str(entry.get("backup_path", ""))
+    retention = int(entry.get("retention", 10))
+    archive = await _run_backup(backup_path, retention)
+    return {"mode": "local", "path": backup_path, "archive": archive}
+
+
 @router.get("/snapshots")
 async def list_snapshots(
     config_id: int | None = Query(None),
