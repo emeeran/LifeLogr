@@ -85,15 +85,28 @@ class BackupService:
         """Create a temporary .tar.gz backup archive in memory."""
         import io
         import tarfile
+
+        from sqlalchemy import text
+
         from app.core.config import settings
-        from app.core.restore import checkpoint_wal
 
         db_file = settings.db_path
         media_dir = settings.MEDIA_DIR
 
-        # Checkpoint WAL to make sure database is flushed to disk
+        # Checkpoint the WAL on the session's OWN connection (best-effort).
+        # We must not open a second pooled connection here: SQLite's engine pool
+        # is size 1, and this method runs inside a request that already holds
+        # the one connection via self.db — asking the engine for another would
+        # deadlock ("QueuePool limit ... reached"). Running the checkpoint on
+        # the session also sidesteps checkpoint_wal()'s busy-raise: a "busy"
+        # result just means it couldn't fully TRUNCATE (an open txn on this
+        # connection holds a snapshot); committed frames still flush, and
+        # -wal/-shm are bundled below so the archive is complete regardless.
         if db_file.exists():
-            await checkpoint_wal(db_file)
+            try:
+                await self.db.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+            except Exception:
+                logger.warning("WAL checkpoint before backup failed", exc_info=True)
 
         archive_io = io.BytesIO()
         with tarfile.open(fileobj=archive_io, mode="w:gz") as tar:
@@ -293,6 +306,7 @@ class BackupService:
                         extracted_media=extracted_media if extracted_media.exists() else None,
                         live_db=db_file_path,
                         live_media=media_dir,
+                        session=self.db,
                     )
                     if "database" in restored:
                         counts = await self.count_all()

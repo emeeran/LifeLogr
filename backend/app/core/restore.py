@@ -15,6 +15,8 @@ import shutil
 import sqlite3
 from pathlib import Path
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 logger = logging.getLogger(__name__)
 
 _SQLITE_HEADER = b"SQLite format 3\x00"
@@ -81,6 +83,31 @@ async def checkpoint_wal(db_path: Path) -> None:
             )
 
 
+async def _checkpoint_live(
+    live_db: Path, session: AsyncSession | None = None
+) -> None:
+    """Best-effort WAL checkpoint of the live DB before a restore/swap.
+
+    Prefers the caller's *session* connection so we don't open a second pooled
+    connection — SQLite's engine pool is size 1, so doing so from a request
+    that already holds the session would deadlock (``QueuePool limit reached``).
+    Tolerant of "busy": the live DB is backed up before the swap and the file
+    is replaced regardless, so a checkpoint that can't fully TRUNCATE is fine.
+    """
+    from sqlalchemy import text
+
+    from app.core.database import engine
+
+    try:
+        if session is not None:
+            await session.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+        else:
+            async with engine.begin() as conn:
+                await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+    except Exception:
+        logger.warning("WAL checkpoint before restore failed (continuing)", exc_info=True)
+
+
 def validate_extracted_db(db_path: Path) -> None:
     """Validate a database file before swapping it in.
 
@@ -143,6 +170,7 @@ async def atomic_restore(
     extracted_media: Path | None,
     live_db: Path,
     live_media: Path,
+    session: AsyncSession | None = None,
 ) -> list[str]:
     """Atomically restore database and (optionally) media files.
 
@@ -154,7 +182,9 @@ async def atomic_restore(
     6. On media failure after DB success, roll DB back too.
     7. Clean up backup files on success.
 
-    Returns a list of what was restored (``["database"]``, ``["database", "media"]``).
+    *session* (when the caller is a request holding one) lets the checkpoint
+    reuse that connection instead of opening a second pooled one (deadlock on
+    SQLite's size-1 pool).
     """
     from app.core.database import init_db, reinit_engine
 
@@ -165,7 +195,7 @@ async def atomic_restore(
 
     # ── Checkpoint live WAL ───────────────────────────────────────────────
     if live_db.exists():
-        await checkpoint_wal(live_db)
+        await _checkpoint_live(live_db, session)
 
     # ── Backup live DB ────────────────────────────────────────────────────
     db_backup = live_db.with_suffix(live_db.suffix + ".pre-restore.bak")

@@ -226,6 +226,22 @@ class TestCheckExpectedTables:
             _check_expected_tables(db)
 
 
+class TestCheckpointLive:
+    """_checkpoint_live must reuse the caller's session (no 2nd pooled conn)."""
+
+    async def test_uses_session_when_provided(self) -> None:
+        from app.core.restore import _checkpoint_live
+
+        executed: list[str] = []
+
+        class FakeSession:
+            async def execute(self, stmt) -> None:
+                executed.append(str(stmt))
+
+        await _checkpoint_live(Path("/nonexistent.db"), FakeSession())  # type: ignore[arg-type]
+        assert executed and "wal_checkpoint" in executed[0]
+
+
 # ── HTTP-level backup tests ──────────────────────────────────────────────────
 
 
@@ -299,6 +315,33 @@ class TestBackupSnapshots:
         data = r.json()
         assert data["items"] == []
         assert data["total"] == 0
+
+    async def test_list_snapshots_serializes_rows(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Snapshots must serialize to plain JSON (regression: raw ORM objects
+        made pydantic v2 raise 'Unable to serialize unknown type' → 500)."""
+        from app.models.backup import BackupConfig, BackupSnapshot
+
+        cfg = BackupConfig(provider="google_drive", credentials_encrypted="enc")
+        db_session.add(cfg)
+        await db_session.commit()
+        await db_session.refresh(cfg)
+        db_session.add(
+            BackupSnapshot(
+                config_id=cfg.id, status="completed", entries_synced=5, media_synced=2
+            )
+        )
+        await db_session.commit()
+
+        r = await client.get("/api/v1/backup/snapshots")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] >= 1
+        item = data["items"][0]
+        assert item["status"] == "completed"
+        assert item["entries_synced"] == 5
+        assert isinstance(item["id"], int)  # plain JSON, not an ORM object
 
     async def test_list_snapshots_with_config_filter(
         self, client: AsyncClient

@@ -111,7 +111,14 @@ async def list_snapshots(
     """List backup snapshots with pagination."""
     svc = BackupService(db)
     snapshots, total = await svc.list_snapshots(config_id, offset, limit)
-    return {"items": snapshots, "total": total, "offset": offset, "limit": limit}
+    # Serialize ORM rows via the response model — returning the raw ORM objects
+    # makes pydantic v2 raise "Unable to serialize unknown type" on the response.
+    return {
+        "items": [BackupSnapshotResponse.model_validate(s).model_dump() for s in snapshots],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 @router.post("/restore")
