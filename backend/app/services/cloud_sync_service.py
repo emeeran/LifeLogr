@@ -607,6 +607,186 @@ class DropboxProvider:
             logger.info("Dropbox provider HTTP client closed.")
 
 
+# ── Box provider ────────────────────────────────────────────────────────
+
+
+class BoxProvider:
+    """Box sync provider via the Box Content API (LifeLogr folder in root).
+
+    Raw httpx — mirrors OneDriveProvider. Box **rotates** its refresh token on
+    each refresh, so ``on_token_refresh`` is 3-arg ``(access, refresh, expiry)``
+    and the caller must persist the new refresh token.
+    """
+
+    AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize"
+    TOKEN_URL = "https://api.box.com/oauth2/token"
+    API = "https://api.box.com/2.0"
+    UPLOAD_API = "https://upload.box.com/api/2.0"
+    ROOT_FOLDER_ID = "0"
+    FOLDER_NAME = "LifeLogr"
+
+    def __init__(
+        self,
+        credentials: dict[str, str],
+        on_token_refresh: Callable[[str, str, str], Awaitable[None]] | None = None,
+    ) -> None:
+        self._client_id = credentials.get("client_id", "")
+        self._client_secret = credentials.get("client_secret", "")
+        self._refresh_token = credentials.get("refresh_token")
+        self._access_token = credentials.get("access_token")
+        self._token_expiry = credentials.get("token_expiry")
+        self._on_token_refresh = on_token_refresh
+        self._client: httpx.AsyncClient | None = None
+        self._folder_id: str | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+    async def _ensure_valid_token(self) -> str:
+        import time
+
+        now = time.time()
+        if self._access_token and self._token_expiry and float(self._token_expiry) > now + 60:
+            return self._access_token
+        if not self._refresh_token:
+            raise ValueError("Refresh token missing from Box credentials")
+        if not self._client_id or not self._client_secret:
+            raise ValueError("Box OAuth client credentials are not configured")
+
+        client = self._get_client()
+        resp = await client.post(
+            self.TOKEN_URL,
+            data={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "refresh_token": self._refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        self._access_token = data["access_token"]
+        self._token_expiry = str(now + data["expires_in"])
+        # Box rotates the refresh token — keep the new one or the next refresh fails.
+        if data.get("refresh_token"):
+            self._refresh_token = data["refresh_token"]
+        if self._on_token_refresh:
+            await self._on_token_refresh(
+                self._access_token, self._refresh_token or "", self._token_expiry
+            )
+        return self._access_token
+
+    async def _get_folder_id(self) -> str:
+        """Find (or create) the LifeLogr folder under the Box root."""
+        if self._folder_id:
+            return self._folder_id
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.API}/folders/{self.ROOT_FOLDER_ID}/items",
+            params={"fields": "type,id,name", "limit": 1000},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        for entry in resp.json().get("entries", []):
+            if entry.get("type") == "folder" and entry.get("name") == self.FOLDER_NAME:
+                self._folder_id = entry["id"]
+                return self._folder_id
+        resp = await client.post(
+            f"{self.API}/folders",
+            json={"name": self.FOLDER_NAME, "parent": {"id": self.ROOT_FOLDER_ID}},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        self._folder_id = resp.json()["id"]
+        return self._folder_id
+
+    async def _file_id(self, name: str) -> str:
+        token = await self._ensure_valid_token()
+        folder_id = await self._get_folder_id()
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.API}/folders/{folder_id}/items",
+            params={"fields": "type,id,name", "limit": 1000},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        for entry in resp.json().get("entries", []):
+            if entry.get("type") == "file" and entry.get("name") == name:
+                return entry["id"]
+        raise ValueError(f"File '{name}' not found in Box folder")
+
+    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+        token = await self._ensure_valid_token()
+        folder_id = await self._get_folder_id()
+        client = self._get_client()
+        # Box file upload is multipart: an `attributes` JSON field + the file.
+        files = {
+            "attributes": (None, json.dumps({"name": path, "parent": {"id": folder_id}})),
+            "file": (path, data),
+        }
+        resp = await client.post(
+            f"{self.UPLOAD_API}/files/content",
+            headers={"Authorization": f"Bearer {token}"},
+            files=files,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        return path
+
+    async def list_files(self, prefix: str) -> list[str]:
+        token = await self._ensure_valid_token()
+        folder_id = await self._get_folder_id()
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.API}/folders/{folder_id}/items",
+            params={"fields": "type,name", "limit": 1000},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        names = [
+            e.get("name", "")
+            for e in resp.json().get("entries", [])
+            if e.get("type") == "file"
+        ]
+        return [n for n in names if n.startswith(prefix)]
+
+    async def download(self, path: str) -> bytes:
+        token = await self._ensure_valid_token()
+        file_id = await self._file_id(path)
+        client = self._get_client()
+        resp = await client.get(
+            f"{self.API}/files/{file_id}/content",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    async def delete(self, path: str) -> None:
+        token = await self._ensure_valid_token()
+        file_id = await self._file_id(path)
+        client = self._get_client()
+        resp = await client.delete(
+            f"{self.API}/files/{file_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            logger.info("Box provider HTTP client closed.")
+
+
 # ── MEGA provider ──────────────────────────────────────────────────────
 
 

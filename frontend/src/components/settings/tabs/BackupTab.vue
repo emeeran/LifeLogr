@@ -75,6 +75,11 @@ const providerFields: Record<string, { label: string; placeholder: string }[]> =
     { label: 'Client Secret', placeholder: 'GOCSPX-xxxx' },
     { label: 'Refresh Token', placeholder: '1//xxxx' },
   ],
+  box: [
+    { label: 'Client ID', placeholder: 'your Box client ID' },
+    { label: 'Client Secret', placeholder: 'your Box client secret' },
+    { label: 'Refresh Token', placeholder: 'set via "Sign in with Box"' },
+  ],
   onedrive: [
     { label: 'Client ID', placeholder: 'xxxx-xxxx-xxxx' },
     { label: 'Client Secret', placeholder: 'xxxx~xxxx' },
@@ -106,6 +111,16 @@ async function startGoogleDriveAuth() {
     showCreate.value = false
     setTimeout(async () => { await backup.fetchConfigs() }, 6000)
   } catch (e: unknown) { emit('toast', 'error', `Google auth initiation failed: ${errMsg(e)}`) }
+}
+
+async function startBoxAuth() {
+  try {
+    const res = await backupApi.getBoxAuthUrl()
+    window.open(res.auth_url, '_blank')
+    emit('toast', 'info', 'Opening Box Authentication in browser...')
+    showCreate.value = false
+    setTimeout(async () => { await backup.fetchConfigs() }, 6000)
+  } catch (e: unknown) { emit('toast', 'error', `Box auth initiation failed: ${errMsg(e)}`) }
 }
 
 function openCreateForm() {
@@ -356,6 +371,7 @@ onMounted(() => {
         <select v-model="newProvider" class="settings-select" @change="resetNewCredentials">
           <option value="webdav">WebDAV</option>
           <option value="google_drive">Google Drive</option>
+          <option value="box">Box</option>
           <option value="onedrive">OneDrive</option>
           <option value="dropbox">Dropbox</option>
           <option value="nas">NAS</option>
@@ -368,6 +384,10 @@ onMounted(() => {
             {{ showManualGoogleFields ? 'Hide manual settings' : 'Or configure manually (Advanced)' }}
           </a>
         </div>
+      </div>
+      <div v-else-if="newProvider === 'box'" class="flex flex-col gap-1.5 py-1">
+        <SButton variant="primary" @click="startBoxAuth">Sign in with Box</SButton>
+        <p class="text-[10px] text-text-muted text-center">Authorise in your browser, or fill the fields below manually.</p>
       </div>
       <template v-if="newProvider !== 'google_drive' || showManualGoogleFields">
         <SettingRow v-for="field in currentFields" :key="field.label" :label="field.label">

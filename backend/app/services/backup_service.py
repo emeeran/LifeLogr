@@ -39,6 +39,7 @@ class BackupService:
     async def test_connection(self, config_id: int) -> bool:
         """Validate stored credentials by connecting to the provider."""
         from app.services.cloud_sync_service import (
+            BoxProvider,
             DropboxProvider,
             GoogleDriveProvider,
             NextcloudProvider,
@@ -75,6 +76,10 @@ class BackupService:
                 db = DropboxProvider(creds)
                 provider = db
                 await db._ensure_valid_token()
+                return True
+            if config.provider == "box":
+                provider = BoxProvider(creds)
+                await provider.list_files("lifelogr-backup-")
                 return True
             raise ValueError(f"Unsupported backup provider: {config.provider}")
         finally:
@@ -127,6 +132,7 @@ class BackupService:
     async def run_backup(self, config_id: int) -> BackupSnapshot:
         """Perform incremental backup; transfer new/modified data since last sync."""
         from app.services.cloud_sync_service import (
+            BoxProvider,
             DropboxProvider,
             GoogleDriveProvider,
             NextcloudProvider,
@@ -186,6 +192,18 @@ class BackupService:
 
                 provider = provider_cls(creds, on_token_refresh=on_refresh)
                 await provider.upload(filename, archive_data, encrypted=False)
+            elif config.provider == "box":
+
+                async def on_refresh_box(
+                    new_access_token: str, new_refresh_token: str, new_expiry: str
+                ) -> None:
+                    creds["access_token"] = new_access_token
+                    creds["refresh_token"] = new_refresh_token
+                    creds["token_expiry"] = new_expiry
+                    config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+                provider = BoxProvider(creds, on_token_refresh=on_refresh_box)
+                await provider.upload(filename, archive_data, encrypted=False)
             else:
                 raise ValueError(f"Unsupported backup provider: {config.provider}")
 
@@ -210,6 +228,7 @@ class BackupService:
     async def restore(self, config_id: int) -> dict[str, int]:
         """Atomically replace local data with cloud backup; rollback on failure."""
         from app.services.cloud_sync_service import (
+            BoxProvider,
             DropboxProvider,
             GoogleDriveProvider,
             NextcloudProvider,
@@ -270,6 +289,22 @@ class BackupService:
                 files = await provider.list_files("lifelogr-backup-")
                 if not files:
                     raise ConflictError("No cloud backups found")
+                latest_backup = sorted(files)[-1]
+                archive_data = await provider.download(latest_backup)
+            elif config.provider == "box":
+
+                async def on_refresh_box(
+                    new_access_token: str, new_refresh_token: str, new_expiry: str
+                ) -> None:
+                    creds["access_token"] = new_access_token
+                    creds["refresh_token"] = new_refresh_token
+                    creds["token_expiry"] = new_expiry
+                    config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+                provider = BoxProvider(creds, on_token_refresh=on_refresh_box)
+                files = await provider.list_files("lifelogr-backup-")
+                if not files:
+                    raise ConflictError("No backups found in Box")
                 latest_backup = sorted(files)[-1]
                 archive_data = await provider.download(latest_backup)
             else:

@@ -210,7 +210,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
-from app.routers.google_drive import router as google_drive_router  # noqa: E402
+from app.routers.google_drive import router as google_drive_router
+from app.routers.box import router as box_router  # noqa: E402
 from app.routers.dropbox import router as dropbox_router  # noqa: E402
 from app.routers.onedrive import router as onedrive_router  # noqa: E402
 from app.routers.encryption import (  # noqa: E402
@@ -243,6 +244,7 @@ app.include_router(media_router)
 app.include_router(recordings_router)
 app.include_router(backup_router)
 app.include_router(google_drive_router)
+app.include_router(box_router)
 app.include_router(onedrive_router)
 app.include_router(dropbox_router)
 app.include_router(prompts_router)
@@ -348,9 +350,16 @@ if _FRONTEND_DIST.is_dir():
     async def serve_frontend(full_path: str) -> FileResponse:
         """Serve frontend SPA — fall back to index.html for client-side routing."""
         file_path = _FRONTEND_DIST / full_path
-        if file_path.is_file():
-            return FileResponse(str(file_path))
-        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+        target = file_path if file_path.is_file() else (_FRONTEND_DIST / "index.html")
+        # index.html must always revalidate so new content-hashed assets are
+        # picked up; the hashed asset files themselves can be cached forever.
+        is_index = (target.name == "index.html")
+        headers = (
+            {"Cache-Control": "no-cache, must-revalidate"}
+            if is_index
+            else {"Cache-Control": "public, max-age=31536000, immutable"}
+        )
+        return FileResponse(str(target), headers=headers)
 
 
 if __name__ == "__main__":

@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     DROPBOX_CLIENT_ID: str = ""
     DROPBOX_CLIENT_SECRET: str = ""
 
+    # Box OAuth
+    BOX_CLIENT_ID: str = ""
+    BOX_CLIENT_SECRET: str = ""
+
     # Ollama (AI assistance)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.2:3b"

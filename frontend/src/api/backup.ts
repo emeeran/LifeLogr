@@ -66,4 +66,8 @@ export const backupApi = {
   getGoogleDriveAuthUrl(): Promise<{ auth_url: string }> {
     return request('/backup/google-drive/auth-url')
   },
+
+  getBoxAuthUrl(): Promise<{ auth_url: string }> {
+    return request('/backup/box/auth-url')
+  },
 }
