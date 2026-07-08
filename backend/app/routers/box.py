@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import time
 from urllib.parse import urlencode
 
@@ -22,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.oauth_state import OAuthStateStore
 from app.core.security import decrypt, encrypt
 from app.models.backup import BackupConfig
 
@@ -32,24 +32,7 @@ router = APIRouter(prefix="/api/v1/backup/box", tags=["backup-box"])
 AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize"
 TOKEN_URL = "https://api.box.com/oauth2/token"
 REDIRECT_URI = "http://localhost:18765/api/v1/backup/box/callback"
-_STATE_TTL_SECONDS = 600
-_pending_states: dict[str, float] = {}
-
-
-def _new_oauth_state() -> str:
-    now = time.time()
-    for key in [k for k, created in _pending_states.items() if now - created > _STATE_TTL_SECONDS]:
-        _pending_states.pop(key, None)
-    state = secrets.token_urlsafe(24)
-    _pending_states[state] = now
-    return state
-
-
-def _consume_oauth_state(state: str | None) -> bool:
-    if not state:
-        return False
-    created = _pending_states.pop(state, None)
-    return created is not None and (time.time() - created) <= _STATE_TTL_SECONDS
+_state = OAuthStateStore()
 
 
 @router.get("/auth-url")
@@ -74,7 +57,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": REDIRECT_URI,
-        "state": _new_oauth_state(),
+        "state": _state.issue(),
     }
     return {"auth_url": f"{AUTHORIZE_URL}?{urlencode(params)}"}
 
@@ -95,7 +78,7 @@ async def oauth_callback(
         return _render_error_page(msg)
     if not code:
         return _render_error_page("Box returned no authorization code.")
-    if not _consume_oauth_state(state):
+    if not _state.consume(state):
         return _render_error_page("Invalid or expired OAuth state. Please retry connection.")
 
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "box"))

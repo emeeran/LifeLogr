@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import time
 from urllib.parse import urlencode
 
@@ -16,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.oauth_state import OAuthStateStore
 from app.core.security import decrypt, encrypt
 from app.models.backup import BackupConfig
 
@@ -27,24 +27,7 @@ REDIRECT_URI = "http://127.0.0.1:18765/api/v1/backup/dropbox/callback"
 AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize"
 TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 
-_STATE_TTL_SECONDS = 600
-_pending_states: dict[str, float] = {}
-
-
-def _new_state() -> str:
-    now = time.time()
-    for k in [k for k, c in _pending_states.items() if now - c > _STATE_TTL_SECONDS]:
-        _pending_states.pop(k, None)
-    s = secrets.token_urlsafe(24)
-    _pending_states[s] = now
-    return s
-
-
-def _consume_state(state: str | None) -> bool:
-    if not state:
-        return False
-    created = _pending_states.pop(state, None)
-    return created is not None and (time.time() - created) <= _STATE_TTL_SECONDS
+_state = OAuthStateStore()
 
 
 def _result_page(ok: bool, detail: str = "") -> HTMLResponse:
@@ -85,7 +68,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "token_access_type": "offline",  # required to receive a refresh token
-        "state": _new_state(),
+        "state": _state.issue(),
     }
     return {"auth_url": f"{AUTHORIZE_URL}?{urlencode(params)}"}
 
@@ -97,7 +80,7 @@ async def oauth_callback(
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Exchange the Dropbox auth code for tokens and save the config."""
-    if not _consume_state(state):
+    if not _state.consume(state):
         return _result_page(False, "Invalid or expired OAuth state. Please retry.")
 
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "dropbox"))

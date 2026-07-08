@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import time
 from urllib.parse import urlencode
 
@@ -14,39 +13,18 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.oauth_state import OAuthStateStore
 from app.core.security import decrypt, encrypt
 from app.models.backup import BackupConfig
-
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup/google-drive", tags=["backup-google-drive"])
 
 REDIRECT_URI = "http://127.0.0.1:18765/api/v1/backup/google-drive/callback"
-_STATE_TTL_SECONDS = 600
-_pending_states: dict[str, float] = {}
-
-
-def _new_oauth_state() -> str:
-    now = time.time()
-    expired = [k for k, created in _pending_states.items() if now - created > _STATE_TTL_SECONDS]
-    for key in expired:
-        _pending_states.pop(key, None)
-
-    state = secrets.token_urlsafe(24)
-    _pending_states[state] = now
-    return state
-
-
-def _consume_oauth_state(state: str | None) -> bool:
-    if not state:
-        return False
-    created = _pending_states.pop(state, None)
-    if created is None:
-        return False
-    return (time.time() - created) <= _STATE_TTL_SECONDS
+_state = OAuthStateStore()
 
 
 def get_default_credentials() -> tuple[str, str]:
@@ -79,7 +57,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     # Build OAuth URL
     scopes = "https://www.googleapis.com/auth/drive.appdata"
     auth_base_url = "https://accounts.google.com/o/oauth2/v2/auth"
-    state = _new_oauth_state()
+    state = _state.issue()
 
     params = {
         "client_id": client_id,
@@ -101,7 +79,7 @@ async def oauth_callback(
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
     """Handle Google OAuth 2.0 loopback redirection, exchange code, and save tokens."""
-    if not _consume_oauth_state(state):
+    if not _state.consume(state):
         return _render_error_page("Invalid or expired OAuth state. Please retry connection.")
 
     # 1. Resolve client credentials

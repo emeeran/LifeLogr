@@ -20,14 +20,6 @@ export function getExportPdfUrl(startDate?: string, endDate?: string): string {
   return `${BASE_URL}/export/pdf${qs ? `?${qs}` : ''}`
 }
 
-export function getExportDiariumUrl(startDate?: string, endDate?: string): string {
-  const params = new URLSearchParams()
-  if (startDate) params.set('start_date', startDate)
-  if (endDate) params.set('end_date', endDate)
-  const qs = params.toString()
-  return `${BASE_URL}/entries/export/diarium${qs ? `?${qs}` : ''}`
-}
-
 export function getExportDiariumDbUrl(startDate?: string, endDate?: string): string {
   const params = new URLSearchParams()
   if (startDate) params.set('start_date', startDate)

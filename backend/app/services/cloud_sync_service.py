@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Protocol, cast
+from typing import Any, Awaitable, Callable, Protocol
 
 import httpx
 from sqlalchemy import func, select
@@ -785,121 +784,6 @@ class BoxProvider:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             logger.info("Box provider HTTP client closed.")
-
-
-# ── MEGA provider ──────────────────────────────────────────────────────
-
-
-class MegaClient(Protocol):
-    def create_folder(self, name: str, dest: str) -> object: ...
-    def upload(self, filename: str, dest: str, dest_filename: str) -> object: ...
-    def find(self, path: str) -> object: ...
-    def download(self, file_info: object, dest_path: str) -> object: ...
-    def get_files(self) -> dict[str, object]: ...
-    def delete(self, file_info: object) -> object: ...
-
-
-class MegaProvider:
-    """MEGA cloud sync provider using mega.py library."""
-
-    def __init__(self, email: str, password: str) -> None:
-        self._email = email
-        self._password = password
-        self._mega: MegaClient | None = None
-
-    def _get_sync_client(self) -> MegaClient:
-        """Get or create the synchronous MEGA client."""
-        if self._mega is None:
-            try:
-                from mega import Mega  # type: ignore[import-not-found]
-            except ImportError as exc:
-                raise ImportError(
-                    "MEGA cloud sync requires the 'cloud' extra. "
-                    'Install it with: uv pip install -e ".[cloud]"'
-                ) from exc
-
-            m = Mega()
-            self._mega = cast(MegaClient, m.login(self._email, self._password))
-        return self._mega
-
-    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
-        import tempfile
-        from pathlib import Path
-
-        mega = await asyncio.to_thread(self._get_sync_client)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
-            tmp.write(data)
-            tmp_path = tmp.name
-
-        try:
-            parts = path.split("/")
-            folder = "/"
-            for part in parts[:-1]:
-                if part:
-                    try:
-                        await asyncio.to_thread(mega.create_folder, part, folder)
-                    except Exception:
-                        logger.debug("Folder creation skipped (likely exists): %s", part)
-                    folder = folder.rstrip("/") + "/" + part
-
-            await asyncio.to_thread(mega.upload, tmp_path, folder, parts[-1])
-            return path
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-
-    async def download(self, path: str) -> bytes:
-        import tempfile
-        from pathlib import Path
-
-        mega = await asyncio.to_thread(self._get_sync_client)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
-            tmp_path = tmp.name
-
-        try:
-            file_info = await asyncio.to_thread(mega.find, path)
-            if not file_info:
-                raise FileNotFoundError(f"File not found on MEGA: {path}")
-            await asyncio.to_thread(mega.download, file_info, tmp_path)
-            return Path(tmp_path).read_bytes()
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
-
-    async def list_files(self, prefix: str) -> list[str]:
-        mega = await asyncio.to_thread(self._get_sync_client)
-        try:
-            files = await asyncio.to_thread(mega.get_files)
-            found: list[str] = []
-            needle = prefix.split("/")[-1] if "/" in prefix else prefix
-            for item in files.values():
-                if not isinstance(item, dict):
-                    continue
-                attrs = item.get("a")
-                if not isinstance(attrs, dict):
-                    continue
-                name = attrs.get("n")
-                if isinstance(name, str) and name.startswith(needle):
-                    found.append(name)
-            return found
-        except Exception:
-            logger.warning("Failed to list MEGA files", exc_info=True)
-            return []
-
-    async def delete(self, path: str) -> None:
-        mega = await asyncio.to_thread(self._get_sync_client)
-        try:
-            file_info = await asyncio.to_thread(mega.find, path)
-            if file_info:
-                await asyncio.to_thread(
-                    mega.delete, file_info[0] if isinstance(file_info, list) else file_info
-                )
-        except Exception:
-            logger.warning("Failed to delete MEGA file: %s", path, exc_info=True)
-
-    async def close(self) -> None:
-        """MEGA provider uses short-lived sync calls and holds no async handles."""
-        return None
 
 
 # ── High-level orchestration ───────────────────────────────────────────

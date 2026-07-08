@@ -35,8 +35,7 @@ ocr = ["pytesseract>=0.3.13", "pillow>=12.2.0"]
 pdf = ["weasyprint>=68.1"]
 tts = ["edge-tts>=7.2.8"]
 image = ["pillow>=12.2.0"]
-cloud = ["mega.py>=0.1.0"]
-all = ["lifelogr[stt,ocr,pdf,tts,image,cloud]"]
+all = ["lifelogr[stt,ocr,pdf,tts,image]"]
 
 [dependency-groups]
 dev = [
