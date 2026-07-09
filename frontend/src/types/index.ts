@@ -210,6 +210,7 @@ export interface BackupSnapshotResponse {
   started_at: string;
   completed_at: string | null;
   error_message: string | null;
+  backup_filename: string | null;
 }
 
 export interface PaginatedParams {

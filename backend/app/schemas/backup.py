@@ -50,6 +50,7 @@ class BackupSnapshotResponse(BaseModel):
     started_at: datetime
     completed_at: datetime | None
     error_message: str | None
+    backup_filename: str | None
 
     model_config = ConfigDict(from_attributes=True)
 

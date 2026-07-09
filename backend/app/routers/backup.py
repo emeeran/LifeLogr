@@ -131,6 +131,15 @@ async def list_snapshots(
     }
 
 
+@router.delete("/snapshots/{snapshot_id}")
+async def delete_backup_snapshot(
+    snapshot_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Delete a snapshot's cloud backup file (if any) and the snapshot record."""
+    svc = BackupService(db)
+    return await svc.delete_backup(snapshot_id)
+
+
 @router.post("/restore")
 async def restore_backup(
     request: RestoreRequest, db: AsyncSession = Depends(get_db)

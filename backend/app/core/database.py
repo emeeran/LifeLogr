@@ -166,6 +166,11 @@ async def init_db() -> None:
 # Each entry: (table, column, sql). Safe to run on every startup — skipped if column exists.
 _COLUMN_MIGRATIONS = [
     ("backup_config", "label", "ALTER TABLE backup_config ADD COLUMN label VARCHAR"),
+    (
+        "backup_snapshots",
+        "backup_filename",
+        "ALTER TABLE backup_snapshots ADD COLUMN backup_filename VARCHAR",
+    ),
     ("entries", "summary", "ALTER TABLE entries ADD COLUMN summary VARCHAR(500)"),
     ("entries", "title", "ALTER TABLE entries ADD COLUMN title VARCHAR(255)"),
     ("entries", "mood", "ALTER TABLE entries ADD COLUMN mood VARCHAR(50)"),

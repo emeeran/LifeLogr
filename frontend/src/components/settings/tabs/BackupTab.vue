@@ -264,6 +264,27 @@ async function confirmDelete() {
   }
 }
 
+const deleteSnapConfirm = ref<number | null>(null);
+
+async function confirmDeleteSnap() {
+  if (deleteSnapConfirm.value === null) return;
+  const id = deleteSnapConfirm.value;
+  deleteSnapConfirm.value = null;
+  try {
+    const r = await backupApi.deleteSnapshot(id);
+    emit(
+      "toast",
+      "success",
+      r.remote_file_deleted
+        ? "Backup deleted from cloud"
+        : "Backup record removed",
+    );
+    await backup.fetchSnapshots();
+  } catch (e: unknown) {
+    emit("toast", "error", `Delete failed: ${errMsg(e)}`);
+  }
+}
+
 // ── Sync ──
 const syncPushing = ref(false);
 const syncPulling = ref(false);
@@ -775,6 +796,13 @@ onMounted(() => {
             <span class="ml-auto text-text-muted">{{
               new Date(snap.started_at).toLocaleDateString()
             }}</span>
+            <button
+              title="Delete this backup"
+              class="text-text-muted hover:text-danger cursor-pointer"
+              @click="deleteSnapConfirm = snap.id"
+            >
+              <Trash2 :size="11" />
+            </button>
           </div>
           <div
             v-if="snap.error_message"
@@ -857,5 +885,12 @@ onMounted(() => {
     message="This permanently discards all pending sync operations. Continue?"
     @confirm="handleSyncFlush"
     @cancel="flushConfirm = false"
+  />
+  <ConfirmDialog
+    v-if="deleteSnapConfirm !== null"
+    title="Delete backup?"
+    message="This deletes the backup file from cloud storage and removes the record. Continue?"
+    @confirm="confirmDeleteSnap"
+    @cancel="deleteSnapConfirm = null"
   />
 </template>

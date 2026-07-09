@@ -42,5 +42,8 @@ class BackupSnapshot(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Filename of the uploaded archive on the provider (so a snapshot can be
+    # deleted from cloud storage). Null for snapshots from older versions.
+    backup_filename: Mapped[str | None] = mapped_column(String, nullable=True)
 
     config: Mapped["BackupConfig"] = relationship(back_populates="snapshots")

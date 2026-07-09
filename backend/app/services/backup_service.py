@@ -247,6 +247,10 @@ class BackupService:
             else:
                 raise ValueError(f"Unsupported backup provider: {config.provider}")
 
+            # Remember the uploaded filename so this snapshot can be deleted
+            # from cloud storage later.
+            snapshot.backup_filename = filename
+
             # Counts for synced items
             counts = await self.count_all()
             snapshot.entries_synced = counts["entries"]
@@ -264,6 +268,89 @@ class BackupService:
         await self.db.commit()
         await self.db.refresh(snapshot)
         return snapshot
+
+    def _cloud_provider_for(self, config: BackupConfig, creds: dict[str, str]):
+        """Instantiate the cloud provider for *config* with a refresh callback.
+
+        Centralised so provider construction stays consistent; used by
+        ``delete_backup`` (run_backup keeps its own inline dispatch).
+        """
+        from app.services.cloud_sync_service import (
+            BoxProvider,
+            DropboxProvider,
+            GoogleDriveProvider,
+            NextcloudProvider,
+            OneDriveProvider,
+        )
+
+        if config.provider == "google_drive":
+
+            async def on_refresh(new_access_token: str, new_expiry: str) -> None:
+                creds["access_token"] = new_access_token
+                creds["token_expiry"] = new_expiry
+                config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+            return GoogleDriveProvider(creds, on_token_refresh=on_refresh)
+
+        if config.provider == "webdav":
+            return NextcloudProvider(
+                base_url=creds.get("url", ""),
+                username=creds.get("username", ""),
+                password=creds.get("password", ""),
+            )
+
+        if config.provider in ("onedrive", "dropbox"):
+
+            async def on_refresh_od(new_access_token: str, new_expiry: str) -> None:
+                creds["access_token"] = new_access_token
+                creds["token_expiry"] = new_expiry
+                config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+            cls = OneDriveProvider if config.provider == "onedrive" else DropboxProvider
+            return cls(creds, on_token_refresh=on_refresh_od)
+
+        if config.provider == "box":
+
+            async def on_refresh_box(
+                new_access_token: str, new_refresh_token: str, new_expiry: str
+            ) -> None:
+                creds["access_token"] = new_access_token
+                creds["refresh_token"] = new_refresh_token
+                creds["token_expiry"] = new_expiry
+                config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
+
+            return BoxProvider(creds, on_token_refresh=on_refresh_box)
+
+        raise ValueError(f"Unsupported backup provider: {config.provider}")
+
+    async def delete_backup(self, snapshot_id: int) -> dict[str, object]:
+        """Delete a snapshot's cloud backup file (if any) and the snapshot record.
+
+        Old snapshots without a stored filename just have their record removed.
+        """
+        snap = await self.db.get(BackupSnapshot, snapshot_id)
+        if snap is None:
+            raise NotFoundError(f"Backup snapshot {snapshot_id} not found")
+
+        remote_deleted = False
+        filename = snap.backup_filename
+        if filename:
+            config = await self._get_config(snap.config_id)
+            creds = json.loads(decrypt(config.credentials_encrypted))
+            provider = self._cloud_provider_for(config, creds)
+            try:
+                await provider.delete(filename)
+                remote_deleted = True
+            finally:
+                await provider.close()
+
+        await self.db.delete(snap)
+        await self.db.commit()
+        return {
+            "deleted": True,
+            "remote_file_deleted": remote_deleted,
+            "filename": filename,
+        }
 
     async def restore(self, config_id: int) -> dict[str, int]:
         """Atomically replace local data with cloud backup; rollback on failure."""
