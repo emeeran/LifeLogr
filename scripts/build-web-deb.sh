@@ -336,7 +336,7 @@ Description: LifeLogr — Privacy-first journaling web app
  data in ~/.local/share/lifelogr. The Python venv is built on the target
  at install time (needs network), so it runs on any Python 3.11+ / amd64
  Linux. Includes AI-assisted features via Ollama, encryption, markdown
- editing, media attachments, and voice recording with transcription.
+ editing, media attachments, and voice recording.
 Homepage: https://github.com/lifelogr/lifelogr
 EOF
 

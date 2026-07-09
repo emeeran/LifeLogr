@@ -44,7 +44,7 @@ const features = [
   { icon: ShieldCheck, label: 'Privacy-first', sub: 'Your data, your device' },
   { icon: WifiOff, label: 'Offline-first', sub: 'Works without a network' },
   { icon: Sparkles, label: 'Local AI', sub: 'Ollama-powered insights' },
-  { icon: Mic, label: 'Voice & OCR', sub: 'Whisper + Tesseract' },
+  { icon: Mic, label: 'Voice & OCR', sub: 'Recording + Tesseract' },
   { icon: Cloud, label: 'Encrypted Sync', sub: 'End-to-end backups' },
 ]
 

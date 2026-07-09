@@ -28,14 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# faster-whisper is now a required dep (transcription works out of the box);
-# the `stt` extra is kept as a no-op for backwards compatibility.
-stt = []
 ocr = ["pytesseract>=0.3.13", "pillow>=12.2.0"]
 pdf = ["weasyprint>=68.1"]
 tts = ["edge-tts>=7.2.8"]
 image = ["pillow>=12.2.0"]
-all = ["lifelogr[stt,ocr,pdf,tts,image]"]
+all = ["lifelogr[ocr,pdf,tts,image]"]
 
 [dependency-groups]
 dev = [
@@ -62,7 +59,7 @@ strict = true
 
 # Third-party libs without type stubs — silence import-untyped errors.
 [[tool.mypy.overrides]]
-module = ["faster_whisper", "faster_whisper.*", "edge_tts", "apscheduler.*"]
+module = ["edge_tts", "apscheduler.*"]
 ignore_missing_imports = true
 
 [tool.uv]

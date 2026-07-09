@@ -95,7 +95,7 @@ install_ollama() {
     fi
 }
 
-# ── 3. Optional: Python deps for voice transcription & PDF export ──
+# ── 3. Optional: Python deps for PDF export ──
 install_python_optional() {
     echo ">>> Installing optional Python packages..."
 
@@ -116,7 +116,7 @@ install_python_optional() {
     fi
 
     "$VENV/bin/pip" install --upgrade pip -q 2>/dev/null
-    "$VENV/bin/pip" install -q faster-whisper weasyprint 2>/dev/null || \
+    "$VENV/bin/pip" install -q weasyprint 2>/dev/null || \
         warn "Some optional Python deps failed to install (non-critical)"
 
     # Fix ownership of installed packages
@@ -125,7 +125,7 @@ install_python_optional() {
     fi
 
     log "Optional Python deps installed to $VENV"
-    warn "Note: faster-whisper and weasyprint are optional — not required for core features"
+    warn "Note: weasyprint is optional — not required for core features"
 }
 
 # ── 4. Verify installation ──
