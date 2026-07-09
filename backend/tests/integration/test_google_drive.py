@@ -123,6 +123,37 @@ async def test_google_drive_provider_upload_update():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_google_drive_upload_falls_back_to_appdata_on_403():
+    """A drive.appdata-only token (folder query 403) degrades to App Data.
+
+    Reproduces the 're-link without revoke' state: the stored token can't see
+    My Drive, so the visible-folder query 403s. The provider must still upload
+    successfully — to the hidden App Data folder — and record last_location.
+    """
+    creds = {"access_token": "active-token", "token_expiry": str(time.time() + 1000)}
+    provider = GoogleDriveProvider(creds)  # _folder_id NOT set → folder query runs
+
+    # Visible-folder query → 403 (insufficientScopes)
+    respx.get(url__regex=r"drive/v3/files\?q=.*mimeType.*").mock(
+        return_value=httpx.Response(403, json={"error": {"message": "forbidden"}})
+    )
+    # App Data file lookup → not found
+    respx.get(url__regex=r"drive/v3/files\?q=.*appDataFolder.*").mock(
+        return_value=httpx.Response(200, json={"files": []})
+    )
+    # App Data upload → created
+    respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart").mock(
+        return_value=httpx.Response(200, json={"id": "appdata-file-id"})
+    )
+
+    result = await provider.upload("lifelogr-backup-test.tar.gz", b"data")
+    assert result == "lifelogr-backup-test.tar.gz"
+    assert provider.last_location == "appdata"
+    assert provider._use_appdata is True
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_google_drive_provider_download():
     """Test downloading a file successfully."""
     creds = {
