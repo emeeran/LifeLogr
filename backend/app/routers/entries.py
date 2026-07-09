@@ -239,6 +239,54 @@ async def export_diarium(
     )
 
 
+@router.get("/export/json")
+async def export_json(
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Export entries as a portable LifeLogr JSON document.
+
+    Schema: ``{"app":"lifelogr","version":1,"entries":[{entry_date,title,body,mood,tags}]}``.
+    Round-trips through the ``/import/file`` JSON importer.
+    """
+    q = (
+        select(Entry)
+        .where(Entry.is_deleted.is_(False))
+        .options(selectinload(Entry.tag_associations).selectinload(EntryTag.tag))
+        .order_by(Entry.entry_date)
+    )
+    if start_date:
+        q = q.where(Entry.entry_date >= start_date)
+    if end_date:
+        q = q.where(Entry.entry_date <= end_date)
+    result = await db.execute(q)
+    entries = list(result.scalars().all())
+
+    items: list[dict[str, Any]] = []
+    for entry in entries:
+        tags = [a.tag.name for a in entry.tag_associations if a.tag]
+        item: dict[str, Any] = {
+            "entry_date": str(entry.entry_date),
+            "title": entry.title,
+            "body": entry.body or "",
+            "mood": entry.mood,
+        }
+        if tags:
+            item["tags"] = tags
+        items.append(item)
+
+    payload = {"app": "lifelogr", "version": 1, "entries": items}
+    content = json.dumps(payload, indent=2, ensure_ascii=False)
+    buf = io.BytesIO(content.encode("utf-8"))
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=lifelogr-export.json"},
+    )
+
+
 # .NET DateTime ticks for 0001-01-01 (the epoch Diarium's DiaryEntryId is based on).
 _DOTNET_TICKS_EPOCH = 621355968000000000
 _TICKS_PER_SECOND = 10_000_000
@@ -354,9 +402,7 @@ async def export_diarium_db(
                 if not tag or not tag.name:
                     continue
                 if tag.name not in tag_id_map:
-                    cur = conn.execute(
-                        "INSERT INTO Tags (Value) VALUES (?)", (tag.name,)
-                    )
+                    cur = conn.execute("INSERT INTO Tags (Value) VALUES (?)", (tag.name,))
                     tag_id_map[tag.name] = cur.lastrowid  # type: ignore[assignment]
                 conn.execute(
                     "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId) VALUES (?, ?)",
@@ -371,6 +417,7 @@ async def export_diarium_db(
         # and yields a byte-identical SQLite database file.
         import tempfile
         from pathlib import Path as _Path
+
         tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
         tmp.close()
         try:
@@ -528,6 +575,9 @@ async def import_entries(
 @router.post("/import/file", response_model=dict)
 async def import_file(
     file: UploadFile = File(...),
+    skip_duplicates: bool = Query(
+        True, description="Skip entries already present (same date + body)"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Import entries from an uploaded file (ZIP, JSON, or Diarium .diary).
@@ -537,6 +587,7 @@ async def import_file(
     - Diarium JSON export (array of entries with date/html/heading/tags/rating)
     - Markdown ZIP (entries/*.md with YAML frontmatter: date, mood, tags)
     """
+    import hashlib
     import shutil
     from datetime import date as date_type
 
@@ -626,36 +677,55 @@ async def import_file(
         if filename.endswith(".zip"):
             import zipfile as zf
 
+            from app.services.importers import parse_dayone_zip
+
             buf = io.BytesIO(content)
-            with zf.ZipFile(buf, "r") as z:
-                names = z.namelist()
+            # Day One exports carry Journal.json — detect and handle first.
+            is_dayone = False
+            try:
+                with zf.ZipFile(buf, "r") as z:
+                    is_dayone = any(n.endswith("Journal.json") for n in z.namelist())
+            except zipfile.BadZipFile:
+                pass
 
-                json_files = [n for n in names if n.endswith(".json") and n != "manifest.json"]
-                if json_files:
-                    for jf in json_files:
-                        try:
-                            entry = json.loads(z.read(jf))
-                            entries_data.append(_parse_diarium_json_entry(entry))
-                        except Exception:
-                            logger.warning("Failed to parse JSON entry from %s", jf)
+            if is_dayone:
+                entries_data.extend(parse_dayone_zip(content))
+            else:
+                buf.seek(0)
+                with zf.ZipFile(buf, "r") as z:
+                    names = z.namelist()
 
-                if not json_files:
-                    for n in names:
-                        if n == "entries.json" or n == "diarium.json":
+                    json_files = [n for n in names if n.endswith(".json") and n != "manifest.json"]
+                    if json_files:
+                        for jf in json_files:
                             try:
-                                data = json.loads(z.read(n))
-                                if isinstance(data, list):
-                                    for entry in data:
-                                        entries_data.append(_parse_diarium_json_entry(entry))
+                                entry = json.loads(z.read(jf))
+                                entries_data.append(_parse_diarium_json_entry(entry))
                             except Exception:
-                                logger.warning("Failed to parse bulk JSON from %s", n)
+                                logger.warning("Failed to parse JSON entry from %s", jf)
 
-                md_files = sorted([n for n in names if n.endswith(".md")])
-                for mf in md_files:
-                    raw = z.read(mf).decode("utf-8")
-                    entry = _parse_markdown_entry(raw)
-                    if entry:
-                        entries_data.append(entry)
+                    if not json_files:
+                        for n in names:
+                            if n == "entries.json" or n == "diarium.json":
+                                try:
+                                    data = json.loads(z.read(n))
+                                    if isinstance(data, list):
+                                        for entry in data:
+                                            entries_data.append(_parse_diarium_json_entry(entry))
+                                except Exception:
+                                    logger.warning("Failed to parse bulk JSON from %s", n)
+
+                    md_files = sorted([n for n in names if n.endswith(".md")])
+                    for mf in md_files:
+                        raw = z.read(mf).decode("utf-8")
+                        entry = _parse_markdown_entry(raw)
+                        if entry:
+                            entries_data.append(entry)
+
+        elif filename.endswith(".csv"):
+            from app.services.importers import parse_csv
+
+            entries_data.extend(parse_csv(content.decode("utf-8", errors="replace")))
 
         elif filename.endswith(".json"):
             data = json.loads(content)
@@ -677,6 +747,13 @@ async def import_file(
     existing_tags_result = await db.execute(select(Tag))
     tag_cache: dict[str, Tag] = {t.name: t for t in existing_tags_result.scalars().all()}
 
+    # Duplicate detection: (entry_date, sha256(body[:1000])) of existing rows.
+    existing_sigs: set[tuple[str, str]] = set()
+    if skip_duplicates:
+        _rows = await db.execute(select(Entry.entry_date, Entry.body).where(~Entry.is_deleted))
+        for _ed, _body in _rows.all():
+            existing_sigs.add((str(_ed), hashlib.sha256((_body or "")[:1000].encode()).hexdigest()))
+
     imported = 0
     skipped = 0
     for entry in entries_data:
@@ -687,6 +764,14 @@ async def import_file(
             ed = entry["entry_date"]
             if isinstance(ed, str):
                 ed = date_type.fromisoformat(ed[:10])
+
+            sig = (
+                str(ed),
+                hashlib.sha256((entry["body"] or "")[:1000].encode()).hexdigest(),
+            )
+            if skip_duplicates and sig in existing_sigs:
+                skipped += 1
+                continue
 
             # Resolve tag names to IDs (create tags if needed)
             tag_ids: list[int] = []
@@ -712,6 +797,7 @@ async def import_file(
                 tag_ids=tag_ids,
             )
             await svc.create(data)
+            existing_sigs.add(sig)
             imported += 1
         except Exception as e:
             logger.warning("Failed to import entry (date=%s): %s", entry.get("entry_date"), e)
