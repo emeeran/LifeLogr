@@ -23,6 +23,7 @@ class BackupService:
         """Encrypt and store cloud provider credentials."""
         config = BackupConfig(
             provider=data.provider,
+            label=data.label,
             credentials_encrypted=encrypt(json.dumps(data.credentials)),
             schedule_cron=data.schedule_cron,
         )
@@ -192,9 +193,7 @@ class BackupService:
                     creds["access_token"] = new_access_token
                     creds["token_expiry"] = new_expiry
                     # Re-encrypt at v2, upgrading any legacy v1 token on write.
-                    config.credentials_encrypted = reencrypt(
-                        encrypt(json.dumps(creds))
-                    )
+                    config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
 
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
                 # Best-effort: move any older hidden (App Data) backups into the
@@ -285,9 +284,7 @@ class BackupService:
                 async def on_refresh(new_access_token: str, new_expiry: str) -> None:
                     creds["access_token"] = new_access_token
                     creds["token_expiry"] = new_expiry
-                    config.credentials_encrypted = reencrypt(
-                        encrypt(json.dumps(creds))
-                    )
+                    config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
 
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
                 files = await provider.list_files("lifelogr-backup-")
@@ -353,9 +350,7 @@ class BackupService:
                     # Defence-in-depth: reject path traversal before extraction.
                     for member in tar.getmembers():
                         if member.name.startswith("/") or ".." in member.name:
-                            raise ValueError(
-                                f"Invalid archive: path traversal in '{member.name}'"
-                            )
+                            raise ValueError(f"Invalid archive: path traversal in '{member.name}'")
                     # `filter="data"` (PEP 706) additionally strips symlinks,
                     # hardlinks, device files and absolute/parent links — closing
                     # the symlink-escape vector the manual check above does not cover.
@@ -420,9 +415,7 @@ class BackupService:
         # Delete child snapshots first. The snapshots' config_id is NOT NULL and
         # the relationship has no ORM cascade, so leaving it to SQLAlchemy's
         # default would null the FK and hit an IntegrityError.
-        await self.db.execute(
-            delete(BackupSnapshot).where(BackupSnapshot.config_id == config_id)
-        )
+        await self.db.execute(delete(BackupSnapshot).where(BackupSnapshot.config_id == config_id))
         await self.db.delete(config)
         await self.db.commit()
 

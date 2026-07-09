@@ -114,23 +114,18 @@ async def validate_db_health() -> None:
             result = await conn.execute(text("PRAGMA integrity_check"))
             row = result.scalar()
             if row != "ok":
-                raise RuntimeError(
-                    f"SQLite integrity check failed: {row}"
-                )
+                raise RuntimeError(f"SQLite integrity check failed: {row}")
 
     # 3. Verify FTS5 is available (soft check — warn, don't abort)
     _fts5_available = False
     async with engine.begin() as conn:
         try:
-            await conn.execute(
-                text("CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_check USING fts5(x)")
-            )
+            await conn.execute(text("CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_check USING fts5(x)"))
             await conn.execute(text("DROP TABLE IF EXISTS _fts5_check"))
             _fts5_available = True
         except Exception as exc:
             logger.warning(
-                "SQLite FTS5 extension is not available: %s. "
-                "Full-text search will not work.",
+                "SQLite FTS5 extension is not available: %s. Full-text search will not work.",
                 exc,
             )
 
@@ -170,6 +165,7 @@ async def init_db() -> None:
 # Lightweight column migrations for desktop (no Alembic).
 # Each entry: (table, column, sql). Safe to run on every startup — skipped if column exists.
 _COLUMN_MIGRATIONS = [
+    ("backup_config", "label", "ALTER TABLE backup_config ADD COLUMN label VARCHAR"),
     ("entries", "summary", "ALTER TABLE entries ADD COLUMN summary VARCHAR(500)"),
     ("entries", "title", "ALTER TABLE entries ADD COLUMN title VARCHAR(255)"),
     ("entries", "mood", "ALTER TABLE entries ADD COLUMN mood VARCHAR(50)"),
@@ -178,8 +174,16 @@ _COLUMN_MIGRATIONS = [
     ("entries", "latitude", "ALTER TABLE entries ADD COLUMN latitude FLOAT"),
     ("entries", "longitude", "ALTER TABLE entries ADD COLUMN longitude FLOAT"),
     ("entries", "location_name", "ALTER TABLE entries ADD COLUMN location_name VARCHAR(255)"),
-    ("entries", "created_at", "ALTER TABLE entries ADD COLUMN created_at DATETIME DEFAULT '1970-01-01 00:00:00'"),
-    ("entries", "updated_at", "ALTER TABLE entries ADD COLUMN updated_at DATETIME DEFAULT '1970-01-01 00:00:00'"),
+    (
+        "entries",
+        "created_at",
+        "ALTER TABLE entries ADD COLUMN created_at DATETIME DEFAULT '1970-01-01 00:00:00'",
+    ),
+    (
+        "entries",
+        "updated_at",
+        "ALTER TABLE entries ADD COLUMN updated_at DATETIME DEFAULT '1970-01-01 00:00:00'",
+    ),
     # voice_recordings: legacy transcription columns. Older databases already
     # have these (is_transcribed is NOT NULL there); databases created after
     # transcription was removed lack them. Add if missing so every DB converges
@@ -199,9 +203,18 @@ _COLUMN_MIGRATIONS = [
 ]
 
 _INDEX_MIGRATIONS = [
-    ("ix_entries_deleted_date", "CREATE INDEX IF NOT EXISTS ix_entries_deleted_date ON entries (is_deleted, entry_date)"),
-    ("ix_entries_deleted_mood", "CREATE INDEX IF NOT EXISTS ix_entries_deleted_mood ON entries (is_deleted, mood)"),
-    ("ix_entry_tags_tag_id", "CREATE INDEX IF NOT EXISTS ix_entry_tags_tag_id ON entry_tags (tag_id)"),
+    (
+        "ix_entries_deleted_date",
+        "CREATE INDEX IF NOT EXISTS ix_entries_deleted_date ON entries (is_deleted, entry_date)",
+    ),
+    (
+        "ix_entries_deleted_mood",
+        "CREATE INDEX IF NOT EXISTS ix_entries_deleted_mood ON entries (is_deleted, mood)",
+    ),
+    (
+        "ix_entry_tags_tag_id",
+        "CREATE INDEX IF NOT EXISTS ix_entry_tags_tag_id ON entry_tags (tag_id)",
+    ),
     # Notes (also model-declared; listed for parity with entries + idempotent safety).
     (
         "ix_notes_folder_pinned_updated",
@@ -212,7 +225,10 @@ _INDEX_MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_notes_deleted_updated ON notes (is_deleted, updated_at)",
     ),
     ("ix_note_tags_tag_id", "CREATE INDEX IF NOT EXISTS ix_note_tags_tag_id ON note_tags (tag_id)"),
-    ("ix_note_folders_deleted", "CREATE INDEX IF NOT EXISTS ix_note_folders_deleted ON note_folders (is_deleted)"),
+    (
+        "ix_note_folders_deleted",
+        "CREATE INDEX IF NOT EXISTS ix_note_folders_deleted ON note_folders (is_deleted)",
+    ),
 ]
 
 
@@ -269,11 +285,7 @@ async def _backfill_entry_templates(conn: Any) -> None:
     """
     min_body = 15
     templates = (await conn.execute(text("SELECT id, body FROM templates"))).fetchall()
-    candidates = [
-        (row[0], row[1])
-        for row in templates
-        if len((row[1] or "").strip()) >= min_body
-    ]
+    candidates = [(row[0], row[1]) for row in templates if len((row[1] or "").strip()) >= min_body]
     candidates.sort(key=lambda item: len(item[1]), reverse=True)  # most specific first
     if not candidates:
         return
@@ -359,7 +371,9 @@ async def _setup_fts() -> None:
                         or 0
                     )
                     if count != entry_count:
-                        logger.info("FTS index stale (%d/%d rows), rebuilding...", count, entry_count)
+                        logger.info(
+                            "FTS index stale (%d/%d rows), rebuilding...", count, entry_count
+                        )
                         await conn.execute(text("DELETE FROM entries_fts"))
                         await conn.execute(
                             text("""
@@ -379,7 +393,9 @@ async def _setup_fts() -> None:
                         ):
                             await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
                         await conn.execute(text("DROP TABLE IF EXISTS entries_fts"))
-                        await conn.execute(text("CREATE VIRTUAL TABLE entries_fts USING fts5(title, body)"))
+                        await conn.execute(
+                            text("CREATE VIRTUAL TABLE entries_fts USING fts5(title, body)")
+                        )
                         await conn.execute(
                             text("""
                             INSERT INTO entries_fts(rowid, title, body)
@@ -387,7 +403,9 @@ async def _setup_fts() -> None:
                         """)
                         )
                     except Exception:
-                        logger.warning("FTS5 rebuild failed — full-text search unavailable", exc_info=True)
+                        logger.warning(
+                            "FTS5 rebuild failed — full-text search unavailable", exc_info=True
+                        )
 
             # Ensure triggers exist (DROP + CREATE for idempotency)
             # Skip if FTS5 table couldn't be created
@@ -553,7 +571,9 @@ async def _setup_fts() -> None:
             """)
             )
     except Exception:
-        logger.warning("Notes FTS5 setup failed — notes full-text search unavailable", exc_info=True)
+        logger.warning(
+            "Notes FTS5 setup failed — notes full-text search unavailable", exc_info=True
+        )
 
 
 async def _seed_builtin_templates() -> None:

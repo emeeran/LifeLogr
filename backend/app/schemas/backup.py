@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class BackupConfigCreate(BaseModel):
-    provider: str = Field(description="One of: google_drive, onedrive, dropbox, webdav, nas")
+    provider: str = Field(
+        description="One of: google_drive, onedrive, dropbox, box, webdav "
+        "(Synology/NAS presets use webdav)"
+    )
+    label: str | None = Field(default=None, description="Optional display name for this config")
     credentials: dict[str, str] = Field(description="Provider-specific credential map")
     schedule_cron: str | None = Field(default=None, description="Cron expression for auto-backup")
 
@@ -28,6 +32,7 @@ class BackupConfigCreate(BaseModel):
 class BackupConfigResponse(BaseModel):
     id: int
     provider: str
+    label: str | None
     schedule_cron: str | None
     last_sync_at: datetime | None
     created_at: datetime

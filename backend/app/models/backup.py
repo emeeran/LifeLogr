@@ -13,6 +13,7 @@ class BackupConfig(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     provider: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str | None] = mapped_column(String, nullable=True)
     credentials_encrypted: Mapped[str] = mapped_column(String, nullable=False)
     schedule_cron: Mapped[str | None] = mapped_column(String, nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
