@@ -3,7 +3,6 @@ import { ref, computed, onMounted } from "vue";
 import { useBackupStore } from "../../../stores/backup";
 import { backupApi } from "../../../api/backup";
 import { useEntriesStore } from "../../../stores/entries";
-import { useSyncStore } from "../../../stores/sync";
 import { isTauri } from "../../../api/client";
 import { saveFile, pickFile, pickFolder } from "../../../utils/fileDialog";
 import { useLocalStorage } from "@vueuse/core";
@@ -39,7 +38,6 @@ function errMsg(e: unknown): string {
 
 const backup = useBackupStore();
 const entriesStore = useEntriesStore();
-const syncStore = useSyncStore();
 
 // ── Local archive ──
 const importing = ref(false);
@@ -285,45 +283,6 @@ async function confirmDeleteSnap() {
   }
 }
 
-// ── Sync ──
-const syncPushing = ref(false);
-const syncPulling = ref(false);
-const flushConfirm = ref(false);
-
-async function handleSyncPush() {
-  syncPushing.value = true;
-  try {
-    await syncStore.push("local_file");
-    emit("toast", "success", "Push done");
-  } catch (e: unknown) {
-    emit("toast", "error", `Push failed: ${errMsg(e)}`);
-  } finally {
-    syncPushing.value = false;
-  }
-}
-async function handleSyncPull() {
-  syncPulling.value = true;
-  try {
-    await syncStore.pull("local_file");
-    emit("toast", "success", "Pull done");
-  } catch (e: unknown) {
-    emit("toast", "error", `Pull failed: ${errMsg(e)}`);
-  } finally {
-    syncPulling.value = false;
-  }
-}
-async function handleSyncFlush() {
-  try {
-    await syncStore.flush();
-    emit("toast", "success", "Queue flushed");
-    syncStore.fetchStatus();
-  } catch (e: unknown) {
-    emit("toast", "error", `Flush failed: ${errMsg(e)}`);
-  } finally {
-    flushConfirm.value = false;
-  }
-}
-
 // ── Auto Backup ──
 const autoBackupEnabled = useLocalStorage<boolean>(
   "lifelogr-auto-backup-enabled",
@@ -480,7 +439,6 @@ async function browseBackupFolder() {
 onMounted(() => {
   backup.fetchConfigs();
   backup.fetchSnapshots();
-  syncStore.fetchStatus();
   loadAutoBackupStatus();
 });
 </script>
@@ -821,50 +779,6 @@ onMounted(() => {
     </details>
   </SettingsSection>
 
-  <!-- Sync -->
-  <SettingsSection
-    title="Sync Queue"
-    :icon="RefreshCw"
-    description="Manage pending synchronization operations"
-    setting-key="Sync queue"
-  >
-    <div
-      v-if="syncStore.status"
-      class="flex items-center gap-3 text-[11px] mb-2"
-    >
-      <span
-        :class="
-          syncStore.status.status === 'ok' ? 'text-green-400' : 'text-accent'
-        "
-        class="font-medium"
-        >{{ syncStore.status.status }}</span
-      >
-      <span class="text-text-muted"
-        >{{ syncStore.status.pending_count }} pending</span
-      >
-      <span class="text-text-muted ml-auto">{{
-        syncStore.status.last_sync_at
-          ? new Date(syncStore.status.last_sync_at).toLocaleDateString()
-          : "—"
-      }}</span>
-    </div>
-    <div class="flex items-center gap-1.5">
-      <SButton
-        variant="accent-soft"
-        :disabled="syncPushing"
-        @click="handleSyncPush"
-      >
-        <Loader v-if="syncPushing" :size="11" class="animate-spin" />Push
-      </SButton>
-      <SButton variant="ghost" :disabled="syncPulling" @click="handleSyncPull">
-        <Loader v-if="syncPulling" :size="11" class="animate-spin" />Pull
-      </SButton>
-      <SButton variant="danger-soft" :icon="Trash2" @click="flushConfirm = true"
-        >Flush</SButton
-      >
-    </div>
-  </SettingsSection>
-
   <ConfirmDialog
     v-if="restoreConfirm"
     title="Restore from backup?"
@@ -878,13 +792,6 @@ onMounted(() => {
     message="Snapshots kept."
     @confirm="confirmDelete"
     @cancel="deleteConfirm = null"
-  />
-  <ConfirmDialog
-    v-if="flushConfirm"
-    title="Flush sync queue?"
-    message="This permanently discards all pending sync operations. Continue?"
-    @confirm="handleSyncFlush"
-    @cancel="flushConfirm = false"
   />
   <ConfirmDialog
     v-if="deleteSnapConfirm !== null"

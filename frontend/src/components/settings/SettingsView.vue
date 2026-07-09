@@ -468,7 +468,7 @@ provide("settings-highlight", highlightKey);
         :class="
           activeTab === 'dedication'
             ? 'overflow-hidden'
-            : 'overflow-y-auto px-5 py-4 space-y-4'
+            : 'overflow-y-auto px-5 py-3 space-y-3'
         "
       >
         <GeneralTab v-if="activeTab === 'general'" @toast="showToast" />

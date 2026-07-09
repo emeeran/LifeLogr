@@ -9,13 +9,20 @@
  */
 defineProps<{
   /** Optional uppercase eyebrow label above the group. */
-  label?: string
-}>()
+  label?: string;
+}>();
 </script>
 
 <template>
-  <div class="border-t border-border first:border-t-0 first:pt-0 pt-2.5 space-y-2">
-    <p v-if="label" class="text-[10px] text-text-muted uppercase tracking-wide font-medium">{{ label }}</p>
+  <div
+    class="border-t border-border first:border-t-0 first:pt-0 pt-2 space-y-1.5"
+  >
+    <p
+      v-if="label"
+      class="text-[10px] text-text-muted uppercase tracking-wide font-medium"
+    >
+      {{ label }}
+    </p>
     <slot />
   </div>
 </template>
