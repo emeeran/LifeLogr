@@ -2,9 +2,9 @@
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
@@ -141,7 +141,27 @@ class BackupService:
         )
 
         config = await self._get_config(config_id)
-        # Check for already-running backup
+        # Reclaim snapshots left "in_progress" by a crashed/interrupted previous
+        # run. We commit the in_progress row before the upload, so a crash
+        # mid-upload would otherwise block all future backups (including the
+        # daily job) forever. Anything older than 5 min is treated as stale.
+        stale_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(tzinfo=None)
+        stale = await self.db.execute(
+            select(BackupSnapshot).where(
+                BackupSnapshot.config_id == config_id,
+                BackupSnapshot.status == "in_progress",
+                BackupSnapshot.started_at < stale_cutoff,
+            )
+        )
+        stale_rows = stale.scalars().all()
+        for old in stale_rows:
+            old.status = "failed"
+            old.error_message = "Interrupted: previous run did not complete"
+            old.completed_at = datetime.now(timezone.utc)
+        if stale_rows:
+            await self.db.commit()
+
+        # Block only genuinely-running (recent) backups.
         running = await self.db.execute(
             select(BackupSnapshot).where(
                 BackupSnapshot.config_id == config_id, BackupSnapshot.status == "in_progress"
@@ -152,7 +172,12 @@ class BackupService:
 
         snapshot = BackupSnapshot(config_id=config_id, status="in_progress")
         self.db.add(snapshot)
-        await self.db.flush()
+        # Commit the in_progress row up front so we don't hold a write
+        # transaction (and SQLite's single-writer lock) open across the slow
+        # cloud upload. Holding it caused "database table is locked" on the
+        # post-upload count, marking otherwise-successful backups as failed.
+        await self.db.commit()
+        await self.db.refresh(snapshot)
 
         provider: SyncProvider | None = None
         try:
@@ -172,6 +197,12 @@ class BackupService:
                     )
 
                 provider = GoogleDriveProvider(creds, on_token_refresh=on_refresh)
+                # Best-effort: move any older hidden (App Data) backups into the
+                # visible folder. Never let migration failure abort the backup.
+                try:
+                    await provider.migrate_appdata_backups()
+                except Exception:
+                    logger.warning("Google Drive App Data migration skipped", exc_info=True)
                 await provider.upload(filename, archive_data, encrypted=False)
             elif config.provider == "webdav":
                 provider = NextcloudProvider(
@@ -386,6 +417,12 @@ class BackupService:
     async def delete_config(self, config_id: int) -> None:
         """Delete a backup configuration and its snapshots."""
         config = await self._get_config(config_id)
+        # Delete child snapshots first. The snapshots' config_id is NOT NULL and
+        # the relationship has no ORM cascade, so leaving it to SQLAlchemy's
+        # default would null the FK and hit an IntegrityError.
+        await self.db.execute(
+            delete(BackupSnapshot).where(BackupSnapshot.config_id == config_id)
+        )
         await self.db.delete(config)
         await self.db.commit()
 

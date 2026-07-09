@@ -287,6 +287,25 @@ class TestBackupConfigCrud:
         dr = await client.delete(f"/api/v1/backup/config/{config_id}")
         assert dr.status_code == 204
 
+    async def test_delete_config_with_snapshots(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Deleting a config that has snapshots must remove them too — config_id
+        is NOT NULL with no ORM cascade, so this used to IntegrityError when
+        SQLAlchemy nulled the children."""
+        from app.models.backup import BackupConfig, BackupSnapshot
+
+        cfg = BackupConfig(provider="webdav", credentials_encrypted="x")
+        db_session.add(cfg)
+        await db_session.commit()
+        await db_session.refresh(cfg)
+        db_session.add(BackupSnapshot(config_id=cfg.id, status="completed"))
+        db_session.add(BackupSnapshot(config_id=cfg.id, status="failed"))
+        await db_session.commit()
+
+        dr = await client.delete(f"/api/v1/backup/config/{cfg.id}")
+        assert dr.status_code == 204
+
     async def test_test_connection_missing_config(self, client: AsyncClient) -> None:
         r = await client.post("/api/v1/backup/config/9999/test")
         assert r.status_code == 404
@@ -328,9 +347,7 @@ class TestBackupSnapshots:
         await db_session.commit()
         await db_session.refresh(cfg)
         db_session.add(
-            BackupSnapshot(
-                config_id=cfg.id, status="completed", entries_synced=5, media_synced=2
-            )
+            BackupSnapshot(config_id=cfg.id, status="completed", entries_synced=5, media_synced=2)
         )
         await db_session.commit()
 
@@ -343,9 +360,7 @@ class TestBackupSnapshots:
         assert item["entries_synced"] == 5
         assert isinstance(item["id"], int)  # plain JSON, not an ORM object
 
-    async def test_list_snapshots_with_config_filter(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_list_snapshots_with_config_filter(self, client: AsyncClient) -> None:
         r = await client.get("/api/v1/backup/snapshots?config_id=999")
         assert r.status_code == 200
 
@@ -354,10 +369,9 @@ class TestBackupSnapshots:
 
 
 class TestExportImport:
-    async def test_export_returns_tar_gz(
-        self, client: AsyncClient, db_engine
-    ) -> None:
+    async def test_export_returns_tar_gz(self, client: AsyncClient, db_engine) -> None:
         """Export endpoint returns a valid gzip archive with diarium.diarium."""
+
         async def _noop_checkpoint(path: Path) -> None:
             pass
 
@@ -379,6 +393,7 @@ class TestExportImport:
         self, client: AsyncClient, db_session: AsyncSession, db_engine
     ) -> None:
         """Export archives the live DB including user entries."""
+
         async def _noop_checkpoint(path: Path) -> None:
             pass
 
@@ -416,9 +431,7 @@ class TestExportImport:
         finally:
             shutil.rmtree(extract_dir, ignore_errors=True)
 
-    async def test_import_rejects_path_traversal(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_import_rejects_path_traversal(self, client: AsyncClient) -> None:
         """Archive with ../ in member names is rejected with 400."""
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -435,9 +448,7 @@ class TestExportImport:
         assert r.status_code == 400
         assert "path traversal" in r.json()["detail"].lower()
 
-    async def test_import_rejects_absolute_path(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_import_rejects_absolute_path(self, client: AsyncClient) -> None:
         """Archive with absolute paths is rejected."""
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -453,9 +464,7 @@ class TestExportImport:
         )
         assert r.status_code == 400
 
-    async def test_import_strips_symlink_escape(
-        self, client: AsyncClient, tmp_path: Path
-    ) -> None:
+    async def test_import_strips_symlink_escape(self, client: AsyncClient, tmp_path: Path) -> None:
         """A symlink whose target escapes the tmpdir must be neutralised.
 
         With ``filter=\"data\"`` the symlink member is dropped entirely, so
@@ -505,9 +514,7 @@ class TestExportImport:
         )
         assert r.status_code == 400
 
-    async def test_import_accepts_media_only_archive(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_import_accepts_media_only_archive(self, client: AsyncClient) -> None:
         """Archive with media/ but no database file imports just media."""
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -537,6 +544,7 @@ class TestExportImport:
         # Patch init_db to avoid FTS setup errors with the minimal test schema
         async def _minimal_init_db():
             from app.core.database import Base, engine
+
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
@@ -776,13 +784,46 @@ class TestScheduledBackupExecution:
             config_mod.settings.DATABASE_URL = orig_url
             config_mod.settings.MEDIA_DIR = orig_media
 
+    async def test_run_now_with_explicit_path_no_schedule(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """POST /backup/run-now?backup_path= runs a local backup immediately
+        with no saved schedule — fixes the local 'Run now' 404."""
+        db_file = tmp_path / "lifelogr.db"
+        _make_valid_db(db_file)
+
+        import app.core.config as config_mod
+
+        orig_url = config_mod.settings.DATABASE_URL
+        orig_media = config_mod.settings.MEDIA_DIR
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = tmp_path / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        try:
+            # No schedule saved — pass the path directly.
+            r = await client.post(
+                "/api/v1/backup/run-now",
+                params={"backup_path": str(backup_dir), "retention": 5},
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["mode"] == "local"
+            assert data["path"] == str(backup_dir)
+            assert len(list(backup_dir.glob("lifelogr-backup-*.tar.gz"))) == 1
+        finally:
+            config_mod.settings.DATABASE_URL = orig_url
+            config_mod.settings.MEDIA_DIR = orig_media
+
     def test_retention_cleanup(self, tmp_path: Path) -> None:
         """_cleanup_old_backups keeps only N most recent archives."""
         from app.services.scheduler_service import _cleanup_old_backups
 
         # Create 5 fake backup files with distinct mtimes
         for i in range(5):
-            f = tmp_path / f"lifelogr-backup-2025010{i+1}-000000.tar.gz"
+            f = tmp_path / f"lifelogr-backup-2025010{i + 1}-000000.tar.gz"
             f.write_bytes(f"backup-{i}".encode())
             # Ensure distinct mtime so sorting is deterministic
             os.utime(str(f), (1000 + i, 1000 + i))

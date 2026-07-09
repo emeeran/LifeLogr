@@ -67,18 +67,28 @@ async def run_backup(
 
 
 @router.post("/run-now")
-async def run_configured_backup_now(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Run the configured backup job immediately.
+async def run_configured_backup_now(
+    backup_path: str | None = Query(
+        None, description="Local folder — run a local backup now (no saved schedule needed)"
+    ),
+    retention: int = Query(10, ge=1, description="Local backups to keep"),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Run a backup immediately.
 
-    Executes whatever the persisted schedule points at — a local folder
-    (``_run_backup``) or a cloud config (``BackupService.run_backup``) — so a
-    user can verify a schedule works without waiting for its cron time. This
-    actually writes the archive to the destination (unlike ``/export``, which
-    builds a throwaway copy).
+    With ``backup_path`` a local backup runs to that folder right away — no
+    persisted schedule required, so "Run now" works before the user saves one.
+    Otherwise the persisted schedule runs (a local folder via ``_run_backup`` or
+    a cloud config via ``BackupService.run_backup``). Actually writes the archive
+    (unlike ``/export``, which is a throwaway copy).
     """
     from fastapi import HTTPException
 
     from app.services.scheduler_service import _load_schedule, _run_backup
+
+    if backup_path:
+        archive = await _run_backup(backup_path, retention)
+        return {"mode": "local", "path": backup_path, "archive": archive}
 
     entry = _load_schedule()
     if not entry:
@@ -95,10 +105,10 @@ async def run_configured_backup_now(db: AsyncSession = Depends(get_db)) -> dict[
             "error": snapshot.error_message,
         }
 
-    backup_path = str(entry.get("backup_path", ""))
-    retention = int(entry.get("retention", 10))
-    archive = await _run_backup(backup_path, retention)
-    return {"mode": "local", "path": backup_path, "archive": archive}
+    sched_path = str(entry.get("backup_path", ""))
+    sched_retention = int(entry.get("retention", 10))
+    archive = await _run_backup(sched_path, sched_retention)
+    return {"mode": "local", "path": sched_path, "archive": archive}
 
 
 @router.get("/snapshots")

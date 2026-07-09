@@ -1085,7 +1085,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "fpdf2", specifier = ">=2.8.3" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "lifelogr", extras = ["stt", "ocr", "pdf", "tts", "image"], marker = "extra == 'all'" },
+    { name = "lifelogr", extras = ["ocr", "pdf", "tts", "image"], marker = "extra == 'all'" },
     { name = "markdown-it-py", specifier = ">=4.2.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "pillow", specifier = ">=12.2.0" },
@@ -1104,7 +1104,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.46.0" },
     { name = "weasyprint", marker = "extra == 'pdf'", specifier = ">=68.1" },
 ]
-provides-extras = ["stt", "ocr", "pdf", "tts", "image", "all"]
+provides-extras = ["ocr", "pdf", "tts", "image", "all"]
 
 [package.metadata.requires-dev]
 dev = [

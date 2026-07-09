@@ -78,6 +78,7 @@ async def test_google_drive_provider_upload_create():
         "token_expiry": str(time.time() + 1000),
     }
     provider = GoogleDriveProvider(creds)
+    provider._folder_id = "folder-id"  # skip the find-or-create folder step
 
     # Mock file lookup (no files found)
     respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
@@ -102,6 +103,7 @@ async def test_google_drive_provider_upload_update():
         "token_expiry": str(time.time() + 1000),
     }
     provider = GoogleDriveProvider(creds)
+    provider._folder_id = "folder-id"  # skip the find-or-create folder step
 
     # Mock file lookup (find existing file)
     respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
@@ -128,11 +130,13 @@ async def test_google_drive_provider_download():
         "token_expiry": str(time.time() + 1000),
     }
     provider = GoogleDriveProvider(creds)
+    provider._folder_id = "folder-id"  # skip the find-or-create folder step
 
-    # Mock file lookup (matches only the search endpoint with query params)
-    respx.get(
-        url__regex=r"https://www\.googleapis\.com/drive/v3/files\?.*spaces=appDataFolder"
-    ).mock(return_value=httpx.Response(200, json={"files": [{"id": "file-id"}]}))
+    # Mock file lookup in the backup folder (list endpoint only — the media
+    # download URL below is matched separately).
+    respx.get(url__regex=r"https://www\.googleapis\.com/drive/v3/files\?").mock(
+        return_value=httpx.Response(200, json={"files": [{"id": "file-id"}]})
+    )
 
     # Mock download contents
     respx.get("https://www.googleapis.com/drive/v3/files/file-id?alt=media").mock(
@@ -141,6 +145,39 @@ async def test_google_drive_provider_download():
 
     content = await provider.download("test-file.json")
     assert content == b"downloaded-bytes"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_google_drive_migrate_appdata_backups():
+    """Hidden App Data backups are copied into the visible folder and removed."""
+    creds = {"access_token": "active-token", "token_expiry": str(time.time() + 1000)}
+    provider = GoogleDriveProvider(creds)
+    provider._folder_id = "folder-id"
+
+    # Any App Data query → the legacy backup; any folder query → empty.
+    def _gdrive_get(request):
+        if "spaces=appDataFolder" in str(request.url):
+            return httpx.Response(
+                200, json={"files": [{"id": "old-id", "name": "lifelogr-backup-1.tar.gz"}]}
+            )
+        return httpx.Response(200, json={"files": []})
+
+    respx.get(url__regex=r"https://www\.googleapis\.com/drive/v3/files\?").mock(
+        side_effect=_gdrive_get
+    )
+    respx.get("https://www.googleapis.com/drive/v3/files/old-id?alt=media").mock(
+        return_value=httpx.Response(200, content=b"archive-bytes")
+    )
+    respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart").mock(
+        return_value=httpx.Response(200, json={"id": "new-id"})
+    )
+    respx.delete("https://www.googleapis.com/drive/v3/files/old-id").mock(
+        return_value=httpx.Response(204)
+    )
+
+    moved = await provider.migrate_appdata_backups()
+    assert moved == 1
 
 
 @pytest.mark.asyncio
@@ -268,9 +305,15 @@ async def test_backup_service_run_backup_gdrive(db_session):
     await db_session.commit()
     await db_session.refresh(config)
 
-    # Mock Google Drive provider operations
+    # Drive GETs: the folder lookup returns a folder (cached on the provider);
+    # all other queries (App Data list during migration, file lookup) are empty.
+    def _gdrive_get(request):
+        if "mimeType" in str(request.url):
+            return httpx.Response(200, json={"files": [{"id": "folder-id"}]})
+        return httpx.Response(200, json={"files": []})
+
     respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
-        return_value=httpx.Response(200, json={"files": []})
+        side_effect=_gdrive_get
     )
     respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart").mock(
         return_value=httpx.Response(200, json={"id": "backup-file-id"})
@@ -306,9 +349,7 @@ async def test_schedule_cloud_backup_registers_job(client, db_session):
     await db_session.refresh(config)
 
     # Schedule with config_id
-    response = await client.post(
-        f"/api/v1/backup/schedule?config_id={config.id}&cron=0+3+*+*+*"
-    )
+    response = await client.post(f"/api/v1/backup/schedule?config_id={config.id}&cron=0+3+*+*+*")
     assert response.status_code == 200
     data = response.json()
     assert data["job_id"] == "auto_backup"
@@ -336,8 +377,6 @@ async def test_schedule_cloud_backup_registers_job(client, db_session):
 @pytest.mark.asyncio
 async def test_schedule_cloud_backup_rejects_invalid_config_id(client, db_session):
     """Test POST /schedule with non-existent config_id returns 404."""
-    response = await client.post(
-        "/api/v1/backup/schedule?config_id=9999&cron=0+3+*+*+*"
-    )
+    response = await client.post("/api/v1/backup/schedule?config_id=9999&cron=0+3+*+*+*")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"]

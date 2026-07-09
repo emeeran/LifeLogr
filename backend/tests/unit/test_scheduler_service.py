@@ -11,7 +11,6 @@ from app.core.security import encrypt
 from app.models.backup import BackupConfig
 from app.services.scheduler_service import (
     SchedulerService,
-    _clear_schedule,
     _last_scheduled_occurrence,
     _load_schedule,
     _mark_backup_run,
@@ -231,9 +230,7 @@ class TestSchedulePersistence:
     @pytest.mark.asyncio
     async def test_schedule_local_persists_to_disk(self, db_session, _clean_scheduler):
         svc = SchedulerService(db_session)
-        await svc.schedule_backup(
-            cron_expr="0 2 * * *", backup_path="/tmp/x", retention=7
-        )
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x", retention=7)
         assert _load_schedule() == {
             "cron": "0 2 * * *",
             "backup_path": "/tmp/x",
@@ -290,9 +287,7 @@ class TestRestoreBackupSchedule:
     @pytest.mark.asyncio
     async def test_restores_local_job(self, _clean_scheduler):
         _ensure_scheduler_running()
-        _persist_schedule(
-            {"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3}
-        )
+        _persist_schedule({"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3})
         await SchedulerService._restore_backup_schedule()
         job = SchedulerService.get_scheduler().get_job("auto_backup")
         assert job is not None
@@ -342,12 +337,8 @@ class TestBackupCatchup:
     @pytest.mark.asyncio
     async def test_runs_local_when_stale(self, _clean_scheduler):
         _ensure_scheduler_running()
-        _persist_schedule(
-            {"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3}
-        )
-        with patch(
-            "app.services.scheduler_service._run_backup", new=AsyncMock()
-        ) as mock_run:
+        _persist_schedule({"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3})
+        with patch("app.services.scheduler_service._run_backup", new=AsyncMock()) as mock_run:
             await SchedulerService._backup_catchup()
             mock_run.assert_awaited_once_with("/tmp/x", 3)
 
@@ -361,9 +352,7 @@ class TestBackupCatchup:
                 "last_run": datetime.now(timezone.utc).isoformat(),
             }
         )
-        with patch(
-            "app.services.scheduler_service._run_backup", new=AsyncMock()
-        ) as mock_run:
+        with patch("app.services.scheduler_service._run_backup", new=AsyncMock()) as mock_run:
             await SchedulerService._backup_catchup()
             mock_run.assert_not_called()
 
@@ -371,9 +360,7 @@ class TestBackupCatchup:
     async def test_runs_cloud_when_stale(self, _clean_scheduler):
         _ensure_scheduler_running()
         _persist_schedule({"cron": "0 3 * * *", "config_id": 11})
-        with patch(
-            "app.services.scheduler_service._run_cloud_backup", new=AsyncMock()
-        ) as mock_run:
+        with patch("app.services.scheduler_service._run_cloud_backup", new=AsyncMock()) as mock_run:
             await SchedulerService._backup_catchup()
             mock_run.assert_awaited_once_with(11)
 

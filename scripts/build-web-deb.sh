@@ -230,15 +230,21 @@ if [ -n "$st" ] && kill -0 "$pid" 2>/dev/null; then
 fi
 rm -f "$STATE_FILE"   # stale
 
-# ── pick a free port: prefer 8000-8019, else let the OS assign ──
+# ── pick a free port: prefer 18765 — that's the OAuth loopback redirect port
+# the backup providers hardcode (Google Drive/Box/OneDrive/Dropbox callbacks),
+# and the SPA must be reachable there for "Sign in" to complete. Fall back to
+# 8000-8019, then an OS-assigned port, only if 18765 is taken.
 PORT="$("$PYTHON" - <<'PY'
 import socket
-for p in range(8000, 8020):
+def free(p):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.bind(("127.0.0.1", p)); s.close(); print(p); break
+        s.bind(("127.0.0.1", p)); s.close(); return True
     except OSError:
-        s.close()
+        s.close(); return False
+for p in (18765, *range(8000, 8020)):
+    if free(p):
+        print(p); break
 else:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))

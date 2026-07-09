@@ -207,7 +207,14 @@ class NextcloudProvider:
 
 
 class GoogleDriveProvider:
-    """Google Drive sync provider with a shared httpx client."""
+    """Google Drive sync provider with a shared httpx client.
+
+    Backups are stored in a visible ``LifeLogr Backups`` folder in My Drive
+    (scope ``drive.file``). A residual ``drive.appdata`` scope is retained so
+    the hidden App Data folder can still be read when migrating older backups.
+    """
+
+    BACKUP_FOLDER_NAME = "LifeLogr Backups"
 
     def __init__(
         self,
@@ -221,6 +228,7 @@ class GoogleDriveProvider:
         self._token_expiry = credentials.get("token_expiry")
         self._on_token_refresh = on_token_refresh
         self._client: httpx.AsyncClient | None = None
+        self._folder_id: str | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -262,103 +270,214 @@ class GoogleDriveProvider:
 
         return self._access_token
 
-    async def _find_file_id(self, path: str) -> str | None:
-        """Find the unique Google Drive file ID matching the file path/name."""
+    async def _get_backup_folder(self) -> str:
+        """Find or create the visible ``LifeLogr Backups`` folder in My Drive.
+
+        Backups live here (not the hidden App Data folder) so they are visible
+        and browsable in drive.google.com. The folder ID is cached per instance.
+        """
+        if self._folder_id:
+            return self._folder_id
         from urllib.parse import quote
 
         token = await self._ensure_valid_token()
         headers = {"Authorization": f"Bearer {token}"}
-
-        query = f"name = '{path}' and 'appDataFolder' in parents and trashed = false"
-        url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
-
         client = self._get_client()
-        resp = await client.get(url, headers=headers, timeout=10.0)
+
+        # No 'root' in parents clause: under drive.file the listing is already
+        # scoped to files this app created, and that clause can raise 403.
+        query = (
+            "mimeType = 'application/vnd.google-apps.folder' and "
+            f"name = '{self.BACKUP_FOLDER_NAME}' and trashed = false"
+        )
+        resp = await client.get(
+            f"https://www.googleapis.com/drive/v3/files?q={quote(query)}",
+            headers=headers,
+            timeout=10.0,
+        )
         resp.raise_for_status()
         files = resp.json().get("files", [])
+        if files:
+            self._folder_id = files[0]["id"]
+            return self._folder_id
+
+        # Not found — create it in My Drive root.
+        resp = await client.post(
+            "https://www.googleapis.com/drive/v3/files",
+            headers=headers,
+            json={
+                "name": self.BACKUP_FOLDER_NAME,
+                "mimeType": "application/vnd.google-apps.folder",
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        self._folder_id = resp.json()["id"]
+        logger.info("Created Google Drive backup folder '%s'.", self.BACKUP_FOLDER_NAME)
+        return self._folder_id
+
+    async def _query_files(self, query: str, *, spaces: str = "") -> list[dict]:
+        """Run a Drive files.list query and return the raw file dicts."""
+        from urllib.parse import quote
+
+        token = await self._ensure_valid_token()
+        url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}"
+        if spaces:
+            url += f"&spaces={spaces}"
+        client = self._get_client()
+        resp = await client.get(
+            url, headers={"Authorization": f"Bearer {token}"}, timeout=10.0
+        )
+        resp.raise_for_status()
+        return resp.json().get("files", [])
+
+    async def _find_file_id(self, path: str, *, look_in: str = "folder") -> str | None:
+        """Find the Drive file ID for *path* in the backup folder or App Data."""
+        parent = await self._get_backup_folder() if look_in == "folder" else "appDataFolder"
+        query = f"name = '{path}' and '{parent}' in parents and trashed = false"
+        spaces = "appDataFolder" if look_in == "appdata" else ""
+        files = await self._query_files(query, spaces=spaces)
         return files[0]["id"] if files else None
 
-    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+    async def _create_in_folder(self, name: str, data: bytes, folder_id: str) -> None:
+        """Create a new file inside *folder_id* via a multipart upload."""
         import json as _json
 
         token = await self._ensure_valid_token()
-        file_id = await self._find_file_id(path)
         client = self._get_client()
-
-        if file_id:
-            url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/octet-stream",
-            }
-            resp = await client.patch(url, headers=headers, content=data, timeout=15.0)
-            resp.raise_for_status()
-            return path
-        else:
-            url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-            boundary = b"lifelogr_upload_boundary"
-            headers = {
+        boundary = b"lifelogr_upload_boundary"
+        resp = await client.post(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+            headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": f"multipart/related; boundary={boundary.decode()}",
-            }
-
-            metadata = {"name": path, "parents": ["appDataFolder"]}
-
-            body = (
+            },
+            content=(
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                + _json.dumps(metadata).encode("utf-8")
+                + _json.dumps({"name": name, "parents": [folder_id]}).encode("utf-8")
                 + b"\r\n"
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: application/octet-stream\r\n\r\n" + data + b"\r\n"
                 b"--" + boundary + b"--\r\n"
-            )
+            ),
+            timeout=15.0,
+        )
+        resp.raise_for_status()
 
-            resp = await client.post(url, headers=headers, content=body, timeout=15.0)
+    async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
+        token = await self._ensure_valid_token()
+        folder_id = await self._get_backup_folder()
+        file_id = await self._find_file_id(path, look_in="folder")
+        client = self._get_client()
+
+        if file_id:
+            # Update the existing file in place.
+            url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
+            resp = await client.patch(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/octet-stream",
+                },
+                content=data,
+                timeout=15.0,
+            )
             resp.raise_for_status()
             return path
 
-    async def download(self, path: str) -> bytes:
+        await self._create_in_folder(path, data, folder_id)
+        return path
+
+    async def _download_by_id(self, file_id: str) -> bytes:
         token = await self._ensure_valid_token()
-        file_id = await self._find_file_id(path)
-        if not file_id:
-            raise FileNotFoundError(f"File not found on Google Drive: {path}")
-
-        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-        headers = {"Authorization": f"Bearer {token}"}
-
         client = self._get_client()
-        resp = await client.get(url, headers=headers, timeout=15.0)
+        resp = await client.get(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15.0,
+        )
         resp.raise_for_status()
         return resp.content
 
-    async def list_files(self, prefix: str) -> list[str]:
-        from urllib.parse import quote
+    async def download(self, path: str) -> bytes:
+        # Visible folder first, then legacy App Data for unmigrated backups.
+        file_id = await self._find_file_id(path, look_in="folder")
+        if not file_id:
+            file_id = await self._find_file_id(path, look_in="appdata")
+        if not file_id:
+            raise FileNotFoundError(f"File not found on Google Drive: {path}")
+        return await self._download_by_id(file_id)
 
-        token = await self._ensure_valid_token()
-        headers = {"Authorization": f"Bearer {token}"}
-
-        query = f"name contains '{prefix}' and 'appDataFolder' in parents and trashed = false"
-        url = f"https://www.googleapis.com/drive/v3/files?q={quote(query)}&spaces=appDataFolder"
-
-        client = self._get_client()
-        resp = await client.get(url, headers=headers, timeout=10.0)
-        resp.raise_for_status()
-        files = resp.json().get("files", [])
+    async def _list_names(self, prefix: str, *, look_in: str = "folder") -> list[str]:
+        parent = await self._get_backup_folder() if look_in == "folder" else "appDataFolder"
+        query = f"name contains '{prefix}' and '{parent}' in parents and trashed = false"
+        spaces = "appDataFolder" if look_in == "appdata" else ""
+        files = await self._query_files(query, spaces=spaces)
         return [f["name"] for f in files]
 
-    async def delete(self, path: str) -> None:
+    async def list_files(self, prefix: str) -> list[str]:
+        """List backups in the visible folder plus any still in App Data."""
+        names: set[str] = set()
+        try:
+            names.update(await self._list_names(prefix, look_in="folder"))
+        except Exception:
+            logger.debug("list_files(folder) failed", exc_info=True)
+        try:
+            names.update(await self._list_names(prefix, look_in="appdata"))
+        except Exception:
+            logger.debug("list_files(appdata) failed", exc_info=True)
+        return sorted(names)
+
+    async def _delete_by_id(self, file_id: str) -> None:
         token = await self._ensure_valid_token()
-        file_id = await self._find_file_id(path)
-        if not file_id:
-            return
-
-        url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
-        headers = {"Authorization": f"Bearer {token}"}
-
         client = self._get_client()
-        resp = await client.delete(url, headers=headers, timeout=10.0)
+        resp = await client.delete(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
         resp.raise_for_status()
+
+    async def delete(self, path: str) -> None:
+        file_id = await self._find_file_id(path, look_in="folder")
+        if not file_id:
+            file_id = await self._find_file_id(path, look_in="appdata")
+        if file_id:
+            await self._delete_by_id(file_id)
+
+    async def migrate_appdata_backups(self) -> int:
+        """Move backups stranded in the hidden App Data folder into the visible
+        ``LifeLogr Backups`` folder, then remove the originals. Idempotent.
+
+        Requires the ``drive.appdata`` scope (to read the old location) and
+        ``drive.file`` (to write the new one). Best-effort: failures log and
+        skip, so a partial migration is retried on the next run.
+        """
+        try:
+            legacy = await self._list_names("lifelogr-backup-", look_in="appdata")
+        except Exception:
+            logger.debug("migrate: could not list App Data backups", exc_info=True)
+            return 0
+
+        folder_id = await self._get_backup_folder()
+        moved = 0
+        for name in legacy:
+            try:
+                if await self._find_file_id(name, look_in="folder"):
+                    continue  # already migrated
+                old_id = await self._find_file_id(name, look_in="appdata")
+                if not old_id:
+                    continue
+                await self._create_in_folder(name, await self._download_by_id(old_id), folder_id)
+                await self._delete_by_id(old_id)
+                moved += 1
+            except Exception:
+                logger.warning("Failed to migrate backup '%s' from App Data", name, exc_info=True)
+
+        if moved:
+            logger.info("Migrated %d backup(s) from App Data to the visible folder.", moved)
+        return moved
 
     async def close(self) -> None:
         """Safely release connection resources."""
