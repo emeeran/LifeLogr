@@ -78,6 +78,7 @@ const newCredentials = ref<Record<string, string>>({});
 const newSchedule = ref("");
 const newFreqType = ref<"daily" | "weekly" | "monthly">("daily");
 const newTime = ref("03:00");
+const newLabel = ref("");
 const testResult = ref<{
   configId: number;
   success: boolean;
@@ -114,11 +115,10 @@ const providerFields: Record<string, { label: string; placeholder: string }[]> =
       { label: "Refresh Token", placeholder: "0.ARoxxxx" },
     ],
     dropbox: [{ label: "Access Token", placeholder: "sl.xxxxx" }],
-    nas: [
-      { label: "Host", placeholder: "192.168.1.100" },
-      { label: "Share Path", placeholder: "/volume1/backup" },
+    synology: [
+      { label: "URL", placeholder: "https://nas.local:5006/path" },
       { label: "Username", placeholder: "admin" },
-      { label: "Password", placeholder: "password" },
+      { label: "Password", placeholder: "app password" },
     ],
   };
 const currentFields = computed(() => providerFields[newProvider.value] ?? []);
@@ -167,6 +167,7 @@ function openCreateForm() {
   newSchedule.value = "";
   newFreqType.value = "daily";
   newTime.value = "03:00";
+  newLabel.value = "";
   showCreate.value = true;
 }
 
@@ -183,8 +184,15 @@ async function createConfig() {
   const filtered: Record<string, string> = {};
   for (const [k, v] of Object.entries(newCredentials.value))
     if (v.trim()) filtered[k] = v;
+  // Synology NAS is a WebDAV preset — store as webdav so the existing provider handles it.
+  const provider =
+    newProvider.value === "synology" ? "webdav" : newProvider.value;
+  const label =
+    newLabel.value.trim() ||
+    (newProvider.value === "synology" ? "Synology NAS" : undefined);
   await backupApi.createConfig({
-    provider: newProvider.value,
+    provider,
+    label,
     credentials: filtered,
     schedule_cron: timeToCron(newTime.value, newFreqType.value),
   });
@@ -591,9 +599,16 @@ onMounted(() => {
           <option value="box">Box</option>
           <option value="onedrive">OneDrive</option>
           <option value="dropbox">Dropbox</option>
-          <option value="nas">NAS</option>
+          <option value="synology">Synology NAS</option>
         </select>
       </SettingGroup>
+      <SettingRow label="Name">
+        <input
+          v-model="newLabel"
+          class="settings-input flex-1"
+          placeholder="Optional display name (e.g. Synology NAS)"
+        />
+      </SettingRow>
       <div
         v-if="newProvider === 'google_drive'"
         class="flex flex-col gap-1.5 py-1"
@@ -662,7 +677,7 @@ onMounted(() => {
     >
       <div class="flex items-center gap-2 mb-1.5">
         <span class="text-[12px] font-medium text-text-primary">{{
-          providerLabel(config.provider)
+          config.label || providerLabel(config.provider)
         }}</span>
         <span v-if="config.last_sync_at" class="text-[10px] text-text-muted">{{
           new Date(config.last_sync_at).toLocaleDateString()
