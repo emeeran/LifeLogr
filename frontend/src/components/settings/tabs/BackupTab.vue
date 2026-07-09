@@ -222,7 +222,7 @@ async function runBackup(configId: number) {
       "toast",
       snap.status === "completed" ? "success" : "error",
       snap.status === "completed"
-        ? `Backup done — ${snap.entries_synced}e ${snap.media_synced}m`
+        ? `Backup done — ${snap.entries_synced}e ${snap.media_synced}m${snap.error_message ? " (App Data — hidden)" : ""}`
         : `Backup failed: ${snap.error_message ?? "unknown"}`,
     );
     await backup.fetchSnapshots();
@@ -415,7 +415,9 @@ async function runBackupNow() {
         "toast",
         snap.status === "completed" ? "success" : "error",
         snap.status === "completed"
-          ? "Cloud backup completed"
+          ? snap.error_message
+            ? "Cloud backup completed (App Data — hidden)"
+            : "Cloud backup completed"
           : `Backup failed: ${snap.error_message ?? "unknown"}`,
       );
       backup.fetchSnapshots();
@@ -775,8 +777,13 @@ onMounted(() => {
             }}</span>
           </div>
           <div
-            v-if="snap.status !== 'completed' && snap.error_message"
-            class="ml-3.5 text-red-400/80 text-[10px] truncate"
+            v-if="snap.error_message"
+            class="ml-3.5 text-[10px] truncate"
+            :class="
+              snap.status === 'completed'
+                ? 'text-amber-400/80'
+                : 'text-red-400/80'
+            "
             :title="snap.error_message"
           >
             {{ snap.error_message }}

@@ -203,6 +203,16 @@ class BackupService:
                 except Exception:
                     logger.warning("Google Drive App Data migration skipped", exc_info=True)
                 await provider.upload(filename, archive_data, encrypted=False)
+                if getattr(provider, "last_location", "folder") == "appdata":
+                    # Token lacks drive.file — backup succeeded but landed in the
+                    # hidden App Data folder. Keep status=completed; surface how
+                    # to get the visible folder.
+                    snapshot.error_message = (
+                        "Backed up to hidden Google App Data — the connected "
+                        "token lacks the 'drive.file' scope. Revoke the app at "
+                        "myaccount.google.com/permissions and re-link to use the "
+                        "visible 'LifeLogr Backups' folder."
+                    )
             elif config.provider == "webdav":
                 provider = NextcloudProvider(
                     base_url=creds.get("url", ""),

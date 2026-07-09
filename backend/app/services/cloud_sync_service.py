@@ -316,6 +316,29 @@ class GoogleDriveProvider:
         logger.info("Created Google Drive backup folder '%s'.", self.BACKUP_FOLDER_NAME)
         return self._folder_id
 
+    async def _get_folder_or_appdata(self) -> str:
+        """Return the visible folder id, or ``"appDataFolder"`` as a fallback.
+
+        A ``drive.appdata``-only token (a re-link that didn't revoke the old
+        grant first) cannot access My Drive, so the visible-folder query 403s.
+        Rather than fail the whole backup, degrade to the hidden App Data
+        folder — backups still succeed; ``last_location`` records which.
+        """
+        if getattr(self, "_use_appdata", False):
+            return "appDataFolder"
+        try:
+            return await self._get_backup_folder()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 403:
+                logger.warning(
+                    "Google Drive token lacks drive.file scope — falling back to "
+                    "hidden App Data. Re-link (revoke the old grant first at "
+                    "myaccount.google.com/permissions) for a visible folder."
+                )
+                self._use_appdata = True
+                return "appDataFolder"
+            raise
+
     async def _query_files(self, query: str, *, spaces: str = "") -> list[dict]:
         """Run a Drive files.list query and return the raw file dicts."""
         from urllib.parse import quote
@@ -325,9 +348,7 @@ class GoogleDriveProvider:
         if spaces:
             url += f"&spaces={spaces}"
         client = self._get_client()
-        resp = await client.get(
-            url, headers={"Authorization": f"Bearer {token}"}, timeout=10.0
-        )
+        resp = await client.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10.0)
         resp.raise_for_status()
         return resp.json().get("files", [])
 
@@ -367,8 +388,9 @@ class GoogleDriveProvider:
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
         token = await self._ensure_valid_token()
-        folder_id = await self._get_backup_folder()
-        file_id = await self._find_file_id(path, look_in="folder")
+        parent = await self._get_folder_or_appdata()
+        look_in = "appdata" if parent == "appDataFolder" else "folder"
+        file_id = await self._find_file_id(path, look_in=look_in)
         client = self._get_client()
 
         if file_id:
@@ -384,9 +406,11 @@ class GoogleDriveProvider:
                 timeout=15.0,
             )
             resp.raise_for_status()
+            self.last_location = look_in
             return path
 
-        await self._create_in_folder(path, data, folder_id)
+        await self._create_in_folder(path, data, parent)
+        self.last_location = look_in
         return path
 
     async def _download_by_id(self, file_id: str) -> bytes:
@@ -553,7 +577,10 @@ class OneDriveProvider:
         client = self._get_client()
         resp = await client.put(
             f"{self.GRAPH}:{quote(path)}:/content",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/octet-stream",
+            },
             content=data,
             timeout=30.0,
         )
@@ -870,9 +897,7 @@ class BoxProvider:
         )
         resp.raise_for_status()
         names = [
-            e.get("name", "")
-            for e in resp.json().get("entries", [])
-            if e.get("type") == "file"
+            e.get("name", "") for e in resp.json().get("entries", []) if e.get("type") == "file"
         ]
         return [n for n in names if n.startswith(prefix)]
 
@@ -919,7 +944,9 @@ class CloudSyncService:
     async def __aenter__(self) -> CloudSyncService:
         return self
 
-    async def __aexit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any) -> None:
+    async def __aexit__(
+        self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any
+    ) -> None:
         """Safely release connection resources from the provider."""
         if hasattr(self.provider, "close"):
             await self.provider.close()
