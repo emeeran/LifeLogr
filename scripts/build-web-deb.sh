@@ -163,7 +163,17 @@ VENV="$BACKEND/.venv"
 
 # Per-user data dir — mirrors the app's default DATA_DIR (XDG_DATA_HOME/lifelogr).
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-DATA_DIR="${LIFELOGR_DATA_DIR:-$XDG_DATA_HOME/lifelogr}"
+# Resolve DATA_DIR. Precedence mirrors app/core/config.py model_post_init:
+#   LIFELOGR_DATA_DIR env  >  persisted override (config dir)  >  XDG default.
+# The override lives outside DATA_DIR so it survives relocations performed via
+# the in-app "Storage location" control.
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/lifelogr"
+OVERRIDE_FILE="$CONFIG_DIR/data-location.json"
+DATA_DIR="${LIFELOGR_DATA_DIR:-}"
+if [ -z "$DATA_DIR" ] && [ -f "$OVERRIDE_FILE" ]; then
+    DATA_DIR="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("data_dir") or "")' "$OVERRIDE_FILE" 2>/dev/null || true)"
+fi
+[ -z "$DATA_DIR" ] && DATA_DIR="$XDG_DATA_HOME/lifelogr"
 STATE_FILE="$DATA_DIR/runtime"        # plain text: "<pid> <port>"
 LOG_FILE="$DATA_DIR/server.log"
 SECRET_FILE="$DATA_DIR/.secret_key"

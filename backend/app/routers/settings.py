@@ -125,6 +125,17 @@ class SettingsUpdateRequest(BaseModel):
     ai: AISettingsUpdate | None = None
 
 
+class StoragePathResponse(BaseModel):
+    data_dir: str
+    db_path: str
+    db_size_bytes: int
+    media_size_bytes: int
+
+
+class StoragePathUpdate(BaseModel):
+    data_dir: str
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -246,3 +257,35 @@ async def integrity_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     row = result.scalar()
     ok = row == "ok"
     return {"status": "ok" if ok else "error", "message": row}
+
+
+@router.get("/storage-path", response_model=StoragePathResponse)
+async def get_storage_path() -> Any:
+    """Return the active data directory and disk usage."""
+    return StoragePathResponse(
+        data_dir=str(settings.DATA_DIR),
+        db_path=str(settings.db_path),
+        db_size_bytes=_db_file_size(),
+        media_size_bytes=_dir_size(settings.MEDIA_DIR),
+    )
+
+
+@router.post("/storage-path")
+async def update_storage_path(
+    data: StoragePathUpdate, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Relocate the data directory to *data_dir* (hot-move, no restart).
+
+    Copies DB + media + secrets, swaps the live engine, and persists the choice
+    so it survives restart. Raises 400 on an invalid target or insufficient
+    space. The old directory is left intact.
+    """
+    from fastapi import HTTPException
+
+    from app.services.storage_service import relocate_storage
+
+    try:
+        result = await relocate_storage(data.data_dir, session=db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", **result}

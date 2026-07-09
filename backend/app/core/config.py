@@ -1,5 +1,6 @@
 """Application configuration via pydantic-settings."""
 
+import json
 import logging
 import os
 import shutil
@@ -21,7 +22,61 @@ def _default_data_dir() -> Path:
     return base / "lifelogr"
 
 
+def _config_dir() -> Path:
+    """Platform-standard *config* directory (outside DATA_DIR).
+
+    Holds the storage-path override so it survives DATA_DIR moves. Mirrors
+    ``_default_data_dir``'s platform branches but points at the config area,
+    never inside the data area.
+    """
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        return base / "lifelogr" / "config"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Preferences" / "lifelogr"
+    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / "lifelogr"
+
+
 _logger = logging.getLogger(__name__)
+
+
+_STORAGE_OVERRIDE_FILENAME = "data-location.json"
+
+
+def _storage_override_path() -> Path:
+    """Path to the persisted storage-location override file."""
+    return _config_dir() / _STORAGE_OVERRIDE_FILENAME
+
+
+def _read_storage_override() -> Path | None:
+    """Return the user-chosen DATA_DIR from the override file, or ``None``.
+
+    Stored outside DATA_DIR (in the config dir) so it survives relocation.
+    Only absolute paths are honoured; malformed entries are ignored.
+    """
+    path = _storage_override_path()
+    try:
+        if path.exists():
+            raw = json.loads(path.read_text()).get("data_dir")
+            if raw:
+                candidate = Path(raw).expanduser()
+                if candidate.is_absolute():
+                    return candidate
+    except Exception:
+        _logger.warning("Could not read storage override %s", path, exc_info=True)
+    return None
+
+
+def write_storage_override(data_dir: Path) -> None:
+    """Persist the user-chosen DATA_DIR so it survives restarts.
+
+    Honoured (with identical precedence) by the launcher in
+    ``scripts/build-web-deb.sh``.
+    """
+    path = _storage_override_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"data_dir": str(Path(data_dir).expanduser())}))
 
 
 def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
@@ -42,9 +97,7 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
 
     for candidate in candidates:
         if candidate.exists() and candidate.stat().st_size > 0:
-            _logger.info(
-                "Migrating existing database from %s → %s", candidate, target_db
-            )
+            _logger.info("Migrating existing database from %s → %s", candidate, target_db)
             # Atomic write: copy to .tmp then rename
             tmp = target_db.with_suffix(target_db.suffix + ".tmp")
             try:
@@ -58,9 +111,7 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
             legacy_media = candidate.parent / "media"
             target_media = target_data_dir / "media"
             if legacy_media.is_dir() and not target_media.exists():
-                _logger.info(
-                    "Migrating media files from %s → %s", legacy_media, target_media
-                )
+                _logger.info("Migrating media files from %s → %s", legacy_media, target_media)
                 shutil.copytree(str(legacy_media), str(target_media))
             return  # migrated successfully
 
@@ -125,9 +176,19 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: object) -> None:
         """Resolve derived paths after loading from env."""
-        # Resolve DATA_DIR
-        if not self.DATA_DIR or str(self.DATA_DIR) == ".":
-            self.DATA_DIR = _default_data_dir()
+        # Resolve DATA_DIR. Precedence (kept in sync with the launcher in
+        # scripts/build-web-deb.sh): explicit LIFELOGR_DATA_DIR env >
+        # persisted storage-path override (user UI choice, stored outside
+        # DATA_DIR so it survives moves) > DATA_DIR env / platform default.
+        env_data_dir = os.environ.get("LIFELOGR_DATA_DIR")
+        if env_data_dir:
+            self.DATA_DIR = Path(env_data_dir)
+        else:
+            override = _read_storage_override()
+            if override is not None:
+                self.DATA_DIR = override
+            elif not self.DATA_DIR or str(self.DATA_DIR) == ".":
+                self.DATA_DIR = _default_data_dir()
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
         # Derive DATABASE_URL if not explicitly set
@@ -153,7 +214,7 @@ class Settings(BaseSettings):
         # we strip the scheme prefix manually.
         for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
             if url_str.startswith(prefix):
-                return Path(url_str[len(prefix):])
+                return Path(url_str[len(prefix) :])
         return Path(urlparse(url_str).path)
 
     @property
