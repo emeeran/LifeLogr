@@ -51,9 +51,7 @@ diary/
 │   │   └── integration/
 │   ├── .env                 # Local secrets (never commit)
 │   └── pyproject.toml
-├── docs/                    # SDD artefacts
-├── prompts/                 # Prompt templates
-├── raw_idea.txt
+├── docs/                    # SDD artefacts + planning (prompts/, conductor/, raw_idea.txt)
 ├── AGENTS.md                # ← You are here
 └── Makefile
 ```

@@ -1,4 +1,4 @@
-You are a Domain-Driven Design expert. Analyse raw_idea.txt and produce two files:
+You are a Domain-Driven Design expert. Analyse ../raw_idea.txt and produce two files:
 
 docs/00-domain/DOMAIN.md
   - Bounded contexts: name, responsibility, owned data

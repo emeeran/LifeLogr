@@ -46,6 +46,7 @@ backend/media/
 .vite/
 package-lock.json
 frontend/test-results/
+backend/test-results/
 frontend/playwright-report/
 
 # Packaging / distribution

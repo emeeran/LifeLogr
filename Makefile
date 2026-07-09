@@ -32,34 +32,34 @@ setup:
 
 domain:
 	@echo "── Phase 0: Domain Analysis ──"
-	$(AI) "Read raw_idea.txt and prompts/p0_domain.txt. Save outputs to docs/00-domain/DOMAIN.md and docs/00-domain/CONTEXT_MAP.md."
+	$(AI) "Read docs/planning/raw_idea.txt and docs/planning/prompts/p0_domain.txt. Save outputs to docs/00-domain/DOMAIN.md and docs/00-domain/CONTEXT_MAP.md."
 
 reqs: domain
 	@echo "── Phase 1: Requirements ──"
-	$(AI) "Read docs/00-domain/DOMAIN.md and prompts/p1_requirements.txt. Save to docs/01-requirements/REQUIREMENTS.md."
+	$(AI) "Read docs/00-domain/DOMAIN.md and docs/planning/prompts/p1_requirements.txt. Save to docs/01-requirements/REQUIREMENTS.md."
 
 spec: reqs
 	@echo "── Phase 2: Spec Generation ──"
-	$(AI) "Read docs/01-requirements/REQUIREMENTS.md and prompts/p2_spec.txt. Save to docs/02-spec/SPEC.md."
+	$(AI) "Read docs/01-requirements/REQUIREMENTS.md and docs/planning/prompts/p2_spec.txt. Save to docs/02-spec/SPEC.md."
 
 review: spec
 	@echo "── Phase 3: Review Gate ──"
-	$(AI) "Read docs/02-spec/SPEC.md and prompts/p3_review.txt. Save to docs/03-review/REVIEW.md. Print PASS or FAIL."
+	$(AI) "Read docs/02-spec/SPEC.md and docs/planning/prompts/p3_review.txt. Save to docs/03-review/REVIEW.md. Print PASS or FAIL."
 	@grep -q "^## Verdict: PASS" docs/03-review/REVIEW.md \
 		|| (echo "❌ Review FAILED. Fix issues in REVIEW.md before proceeding." && exit 1)
 	@echo "✔ Review PASSED. Proceeding..."
 
 design: review
 	@echo "── Phase 4: Design ──"
-	$(AI) "Read docs/02-spec/SPEC.md, docs/03-review/REVIEW.md, and prompts/p4_design.txt. Save to docs/04-design/DESIGN.md."
+	$(AI) "Read docs/02-spec/SPEC.md, docs/03-review/REVIEW.md, and docs/planning/prompts/p4_design.txt. Save to docs/04-design/DESIGN.md."
 
 code: design
 	@echo "── Phase 5: Implementation ──"
-	$(AI) "Read docs/02-spec/SPEC.md, docs/04-design/DESIGN.md, and prompts/p5_code.txt. Write code into backend/app/."
+	$(AI) "Read docs/02-spec/SPEC.md, docs/04-design/DESIGN.md, and docs/planning/prompts/p5_code.txt. Write code into backend/app/."
 
 review-code: code
 	@echo "── Phase 5.5: Code Review ──"
-	$(AI) "Read prompts/p5.5_review_code.txt and every file in backend/app/. Output the review to stdout."
+	$(AI) "Read docs/planning/prompts/p5.5_review_code.txt and every file in backend/app/. Output the review to stdout."
 	@echo ""
 	@echo "If issues were found, fix them, then re-run: make review-code"
 
