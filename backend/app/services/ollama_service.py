@@ -20,6 +20,42 @@ from app.schemas.ai import (
 
 logger = logging.getLogger(__name__)
 
+# Substrings (lowercased) that identify reasoning / "thinking" models. These emit
+# long <think>…</think> chains before answering and are unusably slow on CPU —
+# every editor AI tool silently stalls if one is configured. Used to add an
+# actionable hint to timeout errors and to warn in the settings UI.
+_REASONING_MARKERS = (
+    "qwen3",
+    "deepseek-r1",
+    "qwq",
+    "gpt-oss",
+    "magistral",
+    "openthinker",
+    "thinker",
+    "reasoning",
+    "nemotron",
+)
+
+_REASONING_TIMEOUT_HINT = (
+    " Reasoning/thinking models (e.g. qwen3) are extremely slow on CPU — "
+    "switch to a standard model like gemma3:4b in Settings → AI."
+)
+
+
+def is_reasoning_model(name: str) -> bool:
+    """Heuristic: does this Ollama model name look like a reasoning model?"""
+    lowered = (name or "").lower()
+    return any(marker in lowered for marker in _REASONING_MARKERS)
+
+
+class OllamaServiceError(Exception):
+    """Actionable Ollama failure (timeout, unreachable, bad status).
+
+    Mapped to HTTP 504 by the app's exception handler so the client sees a
+    helpful message instead of a generic 500 after a long hang.
+    """
+
+
 # Cache for model availability check
 _last_status_check: datetime | None = None
 _cached_status: AIStatusResponse | None = None
@@ -64,22 +100,43 @@ class OllamaService:
         num_predict: int = 2048,
         temperature: float | None = None,
     ) -> str:
-        """Send a generate request to Ollama and return the response text."""
+        """Send a generate request to Ollama and return the response text.
+
+        Raises :class:`OllamaServiceError` with an actionable message if the
+        request times out, Ollama is unreachable, or returns an error status.
+        """
+        used_model = model or self.model
         options: dict[str, Any] = {"num_predict": num_predict}
         if temperature is not None:
             options["temperature"] = temperature
 
         client = _get_client()
-        response = await client.post(
-            f"{self.base_url}/api/generate",
-            json={
-                "model": model or self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": options,
-            },
-        )
-        response.raise_for_status()
+        try:
+            response = await client.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": used_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": options,
+                },
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            hint = _REASONING_TIMEOUT_HINT if is_reasoning_model(used_model) else ""
+            raise OllamaServiceError(
+                f"Model '{used_model}' took too long to respond "
+                f"(timed out after {self.timeout}s).{hint}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise OllamaServiceError(
+                f"Ollama rejected the request for '{used_model}' "
+                f"(HTTP {exc.response.status_code})."
+            ) from exc
+        except httpx.HTTPError as exc:  # ConnectError, ReadError, etc.
+            raise OllamaServiceError(
+                f"Cannot reach Ollama at {self.base_url}: {exc}"
+            ) from exc
         data: dict[str, Any] = response.json()
         return str(data.get("response", ""))
 

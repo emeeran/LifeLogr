@@ -19,6 +19,7 @@ import {
   WifiOff,
   Eye,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-vue-next";
 import SettingsSection from "../shared/SettingsSection.vue";
 import SettingRow from "../shared/SettingRow.vue";
@@ -42,6 +43,28 @@ function formatModelSize(bytes: number): string {
     ? `${gb.toFixed(1)} GB`
     : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
 }
+
+// Mirrors backend app.services.ollama_service.is_reasoning_model — reasoning /
+// "thinking" models emit long <think> chains and stall every editor AI tool on
+// CPU-only machines. We warn (but still allow) when one is selected.
+const REASONING_MARKERS = [
+  "qwen3",
+  "deepseek-r1",
+  "qwq",
+  "gpt-oss",
+  "magistral",
+  "openthinker",
+  "thinker",
+  "reasoning",
+  "nemotron",
+];
+function isReasoningModel(name: string): boolean {
+  const lowered = (name ?? "").toLowerCase();
+  return REASONING_MARKERS.some((m) => lowered.includes(m));
+}
+const selectedModelIsReasoning = computed(() =>
+  isReasoningModel(appSettings.value?.ai.ollama_model ?? ""),
+);
 
 // ── AI Configuration ──
 const appSettings = ref<AppSettings | null>(null);
@@ -204,7 +227,7 @@ async function fetchThemes() {
 function resetAIDefaults() {
   if (!appSettings.value) return;
   const ai = appSettings.value.ai;
-  ai.ollama_model = "llama3.1";
+  ai.ollama_model = "llama3.2:3b";
   ai.ollama_base_url = "http://localhost:11434";
   ai.ollama_embed_model = "nomic-embed-text";
   ai.enable_embeddings = true;
@@ -353,6 +376,18 @@ onMounted(() => {
             </option>
           </select>
         </SettingRow>
+        <div
+          v-if="selectedModelIsReasoning"
+          class="flex items-start gap-1.5 pl-[31px] text-[10.5px] leading-snug text-amber-400"
+        >
+          <AlertTriangle :size="12" class="shrink-0 mt-px" />
+          <span>
+            Reasoning models (e.g. qwen3, deepseek-r1) can stall or hang on
+            machines without a GPU. For reliable editor AI, use a standard model
+            like <strong class="font-medium">gemma3:4b</strong> or
+            <strong class="font-medium">llama3.2:3b</strong>.
+          </span>
+        </div>
         <SettingRow
           :icon="Eye"
           label="Embedding model"

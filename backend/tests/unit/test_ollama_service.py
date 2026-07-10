@@ -1,8 +1,14 @@
 """Integration tests for Ollama — mocked HTTP, real service logic."""
 
-from unittest.mock import MagicMock, patch
+import httpx
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.ollama_service import OllamaService
+from app.services.ollama_service import (
+    OllamaService,
+    OllamaServiceError,
+    is_reasoning_model,
+)
 
 
 def _mock_response(json_data: dict):
@@ -91,3 +97,47 @@ class TestStatus:
             svc = OllamaService()
             result = await svc.status()
         assert result.ollama_available is False
+
+
+class TestReasoningDetection:
+    def test_is_reasoning_model_flags_thinking_models(self):
+        for name in ("qwen3:4b", "deepseek-r1:8b", "qwq:32b", "gpt-oss:120b"):
+            assert is_reasoning_model(name) is True, name
+
+    def test_is_reasoning_model_ignores_standard_models(self):
+        for name in ("gemma3:4b", "llama3.2:3b", "nomic-embed-text", ""):
+            assert is_reasoning_model(name) is False, name
+
+
+class TestGenerateErrors:
+    """_generate must turn httpx failures into actionable OllamaServiceError."""
+
+    async def test_timeout_raises_service_error_naming_model(self):
+        fake_client = MagicMock()
+        fake_client.post = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+        with patch("app.services.ollama_service._get_client", return_value=fake_client):
+            svc = OllamaService()
+            svc.model = "gemma3:4b"
+            with pytest.raises(OllamaServiceError, match="gemma3:4b") as exc_info:
+                await svc._generate("hi")
+        # No reasoning hint for a standard model
+        assert "qwen3" not in str(exc_info.value)
+
+    async def test_timeout_for_reasoning_model_adds_hint(self):
+        fake_client = MagicMock()
+        fake_client.post = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+        with patch("app.services.ollama_service._get_client", return_value=fake_client):
+            svc = OllamaService()
+            svc.model = "qwen3:4b"
+            with pytest.raises(OllamaServiceError, match="qwen3:4b") as exc_info:
+                await svc._generate("hi")
+        msg = str(exc_info.value)
+        assert "gemma3:4b" in msg  # actionable recommendation present
+
+    async def test_connect_error_raises_service_error(self):
+        fake_client = MagicMock()
+        fake_client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        with patch("app.services.ollama_service._get_client", return_value=fake_client):
+            svc = OllamaService()
+            with pytest.raises(OllamaServiceError, match="Cannot reach Ollama"):
+                await svc._generate("hi")

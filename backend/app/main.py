@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.exceptions import ConflictError, MediaSizeError, NotFoundError
+from app.services.ollama_service import OllamaServiceError
 
 # ── Logging ──
 logging.basicConfig(
@@ -196,6 +197,10 @@ app.add_exception_handler(
 )
 app.add_exception_handler(
     MediaSizeError, lambda r, e: JSONResponse(status_code=400, content={"detail": str(e)})
+)
+app.add_exception_handler(
+    OllamaServiceError,
+    lambda r, e: JSONResponse(status_code=504, content={"detail": str(e)}),
 )
 
 
