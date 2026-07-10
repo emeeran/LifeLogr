@@ -1,98 +1,136 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useEntriesStore } from '../../stores/entries'
-import { useTagsStore } from '../../stores/tags'
-import { useUiStore } from '../../stores/ui'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { useEntriesStore } from "../../stores/entries";
+import { useTagsStore } from "../../stores/tags";
+import { useUiStore } from "../../stores/ui";
 import {
-  X, Eye, Edit3, Minimize2, Maximize2,
-  Search, ChevronUp, ChevronDown,
-  Sparkles, Plus, Lock, Trash2, Tag, Volume2, Paperclip, LayoutTemplate,
-  Loader, Pause
-} from 'lucide-vue-next'
-import EncryptionBadge from './EncryptionBadge.vue'
-import EditorToolbar from './EditorToolbar.vue'
-import EditorStatusBar from './EditorStatusBar.vue'
-import EditorContextMenu from './EditorContextMenu.vue'
-import TagList from '../tags/TagList.vue'
-import MediaViewer from '../media/MediaViewer.vue'
-import MediaGrid from '../media/MediaGrid.vue'
-import TemplatePicker from '../templates/TemplatePicker.vue'
-import EmojiPicker from '../common/EmojiPicker.vue'
-import { useTemplatesStore } from '../../stores/templates'
-import { aiStatus, suggestTags } from '../../api/ai'
-import { encryptText, decryptText } from '../../api/encryption'
-import { ttsApi } from '../../api/tts'
-import { useDragDrop } from '../../composables/useDragDrop'
-import { useLocalStorage } from '@vueuse/core'
-import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
-import { useEditorHistory } from '../../composables/useEditorHistory'
-import { useFindReplace } from '../../composables/useFindReplace'
-import { useAiTools } from '../../composables/useAiTools'
-import { useAttachments } from '../../composables/useAttachments'
-import { useAutoSave } from '../../composables/useAutoSave'
-import { useRecordings, provideRecordings } from '../../composables/useRecordings'
-import FloatingRecorder from '../recordings/FloatingRecorder.vue'
-import EntryRecordings from '../recordings/EntryRecordings.vue'
-import FloatingPlayback from '../recordings/FloatingPlayback.vue'
+  X,
+  Eye,
+  Edit3,
+  Minimize2,
+  Maximize2,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  Sparkles,
+  Plus,
+  Lock,
+  Trash2,
+  Tag,
+  Volume2,
+  Paperclip,
+  LayoutTemplate,
+  Loader,
+  Pause,
+} from "lucide-vue-next";
+import EncryptionBadge from "./EncryptionBadge.vue";
+import EditorToolbar from "./EditorToolbar.vue";
+import EditorStatusBar from "./EditorStatusBar.vue";
+import EditorContextMenu from "./EditorContextMenu.vue";
+import TagList from "../tags/TagList.vue";
+import MediaViewer from "../media/MediaViewer.vue";
+import MediaGrid from "../media/MediaGrid.vue";
+import TemplatePicker from "../templates/TemplatePicker.vue";
+import EmojiPicker from "../common/EmojiPicker.vue";
+import { useTemplatesStore } from "../../stores/templates";
+import { aiStatus, suggestTags } from "../../api/ai";
+import { encryptText, decryptText } from "../../api/encryption";
+import { ttsApi } from "../../api/tts";
+import { useDragDrop } from "../../composables/useDragDrop";
+import { useLocalStorage } from "@vueuse/core";
+import { useMarkdownPreview } from "../../composables/useMarkdownPreview";
+import { useEditorHistory } from "../../composables/useEditorHistory";
+import { useFindReplace } from "../../composables/useFindReplace";
+import { useAiTools } from "../../composables/useAiTools";
+import { useAttachments } from "../../composables/useAttachments";
+import { useAutoSave } from "../../composables/useAutoSave";
+import {
+  useRecordings,
+  provideRecordings,
+} from "../../composables/useRecordings";
+import FloatingRecorder from "../recordings/FloatingRecorder.vue";
+import EntryRecordings from "../recordings/EntryRecordings.vue";
+import FloatingPlayback from "../recordings/FloatingPlayback.vue";
 
-const entries = useEntriesStore()
-const ui = useUiStore()
+const entries = useEntriesStore();
+const ui = useUiStore();
 
-const isNew = computed(() => ui.editingEntryId === -1)
-const hasEntry = computed(() => ui.editingEntryId != null && ui.editingEntryId > 0)
+const isNew = computed(() => ui.editingEntryId === -1);
+const hasEntry = computed(
+  () => ui.editingEntryId != null && ui.editingEntryId > 0,
+);
 
 // ── Voice recordings: floating recorder + embedded memo list + floating player ──
 // One shared instance (provided below) keeps all three UI pieces in sync. Capture
 // itself runs in the backend; this only drives the UI + local playback <audio>.
 async function ensureSavedForRecording(): Promise<boolean> {
-  if (hasEntry.value) return true
-  await save()
-  return hasEntry.value
+  if (hasEntry.value) return true;
+  await save();
+  return hasEntry.value;
 }
-const recordingsState = useRecordings(() => ui.editingEntryId, ensureSavedForRecording)
-provideRecordings(recordingsState)
-const title = ref('')
-const body = ref('')
-const tagIds = ref<number[]>([])
-const entryDate = ref('')
-const showPreview = ref(false)
-const fullscreen = ref(false)
-const textarea = ref<HTMLTextAreaElement | null>(null)
-const showTemplates = ref(false)
-const showEmoji = ref(false)
-const viewerOpen = ref(false)
-const viewerIndex = ref(0)
-const showTagDropdown = ref(false)
-const aiAvailable = ref<boolean | null>(null)
-const suggestedTags = ref<string[]>([])
-const suggestingTags = ref(false)
-const ttsPlaying = ref(false)
-const ttsLoading = ref(false)
-let ttsAudio: HTMLAudioElement | null = null
-const isEncrypted = ref(false)
-const focusMode = ref(false)
-const typewriterMode = ref(false)
-const showToolbar = ref(false)
-const showContextMenu = ref(false)
-const contextMenuPos = ref({ x: 0, y: 0 })
-const defaultTemplateId = useLocalStorage<number | null>('lifelogr-default-template', null)
+const recordingsState = useRecordings(
+  () => ui.editingEntryId,
+  ensureSavedForRecording,
+);
+provideRecordings(recordingsState);
+const title = ref("");
+const body = ref("");
+const tagIds = ref<number[]>([]);
+const entryDate = ref("");
+const showPreview = ref(false);
+const fullscreen = ref(false);
+const textarea = ref<HTMLTextAreaElement | null>(null);
+const showTemplates = ref(false);
+const showEmoji = ref(false);
+const viewerOpen = ref(false);
+const viewerIndex = ref(0);
+const showTagDropdown = ref(false);
+const aiAvailable = ref<boolean | null>(null);
+const suggestedTags = ref<string[]>([]);
+const suggestingTags = ref(false);
+const ttsPlaying = ref(false);
+const ttsLoading = ref(false);
+let ttsAudio: HTMLAudioElement | null = null;
+const isEncrypted = ref(false);
+const focusMode = ref(false);
+const typewriterMode = ref(false);
+const showToolbar = ref(false);
+const showContextMenu = ref(false);
+const contextMenuPos = ref({ x: 0, y: 0 });
+const defaultTemplateId = useLocalStorage<number | null>(
+  "lifelogr-default-template",
+  null,
+);
 // Which template the current entry was created from. Captured at creation
 // (default auto-apply or explicit pick) and sent once on create, powering the
 // Timeline template filter. null = blank / no template.
-const selectedTemplateId = ref<number | null>(null)
+const selectedTemplateId = ref<number | null>(null);
 
 // ── Composables (early — no dependencies on later functions) ──
-const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(body, textarea)
-const { showFind, findQuery, replaceQuery, findIndex, findCount, jumpToMatch, replaceOne, replaceAll } = useFindReplace(body, textarea, pushHistory)
-const { attachments, loadAttachments, handleFileUpload, removeAttachment } = useAttachments(
-  () => hasEntry.value,
-  () => ui.editingEntryId ?? null,
-  () => entries.refreshAll(),
-)
-const fileInput = ref<HTMLInputElement | null>(null)
+const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(
+  body,
+  textarea,
+);
+const {
+  showFind,
+  findQuery,
+  replaceQuery,
+  findIndex,
+  findCount,
+  jumpToMatch,
+  replaceOne,
+  replaceAll,
+} = useFindReplace(body, textarea, pushHistory);
+const { attachments, loadAttachments, handleFileUpload, removeAttachment } =
+  useAttachments(
+    () => hasEntry.value,
+    () => ui.editingEntryId ?? null,
+    () => entries.refreshAll(),
+  );
+const fileInput = ref<HTMLInputElement | null>(null);
 
 // Drag & Drop
-const { isDragging, handlers: dragHandlers } = useDragDrop()
+const { isDragging, handlers: dragHandlers } = useDragDrop();
 
 // Auto-save composable
 const { triggerAutosave, saveState: saveActive } = useAutoSave({
@@ -107,50 +145,68 @@ const { triggerAutosave, saveState: saveActive } = useAutoSave({
   snapshot,
   createEntry: (data) => entries.createEntry(data),
   updateEntry: (id, data) => entries.updateEntry(id, data),
-  setEditingEntryId: (id) => { ui.editingEntryId = id },
-})
+  setEditingEntryId: (id) => {
+    ui.editingEntryId = id;
+  },
+});
 
-function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
+function errMsg(e: unknown) {
+  return e instanceof Error ? e.message : String(e);
+}
 
 // ── Cached selection (preserved when editor loses focus) ──
-const cachedSelStart = ref(0)
-const cachedSelEnd = ref(0)
-let selCacheTimer: ReturnType<typeof setTimeout> | null = null
+const cachedSelStart = ref(0);
+const cachedSelEnd = ref(0);
+let selCacheTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cacheSelection() {
-  const el = textarea.value
+  const el = textarea.value;
   if (el) {
-    cachedSelStart.value = el.selectionStart
-    cachedSelEnd.value = el.selectionEnd
+    cachedSelStart.value = el.selectionStart;
+    cachedSelEnd.value = el.selectionEnd;
   }
 }
 
 function startSelCache() {
   // Cache on blur with a short delay so click handlers in drawer can still read it
-  selCacheTimer = setTimeout(cacheSelection, 0)
+  selCacheTimer = setTimeout(cacheSelection, 0);
 }
 
 function clearSelCache() {
-  if (selCacheTimer) { clearTimeout(selCacheTimer); selCacheTimer = null }
-  cacheSelection() // cache immediately on focus too
+  if (selCacheTimer) {
+    clearTimeout(selCacheTimer);
+    selCacheTimer = null;
+  }
+  cacheSelection(); // cache immediately on focus too
 }
 
 // ── Dirty tracking ──
-const dirty = ref(false)
-const savedSnapshot = ref('')
+const dirty = ref(false);
+const savedSnapshot = ref("");
 
-function markDirty() { dirty.value = true; ui.editorIsDirty = true }
+function markDirty() {
+  dirty.value = true;
+  ui.editorIsDirty = true;
+}
 
 function snapshot() {
-  savedSnapshot.value = JSON.stringify({ body: body.value, title: title.value, tagIds: tagIds.value })
-  dirty.value = false
-  ui.editorIsDirty = false
+  savedSnapshot.value = JSON.stringify({
+    body: body.value,
+    title: title.value,
+    tagIds: tagIds.value,
+  });
+  dirty.value = false;
+  ui.editorIsDirty = false;
 }
 
 function isDirty(): boolean {
-  if (dirty.value) return true
-  const current = JSON.stringify({ body: body.value, title: title.value, tagIds: tagIds.value })
-  return current !== savedSnapshot.value
+  if (dirty.value) return true;
+  const current = JSON.stringify({
+    body: body.value,
+    title: title.value,
+    tagIds: tagIds.value,
+  });
+  return current !== savedSnapshot.value;
 }
 
 // ── Undo / Redo history ── (extracted to useEditorHistory composable)
@@ -158,59 +214,63 @@ function isDirty(): boolean {
 
 // ── Stats ──
 const stats = computed(() => {
-  const text = body.value
-  const chars = text.length
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0
-  const lines = text ? text.split('\n').length : 0
-  const paragraphs = text.trim() ? text.trim().split(/\n\s*\n/).length : 0
-  const readMins = Math.max(1, Math.ceil(words / 200))
-  return { chars, words, lines, paragraphs, readMins }
-})
+  const text = body.value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text ? text.split("\n").length : 0;
+  const paragraphs = text.trim() ? text.trim().split(/\n\s*\n/).length : 0;
+  const readMins = Math.max(1, Math.ceil(words / 200));
+  return { chars, words, lines, paragraphs, readMins };
+});
 
 // ── Toolbar formatting ──
-function wrap(before: string, after: string, placeholder = '') {
-  const el = textarea.value
-  if (!el) return
-  const start = el.selectionStart
-  const end = el.selectionEnd
-  const selected = body.value.slice(start, end) || placeholder
-  const replacement = before + selected + after
-  body.value = body.value.slice(0, start) + replacement + body.value.slice(end)
-  pushHistory()
+function wrap(before: string, after: string, placeholder = "") {
+  const el = textarea.value;
+  if (!el) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const selected = body.value.slice(start, end) || placeholder;
+  const replacement = before + selected + after;
+  body.value = body.value.slice(0, start) + replacement + body.value.slice(end);
+  pushHistory();
   nextTick(() => {
-    el.focus()
-    el.selectionStart = start + before.length
-    el.selectionEnd = start + before.length + selected.length
-  })
+    el.focus();
+    el.selectionStart = start + before.length;
+    el.selectionEnd = start + before.length + selected.length;
+  });
 }
 
 function prependLine(prefix: string) {
-  const el = textarea.value
-  if (!el) return
-  const start = el.selectionStart
-  const lineStart = body.value.lastIndexOf('\n', start - 1) + 1
-  body.value = body.value.slice(0, lineStart) + prefix + body.value.slice(lineStart)
-  pushHistory()
+  const el = textarea.value;
+  if (!el) return;
+  const start = el.selectionStart;
+  const lineStart = body.value.lastIndexOf("\n", start - 1) + 1;
+  body.value =
+    body.value.slice(0, lineStart) + prefix + body.value.slice(lineStart);
+  pushHistory();
   nextTick(() => {
-    el.focus()
-    el.selectionStart = el.selectionEnd = start + prefix.length
-  })
+    el.focus();
+    el.selectionStart = el.selectionEnd = start + prefix.length;
+  });
 }
 
 function insertAtCursor(text: string) {
-  const el = textarea.value
-  if (!el) return
-  const start = el.selectionStart
-  body.value = body.value.slice(0, start) + text + body.value.slice(el.selectionEnd)
-  pushHistory()
+  const el = textarea.value;
+  if (!el) return;
+  const start = el.selectionStart;
+  body.value =
+    body.value.slice(0, start) + text + body.value.slice(el.selectionEnd);
+  pushHistory();
   nextTick(() => {
-    el.focus()
-    el.selectionStart = el.selectionEnd = start + text.length
-  })
+    el.focus();
+    el.selectionStart = el.selectionEnd = start + text.length;
+  });
 }
 
 function insertTable() {
-  insertAtCursor('\n| Header | Header |\n|--------|--------|\n| Cell   | Cell   |\n')
+  insertAtCursor(
+    "\n| Header | Header |\n|--------|--------|\n| Cell   | Cell   |\n",
+  );
 }
 
 // Build a horizontal-rule divider of `char`s sized to fill the textarea's
@@ -218,320 +278,422 @@ function insertTable() {
 // the editor's actual computed font (not canvas measureText, whose font-shorthand
 // parsing can silently fall back when fontFamily is a comma-separated stack), so
 // the count matches what the browser really renders — full width, no wrapping.
-function makeDivider(char = '*'): string {
-  const el = textarea.value
-  if (!el) return char.repeat(40)
-  const style = window.getComputedStyle(el)
-  const ruler = document.createElement('span')
+function makeDivider(char = "*"): string {
+  const el = textarea.value;
+  if (!el) return char.repeat(40);
+  const style = window.getComputedStyle(el);
+  const ruler = document.createElement("span");
   Object.assign(ruler.style, {
-    position: 'absolute',
-    visibility: 'hidden',
-    whiteSpace: 'pre',
+    position: "absolute",
+    visibility: "hidden",
+    whiteSpace: "pre",
     fontFamily: style.fontFamily,
     fontSize: style.fontSize,
     fontWeight: style.fontWeight,
-  })
-  const SAMPLE = 40
-  ruler.textContent = char.repeat(SAMPLE)
-  document.body.appendChild(ruler)
-  const unit = (ruler.getBoundingClientRect().width / SAMPLE) || parseFloat(style.fontSize) || 8
-  ruler.remove()
-  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
-  const usable = el.clientWidth - padding
+  });
+  const SAMPLE = 40;
+  ruler.textContent = char.repeat(SAMPLE);
+  document.body.appendChild(ruler);
+  const unit =
+    ruler.getBoundingClientRect().width / SAMPLE ||
+    parseFloat(style.fontSize) ||
+    8;
+  ruler.remove();
+  const padding =
+    parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const usable = el.clientWidth - padding;
   // Fill the line; the 1px guard stops sub-pixel rounding from pushing the last
   // asterisk onto a wrapped second line.
-  const count = Math.max(8, Math.floor((usable - 1) / unit))
-  return char.repeat(count)
+  const count = Math.max(8, Math.floor((usable - 1) / unit));
+  return char.repeat(count);
 }
 
 function insertCheckbox() {
-  prependLine('- [ ] ')
+  prependLine("- [ ] ");
 }
 
 const fmt = {
-  bold: () => wrap('**', '**', 'bold text'),
-  italic: () => wrap('*', '*', 'italic text'),
-  strikethrough: () => wrap('~~', '~~', 'strikethrough'),
-  h1: () => prependLine('# '),
-  h2: () => prependLine('## '),
-  ul: () => prependLine('- '),
-  ol: () => prependLine('1. '),
-  quote: () => prependLine('> '),
-  code: () => wrap('`', '`', 'code'),
-  codeBlock: () => wrap('\n```\n', '\n```\n', 'code block'),
-  link: () => wrap('[', '](url)', 'link text'),
-  image: () => wrap('![', '](url)', 'alt text'),
-  hr: () => insertAtCursor('\n\n' + makeDivider() + '\n\n'),
+  bold: () => wrap("**", "**", "bold text"),
+  italic: () => wrap("*", "*", "italic text"),
+  strikethrough: () => wrap("~~", "~~", "strikethrough"),
+  h1: () => prependLine("# "),
+  h2: () => prependLine("## "),
+  ul: () => prependLine("- "),
+  ol: () => prependLine("1. "),
+  quote: () => prependLine("> "),
+  code: () => wrap("`", "`", "code"),
+  codeBlock: () => wrap("\n```\n", "\n```\n", "code block"),
+  link: () => wrap("[", "](url)", "link text"),
+  image: () => wrap("![", "](url)", "alt text"),
+  hr: () => insertAtCursor("\n\n" + makeDivider() + "\n\n"),
   table: insertTable,
   checkbox: insertCheckbox,
   undo: doUndo,
   redo: doRedo,
-  alignLeft: () => wrap('<div style="text-align: left">\n', '\n</div>', 'left aligned text'),
-  alignCenter: () => wrap('<div style="text-align: center">\n', '\n</div>', 'centered text'),
-  alignRight: () => wrap('<div style="text-align: right">\n', '\n</div>', 'right aligned text'),
-  alignJustify: () => wrap('<div style="text-align: justify">\n', '\n</div>', 'justified text'),
-  highlight: () => wrap('<mark>', '</mark>', 'highlighted text'),
-}
+  alignLeft: () =>
+    wrap('<div style="text-align: left">\n', "\n</div>", "left aligned text"),
+  alignCenter: () =>
+    wrap('<div style="text-align: center">\n', "\n</div>", "centered text"),
+  alignRight: () =>
+    wrap('<div style="text-align: right">\n', "\n</div>", "right aligned text"),
+  alignJustify: () =>
+    wrap('<div style="text-align: justify">\n', "\n</div>", "justified text"),
+  highlight: () => wrap("<mark>", "</mark>", "highlighted text"),
+};
 
-const { renderedPreview } = useMarkdownPreview(() => body.value, () => showPreview.value)
+const { renderedPreview } = useMarkdownPreview(
+  () => body.value,
+  () => showPreview.value,
+);
 
 // ── Load entry data ──
 async function loadEntry() {
-  body.value = ''
-  title.value = ''
-  tagIds.value = []
-  selectedTemplateId.value = null
+  body.value = "";
+  title.value = "";
+  tagIds.value = [];
+  selectedTemplateId.value = null;
 
   if (isNew.value) {
     if (ui.newEntryDate) {
-      entryDate.value = ui.newEntryDate
+      entryDate.value = ui.newEntryDate;
     } else {
-      const d = new Date()
-      entryDate.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const d = new Date();
+      entryDate.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
     // Auto-apply default template
     try {
-      const store = useTemplatesStore()
-      await store.fetchAll()
+      const store = useTemplatesStore();
+      await store.fetchAll();
       // If no default template selected yet, auto-pick the first built-in one
       if (!defaultTemplateId.value && store.templates.length) {
-        const firstBuiltin = store.templates.find(t => t.is_builtin)
-        if (firstBuiltin) defaultTemplateId.value = firstBuiltin.id
+        const firstBuiltin = store.templates.find((t) => t.is_builtin);
+        if (firstBuiltin) defaultTemplateId.value = firstBuiltin.id;
       }
       if (defaultTemplateId.value) {
-        const tmpl = store.templates.find(t => t.id === defaultTemplateId.value)
+        const tmpl = store.templates.find(
+          (t) => t.id === defaultTemplateId.value,
+        );
         if (tmpl) {
-          body.value = tmpl.body
-          if (!title.value) title.value = tmpl.name
-          selectedTemplateId.value = tmpl.id
+          body.value = tmpl.body;
+          if (!title.value) title.value = tmpl.name;
+          selectedTemplateId.value = tmpl.id;
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     // Apply default title if no template set one
     if (!title.value && ui.defaultTitle) {
-      title.value = ui.defaultTitle
+      title.value = ui.defaultTitle;
     }
   } else if (ui.editingEntryId) {
-    const entry = await entries.fetchEntry(ui.editingEntryId!)
+    const entry = await entries.fetchEntry(ui.editingEntryId!);
     if (entry) {
-      isEncrypted.value = entry.is_encrypted
+      isEncrypted.value = entry.is_encrypted;
       if (entry.is_encrypted) {
-        body.value = ''
-        title.value = entry.title ?? ''
+        body.value = "";
+        title.value = entry.title ?? "";
       } else {
-        body.value = entry.body
-        title.value = entry.title ?? ''
+        body.value = entry.body;
+        title.value = entry.title ?? "";
       }
-      tagIds.value = entry.tags.map(t => t.id)
-      entryDate.value = entry.entry_date
-      selectedTemplateId.value = entry.template_id
+      tagIds.value = entry.tags.map((t) => t.id);
+      entryDate.value = entry.entry_date;
+      selectedTemplateId.value = entry.template_id;
     }
   }
-  pushHistory()
-  snapshot()
-  loadAttachments()
+  pushHistory();
+  snapshot();
+  loadAttachments();
 }
 
 onMounted(() => {
-  loadEntry()
-  window.addEventListener('click', async (e) => {
+  loadEntry();
+  window.addEventListener("click", async (e) => {
     // Don't dismiss while AI is running
-    if (aiLoading.value) return
+    if (aiLoading.value) return;
     // If AI result panel is showing, clear it (dismisses without action)
     if (aiResult.value) {
-      clearAiResult()
+      clearAiResult();
     }
-    showContextMenu.value = false
-    const target = e.target as HTMLElement
-    if (target.classList.contains('enc-block')) {
-      const enc = target.getAttribute('data-enc')
-      if (!enc) return
-      const passphrase = prompt('Enter passphrase to decrypt:')
-      if (!passphrase) return
+    showContextMenu.value = false;
+    const target = e.target as HTMLElement;
+    if (target.classList.contains("enc-block")) {
+      const enc = target.getAttribute("data-enc");
+      if (!enc) return;
+      const passphrase = prompt("Enter passphrase to decrypt:");
+      if (!passphrase) return;
       try {
-        const res = await decryptText(enc, passphrase)
-        target.textContent = res.decrypted
-        target.classList.remove('bg-accent/10', 'text-accent')
-        target.classList.add('bg-surface-hover', 'text-text-primary')
+        const res = await decryptText(enc, passphrase);
+        target.textContent = res.decrypted;
+        target.classList.remove("bg-accent/10", "text-accent");
+        target.classList.add("bg-surface-hover", "text-text-primary");
       } catch (e: unknown) {
-        alert('Decryption failed: wrong passphrase?')
+        alert("Decryption failed: wrong passphrase?");
       }
     }
-  })
-})
+  });
+});
 onUnmounted(() => {
-  window.removeEventListener('click', () => { showContextMenu.value = false })
-})
-watch([() => ui.editingEntryId, () => ui.newEntryDate], () => { loadEntry(); loadAttachments() })
+  window.removeEventListener("click", () => {
+    showContextMenu.value = false;
+  });
+});
+watch([() => ui.editingEntryId, () => ui.newEntryDate], () => {
+  loadEntry();
+  loadAttachments();
+});
 
 // Check AI availability once
-aiStatus().then(s => { aiAvailable.value = s.ollama_available && s.model_loaded }).catch(() => { aiAvailable.value = false })
+aiStatus()
+  .then((s) => {
+    aiAvailable.value = s.ollama_available && s.model_loaded;
+  })
+  .catch(() => {
+    aiAvailable.value = false;
+  });
 
 async function onEncryptionChange(encrypted: boolean) {
-  isEncrypted.value = encrypted
-  await loadEntry()
+  isEncrypted.value = encrypted;
+  await loadEntry();
 }
 
 function onInput() {
-  pushHistory()
-  markDirty()
+  pushHistory();
+  markDirty();
 
   if (typewriterMode.value) {
     nextTick(() => {
-      const el = textarea.value
-      if (!el) return
-      const { selectionStart } = el
-      const lines = body.value.slice(0, selectionStart).split('\n').length
-      const lineHeight = 24 // approximate px
-      const targetScroll = (lines * lineHeight) - (el.clientHeight / 2)
-      el.scrollTo({ top: targetScroll, behavior: 'smooth' })
-    })
+      const el = textarea.value;
+      if (!el) return;
+      const { selectionStart } = el;
+      const lines = body.value.slice(0, selectionStart).split("\n").length;
+      const lineHeight = 24; // approximate px
+      const targetScroll = lines * lineHeight - el.clientHeight / 2;
+      el.scrollTo({ top: targetScroll, behavior: "smooth" });
+    });
   }
 
-  triggerAutosave()
+  triggerAutosave();
 }
 
 // ── Keyboard shortcuts ──
 function onKeydown(e: KeyboardEvent) {
-  const mod = e.ctrlKey || e.metaKey
+  const mod = e.ctrlKey || e.metaKey;
 
   // Undo / Redo
-  if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return }
-  if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey) || (e.key === 'Z'))) { e.preventDefault(); doRedo(); return }
+  if (mod && e.key === "z" && !e.shiftKey) {
+    e.preventDefault();
+    doUndo();
+    return;
+  }
+  if (
+    mod &&
+    (e.key === "y" || (e.key === "z" && e.shiftKey) || e.key === "Z")
+  ) {
+    e.preventDefault();
+    doRedo();
+    return;
+  }
 
   // Save
-  if (mod && e.key === 's') { e.preventDefault(); save(); return }
+  if (mod && e.key === "s") {
+    e.preventDefault();
+    save();
+    return;
+  }
 
   // Find
-  if (mod && e.key === 'f') { e.preventDefault(); showFind.value = true; return }
-  if (e.key === 'Escape' && showFind.value) { showFind.value = false; return }
-  if (e.key === 'Enter' && showFind.value && findQuery.value) { e.preventDefault(); jumpToMatch(e.shiftKey ? -1 : 1); return }
+  if (mod && e.key === "f") {
+    e.preventDefault();
+    showFind.value = true;
+    return;
+  }
+  if (e.key === "Escape" && showFind.value) {
+    showFind.value = false;
+    return;
+  }
+  if (e.key === "Enter" && showFind.value && findQuery.value) {
+    e.preventDefault();
+    jumpToMatch(e.shiftKey ? -1 : 1);
+    return;
+  }
 
   // Formatting
-  if (!mod) return
+  if (!mod) return;
   const handlers: Record<string, () => void> = {
     b: fmt.bold,
     i: fmt.italic,
     k: fmt.code,
     u: fmt.strikethrough,
-  }
+  };
   // Ctrl+Alt+H for horizontal rule
-  if (mod && e.altKey && e.key.toLowerCase() === 'h') {
-    e.preventDefault()
-    fmt.hr()
-    return
+  if (mod && e.altKey && e.key.toLowerCase() === "h") {
+    e.preventDefault();
+    fmt.hr();
+    return;
   }
-  const handler = handlers[e.key.toLowerCase()]
+  const handler = handlers[e.key.toLowerCase()];
   if (handler) {
-    e.preventDefault()
-    handler()
+    e.preventDefault();
+    handler();
   }
 }
 
 function onTextareaKeydown(e: KeyboardEvent) {
   // Auto-indent on Enter: continue list prefixes
-  if (e.key === 'Enter') {
-    const el = textarea.value
-    if (!el) return
-    const pos = el.selectionStart
-    const lineStart = body.value.lastIndexOf('\n', pos - 1) + 1
-    const currentLine = body.value.slice(lineStart, pos)
+  if (e.key === "Enter") {
+    const el = textarea.value;
+    if (!el) return;
+    const pos = el.selectionStart;
+    const lineStart = body.value.lastIndexOf("\n", pos - 1) + 1;
+    const currentLine = body.value.slice(lineStart, pos);
 
     // Match list patterns
-    const listMatch = currentLine.match(/^(\s*)([-*+]|\d+\.)\s/)
-    const checkboxMatch = currentLine.match(/^(\s*)- \[[ x]\]\s/)
+    const listMatch = currentLine.match(/^(\s*)([-*+]|\d+\.)\s/);
+    const checkboxMatch = currentLine.match(/^(\s*)- \[[ x]\]\s/);
 
     if (listMatch || checkboxMatch) {
-      e.preventDefault()
-      const prefix = checkboxMatch ? checkboxMatch[1] + '- [ ] ' : listMatch![0]
+      e.preventDefault();
+      const prefix = checkboxMatch
+        ? checkboxMatch[1] + "- [ ] "
+        : listMatch![0];
 
       // If current line is empty (just prefix), clear it
-      if (currentLine.trim() === listMatch?.[0]?.trim() || currentLine.trim() === checkboxMatch?.[0]?.trim()) {
-        body.value = body.value.slice(0, lineStart) + body.value.slice(pos)
-        nextTick(() => { el.selectionStart = el.selectionEnd = lineStart })
-        return
+      if (
+        currentLine.trim() === listMatch?.[0]?.trim() ||
+        currentLine.trim() === checkboxMatch?.[0]?.trim()
+      ) {
+        body.value = body.value.slice(0, lineStart) + body.value.slice(pos);
+        nextTick(() => {
+          el.selectionStart = el.selectionEnd = lineStart;
+        });
+        return;
       }
 
       // Increment numbered list
-      let newPrefix = prefix
-      const numMatch = prefix.match(/^(\s*)(\d+)\.\s/)
+      let newPrefix = prefix;
+      const numMatch = prefix.match(/^(\s*)(\d+)\.\s/);
       if (numMatch) {
-        newPrefix = numMatch[1] + (parseInt(numMatch[2]) + 1) + '. '
+        newPrefix = numMatch[1] + (parseInt(numMatch[2]) + 1) + ". ";
       }
 
-      body.value = body.value.slice(0, pos) + '\n' + newPrefix + body.value.slice(pos)
-      pushHistory()
-      nextTick(() => { el.selectionStart = el.selectionEnd = pos + 1 + newPrefix.length })
-      return
+      body.value =
+        body.value.slice(0, pos) + "\n" + newPrefix + body.value.slice(pos);
+      pushHistory();
+      nextTick(() => {
+        el.selectionStart = el.selectionEnd = pos + 1 + newPrefix.length;
+      });
+      return;
     }
   }
 
   // Tab → insert spaces (or 2-space indent)
-  if (e.key === 'Tab') {
-    e.preventDefault()
+  if (e.key === "Tab") {
+    e.preventDefault();
     if (e.shiftKey) {
       // Dedent: remove up to 2 leading spaces from current line
-      const el = textarea.value!
-      const pos = el.selectionStart
-      const lineStart = body.value.lastIndexOf('\n', pos - 1) + 1
-      const lineContent = body.value.slice(lineStart)
-      if (lineContent.startsWith('  ')) {
-        body.value = body.value.slice(0, lineStart) + lineContent.slice(2)
-        nextTick(() => { el.selectionStart = el.selectionEnd = Math.max(lineStart, pos - 2) })
+      const el = textarea.value!;
+      const pos = el.selectionStart;
+      const lineStart = body.value.lastIndexOf("\n", pos - 1) + 1;
+      const lineContent = body.value.slice(lineStart);
+      if (lineContent.startsWith("  ")) {
+        body.value = body.value.slice(0, lineStart) + lineContent.slice(2);
+        nextTick(() => {
+          el.selectionStart = el.selectionEnd = Math.max(lineStart, pos - 2);
+        });
       }
     } else {
-      insertAtCursor('  ')
+      insertAtCursor("  ");
     }
-    return
+    return;
   }
 }
 
 // ── Fullscreen escape ──
 function onContextMenu(e: MouseEvent) {
-  e.preventDefault()
+  e.preventDefault();
   // Cache selection immediately before blur fires — right-click can change selection
-  cacheSelection()
-  contextMenuPos.value = { x: e.clientX, y: e.clientY - 12 }
-  showContextMenu.value = true
+  cacheSelection();
+  contextMenuPos.value = { x: e.clientX, y: e.clientY - 12 };
+  showContextMenu.value = true;
 }
 
 function onGlobalKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
+  if (e.key !== "Escape") return;
 
   // Close active overlays in priority order
-  if (showTemplates.value) { showTemplates.value = false; return }
-  if ((showContextMenu.value || aiResult.value) && !aiLoading.value) { clearAiResult(); return }
-  if (ui.activeDrawer) { ui.closeDrawer(); return }
-  if (showEmoji.value) { showEmoji.value = false; return }
-  if (viewerOpen.value) { viewerOpen.value = false; return }
-  if (showTagDropdown.value) { showTagDropdown.value = false; return }
-  if (showFind.value) { showFind.value = false; return }
-  if (fullscreen.value) { fullscreen.value = false; return }
+  if (showTemplates.value) {
+    showTemplates.value = false;
+    return;
+  }
+  if ((showContextMenu.value || aiResult.value) && !aiLoading.value) {
+    clearAiResult();
+    return;
+  }
+  if (ui.activeDrawer) {
+    ui.closeDrawer();
+    return;
+  }
+  if (showEmoji.value) {
+    showEmoji.value = false;
+    return;
+  }
+  if (viewerOpen.value) {
+    viewerOpen.value = false;
+    return;
+  }
+  if (showTagDropdown.value) {
+    showTagDropdown.value = false;
+    return;
+  }
+  if (showFind.value) {
+    showFind.value = false;
+    return;
+  }
+  if (fullscreen.value) {
+    fullscreen.value = false;
+    return;
+  }
 
   // Close editor panel entirely
-  close()
+  close();
 }
 
-onMounted(() => document.addEventListener('keydown', onGlobalKeydown))
-onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
+onMounted(() => document.addEventListener("keydown", onGlobalKeydown));
+onUnmounted(() => document.removeEventListener("keydown", onGlobalKeydown));
 
 defineExpose({
-  isDirty, save, body, onInput, hasEntry, entryId: computed(() => ui.editingEntryId),
-  attachments, handleFileUpload, removeAttachment, loadAttachments,
+  isDirty,
+  save,
+  body,
+  onInput,
+  hasEntry,
+  entryId: computed(() => ui.editingEntryId),
+  attachments,
+  handleFileUpload,
+  removeAttachment,
+  loadAttachments,
   triggerFileInput: () => fileInput.value?.click(),
-  openViewer: (index: number) => { viewerIndex.value = index; viewerOpen.value = true },
-  getSelection, applyToSelection,
-})
+  openViewer: (index: number) => {
+    viewerIndex.value = index;
+    viewerOpen.value = true;
+  },
+  getSelection,
+  applyToSelection,
+});
 
 // ── Save ──
 async function save() {
   try {
     if (isNew.value) {
-      if (!body.value.trim() && !title.value.trim()) { return }
+      if (!body.value.trim() && !title.value.trim()) {
+        return;
+      }
       if (!title.value.trim()) {
-        const t = prompt('Title for this entry:')
-        if (t === null) return
-        title.value = t
+        const t = prompt("Title for this entry:");
+        if (t === null) return;
+        title.value = t;
       }
       const entry = await entries.createEntry({
         entry_date: entryDate.value,
@@ -539,130 +701,142 @@ async function save() {
         body: body.value,
         tag_ids: tagIds.value.length ? tagIds.value : undefined,
         template_id: selectedTemplateId.value,
-      })
-      snapshot()
-      entries.refreshAll()
-      entries.currentEntry = entry
-      ui.detailPanelOpen = true
-      ui.startEditing(null)
+      });
+      snapshot();
+      entries.refreshAll();
+      entries.currentEntry = entry;
+      ui.detailPanelOpen = true;
+      ui.startEditing(null);
     } else {
       // Allow empty body if a title is present (title-only / recording-only entries).
       if (!body.value.trim() && !title.value.trim()) {
-        alert('Add a title or some text before saving')
-        return
+        alert("Add a title or some text before saving");
+        return;
       }
-      await entries.updateEntry(ui.editingEntryId!, { title: title.value || null, body: body.value, tag_ids: tagIds.value })
-      snapshot()
-      entries.refreshAll()
-      ui.startEditing(null)
+      await entries.updateEntry(ui.editingEntryId!, {
+        title: title.value || null,
+        body: body.value,
+        tag_ids: tagIds.value,
+      });
+      snapshot();
+      entries.refreshAll();
+      ui.startEditing(null);
     }
   } catch (e: unknown) {
-    console.error('[EntryEditor] save failed:', e)
-    alert(`Save failed: ${errMsg(e)}`)
+    console.error("[EntryEditor] save failed:", e);
+    alert(`Save failed: ${errMsg(e)}`);
   }
 }
 
 function close() {
-  entries.refreshAll()
-  ui.startEditing(null)
+  entries.refreshAll();
+  ui.startEditing(null);
 }
 
 function onEmojiSelect(emoji: string) {
-  insertAtCursor(emoji)
-  showEmoji.value = false
+  insertAtCursor(emoji);
+  showEmoji.value = false;
 }
 
 function copyToClipboard() {
-  const text = getSelection()
-  if (text) navigator.clipboard.writeText(text)
+  const text = getSelection();
+  if (text) navigator.clipboard.writeText(text);
 }
 
 function cutToClipboard() {
-  const text = getSelection()
+  const text = getSelection();
   if (text) {
-    navigator.clipboard.writeText(text)
-    applyToSelection('')
+    navigator.clipboard.writeText(text);
+    applyToSelection("");
   }
 }
 
 function getSelection() {
-  const el = textarea.value
-  if (!el) return ''
-  const start = document.activeElement === el ? el.selectionStart : cachedSelStart.value
-  const end = document.activeElement === el ? el.selectionEnd : cachedSelEnd.value
-  return body.value.slice(start, end).trim()
+  const el = textarea.value;
+  if (!el) return "";
+  const start =
+    document.activeElement === el ? el.selectionStart : cachedSelStart.value;
+  const end =
+    document.activeElement === el ? el.selectionEnd : cachedSelEnd.value;
+  return body.value.slice(start, end).trim();
 }
 
 function applyToSelection(newText: string) {
-  const el = textarea.value
-  if (!el) return
-  const focused = document.activeElement === el
-  const start = focused ? el.selectionStart : cachedSelStart.value
-  const end = focused ? el.selectionEnd : cachedSelEnd.value
-  body.value = body.value.slice(0, start) + newText + body.value.slice(end)
-  pushHistory()
-  markDirty()
+  const el = textarea.value;
+  if (!el) return;
+  const focused = document.activeElement === el;
+  const start = focused ? el.selectionStart : cachedSelStart.value;
+  const end = focused ? el.selectionEnd : cachedSelEnd.value;
+  body.value = body.value.slice(0, start) + newText + body.value.slice(end);
+  pushHistory();
+  markDirty();
   nextTick(() => {
-    el.focus()
-    el.selectionStart = start
-    el.selectionEnd = start + newText.length
-  })
+    el.focus();
+    el.selectionStart = start;
+    el.selectionEnd = start + newText.length;
+  });
 }
 
 async function onDropFiles(e: DragEvent) {
-  const accepted = dragHandlers.onDrop(e)
-  if (!accepted?.length) return
+  const accepted = dragHandlers.onDrop(e);
+  if (!accepted?.length) return;
   // Auto-save entry first if new
   if (!hasEntry.value) {
-    await save()
-    if (!hasEntry.value) return
+    await save();
+    if (!hasEntry.value) return;
   }
-  await handleFileUpload({ length: accepted.length, item: (i: number) => accepted[i] } as any)
+  await handleFileUpload({
+    length: accepted.length,
+    item: (i: number) => accepted[i],
+  } as any);
 }
 
 // ── Attachments ── (extracted to useAttachments composable)
 
 async function openAttachDialog() {
-  if (ui.activeDrawer === 'attachments') { ui.closeDrawer(); return }
-  if (!hasEntry.value) {
-    await save()
-    if (!hasEntry.value) return
+  if (ui.activeDrawer === "attachments") {
+    ui.closeDrawer();
+    return;
   }
-  await loadAttachments()
-  ui.activeDrawer = 'attachments'
-  nextTick(() => fileInput.value?.click())
+  if (!hasEntry.value) {
+    await save();
+    if (!hasEntry.value) return;
+  }
+  await loadAttachments();
+  ui.activeDrawer = "attachments";
+  nextTick(() => fileInput.value?.click());
 }
 
 // handleFileUpload, removeAttachment — extracted to useAttachments composable
 
 async function encryptDecryptSelection() {
-  const text = getSelection()
+  const text = getSelection();
   if (!text) {
-    alert('Please select some text.')
-    return
+    alert("Please select some text.");
+    return;
   }
 
   // Check if the selected text is an encrypted block
-  const encMatch = text.match(/^<!--ENC\{(.+)\}-->$/s)
+  const encMatch = text.match(/^<!--ENC\{(.+)\}-->$/s);
   if (encMatch) {
     // Decrypt mode
-    const passphrase = prompt('Enter passphrase to decrypt:')
-    if (!passphrase) return
+    const passphrase = prompt("Enter passphrase to decrypt:");
+    if (!passphrase) return;
     try {
-      const res = await decryptText(encMatch[1], passphrase)
-      applyToSelection(res.decrypted)
+      const res = await decryptText(encMatch[1], passphrase);
+      applyToSelection(res.decrypted);
     } catch (e: unknown) {
-      alert(`Decryption failed: ${errMsg(e)}`)
+      alert(`Decryption failed: ${errMsg(e)}`);
     }
   } else {
     // Encrypt mode
-    const passphrase = prompt('Enter a passphrase to encrypt this selection:')
-    if (!passphrase) return
+    const passphrase = prompt("Enter a passphrase to encrypt this selection:");
+    if (!passphrase) return;
     try {
-      const res = await encryptText(text, passphrase)
-      applyToSelection(`<!--ENC{${res.encrypted}}-->`)
+      const res = await encryptText(text, passphrase);
+      applyToSelection(`<!--ENC{${res.encrypted}}-->`);
     } catch (e: unknown) {
-      alert(`Encryption failed: ${errMsg(e)}`)
+      alert(`Encryption failed: ${errMsg(e)}`);
     }
   }
 }
@@ -672,133 +846,181 @@ async function encryptDecryptSelection() {
 
 // Initialize AI tools composable (needs getSelection/applyToSelection defined above)
 const {
-  aiLoading, aiResult, aiResultMode, aiParamValue,
-  runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, applyToolParam, clearAiResult,
-} = useAiTools(body, getSelection, applyToSelection, cachedSelStart, cachedSelEnd, textarea, pushHistory, markDirty)
+  aiLoading,
+  aiResult,
+  aiResultMode,
+  aiParamValue,
+  runAiTool,
+  aiResultReplace,
+  aiResultInsert,
+  aiResultRetry,
+  aiResultCopy,
+  applyToolParam,
+  clearAiResult,
+} = useAiTools(
+  body,
+  getSelection,
+  applyToSelection,
+  cachedSelStart,
+  cachedSelEnd,
+  textarea,
+  pushHistory,
+  markDirty,
+);
 
 async function toggleTTS() {
   if (ttsPlaying.value) {
-    if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
-    ttsPlaying.value = false
-    return
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio = null;
+    }
+    ttsPlaying.value = false;
+    return;
   }
-  const text = [title.value, body.value].filter(Boolean).join('\n\n')
-  if (!text.trim()) return
-  ttsLoading.value = true
+  const text = [title.value, body.value].filter(Boolean).join("\n\n");
+  if (!text.trim()) return;
+  ttsLoading.value = true;
   try {
     if (hasEntry.value) {
-      const url = ttsApi.entryUrl(ui.editingEntryId!)
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`)
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      ttsAudio = new Audio(blobUrl)
-      ttsAudio.addEventListener('ended', () => URL.revokeObjectURL(blobUrl))
-      ttsAudio.addEventListener('error', () => URL.revokeObjectURL(blobUrl))
+      const url = ttsApi.entryUrl(ui.editingEntryId!);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      ttsAudio = new Audio(blobUrl);
+      ttsAudio.addEventListener("ended", () => URL.revokeObjectURL(blobUrl));
+      ttsAudio.addEventListener("error", () => URL.revokeObjectURL(blobUrl));
     } else {
-      const blob = await ttsApi.speakBlob(text)
-      const blobUrl = URL.createObjectURL(blob)
-      ttsAudio = new Audio(blobUrl)
-      ttsAudio.addEventListener('ended', () => URL.revokeObjectURL(blobUrl))
-      ttsAudio.addEventListener('error', () => URL.revokeObjectURL(blobUrl))
+      const blob = await ttsApi.speakBlob(text);
+      const blobUrl = URL.createObjectURL(blob);
+      ttsAudio = new Audio(blobUrl);
+      ttsAudio.addEventListener("ended", () => URL.revokeObjectURL(blobUrl));
+      ttsAudio.addEventListener("error", () => URL.revokeObjectURL(blobUrl));
     }
-    ttsAudio.addEventListener('ended', () => { ttsPlaying.value = false })
-    ttsAudio.addEventListener('error', () => { ttsPlaying.value = false })
-    ttsPlaying.value = true
-    ttsLoading.value = false
-    await ttsAudio.play()
+    ttsAudio.addEventListener("ended", () => {
+      ttsPlaying.value = false;
+    });
+    ttsAudio.addEventListener("error", () => {
+      ttsPlaying.value = false;
+    });
+    ttsPlaying.value = true;
+    ttsLoading.value = false;
+    await ttsAudio.play();
   } catch (e: unknown) {
-    alert(`Read Aloud failed: ${errMsg(e)}`)
+    alert(`Read Aloud failed: ${errMsg(e)}`);
   } finally {
-    ttsLoading.value = false
+    ttsLoading.value = false;
   }
 }
 
 async function handleDelete() {
-  if (isNew.value) return
-  if (!confirm('Delete this entry?')) return
+  if (isNew.value) return;
+  if (!confirm("Delete this entry?")) return;
   try {
-    await entries.deleteEntry(ui.editingEntryId!)
+    await entries.deleteEntry(ui.editingEntryId!);
   } catch {
     // Entry already gone — just close
   }
-  entries.refreshAll()
-  ui.startEditing(null)
+  entries.refreshAll();
+  ui.startEditing(null);
 }
 
 function onTemplateSelect(t: { id: number; name: string; body: string }) {
-  selectedTemplateId.value = t.id
+  selectedTemplateId.value = t.id;
   if (!title.value.trim()) {
-    title.value = t.name
+    title.value = t.name;
   }
   if (isNew.value || !body.value.trim()) {
-    body.value = t.body
+    body.value = t.body;
   } else {
-    body.value += '\n\n' + t.body
+    body.value += "\n\n" + t.body;
   }
-  onInput()
+  onInput();
 }
 
 // ── AI Tag Suggestions ──
 async function fetchSuggestedTags() {
-  if (!body.value.trim()) return
-  suggestingTags.value = true
-  suggestedTags.value = []
+  if (!body.value.trim()) return;
+  suggestingTags.value = true;
+  suggestedTags.value = [];
   try {
-    const res = await suggestTags(body.value)
-    suggestedTags.value = res.tags
-  } catch { /* ignore */ }
-  finally { suggestingTags.value = false }
+    const res = await suggestTags(body.value);
+    suggestedTags.value = res.tags;
+  } catch {
+    /* ignore */
+  } finally {
+    suggestingTags.value = false;
+  }
 }
 
 async function applySuggestedTag(name: string) {
-  const tagsStore = useTagsStore()
-  await tagsStore.fetchTree()
-  const existing = tagsStore.tags.find(t => t.name.toLowerCase() === name.toLowerCase())
+  const tagsStore = useTagsStore();
+  await tagsStore.fetchTree();
+  const existing = tagsStore.tags.find(
+    (t) => t.name.toLowerCase() === name.toLowerCase(),
+  );
   if (existing) {
-    if (!tagIds.value.includes(existing.id)) tagIds.value.push(existing.id)
+    if (!tagIds.value.includes(existing.id)) tagIds.value.push(existing.id);
   } else {
-    const created = await tagsStore.createTag({ name })
-    tagIds.value.push(created.id)
+    const created = await tagsStore.createTag({ name });
+    tagIds.value.push(created.id);
   }
-  suggestedTags.value = suggestedTags.value.filter(t => t !== name)
-  onInput()
+  suggestedTags.value = suggestedTags.value.filter((t) => t !== name);
+  onInput();
 }
 
 // Active formatting detection (throttled to avoid recalculating on every keystroke)
-const activeFormats = ref(new Set<string>())
+const activeFormats = ref(new Set<string>());
 
 function computeFormats() {
-  const el = textarea.value
-  if (!el) { activeFormats.value = new Set<string>(); return }
-  const pos = el.selectionStart
-  const lineStart = body.value.lastIndexOf('\n', pos - 1) + 1
-  const currentLine = body.value.slice(lineStart, pos)
-  const s = new Set<string>()
-  if (currentLine.startsWith('# ')) s.add('h1')
-  if (currentLine.startsWith('## ')) s.add('h2')
-  if (currentLine.startsWith('- ') || currentLine.startsWith('* ') || currentLine.startsWith('+ ')) s.add('ul')
-  if (/^\d+\.\s/.test(currentLine)) s.add('ol')
-  if (currentLine.startsWith('> ')) s.add('quote')
+  const el = textarea.value;
+  if (!el) {
+    activeFormats.value = new Set<string>();
+    return;
+  }
+  const pos = el.selectionStart;
+  const lineStart = body.value.lastIndexOf("\n", pos - 1) + 1;
+  const currentLine = body.value.slice(lineStart, pos);
+  const s = new Set<string>();
+  if (currentLine.startsWith("# ")) s.add("h1");
+  if (currentLine.startsWith("## ")) s.add("h2");
+  if (
+    currentLine.startsWith("- ") ||
+    currentLine.startsWith("* ") ||
+    currentLine.startsWith("+ ")
+  )
+    s.add("ul");
+  if (/^\d+\.\s/.test(currentLine)) s.add("ol");
+  if (currentLine.startsWith("> ")) s.add("quote");
 
   // Inline: check surrounding text
-  const before = body.value.slice(Math.max(0, pos - 20), pos)
-  const after = body.value.slice(pos, pos + 20)
-  const full = body.value.slice(Math.max(0, pos - 40), pos + 40)
+  const before = body.value.slice(Math.max(0, pos - 20), pos);
+  const after = body.value.slice(pos, pos + 20);
+  const full = body.value.slice(Math.max(0, pos - 40), pos + 40);
 
-  if ((before.endsWith('**') && after.startsWith('**')) || (before.endsWith('**') && body.value.slice(pos).startsWith('**'))) s.add('bold')
-  if ((before.endsWith('*') && !before.endsWith('**') && after.startsWith('*')) || (before.endsWith('*') && !before.endsWith('**') && body.value.slice(pos).startsWith('*'))) s.add('italic')
-  if (full.includes('<mark>') && full.includes('</mark>')) s.add('highlight')
-  if (full.includes('text-align: left')) s.add('alignLeft')
-  if (full.includes('text-align: center')) s.add('alignCenter')
-  if (full.includes('text-align: right')) s.add('alignRight')
-  if (full.includes('text-align: justify')) s.add('alignJustify')
-  activeFormats.value = s
+  if (
+    (before.endsWith("**") && after.startsWith("**")) ||
+    (before.endsWith("**") && body.value.slice(pos).startsWith("**"))
+  )
+    s.add("bold");
+  if (
+    (before.endsWith("*") && !before.endsWith("**") && after.startsWith("*")) ||
+    (before.endsWith("*") &&
+      !before.endsWith("**") &&
+      body.value.slice(pos).startsWith("*"))
+  )
+    s.add("italic");
+  if (full.includes("<mark>") && full.includes("</mark>")) s.add("highlight");
+  if (full.includes("text-align: left")) s.add("alignLeft");
+  if (full.includes("text-align: center")) s.add("alignCenter");
+  if (full.includes("text-align: right")) s.add("alignRight");
+  if (full.includes("text-align: justify")) s.add("alignJustify");
+  activeFormats.value = s;
 }
 
 // Throttle format recalculation at 200ms
-import { watchThrottled } from '@vueuse/core'
-watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
+import { watchThrottled } from "@vueuse/core";
+watchThrottled(body, computeFormats, { throttle: 200, immediate: true });
 </script>
 
 <template>
@@ -806,7 +1028,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
     class="flex flex-col h-full relative"
     :class="[
       fullscreen ? 'fixed inset-0 z-[100] bg-editor' : '',
-      focusMode ? 'bg-editor' : ''
+      focusMode ? 'bg-editor' : '',
     ]"
     @dragenter="dragHandlers.onDragenter"
     @dragover="dragHandlers.onDragover"
@@ -819,14 +1041,19 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         v-if="isDragging"
         class="absolute inset-0 z-[150] bg-accent/5 border-2 border-dashed border-accent/40 rounded-lg flex items-center justify-center pointer-events-none"
       >
-        <div class="text-sm font-medium text-accent/80 flex flex-col items-center gap-1">
+        <div
+          class="text-sm font-medium text-accent/80 flex flex-col items-center gap-1"
+        >
           <Paperclip :size="24" />
           Drop files here
         </div>
       </div>
     </Transition>
     <!-- Header: Title + Date + New + controls -->
-    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border" v-if="!focusMode">
+    <div
+      class="flex items-center gap-2 px-3 py-1.5 border-b border-border"
+      v-if="!focusMode"
+    >
       <input
         v-model="title"
         class="flex-1 bg-transparent text-base font-semibold text-text-primary placeholder-text-muted/70 outline-none min-w-0"
@@ -871,14 +1098,17 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       </div>
     </div>
 
-
     <!-- Formatting toolbar (collapsible, closed by default) -->
     <div v-if="!showPreview && !focusMode" class="border-b border-border">
       <button
         class="flex items-center gap-1 w-full px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
         @click="showToolbar = !showToolbar"
       >
-        <ChevronDown v-if="!showToolbar" :size="10" class="transition-transform" />
+        <ChevronDown
+          v-if="!showToolbar"
+          :size="10"
+          class="transition-transform"
+        />
         <ChevronUp v-else :size="10" class="transition-transform" />
         Formatting
       </button>
@@ -893,7 +1123,13 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
             :focus-mode="focusMode"
             :typewriter-mode="typewriterMode"
             :ui="ui"
-            @action="(name: string) => { const fn = (fmt as any)[name]; if (fn) fn() }"
+            @action="
+              (name: string) => {
+                const fn = (fmt as any)[name];
+                if (fn) fn();
+              }
+            "
+            @quick-emoji="onEmojiSelect"
             @toggle-emoji="showEmoji = !showEmoji"
             @toggle-find="showFind = !showFind"
             @toggle-focus="focusMode = !focusMode"
@@ -904,7 +1140,10 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
     </div>
 
     <!-- Find & Replace bar -->
-    <div v-if="showFind" class="flex items-center gap-1.5 px-2 py-1 border-b border-border bg-surface">
+    <div
+      v-if="showFind"
+      class="flex items-center gap-1.5 px-2 py-1 border-b border-border bg-surface"
+    >
       <Search :size="12" class="text-text-muted shrink-0" />
       <input
         v-model="findQuery"
@@ -913,12 +1152,20 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         @keydown="onKeydown"
       />
       <span class="text-[10px] text-text-muted whitespace-nowrap">
-        {{ findIndex >= 0 ? (findIndex + 1) : 0 }}/{{ findCount }}
+        {{ findIndex >= 0 ? findIndex + 1 : 0 }}/{{ findCount }}
       </span>
-      <button class="p-0.5 rounded hover:bg-surface-hover text-text-secondary cursor-pointer" title="Previous" @click="jumpToMatch(-1)">
+      <button
+        class="p-0.5 rounded hover:bg-surface-hover text-text-secondary cursor-pointer"
+        title="Previous"
+        @click="jumpToMatch(-1)"
+      >
         <ChevronUp :size="12" />
       </button>
-      <button class="p-0.5 rounded hover:bg-surface-hover text-text-secondary cursor-pointer" title="Next" @click="jumpToMatch(1)">
+      <button
+        class="p-0.5 rounded hover:bg-surface-hover text-text-secondary cursor-pointer"
+        title="Next"
+        @click="jumpToMatch(1)"
+      >
         <ChevronDown :size="12" />
       </button>
       <span class="w-px h-3 bg-border" />
@@ -927,9 +1174,22 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         class="flex-1 bg-transparent border-b border-border focus:border-accent px-1 py-0.5 text-xs text-text-primary outline-none"
         placeholder="Replace..."
       />
-      <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer" @click="replaceOne">Replace</button>
-      <button class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer" @click="replaceAll">All</button>
-      <button class="p-0.5 rounded hover:bg-surface-hover text-text-muted cursor-pointer" @click="showFind = false">
+      <button
+        class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer"
+        @click="replaceOne"
+      >
+        Replace
+      </button>
+      <button
+        class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer"
+        @click="replaceAll"
+      >
+        All
+      </button>
+      <button
+        class="p-0.5 rounded hover:bg-surface-hover text-text-muted cursor-pointer"
+        @click="showFind = false"
+      >
         <X :size="12" />
       </button>
     </div>
@@ -940,80 +1200,111 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
       <div class="flex-1 flex flex-col min-h-0">
         <!-- Textarea / Preview -->
         <div class="flex-1 overflow-y-auto relative min-h-0">
-        <!-- Encrypted lock screen -->
-        <div v-if="isEncrypted" class="flex flex-col items-center justify-center h-full gap-3 text-text-muted">
-          <Lock :size="32" class="text-accent opacity-60" />
-          <div class="text-sm font-medium text-text-secondary">This entry is encrypted</div>
-          <div class="text-xs">Click the unlock button to decrypt</div>
-        </div>
-        <template v-else>
-          <textarea
-            v-if="!showPreview"
-            ref="textarea"
-            v-model="body"
-            class="w-full h-full resize-none bg-transparent p-4 text-text-primary outline-none leading-relaxed placeholder:text-text-muted/60"
-            :style="{ fontFamily: 'var(--editor-font)', fontSize: 'var(--editor-font-size)' }"
-            placeholder="Write your thoughts..."
-            @input="onInput"
-            @keydown="onTextareaKeydown"
-            @keydown.capture="onKeydown"
-            @contextmenu="onContextMenu"
-            @focus="clearSelCache"
-            @blur="startSelCache"
-          />
+          <!-- Encrypted lock screen -->
           <div
-            v-else
-            class="p-4 md-body max-w-none text-text-primary"
-            :style="{ fontFamily: 'var(--editor-font)', fontSize: 'var(--editor-font-size)' }"
-            v-html="renderedPreview"
-          />
-        </template>
+            v-if="isEncrypted"
+            class="flex flex-col items-center justify-center h-full gap-3 text-text-muted"
+          >
+            <Lock :size="32" class="text-accent opacity-60" />
+            <div class="text-sm font-medium text-text-secondary">
+              This entry is encrypted
+            </div>
+            <div class="text-xs">Click the unlock button to decrypt</div>
+          </div>
+          <template v-else>
+            <textarea
+              v-if="!showPreview"
+              ref="textarea"
+              v-model="body"
+              class="w-full h-full resize-none bg-transparent p-4 text-text-primary outline-none leading-relaxed placeholder:text-text-muted/60"
+              :style="{
+                fontFamily: 'var(--editor-font)',
+                fontSize: 'var(--editor-font-size)',
+              }"
+              placeholder="Write your thoughts..."
+              @input="onInput"
+              @keydown="onTextareaKeydown"
+              @keydown.capture="onKeydown"
+              @contextmenu="onContextMenu"
+              @focus="clearSelCache"
+              @blur="startSelCache"
+            />
+            <div
+              v-else
+              class="p-4 md-body max-w-none text-text-primary"
+              :style="{
+                fontFamily: 'var(--editor-font)',
+                fontSize: 'var(--editor-font-size)',
+              }"
+              v-html="renderedPreview"
+            />
+          </template>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Voice memos embedded at the bottom of the entry -->
-  <EntryRecordings v-if="!focusMode" />
+    <!-- Voice memos embedded at the bottom of the entry -->
+    <EntryRecordings v-if="!focusMode" />
 
-  <!-- Media attachment thumbnails, pinned at the bottom of the entry -->
-  <div v-if="!focusMode && hasEntry && !isEncrypted && attachments.length"
-       class="px-3 pt-2 border-t border-border">
-    <MediaGrid
-      :entry-id="ui.editingEntryId ?? 0"
-      :media-count="attachments.length"
-      @deleted="loadAttachments"
-    />
-  </div>
+    <!-- Media attachment thumbnails, pinned at the bottom of the entry -->
+    <div
+      v-if="!focusMode && hasEntry && !isEncrypted && attachments.length"
+      class="px-3 pt-2 border-t border-border"
+    >
+      <MediaGrid
+        :entry-id="ui.editingEntryId ?? 0"
+        :media-count="attachments.length"
+        @deleted="loadAttachments"
+      />
+    </div>
 
-  <!-- Status bar + Bottom controls -->
-  <div class="border-t border-border" v-if="!focusMode">
+    <!-- Status bar + Bottom controls -->
+    <div class="border-t border-border" v-if="!focusMode">
       <!-- Stats bar -->
-      <EditorStatusBar :stats="stats" :save-state="saveActive" :has-content="!!body.trim()" />
+      <EditorStatusBar
+        :stats="stats"
+        :save-state="saveActive"
+        :has-content="!!body.trim()"
+      />
 
       <!-- Controls bar: Edit/Preview + Tags + Save -->
       <div class="flex items-center gap-1.5 px-3 py-1.5 relative">
         <button
           class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors"
-          :class="!showPreview ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          :class="
+            !showPreview
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary'
+          "
           @click="showPreview = false"
         >
           <Edit3 :size="13" />
         </button>
         <button
           class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors"
-          :class="showPreview ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          :class="
+            showPreview
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary'
+          "
           @click="showPreview = true"
         >
           <Eye :size="13" />
         </button>
         <button
           class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors relative"
-          :class="tagIds.length ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary'"
+          :class="
+            tagIds.length
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary'
+          "
           @click="showTagDropdown = !showTagDropdown"
           title="Tags"
         >
           <Tag :size="13" />
-          <span v-if="tagIds.length" class="text-[9px]">{{ tagIds.length }}</span>
+          <span v-if="tagIds.length" class="text-[9px]">{{
+            tagIds.length
+          }}</span>
         </button>
 
         <!-- Tag dropdown -->
@@ -1023,16 +1314,26 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         >
           <TagList v-model="tagIds" />
           <!-- AI Tag Suggestions -->
-          <div v-if="aiAvailable" class="mt-2 pt-2 border-t border-border space-y-1.5">
-            <button @click="fetchSuggestedTags" :disabled="suggestingTags || !body.trim()"
-              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer">
+          <div
+            v-if="aiAvailable"
+            class="mt-2 pt-2 border-t border-border space-y-1.5"
+          >
+            <button
+              @click="fetchSuggestedTags"
+              :disabled="suggestingTags || !body.trim()"
+              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer"
+            >
               <Loader v-if="suggestingTags" :size="10" class="animate-spin" />
               <Sparkles v-else :size="10" />
-              {{ suggestingTags ? 'Suggesting...' : 'Suggest tags' }}
+              {{ suggestingTags ? "Suggesting..." : "Suggest tags" }}
             </button>
             <div v-if="suggestedTags.length" class="flex flex-wrap gap-1">
-              <button v-for="tag in suggestedTags" :key="tag" @click="applySuggestedTag(tag)"
-                class="px-2 py-0.5 rounded-full text-[10px] bg-accent/15 text-accent hover:bg-accent/30 cursor-pointer transition-colors">
+              <button
+                v-for="tag in suggestedTags"
+                :key="tag"
+                @click="applySuggestedTag(tag)"
+                class="px-2 py-0.5 rounded-full text-[10px] bg-accent/15 text-accent hover:bg-accent/30 cursor-pointer transition-colors"
+              >
                 + {{ tag }}
               </button>
             </div>
@@ -1050,7 +1351,11 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         <span class="w-px h-4 bg-border mx-0.5" />
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="ui.activeDrawer === 'ai' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          :class="
+            ui.activeDrawer === 'ai'
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
           title="AI Smart Actions"
           @click="ui.toggleDrawer('ai')"
         >
@@ -1058,13 +1363,19 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         </button>
         <button
           class="p-1 rounded cursor-pointer transition-colors"
-          :class="ui.activeDrawer === 'attachments' ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          :class="
+            ui.activeDrawer === 'attachments'
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
           @click="openAttachDialog"
           title="Attach files"
         >
           <div class="flex items-center gap-0.5">
             <Paperclip :size="13" />
-            <span v-if="attachments.length" class="text-[9px] leading-none">{{ attachments.length }}</span>
+            <span v-if="attachments.length" class="text-[9px] leading-none">{{
+              attachments.length
+            }}</span>
           </div>
         </button>
         <input
@@ -1083,7 +1394,11 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true })
         />
         <button
           class="p-1 rounded cursor-pointer transition-colors disabled:opacity-50"
-          :class="ttsPlaying ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'"
+          :class="
+            ttsPlaying
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
           :disabled="ttsLoading || !body.trim()"
           @click="toggleTTS"
           :title="ttsPlaying ? 'Stop reading' : 'Read aloud'"
