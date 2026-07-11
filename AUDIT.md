@@ -9,13 +9,53 @@ positives. Line numbers reflect post-Phase-3 state.
 
 **Verdict: ready for its intended use (local-first single-user app), with
 fixes recommended before any broader/hosted deployment.** There are **zero
-blockers**. There are several **HIGH** issues; most fall into two clusters:
-(a) input-validation gaps on two upload endpoints (arbitrary local file read,
-unvalidated video upload) and (b) resource/idempotency gaps in the new email
-subsystem (disk leaks, sync double-fire). The crypto findings (deterministic
-salt, SECRET_KEY default) are real but their blast radius is bounded by the
-local single-user model. None of the HIGHs prevent the app from running; they
-are correctness/robustness/hardening debts.
+blockers** per the four-dimension audit. There are several **HIGH** issues;
+most fall into two clusters: (a) input-validation gaps on two upload endpoints
+(arbitrary local file read, unvalidated video upload) and (b)
+resource/idempotency gaps in the new email subsystem (disk leaks, sync
+double-fire). The crypto findings (deterministic salt, SECRET_KEY default) are
+real but their blast radius is bounded by the local single-user model. None of
+the HIGHs prevent the app from running; they are correctness/robustness/
+hardening debts.
+
+> **Important — see Reconciliation below:** the Phase 5 blind review
+> independently surfaced a **CRITICAL** this audit missed — encrypting an
+> entry indexes its **ciphertext into the FTS5 search index** and ships
+> ciphertext to the LLM for enrichment — which elevates the encryption cluster
+> above what the HIGHs below convey. Treat that as the single highest-priority
+> item to fix.
+
+## Reconciliation with the Phase 5 blind review
+
+A context-blind reviewer (no knowledge that a cleanup ran) caught real issues
+the four-dimension audit missed, and vice-versa. Per the pipeline these are
+logged here rather than silently folded into the earlier sections.
+
+### Missed by pipeline, caught by blind review (genuine audit misses)
+- **CRITICAL — `encryption_service.py:58` + `core/database.py:486` — encrypting an entry indexes its CIPHERTEXT into the FTS5 search index.** `encrypt_entry()` sets `entry.body` to base64 ciphertext and commits → the `fts_entry_au` trigger re-indexes that ciphertext. The search service doesn't filter `is_encrypted`. Result: search over encrypted entries matches/snippets ciphertext, and the plaintext is lost from the index even after decryption unless the entry is re-edited. (Notes too, via `fts_note_au`.) The pipeline audit read both files but never connected them. **Highest-priority fix.**
+- **HIGH — `entry_service.py:42,106` + `routers/ai.py:149` — encrypted entries ship ciphertext to the LLM.** `create`/`update` call `EnrichmentService.schedule(title, body)` with no `is_encrypted` guard; `/on-this-day` slices `e.body[:500]` without the guard. Editing an encrypted entry sends its ciphertext to Ollama for embeddings/sentiment/summary.
+- **HIGH — `routers/settings.py:210` — `OLLAMA_BASE_URL` is user-settable via the unauthenticated `PUT /settings`** → any caller redirects all AI features (which proxy journal content) at an arbitrary host: SSRF + data-exfiltration primitive. The pipeline's security pass checked OAuth URLs were hardcoded but missed this user-controlled one.
+- **HIGH — OAuth callback error pages reflect exception text into HTML unescaped** (`google_drive.py:124`, mirrored in `box/onedrive/dropbox`): `_render_error_page` does `.replace("{{DETAIL}}", f"Failed to exchange code: {e}")` — `httpx` error text embeds the remote response body, an attacker-influenced reflected-XSS sink (low impact on loopback, exploitable if ever bound to `0.0.0.0`).
+- **MEDIUM — `core/database.py:57` — `get_db()` wraps every request's session creation in a global `async with _engine_lock` and releases it immediately**, serializing all requests at lock-acquire for no benefit (SQLite's pool_size=1 already serializes). Avoidable throughput ceiling.
+- **MEDIUM — `email_service.py:620` — synced inbound attachments are written to disk with no size cap** (the 25 MB limit is only enforced on the upload path, not on inbound mail).
+- **MEDIUM — `cloud_sync_service.py:114` — `LocalFileProvider.upload(path)` joins a raw, partially user-influenced path with no normalization** — a latent path-traversal sink, currently dev-only but exported alongside the production providers.
+- **MEDIUM — AI endpoints return fake-success (HTTP 200 with empty/canned content) on any exception** (`ai.py:202`, `ollama_service.py` parse failures) — silent AI failures look healthy to monitoring.
+
+### Both agree (higher confidence)
+- Deterministic PBKDF2 salt (`encryption_service.py:33`) — CRITICAL/ HIGH in both.
+- `SECRET_KEY` default encrypts real credentials when the prod guard is bypassed (`config.py:127`) — both.
+- Email-sync job overlap / missing `max_instances` (`scheduler_service.py`) — both.
+- `_TEMP_ATTACHMENTS` unbounded leak; deleted-email disk-file leak; IMAP side-effects swallowed at DEBUG — all flagged by both.
+
+### Caught by pipeline, not emphasized by blind review (still valid)
+- The two upload-validation HIGHs (`notes/from-path` arbitrary file read; `video_notes` zero validation) — the blind reviewer didn't reach those services.
+- Contact-photo magic-byte gap; `.env.example` missing OAuth/email vars; backup-in-RAM; lifespan not draining background tasks; the test-coverage HIGHs (`email_protocol`, planner recurrence, contact vCard) and the `test_encryption_service` `try/except:pass` hiding a 500.
+
+### Honest limit
+The blind reviewer runs on the same model as this session; the sanitized pass
+removed self-grading/framing bias (which is why it caught the misses above) but
+not model-level blind spots. The strongest independent check is a fresh
+session / different reviewer. See `.pipeline/blind-review.md`.
 
 ## Blockers (must fix before prod)
 - _(none)_ — consensus across all four audit dimensions.
