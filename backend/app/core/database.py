@@ -205,6 +205,21 @@ _COLUMN_MIGRATIONS = [
         "transcription",
         "ALTER TABLE voice_recordings ADD COLUMN transcription VARCHAR",
     ),
+    # Contacts — EPIM-style rich fields. Scalar extras + JSON multi-value lists.
+    ("contacts", "nickname", "ALTER TABLE contacts ADD COLUMN nickname VARCHAR"),
+    ("contacts", "department", "ALTER TABLE contacts ADD COLUMN department VARCHAR"),
+    ("contacts", "profession", "ALTER TABLE contacts ADD COLUMN profession VARCHAR"),
+    (
+        "contacts",
+        "is_favorite",
+        "ALTER TABLE contacts ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0",
+    ),
+    ("contacts", "phones", "ALTER TABLE contacts ADD COLUMN phones JSON"),
+    ("contacts", "addresses", "ALTER TABLE contacts ADD COLUMN addresses JSON"),
+    ("contacts", "im_handles", "ALTER TABLE contacts ADD COLUMN im_handles JSON"),
+    ("contacts", "websites", "ALTER TABLE contacts ADD COLUMN websites JSON"),
+    ("contacts", "dates", "ALTER TABLE contacts ADD COLUMN dates JSON"),
+    ("contacts", "relationships", "ALTER TABLE contacts ADD COLUMN relationships JSON"),
 ]
 
 _INDEX_MIGRATIONS = [

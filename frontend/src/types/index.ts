@@ -426,6 +426,61 @@ export interface MediaStatsResponse {
 
 // ── Contacts ─────────────────────────────────────────────────────────
 
+export interface ContactTypedValue {
+  type: string;
+  value: string;
+}
+
+export interface ContactAddress {
+  type: string;
+  street?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+}
+
+export interface ContactDateValue {
+  type: string;
+  label?: string | null;
+  date: string;
+}
+
+export interface ContactGroupBrief {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
+export interface ContactGroupResponse extends ContactGroupBrief {
+  sort_order: number;
+  member_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactGroupCreate {
+  name: string;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface ContactGroupUpdate {
+  name?: string;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface RelatedEmailResponse {
+  id: number;
+  account_id: number;
+  subject: string | null;
+  from_address: string;
+  from_name: string | null;
+  sent_at: string | null;
+  is_read: boolean;
+}
+
 export interface ContactResponse {
   id: number;
   name: string | null;
@@ -433,9 +488,20 @@ export interface ContactResponse {
   emails_extra: string[] | null;
   phone: string | null;
   phone_secondary: string | null;
+  phones: ContactTypedValue[] | null;
   company: string | null;
   title: string | null;
+  department: string | null;
+  profession: string | null;
+  nickname: string | null;
+  addresses: ContactAddress[] | null;
+  im_handles: ContactTypedValue[] | null;
+  websites: string[] | null;
+  dates: ContactDateValue[] | null;
+  relationships: ContactTypedValue[] | null;
   notes: string | null;
+  is_favorite: boolean;
+  groups: ContactGroupBrief[];
   source: string;
   last_seen_at: string | null;
   email_account_id: number | null;
@@ -452,9 +518,20 @@ export interface ContactCreate {
   emails_extra?: string[] | null;
   phone?: string | null;
   phone_secondary?: string | null;
+  phones?: ContactTypedValue[] | null;
   company?: string | null;
   title?: string | null;
+  department?: string | null;
+  profession?: string | null;
+  nickname?: string | null;
+  addresses?: ContactAddress[] | null;
+  im_handles?: ContactTypedValue[] | null;
+  websites?: string[] | null;
+  dates?: ContactDateValue[] | null;
+  relationships?: ContactTypedValue[] | null;
   notes?: string | null;
+  is_favorite?: boolean;
+  group_ids?: number[] | null;
 }
 
 export interface ContactUpdate {
@@ -463,9 +540,20 @@ export interface ContactUpdate {
   emails_extra?: string[] | null;
   phone?: string | null;
   phone_secondary?: string | null;
+  phones?: ContactTypedValue[] | null;
   company?: string | null;
   title?: string | null;
+  department?: string | null;
+  profession?: string | null;
+  nickname?: string | null;
+  addresses?: ContactAddress[] | null;
+  im_handles?: ContactTypedValue[] | null;
+  websites?: string[] | null;
+  dates?: ContactDateValue[] | null;
+  relationships?: ContactTypedValue[] | null;
   notes?: string | null;
+  is_favorite?: boolean | null;
+  group_ids?: number[] | null;
 }
 
 export interface ContactListResponse {

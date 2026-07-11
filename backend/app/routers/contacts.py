@@ -1,19 +1,24 @@
-"""Contact route handlers — CRUD, vCard import/export."""
+"""Contact route handlers — CRUD, groups, vCard import/export, photos, related emails."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, UploadFile
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.exceptions import NotFoundError
 from app.schemas.contact import (
     ContactCreate,
+    ContactGroupCreate,
+    ContactGroupResponse,
+    ContactGroupUpdate,
     ContactListResponse,
     ContactResponse,
     ContactUpdate,
+    RelatedEmailResponse,
 )
 from app.services.contact_service import ContactService
 
@@ -25,12 +30,20 @@ async def list_contacts(
     search: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=1000),
+    group_id: int | None = Query(default=None),
+    favorites_only: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """List contacts (paginated, optional search)."""
+    """List contacts (paginated, optional search / group / favorites filter)."""
     svc = ContactService(db)
-    items = await svc.list_all(search=search, offset=offset, limit=limit)
-    total = await svc.count(search=search)
+    items = await svc.list_all(
+        search=search,
+        offset=offset,
+        limit=limit,
+        group_id=group_id,
+        favorites_only=favorites_only,
+    )
+    total = await svc.count(search=search, group_id=group_id, favorites_only=favorites_only)
     return ContactListResponse(
         items=[ContactResponse.model_validate(c) for c in items],
         total=total,
@@ -93,6 +106,37 @@ async def bulk_delete(ids: list[int], db: AsyncSession = Depends(get_db)) -> Non
         await svc.delete(contact_id)
 
 
+# ── Groups — MUST come before /{contact_id} ─────────────────────────────────
+
+
+@router.get("/groups", response_model=list[ContactGroupResponse])
+async def list_groups(db: AsyncSession = Depends(get_db)) -> Any:
+    """List all contact groups with member counts."""
+    return await ContactService(db).list_groups()
+
+
+@router.post("/groups", response_model=ContactGroupResponse, status_code=201)
+async def create_group(
+    data: ContactGroupCreate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Create a contact group."""
+    return await ContactService(db).create_group(data)
+
+
+@router.patch("/groups/{group_id}", response_model=ContactGroupResponse)
+async def update_group(
+    group_id: int, data: ContactGroupUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Rename / recolour a contact group."""
+    return await ContactService(db).update_group(group_id, data)
+
+
+@router.delete("/groups/{group_id}", status_code=204)
+async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Delete a contact group (members are unlinked, not deleted)."""
+    await ContactService(db).delete_group(group_id)
+
+
 # ── Per-contact CRUD ───────────────────────────────────────────────────────
 
 
@@ -124,3 +168,43 @@ async def restore_contact(contact_id: int, db: AsyncSession = Depends(get_db)) -
     """Restore a soft-deleted contact."""
     svc = ContactService(db)
     return await svc.restore(contact_id)
+
+
+# ── Photo + related emails ─────────────────────────────────────────────────
+
+
+@router.get("/{contact_id}/photo")
+async def get_contact_photo(contact_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Serve a contact's photo (404 if none)."""
+    svc = ContactService(db)
+    contact = await svc.get(contact_id)
+    path = svc.photo_abs_path(contact)
+    if path is None or not path.exists():
+        raise NotFoundError(f"Contact {contact_id} has no photo")
+    return FileResponse(path=str(path))
+
+
+@router.post("/{contact_id}/photo", response_model=ContactResponse)
+async def upload_contact_photo(
+    contact_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Upload/replace a contact's photo."""
+    svc = ContactService(db)
+    data = await file.read()
+    return await svc.set_photo(contact_id, data, file.filename or "photo.png")
+
+
+@router.delete("/{contact_id}/photo", response_model=ContactResponse)
+async def delete_contact_photo(contact_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Remove a contact's photo."""
+    svc = ContactService(db)
+    return await svc.delete_photo(contact_id)
+
+
+@router.get("/{contact_id}/emails", response_model=list[RelatedEmailResponse])
+async def related_emails(contact_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Emails involving this contact's address(es) — the EPIM 'related emails' view."""
+    svc = ContactService(db)
+    return await svc.related_emails(contact_id)
