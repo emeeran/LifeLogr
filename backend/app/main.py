@@ -5,8 +5,10 @@ from __future__ import annotations
 # Patch sqlite3 with pysqlite3 in PyInstaller builds where the bundled
 # sqlite3 has issues with qualified column names (e.g. "entries.title").
 import sys
+
 try:
     import pysqlite3 as _pysqlite3  # type: ignore[import-untyped]
+
     if getattr(sys, "frozen", False):
         sys.modules["sqlite3"] = _pysqlite3
 except ImportError:
@@ -367,7 +369,7 @@ if _FRONTEND_DIST.is_dir():
         target = file_path if file_path.is_file() else (_FRONTEND_DIST / "index.html")
         # index.html must always revalidate so new content-hashed assets are
         # picked up; the hashed asset files themselves can be cached forever.
-        is_index = (target.name == "index.html")
+        is_index = target.name == "index.html"
         headers = (
             {"Cache-Control": "no-cache, must-revalidate"}
             if is_index

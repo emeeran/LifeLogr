@@ -212,9 +212,7 @@ async def update_message_flags(
     svc = EmailMessageService(db)
     message = await svc.set_flags(message_id, data.is_read, data.is_starred)
     if data.is_read is not None or data.is_starred is not None:
-        background_tasks.add_task(
-            push_flags_background, message_id, data.is_read, data.is_starred
-        )
+        background_tasks.add_task(push_flags_background, message_id, data.is_read, data.is_starred)
     return EmailMessageListResponse.model_validate(message)
 
 
@@ -227,9 +225,7 @@ async def delete_message(
     svc = EmailMessageService(db)
     move = await svc.delete_message(message_id)
     if move:
-        background_tasks.add_task(
-            move_to_trash_background, move["account_id"], move["moves"]
-        )
+        background_tasks.add_task(move_to_trash_background, move["account_id"], move["moves"])
 
 
 @router.patch("/messages/{message_id}/spam", response_model=EmailMessageListResponse)
@@ -279,9 +275,7 @@ async def download_attachment(
     from app.models.email_attachment import EmailAttachment
 
     att = (
-        await db.execute(
-            select(EmailAttachment).where(EmailAttachment.id == attachment_id)
-        )
+        await db.execute(select(EmailAttachment).where(EmailAttachment.id == attachment_id))
     ).scalar_one_or_none()
     filename = att.filename if att else path.name
     media_type = att.content_type if att else "application/octet-stream"
@@ -289,9 +283,7 @@ async def download_attachment(
 
 
 @router.get("/messages/{message_id}/raw")
-async def download_raw_message(
-    message_id: int, db: AsyncSession = Depends(get_db)
-) -> FileResponse:
+async def download_raw_message(message_id: int, db: AsyncSession = Depends(get_db)) -> FileResponse:
     svc = EmailMessageService(db)
     path = await svc.raw_path(message_id)
     return FileResponse(path, filename=f"message_{message_id}.eml", media_type="message/rfc822")
@@ -307,9 +299,7 @@ async def list_spam_rules(db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.post("/spam/rules", response_model=SpamRuleResponse, status_code=201)
-async def create_spam_rule(
-    data: SpamRuleCreate, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def create_spam_rule(data: SpamRuleCreate, db: AsyncSession = Depends(get_db)) -> Any:
     """Block a sender address (is_domain=false) or domain (is_domain=true)."""
     return await SpamService(db).add_rule(data.pattern, data.is_domain)
 

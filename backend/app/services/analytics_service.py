@@ -44,9 +44,7 @@ class AnalyticsService:
 
         words_result = (
             await self.db.execute(
-                select(
-                    func.sum(_word_count_expr())
-                ).where(Entry.is_deleted == False)  # noqa: E712
+                select(func.sum(_word_count_expr())).where(Entry.is_deleted == False)  # noqa: E712
             )
         ).scalar()
         total_words = int(words_result or 0)

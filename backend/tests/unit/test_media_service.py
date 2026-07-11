@@ -61,9 +61,14 @@ class TestWavContentType:
 
     def test_wav_extension_served_as_audio_wav(self):
         from app.services.media_service import MediaService
-        assert MediaService._content_type_from_ext("rec.webm".replace("webm", "wav"), "audio/wav") == "audio/wav"
+
+        assert (
+            MediaService._content_type_from_ext("rec.webm".replace("webm", "wav"), "audio/wav")
+            == "audio/wav"
+        )
 
     def test_legacy_x_wav_normalised(self):
         from app.services.media_service import MediaService
+
         assert MediaService._content_type_from_ext("old.wav", "audio/x-wav") == "audio/wav"
         assert MediaService._content_type_from_ext("old.wav", "audio/wave") == "audio/wav"

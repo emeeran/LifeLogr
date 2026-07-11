@@ -57,10 +57,12 @@ class TestPlannerTasks:
         b = (await client.post("/api/v1/planner/tasks", json={"title": "B"})).json()
         resp = await client.post(
             "/api/v1/planner/tasks/reorder",
-            json={"items": [
-                {"id": a["id"], "new_sort_order": 2},
-                {"id": b["id"], "new_sort_order": 1},
-            ]},
+            json={
+                "items": [
+                    {"id": a["id"], "new_sort_order": 2},
+                    {"id": b["id"], "new_sort_order": 1},
+                ]
+            },
         )
         assert resp.status_code == 200
         listing = await client.get("/api/v1/planner/tasks")
@@ -114,7 +116,11 @@ class TestPlannerSchedule:
         ev = (
             await client.post(
                 "/api/v1/planner/events",
-                json={"title": "Lunch", "start_at": "2026-08-01T12:00:00", "end_at": "2026-08-01T13:00:00"},
+                json={
+                    "title": "Lunch",
+                    "start_at": "2026-08-01T12:00:00",
+                    "end_at": "2026-08-01T13:00:00",
+                },
             )
         ).json()
         upd = await client.patch(f"/api/v1/planner/events/{ev['id']}", json={"location": "Cafe"})

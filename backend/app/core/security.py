@@ -17,15 +17,12 @@ _V2_SALT = b"lifelogr-encryption-v2"
 _V2_INFO = b"aes-256-gcm-key"
 
 # v2 key: HKDF-derived from SECRET_KEY
-_v2_key = (
-    HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=_V2_SALT,
-        info=_V2_INFO,
-    )
-    .derive(settings.SECRET_KEY.encode())
-)
+_v2_key = HKDF(
+    algorithm=hashes.SHA256(),
+    length=32,
+    salt=_V2_SALT,
+    info=_V2_INFO,
+).derive(settings.SECRET_KEY.encode())
 
 # v1 key: legacy null-padded key (for backward compat)
 _v1_key = settings.SECRET_KEY.encode().ljust(32, b"\0")[:32]

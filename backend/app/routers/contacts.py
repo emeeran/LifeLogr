@@ -87,9 +87,7 @@ async def export_contacts(
 
 
 @router.post("/import")
-async def import_contacts(
-    file: UploadFile, db: AsyncSession = Depends(get_db)
-) -> dict[str, int]:
+async def import_contacts(file: UploadFile, db: AsyncSession = Depends(get_db)) -> dict[str, int]:
     """Import contacts from an uploaded .vcf file."""
     raw = await file.read()
     text = raw.decode("utf-8-sig", errors="replace")
@@ -116,9 +114,7 @@ async def list_groups(db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.post("/groups", response_model=ContactGroupResponse, status_code=201)
-async def create_group(
-    data: ContactGroupCreate, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def create_group(data: ContactGroupCreate, db: AsyncSession = Depends(get_db)) -> Any:
     """Create a contact group."""
     return await ContactService(db).create_group(data)
 

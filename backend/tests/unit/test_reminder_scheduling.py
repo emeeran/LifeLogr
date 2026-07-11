@@ -44,9 +44,7 @@ class TestParseDaysOfWeek:
         assert SchedulerService._parse_days_of_week("0,6") == "mon,sun"
 
     def test_full_week_default_on_garbage(self):
-        assert SchedulerService._parse_days_of_week("") == (
-            "mon,tue,wed,thu,fri,sat,sun"
-        )
+        assert SchedulerService._parse_days_of_week("") == ("mon,tue,wed,thu,fri,sat,sun")
 
     def test_dedupes_and_ignores_out_of_range(self):
         # 0 (mon) duplicated, 9 out of range ignored
@@ -66,9 +64,7 @@ class TestReminderSyncsOnCrud:
         rem = await _make_reminder(client)
         with patch.object(SchedulerService, "sync_reminders") as mock_sync:
             mock_sync.return_value = 0
-            r = await client.patch(
-                f"/api/v1/reminders/{rem['id']}", json={"title": "New"}
-            )
+            r = await client.patch(f"/api/v1/reminders/{rem['id']}", json={"title": "New"})
             assert r.status_code == 200
         assert mock_sync.await_count == 1
 
@@ -99,10 +95,12 @@ class TestSyncReminders:
 
         from app.models.reminder import Reminder
 
-        db_session.add_all([
-            Reminder(title="A", reminder_time=time(9, 0), days_of_week="0,1,2", is_active=True),
-            Reminder(title="B", reminder_time=time(10, 0), days_of_week="3,4", is_active=False),
-        ])
+        db_session.add_all(
+            [
+                Reminder(title="A", reminder_time=time(9, 0), days_of_week="0,1,2", is_active=True),
+                Reminder(title="B", reminder_time=time(10, 0), days_of_week="3,4", is_active=False),
+            ]
+        )
         await db_session.commit()
 
         await SchedulerService.start()

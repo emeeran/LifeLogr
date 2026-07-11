@@ -43,7 +43,8 @@ class TestEntryCreate:
     async def test_create_title_only_allowed(self, client: AsyncClient):
         """A title with empty body should also be accepted."""
         r = await client.post(
-            "/api/v1/entries", json={"entry_date": "2026-05-08", "title": "Just a title", "body": ""}
+            "/api/v1/entries",
+            json={"entry_date": "2026-05-08", "title": "Just a title", "body": ""},
         )
         assert r.status_code == 201
         assert r.json()["title"] == "Just a title"

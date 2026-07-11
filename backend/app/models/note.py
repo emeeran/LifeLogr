@@ -85,7 +85,9 @@ class Note(Base):
     )
 
     __table_args__ = (
-        Index("ix_notes_folder_pinned_updated", "is_deleted", "folder_id", "is_pinned", "updated_at"),
+        Index(
+            "ix_notes_folder_pinned_updated", "is_deleted", "folder_id", "is_pinned", "updated_at"
+        ),
         Index("ix_notes_deleted_updated", "is_deleted", "updated_at"),
     )
 
@@ -116,9 +118,7 @@ class NoteTag(Base):
     note_id: Mapped[int] = mapped_column(
         ForeignKey("notes.id", ondelete="CASCADE"), primary_key=True
     )
-    tag_id: Mapped[int] = mapped_column(
-        ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
-    )
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
 
     note: Mapped["Note"] = relationship(back_populates="tag_associations")  # noqa: F821
     tag: Mapped["Tag"] = relationship(back_populates="note_associations", lazy="selectin")  # noqa: F821
@@ -135,9 +135,7 @@ class NotePage(Base):
     __tablename__ = "note_pages"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    note_id: Mapped[int] = mapped_column(
-        ForeignKey("notes.id", ondelete="CASCADE"), nullable=False
-    )
+    note_id: Mapped[int] = mapped_column(ForeignKey("notes.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     body: Mapped[str] = mapped_column(String, nullable=False, default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

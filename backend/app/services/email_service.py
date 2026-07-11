@@ -131,9 +131,7 @@ async def move_to_trash_background(account_id: int, moves: list[tuple[str, int]]
 
         async with async_session() as db:
             account = (
-                await db.execute(
-                    select(EmailAccount).where(EmailAccount.id == account_id)
-                )
+                await db.execute(select(EmailAccount).where(EmailAccount.id == account_id))
             ).scalar_one_or_none()
             if not account:
                 return
@@ -146,8 +144,11 @@ async def move_to_trash_background(account_id: int, moves: list[tuple[str, int]]
         for folder_name, uid in moves:
             by_folder.setdefault(folder_name, []).append(uid)
         async with ImapClient(
-            account.imap_host, account.imap_port, account.imap_use_ssl,
-            account.username, password,
+            account.imap_host,
+            account.imap_port,
+            account.imap_use_ssl,
+            account.username,
+            password,
         ) as imap:
             for folder_name, uids in by_folder.items():
                 try:
@@ -169,9 +170,7 @@ async def move_to_junk_background(account_id: int, moves: list[tuple[str, int]])
 
         async with async_session() as db:
             account = (
-                await db.execute(
-                    select(EmailAccount).where(EmailAccount.id == account_id)
-                )
+                await db.execute(select(EmailAccount).where(EmailAccount.id == account_id))
             ).scalar_one_or_none()
             if not account:
                 return
@@ -184,8 +183,11 @@ async def move_to_junk_background(account_id: int, moves: list[tuple[str, int]])
         for folder_name, uid in moves:
             by_folder.setdefault(folder_name, []).append(uid)
         async with ImapClient(
-            account.imap_host, account.imap_port, account.imap_use_ssl,
-            account.username, password,
+            account.imap_host,
+            account.imap_port,
+            account.imap_use_ssl,
+            account.username,
+            password,
         ) as imap:
             for folder_name, uids in by_folder.items():
                 try:
@@ -201,13 +203,17 @@ async def move_to_junk_background(account_id: int, moves: list[tuple[str, int]])
 async def _special_folder_name(db: AsyncSession, account_id: int, special: str) -> str | None:
     """Resolve the IMAP name of a special-use folder (trash/junk) if any."""
     folder = (
-        await db.execute(
-            select(EmailFolder).where(
-                EmailFolder.account_id == account_id,
-                EmailFolder.special_use == special,
+        (
+            await db.execute(
+                select(EmailFolder).where(
+                    EmailFolder.account_id == account_id,
+                    EmailFolder.special_use == special,
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     return folder.folder_name if folder else None
 
 
@@ -247,7 +253,9 @@ class EmailAccountService:
                     .where(EmailAccount.is_active == True)  # noqa: E712
                     .order_by(EmailAccount.label)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
 
     async def get(self, account_id: int) -> EmailAccount:
@@ -261,8 +269,17 @@ class EmailAccountService:
     async def update(self, account_id: int, data: EmailAccountUpdate) -> EmailAccount:
         account = await self.get(account_id)
         for field_name in (
-            "label", "imap_host", "imap_port", "imap_use_ssl", "smtp_host", "smtp_port",
-            "smtp_use_tls", "display_name", "sync_enabled", "poll_interval_minutes", "is_active",
+            "label",
+            "imap_host",
+            "imap_port",
+            "imap_use_ssl",
+            "smtp_host",
+            "smtp_port",
+            "smtp_use_tls",
+            "display_name",
+            "sync_enabled",
+            "poll_interval_minutes",
+            "is_active",
         ):
             val = getattr(data, field_name)
             if val is not None:
@@ -295,8 +312,11 @@ class EmailAccountService:
         password = security.decrypt(account.password_encrypted)
         try:
             async with ImapClient(
-                account.imap_host, account.imap_port, account.imap_use_ssl,
-                account.username, password,
+                account.imap_host,
+                account.imap_port,
+                account.imap_use_ssl,
+                account.username,
+                password,
             ) as imap:
                 await imap.select("INBOX")
             return {"success": True, "error": None}
@@ -323,7 +343,9 @@ class EmailAccountService:
                 await self.db.execute(
                     select(EmailFolder).where(EmailFolder.account_id == account_id)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         }
         for name, flags in remote:
             special = _special_use(name, flags)
@@ -349,7 +371,9 @@ class EmailAccountService:
                     .where(EmailFolder.account_id == account_id)
                     .order_by(EmailFolder.folder_name)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
 
     async def update_folder(
@@ -396,7 +420,9 @@ class EmailSyncService:
                         EmailAccount.sync_enabled == True,  # noqa: E712
                     )
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         ]
         for account_id in account_ids:
             try:
@@ -415,8 +441,11 @@ class EmailSyncService:
         new_total = 0
         try:
             async with ImapClient(
-                account.imap_host, account.imap_port, account.imap_use_ssl,
-                account.username, password,
+                account.imap_host,
+                account.imap_port,
+                account.imap_use_ssl,
+                account.username,
+                password,
             ) as imap:
                 for folder in folders:
                     if not folder.sync_enabled:
@@ -435,23 +464,35 @@ class EmailSyncService:
             await self.db.commit()
         return new_total
 
-    async def sync_folder(self, imap: ImapClient, account: EmailAccount, folder: EmailFolder) -> int:
+    async def sync_folder(
+        self, imap: ImapClient, account: EmailAccount, folder: EmailFolder
+    ) -> int:
         count, uidvalidity = await imap.select(folder.folder_name)
 
         # UIDVALIDITY change → UIDs invalidated; wipe and re-sync.
-        if folder.uidvalidity is not None and uidvalidity is not None and folder.uidvalidity != uidvalidity:
+        if (
+            folder.uidvalidity is not None
+            and uidvalidity is not None
+            and folder.uidvalidity != uidvalidity
+        ):
             logger.warning(
                 "UIDVALIDITY changed for %s (%d→%d); full re-sync",
-                folder.folder_name, folder.uidvalidity, uidvalidity,
+                folder.folder_name,
+                folder.uidvalidity,
+                uidvalidity,
             )
             await self.db.execute(
                 select(EmailMessage).where(EmailMessage.folder_id == folder.id)
             )  # load to cascade-delete attachments; executed below
             msgs = (
-                await self.db.execute(
-                    select(EmailMessage).where(EmailMessage.folder_id == folder.id)
+                (
+                    await self.db.execute(
+                        select(EmailMessage).where(EmailMessage.folder_id == folder.id)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for m in msgs:
                 await self.db.delete(m)
             folder.last_uid = 0
@@ -482,15 +523,18 @@ class EmailSyncService:
     async def _refresh_folder_counts(self, folder: EmailFolder) -> None:
         total = (
             await self.db.execute(
-                select(func.count()).select_from(EmailMessage).where(
-                    EmailMessage.folder_id == folder.id
-                )
+                select(func.count())
+                .select_from(EmailMessage)
+                .where(EmailMessage.folder_id == folder.id)
             )
         ).scalar() or 0
         unread = (
             await self.db.execute(
-                select(func.count()).select_from(EmailMessage).where(
-                    EmailMessage.folder_id == folder.id, EmailMessage.is_read == False  # noqa: E712
+                select(func.count())
+                .select_from(EmailMessage)
+                .where(
+                    EmailMessage.folder_id == folder.id,
+                    EmailMessage.is_read == False,  # noqa: E712
                 )
             )
         ).scalar() or 0
@@ -674,15 +718,15 @@ class EmailMessageService:
                     .where(EmailAttachment.message_id == message_id)
                     .order_by(EmailAttachment.id)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         return {"message": message, "attachments": attachments}
 
     async def _get(self, message_id: int) -> EmailMessage:
         message = (
-            await self.db.execute(
-                select(EmailMessage).where(EmailMessage.id == message_id)
-            )
+            await self.db.execute(select(EmailMessage).where(EmailMessage.id == message_id))
         ).scalar_one_or_none()
         if not message:
             raise NotFoundError(f"Message {message_id} not found")
@@ -734,8 +778,11 @@ class EmailMessageService:
                 return
             password = security.decrypt(account.password_encrypted)
             async with ImapClient(
-                account.imap_host, account.imap_port, account.imap_use_ssl,
-                account.username, password,
+                account.imap_host,
+                account.imap_port,
+                account.imap_use_ssl,
+                account.username,
+                password,
             ) as imap:
                 await imap.select(folder.folder_name)
                 if is_read is not None:
@@ -765,9 +812,7 @@ class EmailMessageService:
     async def _describe_move(self, message: EmailMessage) -> dict | None:
         """Capture (account_id, source folder name, uid) for a background move."""
         folder = (
-            await self.db.execute(
-                select(EmailFolder).where(EmailFolder.id == message.folder_id)
-            )
+            await self.db.execute(select(EmailFolder).where(EmailFolder.id == message.folder_id))
         ).scalar_one_or_none()
         if not folder:
             return None
@@ -865,7 +910,9 @@ class EmailMessageService:
                     )
                     .order_by(EmailMessage.id)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
 
         moves: list[tuple[str, int]] = []
@@ -893,10 +940,10 @@ class EmailMessageService:
 
         # Recount the folders we touched so badges stay accurate.
         touched_folders = (
-            await self.db.execute(
-                select(EmailFolder).where(EmailFolder.id.in_(affected_folders))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(EmailFolder).where(EmailFolder.id.in_(affected_folders))))
+            .scalars()
+            .all()
+        )
         for folder in touched_folders:
             await EmailSyncService(self.db)._refresh_folder_counts(folder)
 
@@ -953,8 +1000,12 @@ class EmailComposeService:
         msg = self._build_message(account, data)
         try:
             await send_via_smtp(
-                account.smtp_host, account.smtp_port, account.smtp_use_tls,
-                account.username, security.decrypt(account.password_encrypted), msg,
+                account.smtp_host,
+                account.smtp_port,
+                account.smtp_use_tls,
+                account.username,
+                security.decrypt(account.password_encrypted),
+                msg,
             )
         except Exception as exc:  # noqa: BLE001
             return {"success": False, "sent_message_id": None, "error": _exc_message(exc)}
@@ -1023,19 +1074,26 @@ class EmailComposeService:
     ) -> None:
         try:
             folder = (
-                await self.db.execute(
-                    select(EmailFolder).where(
-                        EmailFolder.account_id == account.id,
-                        EmailFolder.special_use == special,
+                (
+                    await self.db.execute(
+                        select(EmailFolder).where(
+                            EmailFolder.account_id == account.id,
+                            EmailFolder.special_use == special,
+                        )
                     )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if not folder:
                 return
             password = security.decrypt(account.password_encrypted)
             async with ImapClient(
-                account.imap_host, account.imap_port, account.imap_use_ssl,
-                account.username, password,
+                account.imap_host,
+                account.imap_port,
+                account.imap_use_ssl,
+                account.username,
+                password,
             ) as imap:
                 await imap.append(folder.folder_name, flag, raw)
                 # Re-sync that folder so the appended message lands in our DB.

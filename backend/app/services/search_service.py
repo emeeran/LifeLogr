@@ -119,12 +119,9 @@ class SearchService:
 
         # ── ILIKE fallback ──
         pattern = f"%{query}%"
-        base = (
-            select(Note.id, Note.folder_id, Note.updated_at, Note.title, Note.body)
-            .where(
-                Note.is_deleted == False,  # noqa: E712
-                (Note.title.ilike(pattern)) | (Note.body.ilike(pattern)),
-            )
+        base = select(Note.id, Note.folder_id, Note.updated_at, Note.title, Note.body).where(
+            Note.is_deleted == False,  # noqa: E712
+            (Note.title.ilike(pattern)) | (Note.body.ilike(pattern)),
         )
         if tag_ids:
             base = base.where(
@@ -134,9 +131,7 @@ class SearchService:
             await self.db.execute(select(func.count()).select_from(base.subquery()))
         ).scalar_one()
         rows = (
-            await self.db.execute(
-                base.order_by(Note.updated_at.desc()).offset(offset).limit(limit)
-            )
+            await self.db.execute(base.order_by(Note.updated_at.desc()).offset(offset).limit(limit))
         ).all()
         return [
             SearchResultEntry(
@@ -253,6 +248,7 @@ class SearchService:
         )
 
         from app.services.entry_service import EntryService
+
         stmt = EntryService._apply_filters(stmt, tag_ids, mood, None, None)
 
         if date_from:
@@ -268,9 +264,7 @@ class SearchService:
         # ── Vectorised cosine similarity ──────────────────────────
         entry_ids_raw = [row.entry_id for row in rows]
         # Stack all embeddings into a single (N, D) float32 matrix.
-        matrix = np.array(
-            [json.loads(row.embedding) for row in rows], dtype=np.float32
-        )
+        matrix = np.array([json.loads(row.embedding) for row in rows], dtype=np.float32)
         q = np.array(query_vec, dtype=np.float32)
 
         # Cosine similarity = dot(a,b) / (||a|| * ||b||)

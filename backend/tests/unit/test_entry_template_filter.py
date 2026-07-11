@@ -86,12 +86,16 @@ class TestEntryTemplateBackfill:
             ).scalar_one()
             # One entry created from the template (body = template + additions)...
             await conn.execute(
-                text("INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-01-01', :b, 0, 0)"),
+                text(
+                    "INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-01-01', :b, 0, 0)"
+                ),
                 {"b": body + "extra freeform writing"},
             )
             # ...and one freeform entry that doesn't match.
             await conn.execute(
-                text("INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-01-02', :b, 0, 0)"),
+                text(
+                    "INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-01-02', :b, 0, 0)"
+                ),
                 {"b": "totally unrelated freeform entry"},
             )
             await _backfill_entry_templates(conn)
@@ -124,7 +128,9 @@ class TestEntryTemplateBackfill:
                 await conn.execute(text("SELECT id FROM templates WHERE name = 'Long'"))
             ).scalar_one()
             await conn.execute(
-                text("INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-02-01', :b, 0, 0)"),
+                text(
+                    "INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-02-01', :b, 0, 0)"
+                ),
                 {"b": long_body + "extra"},
             )
             await _backfill_entry_templates(conn)
@@ -143,7 +149,9 @@ class TestEntryTemplateBackfill:
                 {"b": "hi"},  # < 15 chars → not a candidate
             )
             await conn.execute(
-                text("INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-03-01', :b, 0, 0)"),
+                text(
+                    "INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2026-03-01', :b, 0, 0)"
+                ),
                 {"b": "hi there"},
             )
             await _backfill_entry_templates(conn)

@@ -140,9 +140,7 @@ async def oauth_callback(
 
 
 def _render_error_page(detail: str) -> HTMLResponse:
-    return HTMLResponse(
-        content=_ERROR_HTML.replace("{{DETAIL}}", str(detail)), status_code=400
-    )
+    return HTMLResponse(content=_ERROR_HTML.replace("{{DETAIL}}", str(detail)), status_code=400)
 
 
 _SUCCESS_HTML = """<!DOCTYPE html><html><head><title>Box Connected</title>

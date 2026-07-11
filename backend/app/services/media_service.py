@@ -290,8 +290,12 @@ class MediaService:
         if media_type in ("audio/x-wav", "audio/wav", "audio/wave"):
             return "audio/wav"
         audio_map = {
-            "webm": "audio/webm", "ogg": "audio/ogg", "mp3": "audio/mpeg",
-            "mp4": "audio/mp4", "wav": "audio/wav", "m4a": "audio/mp4",
+            "webm": "audio/webm",
+            "ogg": "audio/ogg",
+            "mp3": "audio/mpeg",
+            "mp4": "audio/mp4",
+            "wav": "audio/wav",
+            "m4a": "audio/mp4",
             "opus": "audio/opus",
         }
         if category == "audio" and ext in audio_map:

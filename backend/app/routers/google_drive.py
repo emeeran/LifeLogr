@@ -56,7 +56,9 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
     # drive.file: create/access the visible "LifeLogr Backups" folder.
     # drive.appdata: retained so older hidden backups can be migrated out.
-    scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata"
+    scopes = (
+        "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata"
+    )
     auth_base_url = "https://accounts.google.com/o/oauth2/v2/auth"
     state = _state.issue()
 

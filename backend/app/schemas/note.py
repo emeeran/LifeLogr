@@ -9,11 +9,15 @@ from app.schemas.tag import TagBrief
 
 class NoteFolderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="Folder name")
-    parent_id: int | None = Field(default=None, description="Parent folder ID (nesting reserved for future)")
+    parent_id: int | None = Field(
+        default=None, description="Parent folder ID (nesting reserved for future)"
+    )
     color: str | None = Field(default=None, max_length=20, description="Optional color label")
     sort_order: int = Field(default=0, ge=0)
 
-    model_config = ConfigDict(json_schema_extra={"example": {"name": "Research", "color": "#5875F7"}})
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"name": "Research", "color": "#5875F7"}}
+    )
 
 
 class NoteFolderUpdate(BaseModel):
@@ -45,16 +49,29 @@ class NoteCreate(BaseModel):
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {"title": "Project ideas", "body": "- Ship notes feature", "folder_id": 1, "tag_ids": []}
+            "example": {
+                "title": "Project ideas",
+                "body": "- Ship notes feature",
+                "folder_id": 1,
+                "tag_ids": [],
+            }
         }
     )
 
 
 class NoteUpdate(BaseModel):
-    title: str | None = Field(default=None, max_length=255, description="Updated title; null to clear")
-    body: str | None = Field(default=None, max_length=1_000_000, description="Updated Markdown body")
-    folder_id: int | None = Field(default=None, description="Folder to file under; combine with clear_folder to un-file")
-    clear_folder: bool = Field(default=False, description="Set folder_id to None (un-file the note)")
+    title: str | None = Field(
+        default=None, max_length=255, description="Updated title; null to clear"
+    )
+    body: str | None = Field(
+        default=None, max_length=1_000_000, description="Updated Markdown body"
+    )
+    folder_id: int | None = Field(
+        default=None, description="Folder to file under; combine with clear_folder to un-file"
+    )
+    clear_folder: bool = Field(
+        default=False, description="Set folder_id to None (un-file the note)"
+    )
     tag_ids: list[int] | None = Field(default=None, description="Tag IDs; null to keep existing")
     is_pinned: bool | None = Field(default=None)
     color: str | None = Field(default=None, max_length=20)

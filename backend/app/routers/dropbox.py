@@ -33,11 +33,7 @@ _state = OAuthStateStore()
 def _result_page(ok: bool, detail: str = "") -> HTMLResponse:
     title = "Dropbox Connected" if ok else "Connection Failed"
     emoji = "✅" if ok else "❌"
-    body = (
-        "LifeLogr connected to your Dropbox account. You can close this tab."
-        if ok
-        else detail
-    )
+    body = "LifeLogr connected to your Dropbox account. You can close this tab." if ok else detail
     return HTMLResponse(
         content=(
             "<!DOCTYPE html><html><body style='font-family:sans-serif;background:#0f172a;color:#f8fafc;"
@@ -57,7 +53,9 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     client_id = settings.DROPBOX_CLIENT_ID
     if config:
         try:
-            client_id = json.loads(decrypt(config.credentials_encrypted)).get("client_id", client_id)
+            client_id = json.loads(decrypt(config.credentials_encrypted)).get(
+                "client_id", client_id
+            )
         except Exception:
             logger.warning("Failed to decrypt stored Dropbox credentials", exc_info=True)
     if not client_id:
@@ -95,7 +93,9 @@ async def oauth_callback(
             client_id = stored.get("client_id", client_id)
             client_secret = stored.get("client_secret", client_secret)
         except Exception:
-            logger.warning("Failed to decrypt Dropbox credentials for token exchange", exc_info=True)
+            logger.warning(
+                "Failed to decrypt Dropbox credentials for token exchange", exc_info=True
+            )
     if not client_id or not client_secret:
         return _result_page(False, "Dropbox client_id/client_secret are not configured")
 
@@ -119,7 +119,9 @@ async def oauth_callback(
 
     refresh_token = token_data.get("refresh_token") or stored.get("refresh_token")
     if not refresh_token:
-        return _result_page(False, "No refresh token returned. Ensure the app uses long-lived access.")
+        return _result_page(
+            False, "No refresh token returned. Ensure the app uses long-lived access."
+        )
     new_creds = {
         "client_id": client_id,
         "client_secret": client_secret,

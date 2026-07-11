@@ -130,13 +130,10 @@ class OllamaService:
             ) from exc
         except httpx.HTTPStatusError as exc:
             raise OllamaServiceError(
-                f"Ollama rejected the request for '{used_model}' "
-                f"(HTTP {exc.response.status_code})."
+                f"Ollama rejected the request for '{used_model}' (HTTP {exc.response.status_code})."
             ) from exc
         except httpx.HTTPError as exc:  # ConnectError, ReadError, etc.
-            raise OllamaServiceError(
-                f"Cannot reach Ollama at {self.base_url}: {exc}"
-            ) from exc
+            raise OllamaServiceError(f"Cannot reach Ollama at {self.base_url}: {exc}") from exc
         data: dict[str, Any] = response.json()
         return str(data.get("response", ""))
 
@@ -214,8 +211,8 @@ class OllamaService:
                 model_loaded=model_loaded,
                 model_names=models,
                 error=None
-                    if model_loaded
-                    else f"Model '{self.model}' not found. Available: {models}",
+                if model_loaded
+                else f"Model '{self.model}' not found. Available: {models}",
             )
         except Exception as exc:
             result = AIStatusResponse(
@@ -324,7 +321,7 @@ class OllamaService:
 
         prompt = (
             "Analyze these monthly journal summaries and identify 3-5 recurring themes. "
-            'Return ONLY a raw JSON array of objects — no markdown code fence, no commentary: '
+            "Return ONLY a raw JSON array of objects — no markdown code fence, no commentary: "
             '[{"theme": "...", "frequency": "monthly|weekly|occasional", '
             '"months_mentioned": ["Jan 2026", ...], "insight": "Brief observation"}]\n\n'
             + "\n".join(sections[:20])

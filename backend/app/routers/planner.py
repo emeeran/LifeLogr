@@ -80,7 +80,9 @@ async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db)) -> A
 
 
 @router.post("/tasks/reorder")
-async def reorder_tasks(data: TaskReorderRequest, db: AsyncSession = Depends(get_db)) -> dict[str, int]:
+async def reorder_tasks(
+    data: TaskReorderRequest, db: AsyncSession = Depends(get_db)
+) -> dict[str, int]:
     svc = PlannerService(db)
     await svc.reorder(data.items)
     return {"reordered": len(data.items)}
@@ -93,9 +95,7 @@ async def get_task(task_id: int, db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskResponse)
-async def update_task(
-    task_id: int, data: TaskUpdate, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def update_task(task_id: int, data: TaskUpdate, db: AsyncSession = Depends(get_db)) -> Any:
     svc = PlannerService(db)
     return await svc.update_task(task_id, data)
 

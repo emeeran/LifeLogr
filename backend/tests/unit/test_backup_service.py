@@ -68,9 +68,17 @@ class TestBoxBackup:
 
         box_instance = AsyncMock()
         with (
-            patch("app.services.cloud_sync_service.BoxProvider", return_value=box_instance) as mock_cls,
-            patch.object(BackupService, "_create_backup_archive", AsyncMock(return_value=b"archive")),
-            patch.object(BackupService, "count_all", AsyncMock(return_value={"entries": 0, "media": 0, "notes": 0})),
+            patch(
+                "app.services.cloud_sync_service.BoxProvider", return_value=box_instance
+            ) as mock_cls,
+            patch.object(
+                BackupService, "_create_backup_archive", AsyncMock(return_value=b"archive")
+            ),
+            patch.object(
+                BackupService,
+                "count_all",
+                AsyncMock(return_value={"entries": 0, "media": 0, "notes": 0}),
+            ),
         ):
             svc = BackupService(db_session)
             snap = await svc.run_backup(config.id)

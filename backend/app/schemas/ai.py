@@ -214,9 +214,7 @@ class DefineTextResponse(BaseModel):
 
 class VoiceChangeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000, description="Text to convert")
-    voice: str = Field(
-        description="Target voice: active or passive"
-    )
+    voice: str = Field(description="Target voice: active or passive")
 
 
 class VoiceChangeResponse(BaseModel):

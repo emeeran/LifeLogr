@@ -107,9 +107,7 @@ class PlannerService:
         stmt = stmt.order_by(Task.sort_order, Task.created_at)
         # Eagerly load 2 levels of subtasks (our max depth) so building the
         # response tree never triggers an async lazy-load after the session closes.
-        stmt = stmt.options(
-            selectinload(Task.children).selectinload(Task.children)
-        )
+        stmt = stmt.options(selectinload(Task.children).selectinload(Task.children))
         tasks = list((await self.db.execute(stmt)).scalars().all())
         return [self._task_to_response(t, include_completed=include_completed) for t in tasks]
 
@@ -117,7 +115,15 @@ class PlannerService:
         task = await self._get_task(task_id)
         if data.parent_id is not None and data.parent_id != task.parent_id:
             await self._assert_can_nest(data.parent_id)
-        for field in ("title", "list_id", "parent_id", "notes", "priority", "due_date", "sort_order"):
+        for field in (
+            "title",
+            "list_id",
+            "parent_id",
+            "notes",
+            "priority",
+            "due_date",
+            "sort_order",
+        ):
             val = getattr(data, field)
             if val is not None:
                 setattr(task, field, val)
@@ -192,8 +198,15 @@ class PlannerService:
     async def update_event(self, event_id: int, data: ScheduleEventUpdate) -> ScheduleEvent:
         event = await self._get_event(event_id)
         for field in (
-            "title", "description", "location", "start_at", "end_at",
-            "all_day", "rrule", "timezone_name", "color",
+            "title",
+            "description",
+            "location",
+            "start_at",
+            "end_at",
+            "all_day",
+            "rrule",
+            "timezone_name",
+            "color",
         ):
             val = getattr(data, field)
             if val is not None:
@@ -234,9 +247,7 @@ class PlannerService:
 
     # ── helpers ────────────────────────────────────────────────────────────
 
-    def _expand_recurrence(
-        self, ev: ScheduleEvent, frm: datetime, to: datetime
-    ) -> list[datetime]:
+    def _expand_recurrence(self, ev: ScheduleEvent, frm: datetime, to: datetime) -> list[datetime]:
         """Return occurrence start datetimes in [frm, to], honoring exclusions."""
         try:
             rule = rrulestr(ev.rrule, dtstart=ev.start_at)
@@ -291,9 +302,11 @@ class PlannerService:
             raise ValidationError("Subtasks cannot have their own subtasks")
 
     async def _get_task(self, task_id: int, include_deleted: bool = False) -> Task:
-        stmt = select(Task).options(
-            selectinload(Task.children).selectinload(Task.children)
-        ).where(Task.id == task_id)
+        stmt = (
+            select(Task)
+            .options(selectinload(Task.children).selectinload(Task.children))
+            .where(Task.id == task_id)
+        )
         if not include_deleted:
             stmt = stmt.where(Task.is_deleted == False)  # noqa: E712
         task = (await self.db.execute(stmt)).scalar_one_or_none()
@@ -305,7 +318,8 @@ class PlannerService:
         tl = (
             await self.db.execute(
                 select(TaskList).where(
-                    TaskList.id == list_id, TaskList.is_deleted == False  # noqa: E712
+                    TaskList.id == list_id,
+                    TaskList.is_deleted == False,  # noqa: E712
                 )
             )
         ).scalar_one_or_none()

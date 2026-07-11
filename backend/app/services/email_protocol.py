@@ -278,16 +278,18 @@ class ImapClient:
 
     async def uid_fetch_rfc822(self, uid: int) -> tuple[bytes | None, list[str]]:
         """Fetch raw RFC822 bytes + parsed flags for one UID."""
-        typ, data = await asyncio.to_thread(
-            self.imap.uid, "FETCH", str(uid), "(RFC822 FLAGS)"
-        )
+        typ, data = await asyncio.to_thread(self.imap.uid, "FETCH", str(uid), "(RFC822 FLAGS)")
         if typ != "OK" or not data:
             return None, []
         raw: bytes | None = None
         flags: list[str] = []
         for item in data:
             if isinstance(item, tuple):
-                header = item[0].decode("utf-8", "replace") if isinstance(item[0], bytes) else str(item[0])
+                header = (
+                    item[0].decode("utf-8", "replace")
+                    if isinstance(item[0], bytes)
+                    else str(item[0])
+                )
                 if isinstance(item[1], bytes):
                     raw = item[1]
                 m = re.search(r"FLAGS \(([^)]*)\)", header)

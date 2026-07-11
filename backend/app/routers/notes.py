@@ -125,9 +125,7 @@ async def update_page(
 
 
 @router.delete("/{note_id}/pages/{page_id}", status_code=204)
-async def delete_page(
-    note_id: int, page_id: int, db: AsyncSession = Depends(get_db)
-) -> None:
+async def delete_page(note_id: int, page_id: int, db: AsyncSession = Depends(get_db)) -> None:
     svc = NoteService(db)
     await svc.delete_page(note_id, page_id)
 
@@ -209,7 +207,11 @@ async def upload_note_media(
     svc = NoteMediaService(db)
     data = await file.read()
     return await svc.upload(
-        note_id, file.filename or "upload", file.content_type or "application/octet-stream", data, caption
+        note_id,
+        file.filename or "upload",
+        file.content_type or "application/octet-stream",
+        data,
+        caption,
     )
 
 
@@ -265,9 +267,7 @@ async def get_note(note_id: int, db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.patch("/{note_id}", response_model=NoteResponse)
-async def update_note(
-    note_id: int, data: NoteUpdate, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def update_note(note_id: int, data: NoteUpdate, db: AsyncSession = Depends(get_db)) -> Any:
     """Update an existing note."""
     svc = NoteService(db)
     return _to_response(await svc.update(note_id, data))
@@ -288,9 +288,7 @@ async def restore_note(note_id: int, db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.patch("/{note_id}/pin", response_model=NoteResponse)
-async def pin_note(
-    note_id: int, body: _PinBody, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def pin_note(note_id: int, body: _PinBody, db: AsyncSession = Depends(get_db)) -> Any:
     """Set the pinned state of a note."""
     svc = NoteService(db)
     return _to_response(await svc.set_pinned(note_id, body.is_pinned))
