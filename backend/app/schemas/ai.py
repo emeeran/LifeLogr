@@ -1,7 +1,5 @@
 """Pydantic schemas for AI assistance (Ollama) endpoints."""
 
-from datetime import date, datetime
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -121,38 +119,6 @@ class TagSuggestionResponse(BaseModel):
     tags: list[str]
 
 
-# ── Entry analysis (combined) ──────────────────────────────────────────
-
-
-class SentimentData(BaseModel):
-    primary_emotion: str
-    secondary_emotion: str | None = None
-    intensity: int = Field(ge=1, le=10)
-    valence: float = Field(ge=-1.0, le=1.0)
-
-
-class EntryAnalysisResponse(BaseModel):
-    entry_id: int
-    sentiment: SentimentData | None = None
-    summary: str | None = None
-    reflection_prompts: list[str] = []
-
-
-# ── Similar entries ────────────────────────────────────────────────────
-
-
-class SimilarEntry(BaseModel):
-    id: int
-    entry_date: date
-    title: str | None
-    similarity_score: float
-
-
-class SimilarEntriesResponse(BaseModel):
-    entry_id: int
-    similar: list[SimilarEntry]
-
-
 # ── Writer's block ─────────────────────────────────────────────────────
 
 
@@ -194,22 +160,6 @@ class ThemeInsight(BaseModel):
 
 class ThemesResponse(BaseModel):
     themes: list[ThemeInsight]
-
-
-# ── Weekly digest ──────────────────────────────────────────────────────
-
-
-class DigestResponse(BaseModel):
-    id: int
-    week_start: date
-    week_end: date
-    themes: list[str]
-    emotional_trajectory: str
-    notable_moments: list[str]
-    summary_text: str
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Smart Tools (expand, change tone) ──────────

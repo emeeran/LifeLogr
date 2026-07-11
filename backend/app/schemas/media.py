@@ -2,16 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class MediaCreate(BaseModel):
-    entry_id: int = Field(description="Entry to attach media to")
-    caption: str | None = Field(default=None, max_length=500, description="Optional caption")
-
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"entry_id": 1, "caption": "Sunset photo"}}
-    )
+from pydantic import BaseModel, ConfigDict
 
 
 class MediaResponse(BaseModel):

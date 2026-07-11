@@ -55,25 +55,25 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/grammar-check", response_model=GrammarCheckResponse)
-async def grammar_check(data: GrammarCheckRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def grammar_check(data: GrammarCheckRequest) -> Any:
     svc = OllamaService()
     return await svc.grammar_check(data.text, data.language)
 
 
 @router.post("/spell-check", response_model=SpellCheckResponse)
-async def spell_check(data: SpellCheckRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def spell_check(data: SpellCheckRequest) -> Any:
     svc = OllamaService()
     return await svc.spell_check(data.text, data.language)
 
 
 @router.post("/rewrite", response_model=RewriteResponse)
-async def rewrite_text(data: RewriteRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def rewrite_text(data: RewriteRequest) -> Any:
     svc = OllamaService()
     return await svc.rewrite(data.text, data.style, data.instructions)
 
 
 @router.get("/status", response_model=AIStatusResponse)
-async def ai_status(db: AsyncSession = Depends(get_db)) -> Any:
+async def ai_status() -> Any:
     svc = OllamaService()
     status = await svc.status()
     # Check if embedding model is available using same status call
@@ -109,7 +109,7 @@ async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(ge
 
 
 @router.post("/continue-writing", response_model=ContinueWritingResponse)
-async def continue_writing(data: ContinueWritingRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def continue_writing(data: ContinueWritingRequest) -> Any:
     """Generate a short continuation suggestion."""
     svc = OllamaService()
     continuation = await svc.continue_writing(data.text)
@@ -248,7 +248,7 @@ async def detect_themes(
 
 
 @router.post("/expand", response_model=ExpandResponse)
-async def expand_text(data: ExpandRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def expand_text(data: ExpandRequest) -> Any:
     """Expand and elaborate on text."""
     svc = OllamaService()
     expanded = await svc.expand(data.text)
@@ -256,7 +256,7 @@ async def expand_text(data: ExpandRequest, db: AsyncSession = Depends(get_db)) -
 
 
 @router.post("/change-tone", response_model=ChangeToneResponse)
-async def change_tone(data: ChangeToneRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def change_tone(data: ChangeToneRequest) -> Any:
     """Change the tone of text."""
     svc = OllamaService()
     changed = await svc.change_tone(data.text, data.tone)
@@ -264,7 +264,7 @@ async def change_tone(data: ChangeToneRequest, db: AsyncSession = Depends(get_db
 
 
 @router.post("/analyze-text", response_model=AnalyzeTextResponse)
-async def analyze_text(data: AnalyzeTextRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def analyze_text(data: AnalyzeTextRequest) -> Any:
     """Analyze text for emotions, themes, and a brief summary."""
     svc = OllamaService()
     result = await svc.analyze_text(data.text)
@@ -276,7 +276,7 @@ async def analyze_text(data: AnalyzeTextRequest, db: AsyncSession = Depends(get_
 
 
 @router.post("/define-text", response_model=DefineTextResponse)
-async def define_text(data: DefineTextRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def define_text(data: DefineTextRequest) -> Any:
     """Define or explain a word, phrase, or concept."""
     svc = OllamaService()
     definition = await svc.define_text(data.text)
@@ -284,7 +284,7 @@ async def define_text(data: DefineTextRequest, db: AsyncSession = Depends(get_db
 
 
 @router.post("/change-voice", response_model=VoiceChangeResponse)
-async def change_voice(data: VoiceChangeRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def change_voice(data: VoiceChangeRequest) -> Any:
     """Convert text between active and passive voice."""
     svc = OllamaService()
     changed = await svc.change_voice(data.text, data.voice)
@@ -292,7 +292,7 @@ async def change_voice(data: VoiceChangeRequest, db: AsyncSession = Depends(get_
 
 
 @router.post("/rewrite-for-clarity", response_model=RewriteForClarityResponse)
-async def rewrite_for_clarity(data: RewriteForClarityRequest, db: AsyncSession = Depends(get_db)) -> Any:
+async def rewrite_for_clarity(data: RewriteForClarityRequest) -> Any:
     """Rewrite text for maximum clarity and readability."""
     svc = OllamaService()
     rewritten = await svc.rewrite_for_clarity(data.text)
@@ -306,7 +306,6 @@ async def rewrite_for_clarity(data: RewriteForClarityRequest, db: AsyncSession =
 async def run_generic_tool(
     tool_id: str,
     data: GenericToolRequest,
-    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Run a registry-defined AI text tool (summarize, translate, …)."""
     svc = OllamaService()

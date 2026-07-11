@@ -37,18 +37,6 @@ class NoteEncryptionStatusResponse(BaseModel):
     encrypted_at: datetime | None = None
 
 
-class EntryDecryptedResponse(BaseModel):
-    """An entry with its content decrypted."""
-
-    id: int
-    entry_date: str
-    title: str | None
-    body: str
-    mood: str | None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class EncryptTextRequest(BaseModel):
     """Request to encrypt arbitrary text."""
 

@@ -140,9 +140,9 @@ class SpamService:
 
     # ── override layers ───────────────────────────────────────────────────
 
-    async def is_blocked(self, addr: str, domain: str) -> bool:
-        if not addr and not domain:
-            return False
+    @staticmethod
+    def _blocklist_conditions(addr: str, domain: str) -> list:
+        """OR-conditions matching a sender by exact address and/or domain."""
         conditions = []
         if addr:
             conditions.append(SpamBlocklist.pattern == addr)
@@ -150,6 +150,12 @@ class SpamService:
             conditions.append(
                 (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
             )
+        return conditions
+
+    async def is_blocked(self, addr: str, domain: str) -> bool:
+        conditions = self._blocklist_conditions(addr, domain)
+        if not conditions:
+            return False
         found = (
             await self.db.execute(select(SpamBlocklist.id).where(or_(*conditions)))
         ).scalar_one_or_none()
@@ -208,15 +214,9 @@ class SpamService:
     async def block_action(self, addr: str, domain: str) -> str | None:
         """Return the configured action ('junk'|'delete') if the sender is
         blocked, else ``None``."""
-        if not addr and not domain:
+        conditions = self._blocklist_conditions(addr, domain)
+        if not conditions:
             return None
-        conditions = []
-        if addr:
-            conditions.append(SpamBlocklist.pattern == addr)
-        if domain:
-            conditions.append(
-                (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
-            )
         row = (
             await self.db.execute(select(SpamBlocklist).where(or_(*conditions)))
         ).scalar_one_or_none()
@@ -232,13 +232,7 @@ class SpamService:
 
     async def remove_rules_for(self, addr: str, domain: str) -> None:
         """Drop blocklist entries matching a sender (used by 'mark not spam')."""
-        conditions = []
-        if addr:
-            conditions.append(SpamBlocklist.pattern == addr)
-        if domain:
-            conditions.append(
-                (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
-            )
+        conditions = self._blocklist_conditions(addr, domain)
         if not conditions:
             return
         rows = list(

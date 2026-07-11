@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from datetime import date
 
 from fpdf import FPDF
@@ -195,8 +196,7 @@ class ExportService:
             import re
 
             plain = re.sub(r"<[^>]+>", "", body_text)
-            plain = plain.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-            plain = plain.replace("&#39;", "'").replace("&quot;", '"')
+            plain = html.unescape(plain)
             pdf.multi_cell(0, 6, _pdf_text(plain))
 
         return bytes(pdf.output())
