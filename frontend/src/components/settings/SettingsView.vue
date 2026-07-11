@@ -304,11 +304,6 @@ const index: SearchEntry[] = [
       "sync",
     ],
   },
-  {
-    tab: "data-backup",
-    label: "Sync queue",
-    keywords: ["sync", "sync queue", "push", "pull", "flush"],
-  },
 
   {
     tab: "dedication",

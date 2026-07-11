@@ -32,7 +32,6 @@ export const useEmailStore = defineStore('email', () => {
   const spamRules = ref<SpamRuleResponse[]>([])
 
   const loadingAccounts = ref(false)
-  const loadingFolders = ref(false)
   const loadingMessages = ref(false)
   const loadingDetail = ref(false)
   const syncing = ref(false)
@@ -77,12 +76,7 @@ export const useEmailStore = defineStore('email', () => {
       folders.value = []
       return
     }
-    loadingFolders.value = true
-    try {
-      folders.value = await emailApi.listFolders(activeAccountId.value)
-    } finally {
-      loadingFolders.value = false
-    }
+    folders.value = await emailApi.listFolders(activeAccountId.value)
   }
 
   async function refreshFolders() {
@@ -301,13 +295,13 @@ export const useEmailStore = defineStore('email', () => {
     accounts, activeAccountId, folders, activeFolderId,
     messages, selectedMessage, search, unreadOnly, spamOnly,
     selectedIds, spamRules, spamCount, total, hasMore, loadingMore,
-    loadingAccounts, loadingFolders, loadingMessages, loadingDetail, syncing,
+    loadingAccounts, loadingMessages, loadingDetail, syncing,
     init, fetchAccounts, selectAccount, fetchFolders, refreshFolders,
     selectFolder, selectSpam, toggleUnread, fetchMessages, loadMore,
     refreshCounts, refreshSpamCount,
     openMessage, toggleStar, toggleRead, removeMessage, bulkDelete, markSpam,
     blockSender,
-    toggleSelected, selectAllVisible, clearSelection, resetSelection,
+    toggleSelected, selectAllVisible, clearSelection,
     fetchSpamRules, addSpamRule, removeSpamRule, rescore, syncActive,
   }
 })
