@@ -19,6 +19,7 @@ from app.schemas.contact import (
     ContactGroupCreate,
     ContactGroupResponse,
     ContactGroupUpdate,
+    ContactResponse,
     ContactUpdate,
     _normalize_email,
 )
@@ -286,6 +287,28 @@ def serialize_vcard(c: Contact) -> str:
 # ── Service ────────────────────────────────────────────────────────────────
 
 
+def contact_to_response(c: Contact) -> ContactResponse:
+    """Build a ContactResponse, hydrating phones from legacy columns.
+
+    Reads must NOT mutate the ORM object: assigning to ``c.phones`` would mark
+    the row dirty, and a subsequent query (e.g. the list ``count``) would
+    autoflush it — firing ``updated_at``'s ``onupdate`` and invalidating that
+    server-generated column, so the following *synchronous* ``model_validate``
+    would raise MissingGreenlet when reading ``updated_at``. We instead build
+    the response from a plain dict and synthesize phones without touching the
+    instance, so the session stays clean.
+    """
+    data = {field: getattr(c, field) for field in ContactResponse.model_fields}
+    if data.get("phones") is None and (c.phone or c.phone_secondary):
+        synth: list[dict[str, str]] = []
+        if c.phone:
+            synth.append({"type": "mobile", "value": c.phone})
+        if c.phone_secondary:
+            synth.append({"type": "home", "value": c.phone_secondary})
+        data["phones"] = synth
+    return ContactResponse(**data)
+
+
 class ContactService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -297,7 +320,7 @@ class ContactService:
         contact = (await self.db.execute(stmt)).scalar_one_or_none()
         if not contact:
             raise NotFoundError(f"Contact {contact_id} not found")
-        return self._hydrate_phones(contact)
+        return contact
 
     async def _reload(self, contact_id: int) -> Contact:
         """Re-fetch a contact so its selectin ``groups`` relationship is loaded.
@@ -320,23 +343,6 @@ class ContactService:
         ).scalar_one_or_none()
         if contact is None:
             raise NotFoundError(f"Contact {contact_id} not found")
-        return self._hydrate_phones(contact)
-
-    @staticmethod
-    def _hydrate_phones(contact: Contact) -> Contact:
-        """Backfill ``phones`` in-memory from legacy columns for old rows.
-
-        ``phones`` JSON is the source of truth on new data; rows created before
-        the rich fields existed only have ``phone``/``phone_secondary``. This
-        synthesizes a phones list for display without persisting.
-        """
-        if contact.phones is None and (contact.phone or contact.phone_secondary):
-            synth: list[dict[str, str]] = []
-            if contact.phone:
-                synth.append({"type": "mobile", "value": contact.phone})
-            if contact.phone_secondary:
-                synth.append({"type": "home", "value": contact.phone_secondary})
-            contact.phones = synth
         return contact
 
     @staticmethod
@@ -447,7 +453,7 @@ class ContactService:
             stmt = stmt.where(member)
         stmt = stmt.order_by(Contact.name, Contact.email).offset(offset).limit(limit)
         rows = list((await self.db.execute(stmt)).scalars().all())
-        return [self._hydrate_phones(c) for c in rows]
+        return rows
 
     async def count(
         self,
@@ -683,7 +689,7 @@ class ContactService:
             stmt = stmt.where(Contact.id.in_(ids))
         stmt = stmt.order_by(Contact.name, Contact.email)
         contacts = list((await self.db.execute(stmt)).scalars().all())
-        return "\r\n".join(serialize_vcard(self._hydrate_phones(c)) for c in contacts) + "\r\n"
+        return "\r\n".join(serialize_vcard(c) for c in contacts) + "\r\n"
 
     async def import_vcf(self, text: str) -> int:
         parsed = parse_vcard(text)

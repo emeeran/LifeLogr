@@ -134,6 +134,25 @@ class TestContactsRichFields:
         assert got["phones"] is not None
         assert got["phones"][0]["value"] == "+1999"
 
+    async def test_list_legacy_phone_row_does_not_break(self, client):
+        """LIST (list_all + count + model_validate) over a legacy phone row.
+
+        Regression: hydrating phones by mutating the ORM object marked the row
+        dirty; the list ``count`` query then autoflushed it, firing
+        ``updated_at``'s onupdate and invalidating the column, so the sync
+        ``model_validate`` raised MissingGreenlet → 500. Reads must not mutate.
+        """
+        c = (await client.post(
+            "/api/v1/contacts",
+            json={"email": "leg2@example.com", "phone": "+1-555-legacy"},
+        )).json()
+        listing = await client.get("/api/v1/contacts?search=leg2")
+        assert listing.status_code == 200
+        item = next(i for i in listing.json()["items"] if i["id"] == c["id"])
+        assert item["phones"] is not None
+        assert item["phones"][0]["value"] == "+1-555-legacy"
+        assert item["updated_at"]  # not invalidated/blanked
+
 
 class TestContactGroups:
     async def test_group_crud_and_membership(self, client):

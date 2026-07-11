@@ -25,6 +25,9 @@ from app.schemas.email import (
     EmailMessageResponse,
     EmailSendResult,
     MessageFlagUpdate,
+    MessageSpamUpdate,
+    SpamRuleCreate,
+    SpamRuleResponse,
     TempAttachmentResponse,
 )
 from app.services.email_service import (
@@ -34,6 +37,7 @@ from app.services.email_service import (
     EmailSyncService,
     store_temp_attachment,
 )
+from app.services.spam_service import SpamService
 
 router = APIRouter(prefix="/api/v1/email", tags=["email"])
 
@@ -147,6 +151,8 @@ async def list_messages(
     unread_only: bool = Query(default=False),
     starred_only: bool = Query(default=False),
     search: str | None = Query(default=None),
+    exclude_spam: bool = Query(default=True),
+    spam_only: bool = Query(default=False),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -158,6 +164,8 @@ async def list_messages(
         unread_only=unread_only,
         starred_only=starred_only,
         search=search,
+        exclude_spam=exclude_spam,
+        spam_only=spam_only,
         offset=offset,
         limit=limit,
     )
@@ -167,6 +175,15 @@ async def list_messages(
         offset=offset,
         limit=limit,
     )
+
+
+@router.post("/messages/bulk-delete", status_code=204)
+async def bulk_delete_messages(
+    ids: list[int], db: AsyncSession = Depends(get_db)
+) -> None:
+    """Soft/move-delete multiple messages at once."""
+    svc = EmailMessageService(db)
+    await svc.bulk_delete(ids)
 
 
 @router.get("/messages/{message_id}", response_model=EmailMessageResponse)
@@ -189,6 +206,16 @@ async def update_message_flags(
 async def delete_message(message_id: int, db: AsyncSession = Depends(get_db)) -> None:
     svc = EmailMessageService(db)
     await svc.delete_message(message_id)
+
+
+@router.patch("/messages/{message_id}/spam", response_model=EmailMessageListResponse)
+async def update_message_spam(
+    message_id: int, data: MessageSpamUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Mark a message as spam / not-spam (user override + blocklist sync)."""
+    svc = EmailMessageService(db)
+    message = await svc.mark_spam(message_id, data.is_spam)
+    return EmailMessageListResponse.model_validate(message)
 
 
 @router.get("/messages/{message_id}/attachments/{attachment_id}")
@@ -219,6 +246,38 @@ async def download_raw_message(
     svc = EmailMessageService(db)
     path = await svc.raw_path(message_id)
     return FileResponse(path, filename=f"message_{message_id}.eml", media_type="message/rfc822")
+
+
+# ── Spam filter (blocklist + rescore) ───────────────────────────────────────
+
+
+@router.get("/spam/rules", response_model=list[SpamRuleResponse])
+async def list_spam_rules(db: AsyncSession = Depends(get_db)) -> Any:
+    """List blocked senders / domains."""
+    return await SpamService(db).list_rules()
+
+
+@router.post("/spam/rules", response_model=SpamRuleResponse, status_code=201)
+async def create_spam_rule(
+    data: SpamRuleCreate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Block a sender address (is_domain=false) or domain (is_domain=true)."""
+    return await SpamService(db).add_rule(data.pattern, data.is_domain)
+
+
+@router.delete("/spam/rules/{rule_id}", status_code=204)
+async def delete_spam_rule(rule_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    await SpamService(db).remove_rule(rule_id)
+
+
+@router.post("/spam/rescore")
+async def rescore_spam(
+    account_id: int | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, int]:
+    """Recompute heuristic spam scores (respects user overrides + blocklist)."""
+    changed = await SpamService(db).rescore(account_id)
+    return {"rescored": changed}
 
 
 # ── Compose ────────────────────────────────────────────────────────────────

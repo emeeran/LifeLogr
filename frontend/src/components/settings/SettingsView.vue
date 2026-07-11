@@ -12,6 +12,7 @@ import {
   Sliders,
   Search,
   Heart,
+  Mail,
 } from "lucide-vue-next";
 import GeneralTab from "./tabs/GeneralTab.vue";
 import AITab from "./tabs/AITab.vue";
@@ -19,12 +20,14 @@ import DataBackupTab from "./tabs/DataBackupTab.vue";
 import FeaturesTab from "./tabs/FeaturesTab.vue";
 import DedicationTab from "./tabs/DedicationTab.vue";
 import AboutTab from "./tabs/AboutTab.vue";
+import EmailTab from "./tabs/EmailTab.vue";
 
 // ── Tab navigation ──
 const activeTab = useLocalStorage<string>("lifelogr-settings-tab", "general");
 const tabs = [
   { id: "general", label: "General", icon: Sliders },
   { id: "ai", label: "AI", icon: Brain },
+  { id: "email", label: "Email", icon: Mail },
   { id: "features", label: "Features", icon: Sparkles },
   { id: "data-backup", label: "Data & Backup", icon: HardDrive },
   { id: "dedication", label: "Dedication", icon: Heart },
@@ -158,6 +161,22 @@ const index: SearchEntry[] = [
     tab: "ai",
     label: "Themes & Insights",
     keywords: ["themes", "insights", "patterns"],
+  },
+
+  {
+    tab: "email",
+    label: "Email accounts",
+    keywords: [
+      "email",
+      "imap",
+      "smtp",
+      "mailbox",
+      "gmail",
+      "outlook",
+      "account",
+      "app password",
+      "mail server",
+    ],
   },
 
   {
@@ -473,6 +492,7 @@ provide("settings-highlight", highlightKey);
       >
         <GeneralTab v-if="activeTab === 'general'" @toast="showToast" />
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
+        <EmailTab v-if="activeTab === 'email'" @toast="showToast" />
         <FeaturesTab v-if="activeTab === 'features'" @toast="showToast" />
         <DataBackupTab v-if="activeTab === 'data-backup'" @toast="showToast" />
         <DedicationTab v-if="activeTab === 'dedication'" />

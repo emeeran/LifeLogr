@@ -32,6 +32,7 @@ from app.services.email_protocol import (
     parse_message,
     send_via_smtp,
 )
+from app.services.spam_service import SpamService, _domain_of
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,23 @@ def _account_media_dir(account_id: int) -> Path:
 def _sanitize(filename: str) -> str:
     safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in filename)
     return safe[:80] or "attachment"
+
+
+def _exc_message(exc: BaseException) -> str:
+    """Human-readable exception text for UI surfaces.
+
+    ``imaplib`` raises errors whose args are ``bytes`` (e.g.
+    ``b'[ALERT] Application-specific password required'``), so a plain
+    ``str(exc)`` surfaces an ugly ``b'...'`` literal. Decode any bytes args.
+    """
+    parts: list[str] = []
+    for arg in getattr(exc, "args", None) or (str(exc),):
+        if isinstance(arg, (bytes, bytearray)):
+            parts.append(bytes(arg).decode("utf-8", "replace"))
+        else:
+            parts.append(str(arg))
+    msg = " ".join(p for p in parts if p).strip()
+    return msg or str(exc)
 
 
 # ── Account service ────────────────────────────────────────────────────────
@@ -168,7 +186,7 @@ class EmailAccountService:
                 await imap.select("INBOX")
             return {"success": True, "error": None}
         except Exception as exc:  # noqa: BLE001
-            return {"success": False, "error": str(exc)}
+            return {"success": False, "error": _exc_message(exc)}
 
     async def list_folders(self, account_id: int) -> list[EmailFolder]:
         """Cached folders for an account (no server round-trip)."""
@@ -295,7 +313,7 @@ class EmailSyncService:
             account.last_synced_at = datetime.now(timezone.utc)
             account.last_sync_error = None
         except Exception as exc:  # noqa: BLE001
-            account.last_sync_error = str(exc)[:500]
+            account.last_sync_error = _exc_message(exc)[:500]
             logger.warning("Account %s sync error: %s", account_id, exc)
             raise
         finally:
@@ -386,6 +404,9 @@ class EmailSyncService:
         parsed = parse_message(raw)
         from_addr = parsed.from_address or account.email_address
 
+        # Local spam filter: blocklist → spam, contact allowlist → ham, else heuristic.
+        spam_score, is_spam = await SpamService(self.db).classify(parsed)
+
         # Persist raw .eml
         media_dir = _account_media_dir(account.id)
         eml_rel = f"email/{account.id}/{folder.id}_{uid}.eml"
@@ -422,6 +443,8 @@ class EmailSyncService:
             is_read="\\seen" in flags_lower,
             is_starred="\\flagged" in flags_lower,
             is_draft="\\draft" in flags_lower,
+            is_spam=is_spam,
+            spam_score=spam_score,
             raw_path=eml_rel,
             has_attachments=has_attachments,
             size_bytes=len(raw),
@@ -480,6 +503,8 @@ class EmailMessageService:
         unread_only: bool = False,
         starred_only: bool = False,
         search: str | None = None,
+        exclude_spam: bool = True,
+        spam_only: bool = False,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[EmailMessage], int]:
@@ -492,6 +517,10 @@ class EmailMessageService:
             conditions.append(EmailMessage.is_read == False)  # noqa: E712
         if starred_only:
             conditions.append(EmailMessage.is_starred == True)  # noqa: E712
+        if spam_only:
+            conditions.append(EmailMessage.is_spam == True)  # noqa: E712
+        elif exclude_spam:
+            conditions.append(EmailMessage.is_spam == False)  # noqa: E712
         if search:
             like = f"%{search.lower()}%"
             conditions.append(
@@ -622,6 +651,43 @@ class EmailMessageService:
         await self.db.delete(message)
         await self.db.commit()
 
+    async def bulk_delete(self, message_ids: list[int]) -> int:
+        """Delete multiple messages (best-effort IMAP move + local delete)."""
+        deleted = 0
+        for mid in message_ids:
+            try:
+                await self.delete_message(mid)
+                deleted += 1
+            except NotFoundError:
+                continue
+            except Exception:  # noqa: BLE001
+                logger.debug("bulk_delete failed for message %s", mid, exc_info=True)
+        return deleted
+
+    async def mark_spam(self, message_id: int, is_spam: bool) -> EmailMessage:
+        """User override of spam classification.
+
+        Marking spam also adds the sender/domain to the blocklist (so future
+        mail is auto-spam); marking not-spam clears the flag and removes any
+        matching blocklist entry. ``spam_user_override`` pins the decision so a
+        later rescore won't undo it.
+        """
+        message = await self._get(message_id)
+        addr = (message.from_address or "").lower()
+        domain = _domain_of(addr)
+        spam_svc = SpamService(self.db)
+        if is_spam:
+            # Prefer a domain rule (broader), fall back to exact address.
+            await spam_svc.add_rule(domain or addr, is_domain=bool(domain))
+        else:
+            await spam_svc.remove_rules_for(addr, domain)
+        message.is_spam = is_spam
+        message.spam_score = 1.0 if is_spam else 0.0
+        message.spam_user_override = is_spam
+        await self.db.commit()
+        await self.db.refresh(message)
+        return message
+
     async def attachment_path(self, message_id: int, attachment_id: int) -> Path:
         att = (
             await self.db.execute(
@@ -671,7 +737,7 @@ class EmailComposeService:
                 account.username, security.decrypt(account.password_encrypted), msg,
             )
         except Exception as exc:  # noqa: BLE001
-            return {"success": False, "sent_message_id": None, "error": str(exc)}
+            return {"success": False, "sent_message_id": None, "error": _exc_message(exc)}
 
         # Append to the Sent folder on the server so future syncs capture it.
         raw = msg.as_bytes()

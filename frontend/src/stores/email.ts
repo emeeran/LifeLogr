@@ -6,6 +6,7 @@ import type {
   EmailFolderResponse,
   EmailMessageListResponse,
   EmailMessageResponse,
+  SpamRuleResponse,
 } from '../types'
 
 export const useEmailStore = defineStore('email', () => {
@@ -19,6 +20,12 @@ export const useEmailStore = defineStore('email', () => {
 
   const search = ref('')
   const unreadOnly = ref(false)
+  const spamOnly = ref(false)
+
+  // Bulk-selection state (message ids).
+  const selectedIds = ref<Set<number>>(new Set())
+
+  const spamRules = ref<SpamRuleResponse[]>([])
 
   const loadingAccounts = ref(false)
   const loadingFolders = ref(false)
@@ -29,6 +36,10 @@ export const useEmailStore = defineStore('email', () => {
   function resetSelection() {
     selectedMessage.value = null
   }
+  function clearSelection() {
+    selectedIds.value = new Set()
+  }
+  const spamCount = ref(0)
 
   async function fetchAccounts() {
     loadingAccounts.value = true
@@ -50,6 +61,8 @@ export const useEmailStore = defineStore('email', () => {
   async function selectAccount(accountId: number) {
     activeAccountId.value = accountId
     activeFolderId.value = null
+    spamOnly.value = false
+    clearSelection()
     resetSelection()
     await fetchFolders()
     await fetchMessages()
@@ -75,7 +88,25 @@ export const useEmailStore = defineStore('email', () => {
 
   function selectFolder(folderId: number | null) {
     activeFolderId.value = folderId
+    spamOnly.value = false
+    clearSelection()
     resetSelection()
+    fetchMessages()
+  }
+
+  function selectSpam() {
+    activeFolderId.value = null
+    unreadOnly.value = false
+    spamOnly.value = true
+    clearSelection()
+    resetSelection()
+    fetchMessages()
+  }
+
+  function toggleUnread() {
+    unreadOnly.value = !unreadOnly.value
+    spamOnly.value = false
+    clearSelection()
     fetchMessages()
   }
 
@@ -91,6 +122,8 @@ export const useEmailStore = defineStore('email', () => {
         folder_id: activeFolderId.value ?? undefined,
         unread_only: unreadOnly.value || undefined,
         search: search.value || undefined,
+        exclude_spam: !spamOnly.value,
+        spam_only: spamOnly.value || undefined,
         limit: 200,
       })
       messages.value = res.items
@@ -99,11 +132,20 @@ export const useEmailStore = defineStore('email', () => {
     }
   }
 
+  async function refreshSpamCount() {
+    if (activeAccountId.value == null) { spamCount.value = 0; return }
+    try {
+      const res = await emailApi.listMessages({
+        account_id: activeAccountId.value, spam_only: true, limit: 1,
+      })
+      spamCount.value = res.total
+    } catch { /* ignore */ }
+  }
+
   async function openMessage(id: number) {
     loadingDetail.value = true
     try {
       selectedMessage.value = await emailApi.getMessage(id)
-      // Mark as read on open (best-effort).
       const listing = messages.value.find((m) => m.id === id)
       if (listing && !listing.is_read) {
         await emailApi.updateMessageFlags(id, { is_read: true })
@@ -139,6 +181,57 @@ export const useEmailStore = defineStore('email', () => {
     if (selectedMessage.value?.id === id) resetSelection()
   }
 
+  async function bulkDelete(ids: number[]) {
+    if (!ids.length) return
+    await emailApi.bulkDeleteMessages(ids)
+    const idset = new Set(ids)
+    messages.value = messages.value.filter((m) => !idset.has(m.id))
+    if (selectedMessage.value && idset.has(selectedMessage.value.id)) resetSelection()
+    clearSelection()
+    await fetchFolders()
+  }
+
+  async function markSpam(msg: EmailMessageListResponse, isSpam: boolean) {
+    await emailApi.markMessageSpam(msg.id, isSpam)
+    msg.is_spam = isSpam
+    if (selectedMessage.value?.id === msg.id) selectedMessage.value.is_spam = isSpam
+    // Spam is hidden outside the Spam view; drop it from the current list then.
+    if (isSpam && !spamOnly.value) {
+      messages.value = messages.value.filter((m) => m.id !== msg.id)
+      if (selectedMessage.value?.id === msg.id) resetSelection()
+    } else if (!isSpam && spamOnly.value) {
+      messages.value = messages.value.filter((m) => m.id !== msg.id)
+      if (selectedMessage.value?.id === msg.id) resetSelection()
+    }
+    await refreshSpamCount()
+  }
+
+  function toggleSelected(id: number) {
+    const next = new Set(selectedIds.value)
+    next.has(id) ? next.delete(id) : next.add(id)
+    selectedIds.value = next
+  }
+  function selectAllVisible() {
+    selectedIds.value = new Set(messages.value.map((m) => m.id))
+  }
+
+  // ── Spam rules (blocklist) ──
+  async function fetchSpamRules() {
+    spamRules.value = await emailApi.listSpamRules()
+  }
+  async function addSpamRule(pattern: string, isDomain: boolean) {
+    await emailApi.addSpamRule({ pattern, is_domain: isDomain })
+    await fetchSpamRules()
+  }
+  async function removeSpamRule(id: number) {
+    await emailApi.removeSpamRule(id)
+    await fetchSpamRules()
+  }
+  async function rescore() {
+    await emailApi.rescoreSpam(activeAccountId.value ?? undefined)
+    await Promise.all([fetchMessages(), refreshSpamCount()])
+  }
+
   async function syncActive() {
     if (activeAccountId.value == null) return
     syncing.value = true
@@ -153,14 +246,18 @@ export const useEmailStore = defineStore('email', () => {
 
   async function init() {
     await fetchAccounts()
+    refreshSpamCount()
   }
 
   return {
     accounts, activeAccountId, folders, activeFolderId,
-    messages, selectedMessage, search, unreadOnly,
+    messages, selectedMessage, search, unreadOnly, spamOnly,
+    selectedIds, spamRules, spamCount,
     loadingAccounts, loadingFolders, loadingMessages, loadingDetail, syncing,
     init, fetchAccounts, selectAccount, fetchFolders, refreshFolders,
-    selectFolder, fetchMessages, openMessage, toggleStar, toggleRead,
-    removeMessage, syncActive, resetSelection,
+    selectFolder, selectSpam, toggleUnread, fetchMessages, refreshSpamCount,
+    openMessage, toggleStar, toggleRead, removeMessage, bulkDelete, markSpam,
+    toggleSelected, selectAllVisible, clearSelection, resetSelection,
+    fetchSpamRules, addSpamRule, removeSpamRule, rescore, syncActive,
   }
 })

@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -62,6 +63,14 @@ class EmailMessage(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     is_starred: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Local spam filter (heuristic + blocklist + contact allowlist).
+    # ``is_spam`` is the effective flag; ``spam_user_override`` records an
+    # explicit user decision (True=spam / False=not-spam / None=auto) so a
+    # rescore never clobbers a user's call.
+    is_spam: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    spam_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spam_user_override: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     raw_path: Mapped[str | None] = mapped_column(String, nullable=True)
     has_attachments: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

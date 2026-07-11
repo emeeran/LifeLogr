@@ -220,6 +220,18 @@ _COLUMN_MIGRATIONS = [
     ("contacts", "websites", "ALTER TABLE contacts ADD COLUMN websites JSON"),
     ("contacts", "dates", "ALTER TABLE contacts ADD COLUMN dates JSON"),
     ("contacts", "relationships", "ALTER TABLE contacts ADD COLUMN relationships JSON"),
+    # Email messages — local spam filter columns.
+    (
+        "email_messages",
+        "is_spam",
+        "ALTER TABLE email_messages ADD COLUMN is_spam BOOLEAN NOT NULL DEFAULT 0",
+    ),
+    ("email_messages", "spam_score", "ALTER TABLE email_messages ADD COLUMN spam_score FLOAT"),
+    (
+        "email_messages",
+        "spam_user_override",
+        "ALTER TABLE email_messages ADD COLUMN spam_user_override BOOLEAN",
+    ),
 ]
 
 _INDEX_MIGRATIONS = [

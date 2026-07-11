@@ -845,6 +845,8 @@ export interface EmailMessageListResponse {
   is_read: boolean;
   is_starred: boolean;
   has_attachments: boolean;
+  is_spam: boolean;
+  spam_score: number | null;
 }
 
 export interface EmailMessageResponse extends EmailMessageListResponse {
@@ -871,8 +873,22 @@ export interface EmailListParams {
   unread_only?: boolean;
   starred_only?: boolean;
   search?: string;
+  exclude_spam?: boolean;
+  spam_only?: boolean;
   offset?: number;
   limit?: number;
+}
+
+export interface SpamRuleResponse {
+  id: number;
+  pattern: string;
+  is_domain: boolean;
+  created_at: string;
+}
+
+export interface SpamRuleCreate {
+  pattern: string;
+  is_domain?: boolean;
 }
 
 export interface EmailCompose {

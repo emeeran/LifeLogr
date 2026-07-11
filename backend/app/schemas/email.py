@@ -122,6 +122,8 @@ class EmailMessageListResponse(BaseModel):
     is_read: bool
     is_starred: bool
     has_attachments: bool
+    is_spam: bool
+    spam_score: float | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,6 +142,24 @@ class EmailMessageResponse(EmailMessageListResponse):
 class MessageFlagUpdate(BaseModel):
     is_read: bool | None = None
     is_starred: bool | None = None
+
+
+class MessageSpamUpdate(BaseModel):
+    is_spam: bool
+
+
+class SpamRuleCreate(BaseModel):
+    pattern: str = Field(min_length=1, max_length=255)
+    is_domain: bool = False
+
+
+class SpamRuleResponse(BaseModel):
+    id: int
+    pattern: str
+    is_domain: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmailMessageListResult(BaseModel):

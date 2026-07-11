@@ -20,7 +20,7 @@ from app.schemas.contact import (
     ContactUpdate,
     RelatedEmailResponse,
 )
-from app.services.contact_service import ContactService
+from app.services.contact_service import ContactService, contact_to_response
 
 router = APIRouter(prefix="/api/v1/contacts", tags=["contacts"])
 
@@ -45,7 +45,7 @@ async def list_contacts(
     )
     total = await svc.count(search=search, group_id=group_id, favorites_only=favorites_only)
     return ContactListResponse(
-        items=[ContactResponse.model_validate(c) for c in items],
+        items=[contact_to_response(c) for c in items],
         total=total,
         offset=offset,
         limit=limit,
@@ -144,7 +144,7 @@ async def delete_group(group_id: int, db: AsyncSession = Depends(get_db)) -> Non
 async def get_contact(contact_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """Get a specific contact."""
     svc = ContactService(db)
-    return await svc.get(contact_id)
+    return contact_to_response(await svc.get(contact_id))
 
 
 @router.patch("/{contact_id}", response_model=ContactResponse)
@@ -153,7 +153,7 @@ async def update_contact(
 ) -> Any:
     """Update a contact."""
     svc = ContactService(db)
-    return await svc.update(contact_id, data)
+    return contact_to_response(await svc.update(contact_id, data))
 
 
 @router.delete("/{contact_id}", status_code=204)
@@ -167,7 +167,7 @@ async def delete_contact(contact_id: int, db: AsyncSession = Depends(get_db)) ->
 async def restore_contact(contact_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """Restore a soft-deleted contact."""
     svc = ContactService(db)
-    return await svc.restore(contact_id)
+    return contact_to_response(await svc.restore(contact_id))
 
 
 # ── Photo + related emails ─────────────────────────────────────────────────
@@ -193,14 +193,14 @@ async def upload_contact_photo(
     """Upload/replace a contact's photo."""
     svc = ContactService(db)
     data = await file.read()
-    return await svc.set_photo(contact_id, data, file.filename or "photo.png")
+    return contact_to_response(await svc.set_photo(contact_id, data, file.filename or "photo.png"))
 
 
 @router.delete("/{contact_id}/photo", response_model=ContactResponse)
 async def delete_contact_photo(contact_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """Remove a contact's photo."""
     svc = ContactService(db)
-    return await svc.delete_photo(contact_id)
+    return contact_to_response(await svc.delete_photo(contact_id))
 
 
 @router.get("/{contact_id}/emails", response_model=list[RelatedEmailResponse])

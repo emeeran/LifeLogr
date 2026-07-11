@@ -7,9 +7,12 @@ import type {
   EmailCompose,
   EmailFolderResponse,
   EmailListParams,
+  EmailMessageListResponse,
   EmailMessageListResult,
   EmailMessageResponse,
   EmailSendResult,
+  SpamRuleCreate,
+  SpamRuleResponse,
   TempAttachmentResponse,
 } from '../types'
 
@@ -55,6 +58,8 @@ export const listMessages = (params?: EmailListParams) => {
   if (params?.unread_only) qs.set('unread_only', 'true')
   if (params?.starred_only) qs.set('starred_only', 'true')
   if (params?.search) qs.set('search', params.search)
+  if (params?.exclude_spam != null) qs.set('exclude_spam', String(params.exclude_spam))
+  if (params?.spam_only) qs.set('spam_only', 'true')
   if (params?.offset != null) qs.set('offset', String(params.offset))
   if (params?.limit != null) qs.set('limit', String(params.limit))
   const tail = qs.toString()
@@ -69,6 +74,26 @@ export const updateMessageFlags = (id: number, data: { is_read?: boolean; is_sta
 
 export const deleteMessage = (id: number) =>
   request<void>(`${BASE}/messages/${id}`, { method: 'DELETE' })
+
+export const bulkDeleteMessages = (ids: number[]) =>
+  request<void>(`${BASE}/messages/bulk-delete`, { method: 'POST', body: JSON.stringify(ids) })
+
+export const markMessageSpam = (id: number, isSpam: boolean) =>
+  request<EmailMessageListResponse>(`${BASE}/messages/${id}/spam`, { method: 'PATCH', body: JSON.stringify({ is_spam: isSpam }) })
+
+// ── Spam filter ──
+
+export const listSpamRules = () => request<SpamRuleResponse[]>(`${BASE}/spam/rules`)
+export const addSpamRule = (data: SpamRuleCreate) =>
+  request<SpamRuleResponse>(`${BASE}/spam/rules`, { method: 'POST', body: JSON.stringify(data) })
+export const removeSpamRule = (id: number) =>
+  request<void>(`${BASE}/spam/rules/${id}`, { method: 'DELETE' })
+export const rescoreSpam = (accountId?: number) => {
+  const qs = new URLSearchParams()
+  if (accountId != null) qs.set('account_id', String(accountId))
+  const tail = qs.toString()
+  return request<{ rescored: number }>(`${BASE}/spam/rescore${tail ? `?${tail}` : ''}`, { method: 'POST' })
+}
 
 // ── Compose ──
 
