@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.core.exceptions import MediaSizeError
 from app.core.database import get_db
 from app.schemas.email import (
+    BlockSenderRequest,
+    BlockSenderResult,
     EmailAccountCreate,
     EmailAccountResponse,
     EmailAccountTestResult,
@@ -35,6 +37,9 @@ from app.services.email_service import (
     EmailComposeService,
     EmailMessageService,
     EmailSyncService,
+    move_to_junk_background,
+    move_to_trash_background,
+    push_flags_background,
     store_temp_attachment,
 )
 from app.services.spam_service import SpamService
@@ -179,11 +184,15 @@ async def list_messages(
 
 @router.post("/messages/bulk-delete", status_code=204)
 async def bulk_delete_messages(
-    ids: list[int], db: AsyncSession = Depends(get_db)
+    ids: list[int],
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft/move-delete multiple messages at once."""
+    """Local-delete many messages; the server-side trash move runs afterwards."""
     svc = EmailMessageService(db)
-    await svc.bulk_delete(ids)
+    result = await svc.bulk_delete(ids)
+    for account_id, moves in result["groups"].items():
+        background_tasks.add_task(move_to_trash_background, account_id, moves)
 
 
 @router.get("/messages/{message_id}", response_model=EmailMessageResponse)
@@ -195,17 +204,32 @@ async def get_message(message_id: int, db: AsyncSession = Depends(get_db)) -> An
 
 @router.patch("/messages/{message_id}/flags", response_model=EmailMessageListResponse)
 async def update_message_flags(
-    message_id: int, data: MessageFlagUpdate, db: AsyncSession = Depends(get_db)
+    message_id: int,
+    data: MessageFlagUpdate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     svc = EmailMessageService(db)
     message = await svc.set_flags(message_id, data.is_read, data.is_starred)
+    if data.is_read is not None or data.is_starred is not None:
+        background_tasks.add_task(
+            push_flags_background, message_id, data.is_read, data.is_starred
+        )
     return EmailMessageListResponse.model_validate(message)
 
 
 @router.delete("/messages/{message_id}", status_code=204)
-async def delete_message(message_id: int, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_message(
+    message_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> None:
     svc = EmailMessageService(db)
-    await svc.delete_message(message_id)
+    move = await svc.delete_message(message_id)
+    if move:
+        background_tasks.add_task(
+            move_to_trash_background, move["account_id"], move["moves"]
+        )
 
 
 @router.patch("/messages/{message_id}/spam", response_model=EmailMessageListResponse)
@@ -216,6 +240,31 @@ async def update_message_spam(
     svc = EmailMessageService(db)
     message = await svc.mark_spam(message_id, data.is_spam)
     return EmailMessageListResponse.model_validate(message)
+
+
+@router.post("/messages/{message_id}/block", response_model=BlockSenderResult)
+async def block_sender(
+    message_id: int,
+    data: BlockSenderRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Block the sender and apply the action to existing + future mail.
+
+    ``action=junk`` segregates their mail as spam (and best-effort moves it to
+    the server Junk folder); ``action=delete`` removes existing mail and makes
+    future mail never land in the app.
+    """
+    svc = EmailMessageService(db)
+    result = await svc.block_sender(message_id, data.action, data.scope)
+    if result["moves"]:
+        bg = move_to_junk_background if data.action == "junk" else move_to_trash_background
+        background_tasks.add_task(bg, result["account_id"], result["moves"])
+    return BlockSenderResult(
+        rule=SpamRuleResponse.model_validate(result["rule"]),
+        action=result["action"],
+        affected=result["affected"],
+    )
 
 
 @router.get("/messages/{message_id}/attachments/{attachment_id}")

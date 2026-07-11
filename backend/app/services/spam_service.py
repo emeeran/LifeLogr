@@ -179,9 +179,12 @@ class SpamService:
             ).scalars().all()
         )
 
-    async def add_rule(self, pattern: str, is_domain: bool) -> SpamBlocklist:
+    async def add_rule(
+        self, pattern: str, is_domain: bool, action: str = "junk"
+    ) -> SpamBlocklist:
         pattern = pattern.strip().lower()
-        # De-dupe.
+        action = action if action in ("junk", "delete") else "junk"
+        # De-dupe. If the same pattern/is_domain exists, adopt the new action.
         existing = (
             await self.db.execute(
                 select(SpamBlocklist).where(
@@ -191,12 +194,33 @@ class SpamService:
             )
         ).scalar_one_or_none()
         if existing:
+            if existing.action != action:
+                existing.action = action
+                await self.db.commit()
+                await self.db.refresh(existing)
             return existing
-        rule = SpamBlocklist(pattern=pattern, is_domain=is_domain)
+        rule = SpamBlocklist(pattern=pattern, is_domain=is_domain, action=action)
         self.db.add(rule)
         await self.db.commit()
         await self.db.refresh(rule)
         return rule
+
+    async def block_action(self, addr: str, domain: str) -> str | None:
+        """Return the configured action ('junk'|'delete') if the sender is
+        blocked, else ``None``."""
+        if not addr and not domain:
+            return None
+        conditions = []
+        if addr:
+            conditions.append(SpamBlocklist.pattern == addr)
+        if domain:
+            conditions.append(
+                (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
+            )
+        row = (
+            await self.db.execute(select(SpamBlocklist).where(or_(*conditions)))
+        ).scalar_one_or_none()
+        return row.action if row else None
 
     async def remove_rule(self, rule_id: int) -> None:
         rule = (

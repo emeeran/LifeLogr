@@ -151,15 +151,31 @@ class MessageSpamUpdate(BaseModel):
 class SpamRuleCreate(BaseModel):
     pattern: str = Field(min_length=1, max_length=255)
     is_domain: bool = False
+    action: str = Field(default="junk", pattern="^(junk|delete)$")
 
 
 class SpamRuleResponse(BaseModel):
     id: int
     pattern: str
     is_domain: bool
+    action: str
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BlockSenderRequest(BaseModel):
+    """Block the sender of a message, applying the action to existing + future mail."""
+
+    action: str = Field(default="junk", pattern="^(junk|delete)$")
+    # "domain" blocks the whole domain (default, broader); "sender" is exact address.
+    scope: str = Field(default="domain", pattern="^(domain|sender)$")
+
+
+class BlockSenderResult(BaseModel):
+    rule: SpamRuleResponse
+    action: str
+    affected: int
 
 
 class EmailMessageListResult(BaseModel):

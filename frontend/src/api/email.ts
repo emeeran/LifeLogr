@@ -81,6 +81,12 @@ export const bulkDeleteMessages = (ids: number[]) =>
 export const markMessageSpam = (id: number, isSpam: boolean) =>
   request<EmailMessageListResponse>(`${BASE}/messages/${id}/spam`, { method: 'PATCH', body: JSON.stringify({ is_spam: isSpam }) })
 
+export const blockSender = (id: number, action: 'junk' | 'delete', scope: 'domain' | 'sender' = 'domain') =>
+  request<{ rule: import('../types').SpamRuleResponse; action: 'junk' | 'delete'; affected: number }>(
+    `${BASE}/messages/${id}/block`,
+    { method: 'POST', body: JSON.stringify({ action, scope }) },
+  )
+
 // ── Spam filter ──
 
 export const listSpamRules = () => request<SpamRuleResponse[]>(`${BASE}/spam/rules`)

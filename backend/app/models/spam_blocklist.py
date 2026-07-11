@@ -3,6 +3,11 @@
 A message whose ``from_address`` (exact) or its domain matches a blocklist row
 is classified as spam during sync / on the next rescore. Paired with the
 contact allowlist (saved contacts are never spam) and the heuristic scorer.
+
+``action`` decides what happens to mail from a blocked sender:
+  * ``"junk"`` (default) — flag as spam (hidden from the Inbox, shown in Spam);
+  * ``"delete"`` — auto-delete: existing mail is removed, future mail is
+    skipped at sync time so it never lands in the app.
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ class SpamBlocklist(Base):
     # sender rule it is the full address (e.g. "nobody@spam.example.com").
     pattern: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     is_domain: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # "junk" → segregate as spam; "delete" → drop existing + future mail.
+    action: Mapped[str] = mapped_column(String(20), default="junk", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

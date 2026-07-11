@@ -910,12 +910,22 @@ export interface SpamRuleResponse {
   id: number;
   pattern: string;
   is_domain: boolean;
+  /** "junk" → segregate as spam; "delete" → drop existing + future mail. */
+  action: string;
   created_at: string;
 }
 
 export interface SpamRuleCreate {
   pattern: string;
   is_domain?: boolean;
+  action?: 'junk' | 'delete';
+}
+
+/** Result of blocking a message's sender (applies to existing + future mail). */
+export interface BlockSenderResult {
+  rule: SpamRuleResponse;
+  action: 'junk' | 'delete';
+  affected: number;
 }
 
 export interface EmailCompose {

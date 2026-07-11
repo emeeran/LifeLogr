@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import * as emailApi from '../api/email'
 import type {
   EmailAccountResponse,
@@ -17,6 +17,10 @@ export const useEmailStore = defineStore('email', () => {
 
   const messages = ref<EmailMessageListResponse[]>([])
   const selectedMessage = ref<EmailMessageResponse | null>(null)
+  const total = ref(0)
+  const PAGE_SIZE = 50
+  const loadingMore = ref(false)
+  const hasMore = computed(() => messages.value.length < total.value)
 
   const search = ref('')
   const unreadOnly = ref(false)
@@ -110,13 +114,17 @@ export const useEmailStore = defineStore('email', () => {
     fetchMessages()
   }
 
-  async function fetchMessages() {
+  async function fetchMessages(opts: { reset?: boolean } = {}) {
+    const reset = opts.reset !== false
     if (activeAccountId.value == null) {
       messages.value = []
+      total.value = 0
       return
     }
-    loadingMessages.value = true
+    if (reset) loadingMessages.value = true
+    else loadingMore.value = true
     try {
+      const offset = reset ? 0 : messages.value.length
       const res = await emailApi.listMessages({
         account_id: activeAccountId.value,
         folder_id: activeFolderId.value ?? undefined,
@@ -124,11 +132,34 @@ export const useEmailStore = defineStore('email', () => {
         search: search.value || undefined,
         exclude_spam: !spamOnly.value,
         spam_only: spamOnly.value || undefined,
-        limit: 200,
+        offset,
+        limit: PAGE_SIZE,
       })
-      messages.value = res.items
+      messages.value = reset ? res.items : [...messages.value, ...res.items]
+      total.value = res.total
     } finally {
       loadingMessages.value = false
+      loadingMore.value = false
+    }
+  }
+
+  async function loadMore() {
+    if (loadingMore.value || !hasMore.value) return
+    await fetchMessages({ reset: false })
+  }
+
+  /** Lightweight live refresh of folder + spam counts (no list churn). */
+  async function refreshCounts() {
+    if (activeAccountId.value == null) return
+    try {
+      const [f, spamRes] = await Promise.all([
+        emailApi.listFolders(activeAccountId.value),
+        emailApi.listMessages({ account_id: activeAccountId.value, spam_only: true, limit: 1 }),
+      ])
+      folders.value = f
+      spamCount.value = spamRes.total
+    } catch {
+      /* ignore — polled periodically */
     }
   }
 
@@ -206,6 +237,23 @@ export const useEmailStore = defineStore('email', () => {
     await refreshSpamCount()
   }
 
+  /**
+   * Block the sender of a message and apply the action to existing + future
+   * mail. Returns the affected count. Refreshes the list/counts so the UI
+   * reflects the change at once.
+   */
+  async function blockSender(
+    msg: EmailMessageListResponse,
+    action: 'junk' | 'delete',
+    scope: 'domain' | 'sender' = 'domain',
+  ): Promise<number> {
+    const res = await emailApi.blockSender(msg.id, action, scope)
+    // The selected message is affected by its own block — clear it.
+    if (action === 'delete' || !spamOnly.value) resetSelection()
+    await Promise.all([fetchMessages(), refreshCounts(), fetchSpamRules()])
+    return res.affected
+  }
+
   function toggleSelected(id: number) {
     const next = new Set(selectedIds.value)
     next.has(id) ? next.delete(id) : next.add(id)
@@ -252,11 +300,13 @@ export const useEmailStore = defineStore('email', () => {
   return {
     accounts, activeAccountId, folders, activeFolderId,
     messages, selectedMessage, search, unreadOnly, spamOnly,
-    selectedIds, spamRules, spamCount,
+    selectedIds, spamRules, spamCount, total, hasMore, loadingMore,
     loadingAccounts, loadingFolders, loadingMessages, loadingDetail, syncing,
     init, fetchAccounts, selectAccount, fetchFolders, refreshFolders,
-    selectFolder, selectSpam, toggleUnread, fetchMessages, refreshSpamCount,
+    selectFolder, selectSpam, toggleUnread, fetchMessages, loadMore,
+    refreshCounts, refreshSpamCount,
     openMessage, toggleStar, toggleRead, removeMessage, bulkDelete, markSpam,
+    blockSender,
     toggleSelected, selectAllVisible, clearSelection, resetSelection,
     fetchSpamRules, addSpamRule, removeSpamRule, rescore, syncActive,
   }

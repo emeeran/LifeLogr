@@ -3,7 +3,7 @@
 from app.models.email_account import EmailAccount
 from app.models.email_folder import EmailFolder
 from app.models.email_message import EmailMessage
-from app.services.spam_service import SPAM_THRESHOLD, score_message
+from app.services.spam_service import SPAM_THRESHOLD, SpamService, score_message
 from sqlalchemy import select
 
 
@@ -132,3 +132,74 @@ class TestMarkSpamAndBulkDelete:
         assert res.status_code == 204
         remaining = (await client.get("/api/v1/email/messages?exclude_spam=false")).json()
         assert remaining["total"] == 0
+
+
+class TestBlockSender:
+    async def test_block_action_lookup(self, db_session):
+        svc = SpamService(db_session)
+        assert await svc.block_action("a@x.com", "x.com") is None
+        await svc.add_rule("x.com", is_domain=True, action="delete")
+        assert await svc.block_action("a@x.com", "x.com") == "delete"
+        assert await svc.block_action("a@y.com", "y.com") is None
+
+    async def _seed_three(self, db_session):
+        acct, folder = await _seed_account_folder(db_session)
+        db_session.add_all([
+            _msg(folder, acct, "noise@junk.stream", subject="a", snippet="x", uid=10),
+            _msg(folder, acct, "other@junk.stream", subject="b", snippet="y", uid=11),
+            _msg(folder, acct, "clean@good.com", subject="c", snippet="z", uid=12),
+        ])
+        await db_session.commit()
+        mid = (
+            await db_session.execute(select(EmailMessage).where(EmailMessage.uid == 10))
+        ).scalar_one().id
+        return mid
+
+    async def test_block_junk_flags_all_from_domain(self, client, db_session):
+        mid = await self._seed_three(db_session)
+        res = await client.post(
+            "/api/v1/email/messages/{}/block".format(mid),
+            json={"action": "junk", "scope": "domain"},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["action"] == "junk"
+        assert body["affected"] == 2  # both junk.stream senders
+        rules = (await client.get("/api/v1/email/spam/rules")).json()
+        assert any(r["pattern"] == "junk.stream" and r["action"] == "junk" for r in rules)
+        spam = (await client.get("/api/v1/email/messages?spam_only=true")).json()
+        assert {m["from_address"] for m in spam["items"]} == {
+            "noise@junk.stream",
+            "other@junk.stream",
+        }
+        normal = (await client.get("/api/v1/email/messages")).json()
+        assert {m["from_address"] for m in normal["items"]} == {"clean@good.com"}
+
+    async def test_block_delete_removes_all_from_domain(self, client, db_session):
+        mid = await self._seed_three(db_session)
+        res = await client.post(
+            "/api/v1/email/messages/{}/block".format(mid),
+            json={"action": "delete", "scope": "domain"},
+        )
+        assert res.status_code == 200
+        assert res.json()["affected"] == 2
+        rules = (await client.get("/api/v1/email/spam/rules")).json()
+        assert any(r["pattern"] == "junk.stream" and r["action"] == "delete" for r in rules)
+        all_msgs = (
+            await client.get("/api/v1/email/messages?exclude_spam=false")
+        ).json()
+        assert {m["from_address"] for m in all_msgs["items"]} == {"clean@good.com"}
+
+    async def test_block_sender_exact_address_scope(self, client, db_session):
+        mid = await self._seed_three(db_session)
+        # scope=sender blocks only the exact address, not the whole domain.
+        res = await client.post(
+            "/api/v1/email/messages/{}/block".format(mid),
+            json={"action": "junk", "scope": "sender"},
+        )
+        assert res.status_code == 200
+        assert res.json()["affected"] == 1
+        rules = (await client.get("/api/v1/email/spam/rules")).json()
+        assert any(
+            r["pattern"] == "noise@junk.stream" and not r["is_domain"] for r in rules
+        )

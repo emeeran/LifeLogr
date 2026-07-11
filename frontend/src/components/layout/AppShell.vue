@@ -24,8 +24,10 @@ const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && 
 const showEditor = computed(() => ui.showEditor)
 const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
 
-// Notes + Dashboard own the full main area — hide the shared entry right panel + splitter.
-const isFullBleedView = computed(() => ui.activeView === 'notes' || ui.activeView === 'dashboard')
+// Notes + Dashboard + Email own the full main area — hide the shared entry right panel + splitter.
+const isFullBleedView = computed(
+  () => ui.activeView === 'notes' || ui.activeView === 'dashboard' || ui.activeView === 'email',
+)
 
 const drawerTitle = computed(() => {
   switch (ui.activeDrawer) {

@@ -96,6 +96,121 @@ def _exc_message(exc: BaseException) -> str:
     return msg or str(exc)
 
 
+# ── Background IMAP side-effects ────────────────────────────────────────────
+# Flag pushes and move-to-trash are slow (a full IMAP round-trip each) and the
+# local DB is the source of truth for the UI. We perform the fast DB write in
+# the request, return immediately, and let these fire-and-forget coroutines
+# sync the change to the server afterwards. Each opens its OWN session so it
+# outlives the request that scheduled it.
+
+
+async def push_flags_background(
+    message_id: int, is_read: bool | None, is_starred: bool | None
+) -> None:
+    """Mirror a flag change to IMAP after the response is sent."""
+    try:
+        from app.core.database import async_session
+
+        async with async_session() as db:
+            await EmailMessageService(db)._push_flags_to_imap_for(message_id, is_read, is_starred)
+    except Exception:  # noqa: BLE001
+        logger.debug("Background flag push failed for message %s", message_id, exc_info=True)
+
+
+async def move_to_trash_background(account_id: int, moves: list[tuple[str, int]]) -> None:
+    """Best-effort server-side move of already-locally-deleted messages.
+
+    ``moves`` is a list of ``(source_folder_name, uid)``. The messages are
+    already gone from the DB; this only syncs the mailbox so the server Inbox
+    doesn't keep copies. Grouped by source folder to minimise SELECTs.
+    """
+    if not moves:
+        return
+    try:
+        from app.core.database import async_session
+
+        async with async_session() as db:
+            account = (
+                await db.execute(
+                    select(EmailAccount).where(EmailAccount.id == account_id)
+                )
+            ).scalar_one_or_none()
+            if not account:
+                return
+            trash_name = await _special_folder_name(db, account_id, "trash")
+            if not trash_name:
+                return
+            password = security.decrypt(account.password_encrypted)
+
+        by_folder: dict[str, list[int]] = {}
+        for folder_name, uid in moves:
+            by_folder.setdefault(folder_name, []).append(uid)
+        async with ImapClient(
+            account.imap_host, account.imap_port, account.imap_use_ssl,
+            account.username, password,
+        ) as imap:
+            for folder_name, uids in by_folder.items():
+                try:
+                    await imap.select(folder_name)
+                    for uid in uids:
+                        await imap.uid_move(uid, trash_name)
+                except Exception:  # noqa: BLE001
+                    logger.debug("Trash move failed in %s", folder_name, exc_info=True)
+    except Exception:  # noqa: BLE001
+        logger.debug("Background trash move failed for account %s", account_id, exc_info=True)
+
+
+async def move_to_junk_background(account_id: int, moves: list[tuple[str, int]]) -> None:
+    """Best-effort server-side move of messages into the Junk folder."""
+    if not moves:
+        return
+    try:
+        from app.core.database import async_session
+
+        async with async_session() as db:
+            account = (
+                await db.execute(
+                    select(EmailAccount).where(EmailAccount.id == account_id)
+                )
+            ).scalar_one_or_none()
+            if not account:
+                return
+            junk_name = await _special_folder_name(db, account_id, "junk")
+            if not junk_name:
+                return
+            password = security.decrypt(account.password_encrypted)
+
+        by_folder: dict[str, list[int]] = {}
+        for folder_name, uid in moves:
+            by_folder.setdefault(folder_name, []).append(uid)
+        async with ImapClient(
+            account.imap_host, account.imap_port, account.imap_use_ssl,
+            account.username, password,
+        ) as imap:
+            for folder_name, uids in by_folder.items():
+                try:
+                    await imap.select(folder_name)
+                    for uid in uids:
+                        await imap.uid_move(uid, junk_name)
+                except Exception:  # noqa: BLE001
+                    logger.debug("Junk move failed in %s", folder_name, exc_info=True)
+    except Exception:  # noqa: BLE001
+        logger.debug("Background junk move failed for account %s", account_id, exc_info=True)
+
+
+async def _special_folder_name(db: AsyncSession, account_id: int, special: str) -> str | None:
+    """Resolve the IMAP name of a special-use folder (trash/junk) if any."""
+    folder = (
+        await db.execute(
+            select(EmailFolder).where(
+                EmailFolder.account_id == account_id,
+                EmailFolder.special_use == special,
+            )
+        )
+    ).scalars().first()
+    return folder.folder_name if folder else None
+
+
 # ── Account service ────────────────────────────────────────────────────────
 
 
@@ -407,6 +522,12 @@ class EmailSyncService:
         # Local spam filter: blocklist → spam, contact allowlist → ham, else heuristic.
         spam_score, is_spam = await SpamService(self.db).classify(parsed)
 
+        # A blocked sender with action="delete" never lands in the app — drop it
+        # now (the caller still advances last_uid so it isn't re-fetched).
+        addr_lower = from_addr.lower()
+        if await SpamService(self.db).block_action(addr_lower, _domain_of(addr_lower)) == "delete":
+            return
+
         # Persist raw .eml
         media_dir = _account_media_dir(account.id)
         eml_rel = f"email/{account.id}/{folder.id}_{uid}.eml"
@@ -570,6 +691,12 @@ class EmailMessageService:
     async def set_flags(
         self, message_id: int, is_read: bool | None, is_starred: bool | None
     ) -> EmailMessage:
+        """Apply the flag change to the DB only and return the message.
+
+        The IMAP mirror is scheduled by the caller as a background task
+        (:func:`push_flags_background`) so this stays fast — opening an IMAP
+        connection per read/star toggle was the main cause of slow opens.
+        """
         message = await self._get(message_id)
         if is_read is not None:
             message.is_read = is_read
@@ -577,9 +704,17 @@ class EmailMessageService:
             message.is_starred = is_starred
         await self.db.commit()
         await self.db.refresh(message)
-        # Best-effort push to IMAP.
-        await self._push_flags_to_imap(message, is_read, is_starred)
         return message
+
+    async def _push_flags_to_imap_for(
+        self, message_id: int, is_read: bool | None, is_starred: bool | None
+    ) -> None:
+        """Fetch the message then mirror flags to IMAP (used by background tasks)."""
+        try:
+            message = await self._get(message_id)
+        except NotFoundError:
+            return
+        await self._push_flags_to_imap(message, is_read, is_starred)
 
     async def _push_flags_to_imap(
         self, message: EmailMessage, is_read: bool | None, is_starred: bool | None
@@ -612,57 +747,53 @@ class EmailMessageService:
         except Exception:
             logger.debug("IMAP flag push failed for message %s", message.id, exc_info=True)
 
-    async def delete_message(self, message_id: int) -> None:
+    async def delete_message(self, message_id: int) -> dict | None:
+        """Delete the local copy immediately and return a move descriptor for
+        the background server-side trash move (or ``None`` if none applicable).
+
+        The IMAP round-trip used to run inline, which made deletes (and bulk
+        deletes, which looped it) painfully slow. It now happens after the
+        response via :func:`move_to_trash_background`.
+        """
         message = await self._get(message_id)
-        # Best-effort server-side move to Trash.
-        try:
-            account = (
-                await self.db.execute(
-                    select(EmailAccount).where(EmailAccount.id == message.account_id)
-                )
-            ).scalar_one()
-            trash = (
-                await self.db.execute(
-                    select(EmailFolder).where(
-                        EmailFolder.account_id == account.id,
-                        EmailFolder.special_use == "trash",
-                    )
-                )
-            ).scalars().first()
-            if trash:
-                password = security.decrypt(account.password_encrypted)
-                async with ImapClient(
-                    account.imap_host, account.imap_port, account.imap_use_ssl,
-                    account.username, password,
-                ) as imap:
-                    await imap.select(trash.folder_name)  # ensure selectable
-                    # select the source folder, then move
-                    await imap.select(
-                        (
-                            await self.db.execute(
-                                select(EmailFolder).where(EmailFolder.id == message.folder_id)
-                            )
-                        ).scalar_one().folder_name
-                    )
-                    await imap.uid_move(message.uid, trash.folder_name)
-        except Exception:
-            logger.debug("IMAP move-to-trash failed for message %s", message_id, exc_info=True)
+        move = await self._describe_move(message)
         # Remove local copy (attachments cascade-delete; disk files orphaned — GC later).
         await self.db.delete(message)
         await self.db.commit()
+        return move
 
-    async def bulk_delete(self, message_ids: list[int]) -> int:
-        """Delete multiple messages (best-effort IMAP move + local delete)."""
-        deleted = 0
+    async def _describe_move(self, message: EmailMessage) -> dict | None:
+        """Capture (account_id, source folder name, uid) for a background move."""
+        folder = (
+            await self.db.execute(
+                select(EmailFolder).where(EmailFolder.id == message.folder_id)
+            )
+        ).scalar_one_or_none()
+        if not folder:
+            return None
+        return {
+            "account_id": message.account_id,
+            "moves": [(folder.folder_name, message.uid)],
+        }
+
+    async def bulk_delete(self, message_ids: list[int]) -> dict:
+        """Local-delete many messages; return grouped move descriptors.
+
+        Each message's server-side trash move is batched per account into one
+        background task (see :func:`move_to_trash_background`).
+        """
+        by_account: dict[int, list[tuple[str, int]]] = {}
         for mid in message_ids:
             try:
-                await self.delete_message(mid)
-                deleted += 1
+                move = await self.delete_message(mid)
             except NotFoundError:
                 continue
             except Exception:  # noqa: BLE001
                 logger.debug("bulk_delete failed for message %s", mid, exc_info=True)
-        return deleted
+                continue
+            if move:
+                by_account.setdefault(move["account_id"], []).extend(move["moves"])
+        return {"groups": by_account}
 
     async def mark_spam(self, message_id: int, is_spam: bool) -> EmailMessage:
         """User override of spam classification.
@@ -687,6 +818,95 @@ class EmailMessageService:
         await self.db.commit()
         await self.db.refresh(message)
         return message
+
+    async def block_sender(
+        self, message_id: int, action: str = "junk", scope: str = "domain"
+    ) -> dict:
+        """Block the sender of ``message_id`` and apply ``action`` to every
+        existing message from them in the same account.
+
+        * ``action="junk"``  — flag them as spam (hidden from Inbox, shown in
+          Spam) and best-effort IMAP-move them to the server Junk folder.
+        * ``action="delete"``— delete the existing messages (local + background
+          server trash-move). Future mail from the sender is skipped at sync.
+
+        Returns ``{"rule": SpamBlocklist, "action": str, "affected": int}``.
+        The caller schedules the background IMAP move using ``moves``.
+        """
+        message = await self._get(message_id)
+        addr = (message.from_address or "").lower()
+        domain = _domain_of(addr)
+        use_domain = scope == "domain" and bool(domain)
+        pattern = domain if use_domain else addr
+        if not pattern:
+            raise NotFoundError("Message has no sender address to block")
+
+        spam_svc = SpamService(self.db)
+        rule = await spam_svc.add_rule(pattern, is_domain=use_domain, action=action)
+
+        # All existing messages from this sender/domain in the same account.
+        match_cond = (
+            (EmailMessage.from_address == addr)
+            if not use_domain
+            else (
+                or_(
+                    EmailMessage.from_address.like(f"%@{domain}"),
+                    EmailMessage.from_address == domain,
+                )
+            )
+        )
+        targets = list(
+            (
+                await self.db.execute(
+                    select(EmailMessage)
+                    .where(
+                        EmailMessage.account_id == message.account_id,
+                        match_cond,
+                    )
+                    .order_by(EmailMessage.id)
+                )
+            ).scalars().all()
+        )
+
+        moves: list[tuple[str, int]] = []
+        affected_folders: set[int] = set()
+
+        if action == "delete":
+            for m in targets:
+                desc = await self._describe_move(m)
+                if desc:
+                    moves.extend(desc["moves"])
+                    affected_folders.add(m.folder_id)
+                await self.db.delete(m)
+        else:  # junk
+            for m in targets:
+                m.is_spam = True
+                m.spam_score = 1.0
+                m.spam_user_override = True
+                desc = await self._describe_move(m)
+                if desc:
+                    moves.extend(desc["moves"])
+                    affected_folders.add(m.folder_id)
+
+        await self.db.commit()
+        await self.db.refresh(rule)
+
+        # Recount the folders we touched so badges stay accurate.
+        touched_folders = (
+            await self.db.execute(
+                select(EmailFolder).where(EmailFolder.id.in_(affected_folders))
+            )
+        ).scalars().all()
+        for folder in touched_folders:
+            await EmailSyncService(self.db)._refresh_folder_counts(folder)
+
+        return {
+            "rule": rule,
+            "action": action,
+            "affected": len(targets),
+            "account_id": message.account_id,
+            "moves": moves,
+        }
 
     async def attachment_path(self, message_id: int, attachment_id: int) -> Path:
         att = (

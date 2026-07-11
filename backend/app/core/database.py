@@ -232,6 +232,12 @@ _COLUMN_MIGRATIONS = [
         "spam_user_override",
         "ALTER TABLE email_messages ADD COLUMN spam_user_override BOOLEAN",
     ),
+    # Spam blocklist — what to do with mail from a blocked sender.
+    (
+        "spam_blocklist",
+        "action",
+        "ALTER TABLE spam_blocklist ADD COLUMN action VARCHAR(20) NOT NULL DEFAULT 'junk'",
+    ),
 ]
 
 _INDEX_MIGRATIONS = [
