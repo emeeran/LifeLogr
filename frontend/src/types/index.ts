@@ -424,6 +424,164 @@ export interface MediaStatsResponse {
   total_size_bytes: number;
 }
 
+// ── Contacts ─────────────────────────────────────────────────────────
+
+export interface ContactResponse {
+  id: number;
+  name: string | null;
+  email: string;
+  emails_extra: string[] | null;
+  phone: string | null;
+  phone_secondary: string | null;
+  company: string | null;
+  title: string | null;
+  notes: string | null;
+  source: string;
+  last_seen_at: string | null;
+  email_account_id: number | null;
+  photo_path: string | null;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactCreate {
+  name?: string | null;
+  email: string;
+  emails_extra?: string[] | null;
+  phone?: string | null;
+  phone_secondary?: string | null;
+  company?: string | null;
+  title?: string | null;
+  notes?: string | null;
+}
+
+export interface ContactUpdate {
+  name?: string | null;
+  email?: string | null;
+  emails_extra?: string[] | null;
+  phone?: string | null;
+  phone_secondary?: string | null;
+  company?: string | null;
+  title?: string | null;
+  notes?: string | null;
+}
+
+export interface ContactListResponse {
+  items: ContactResponse[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+// ── Planner: Tasks & Schedule ─────────────────────────────────────────
+
+export type TaskPriority = "low" | "medium" | "high";
+
+export interface TaskListResponse {
+  id: number;
+  name: string;
+  color: string | null;
+  sort_order: number;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskListCreate {
+  name: string;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface TaskResponse {
+  id: number;
+  parent_id: number | null;
+  list_id: number | null;
+  title: string;
+  notes: string | null;
+  is_completed: boolean;
+  completed_at: string | null;
+  priority: TaskPriority | null;
+  due_date: string | null;
+  sort_order: number;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+  subtasks: TaskResponse[];
+}
+
+export interface TaskCreate {
+  title: string;
+  list_id?: number | null;
+  parent_id?: number | null;
+  notes?: string | null;
+  priority?: TaskPriority | null;
+  due_date?: string | null;
+  sort_order?: number;
+}
+
+export interface TaskUpdate {
+  title?: string;
+  list_id?: number | null;
+  parent_id?: number | null;
+  notes?: string | null;
+  priority?: TaskPriority | null;
+  due_date?: string | null;
+  sort_order?: number;
+}
+
+export interface ScheduleEventResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  start_at: string;
+  end_at: string;
+  all_day: boolean;
+  rrule: string | null;
+  timezone_name: string | null;
+  color: string | null;
+  excluded_dates: string[] | null;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduleEventCreate {
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  start_at: string;
+  end_at: string;
+  all_day?: boolean;
+  rrule?: string | null;
+  timezone_name?: string | null;
+  color?: string | null;
+}
+
+export interface ScheduleEventUpdate extends Partial<ScheduleEventCreate> {}
+
+export interface AgendaItem {
+  event_id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  start_at: string;
+  end_at: string;
+  all_day: boolean;
+  color: string | null;
+  is_recurring: boolean;
+}
+
+export interface AgendaResponse {
+  items: AgendaItem[];
+  total: number;
+  frm: string;
+  to: string;
+}
+
 // ── Reminders ────────────────────────────────────────────────────────
 
 export interface ReminderResponse {
@@ -498,4 +656,157 @@ export interface TemplateCreate {
 export interface TemplateUpdate {
   name?: string | null;
   body?: string | null;
+}
+
+// ── Email ───────────────────────────────────────────────────────────────
+
+export interface EmailAddress {
+  address: string;
+  name: string | null;
+}
+
+export interface EmailAccountResponse {
+  id: number;
+  label: string;
+  email_address: string;
+  imap_host: string;
+  imap_port: number;
+  imap_use_ssl: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_use_tls: boolean;
+  username: string;
+  display_name: string | null;
+  sync_enabled: boolean;
+  poll_interval_minutes: number;
+  last_synced_at: string | null;
+  last_sync_error: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailAccountCreate {
+  label: string;
+  email_address: string;
+  imap_host: string;
+  imap_port?: number;
+  imap_use_ssl?: boolean;
+  smtp_host: string;
+  smtp_port?: number;
+  smtp_use_tls?: boolean;
+  username: string;
+  password: string;
+  display_name?: string | null;
+  poll_interval_minutes?: number;
+}
+
+export interface EmailAccountUpdate {
+  label?: string;
+  email_address?: string;
+  imap_host?: string;
+  imap_port?: number | null;
+  imap_use_ssl?: boolean | null;
+  smtp_host?: string;
+  smtp_port?: number | null;
+  smtp_use_tls?: boolean | null;
+  username?: string;
+  password?: string | null;
+  display_name?: string | null;
+  sync_enabled?: boolean | null;
+  poll_interval_minutes?: number | null;
+  is_active?: boolean | null;
+}
+
+export interface EmailAccountTestResult {
+  success: boolean;
+  error: string | null;
+}
+
+export interface EmailFolderResponse {
+  id: number;
+  account_id: number;
+  folder_name: string;
+  display_name: string | null;
+  special_use: string | null;
+  message_count: number;
+  unread_count: number;
+  sync_enabled: boolean;
+}
+
+export interface EmailAttachmentResponse {
+  id: number;
+  message_id: number;
+  filename: string;
+  content_type: string;
+  file_size: number;
+  content_id: string | null;
+  is_inline: boolean;
+}
+
+export interface EmailMessageListResponse {
+  id: number;
+  account_id: number;
+  folder_id: number;
+  from_address: string;
+  from_name: string | null;
+  to_addresses: EmailAddress[];
+  subject: string | null;
+  snippet: string | null;
+  sent_at: string | null;
+  is_read: boolean;
+  is_starred: boolean;
+  has_attachments: boolean;
+}
+
+export interface EmailMessageResponse extends EmailMessageListResponse {
+  cc_addresses: EmailAddress[] | null;
+  bcc_addresses: EmailAddress[] | null;
+  reply_to: string | null;
+  text_body: string | null;
+  html_body: string | null;
+  in_reply_to: string | null;
+  is_draft: boolean;
+  attachments: EmailAttachmentResponse[];
+}
+
+export interface EmailMessageListResult {
+  items: EmailMessageListResponse[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface EmailListParams {
+  account_id?: number;
+  folder_id?: number;
+  unread_only?: boolean;
+  starred_only?: boolean;
+  search?: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface EmailCompose {
+  account_id: number;
+  to: string[];
+  cc?: string[] | null;
+  bcc?: string | null;
+  subject: string;
+  text_body?: string;
+  html_body?: string | null;
+  in_reply_to_message_id?: number | null;
+  attachment_ids?: string[];
+}
+
+export interface EmailSendResult {
+  success: boolean;
+  sent_message_id: number | null;
+  error: string | null;
+}
+
+export interface TempAttachmentResponse {
+  id: string;
+  filename: string;
+  file_size: number;
 }

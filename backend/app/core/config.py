@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
-    APP_VERSION: str = "0.4.5"  # in-app version; keep in sync with pyproject.toml
+    APP_VERSION: str = "0.5.0"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     SECRET_KEY: str = "change-me-before-production"
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty
@@ -133,6 +133,12 @@ class Settings(BaseSettings):
         "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"
     )
     MAX_MEDIA_SIZE_BYTES: int = 26_214_400  # 25 MB
+
+    # Email client defaults (IMAP/SMTP polling sync)
+    EMAIL_SYNC_INTERVAL_MINUTES: int = 10
+    EMAIL_MAX_ATTACHMENT_SIZE_BYTES: int = 26_214_400  # 25 MB
+    EMAIL_SYNC_ON_STARTUP: bool = True
+    EMAIL_INITIAL_SYNC_BATCH: int = 100  # messages per FETCH round-trip
 
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str = ""

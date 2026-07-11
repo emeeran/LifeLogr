@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.core.exceptions import ConflictError, MediaSizeError, NotFoundError
+from app.core.exceptions import ConflictError, MediaSizeError, NotFoundError, ValidationError
 from app.services.ollama_service import OllamaServiceError
 
 # ── Logging ──
@@ -199,6 +199,9 @@ app.add_exception_handler(
     MediaSizeError, lambda r, e: JSONResponse(status_code=400, content={"detail": str(e)})
 )
 app.add_exception_handler(
+    ValidationError, lambda r, e: JSONResponse(status_code=400, content={"detail": str(e)})
+)
+app.add_exception_handler(
     OllamaServiceError,
     lambda r, e: JSONResponse(status_code=504, content={"detail": str(e)}),
 )
@@ -215,6 +218,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
+from app.routers.contacts import router as contacts_router  # noqa: E402
+from app.routers.email import router as email_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
 from app.routers.box import router as box_router  # noqa: E402
 from app.routers.dropbox import router as dropbox_router  # noqa: E402
@@ -227,6 +232,7 @@ from app.routers.encryption import (  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
 from app.routers.notes import router as notes_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
+from app.routers.planner import router as planner_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
 from app.routers.prompts import router as prompts_router  # noqa: E402
 from app.routers.recordings import router as recordings_router  # noqa: E402
@@ -242,6 +248,8 @@ from app.routers.settings import router as settings_router  # noqa: E402
 app.include_router(ai_router)
 app.include_router(analytics_router)
 app.include_router(entries_router)
+app.include_router(contacts_router)
+app.include_router(email_router)
 app.include_router(notes_router)
 app.include_router(tags_router)
 app.include_router(tts_router)
@@ -258,6 +266,7 @@ app.include_router(encryption_global_router)
 app.include_router(encryption_notes_router)
 app.include_router(export_router)
 app.include_router(reminders_router)
+app.include_router(planner_router)
 app.include_router(search_router)
 app.include_router(sync_router)
 app.include_router(templates_router)

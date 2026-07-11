@@ -1,14 +1,17 @@
 [project]
 name = "lifelogr"
-version = "0.4.5"
+version = "0.5.0"
 description = "Privacy-first, offline-first journaling app for Linux"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aioimaplib>=1.0.1",
+    "aiosmtplib>=3.0.0",
     "aiosqlite>=0.22.1",
     "apscheduler>=3.11.2",
     "cryptography>=48.0.0",
     "edge-tts>=7.2.8",
+    "email-validator>=2.0.0",
     "fastapi>=0.136.1",
     "fpdf2>=2.8.3",
     "httpx>=0.28.1",
@@ -19,6 +22,7 @@ dependencies = [
     "pydantic-settings>=2.14.0",
     "pysqlite3-binary>=0.5.4.post2; sys_platform == 'linux'",
     "pytesseract>=0.3.13",
+    "python-dateutil>=2.9.0",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.18",
     "sounddevice>=0.5.5",
@@ -59,7 +63,7 @@ strict = true
 
 # Third-party libs without type stubs — silence import-untyped errors.
 [[tool.mypy.overrides]]
-module = ["edge_tts", "apscheduler.*"]
+module = ["edge_tts", "apscheduler.*", "aioimaplib", "aiosmtplib", "dateutil.*"]
 ignore_missing_imports = true
 
 [tool.uv]

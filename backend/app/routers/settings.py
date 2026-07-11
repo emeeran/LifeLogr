@@ -42,6 +42,8 @@ def _persist_settings() -> None:
         "AI_ENABLE_SUMMARIZATION": settings.AI_ENABLE_SUMMARIZATION,
         "AI_ENABLE_REFLECTION_PROMPTS": settings.AI_ENABLE_REFLECTION_PROMPTS,
         "AI_ENABLE_WRITER_BLOCK_HELPER": settings.AI_ENABLE_WRITER_BLOCK_HELPER,
+        "EMAIL_SYNC_INTERVAL_MINUTES": settings.EMAIL_SYNC_INTERVAL_MINUTES,
+        "EMAIL_SYNC_ON_STARTUP": settings.EMAIL_SYNC_ON_STARTUP,
     }
     try:
         Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
@@ -71,6 +73,8 @@ def load_persisted_settings() -> None:
             "AI_ENABLE_SUMMARIZATION": "AI_ENABLE_SUMMARIZATION",
             "AI_ENABLE_REFLECTION_PROMPTS": "AI_ENABLE_REFLECTION_PROMPTS",
             "AI_ENABLE_WRITER_BLOCK_HELPER": "AI_ENABLE_WRITER_BLOCK_HELPER",
+            "EMAIL_SYNC_INTERVAL_MINUTES": "EMAIL_SYNC_INTERVAL_MINUTES",
+            "EMAIL_SYNC_ON_STARTUP": "EMAIL_SYNC_ON_STARTUP",
         }
         for json_key, settings_attr in mapping.items():
             if json_key in data:
@@ -102,8 +106,14 @@ class StorageInfo(BaseModel):
     entry_count: int
 
 
+class EmailSettings(BaseModel):
+    sync_interval_minutes: int
+    sync_on_startup: bool
+
+
 class AppSettingsResponse(BaseModel):
     ai: AISettings
+    email: EmailSettings
     storage: StorageInfo
     version: str
     app_name: str
@@ -121,8 +131,14 @@ class AISettingsUpdate(BaseModel):
     enable_writer_block_helper: bool | None = None
 
 
+class EmailSettingsUpdate(BaseModel):
+    sync_interval_minutes: int | None = None
+    sync_on_startup: bool | None = None
+
+
 class SettingsUpdateRequest(BaseModel):
     ai: AISettingsUpdate | None = None
+    email: EmailSettingsUpdate | None = None
 
 
 class StoragePathResponse(BaseModel):
@@ -185,6 +201,10 @@ async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
 
     return AppSettingsResponse(
         ai=_get_ai_settings(),
+        email=EmailSettings(
+            sync_interval_minutes=settings.EMAIL_SYNC_INTERVAL_MINUTES,
+            sync_on_startup=settings.EMAIL_SYNC_ON_STARTUP,
+        ),
         storage=StorageInfo(
             db_size_bytes=_db_file_size(),
             media_count=media_count,
@@ -216,6 +236,19 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
             if val is not None:
                 setattr(settings, attr, val)
         _persist_settings()
+    if data.email:
+        if data.email.sync_interval_minutes is not None:
+            settings.EMAIL_SYNC_INTERVAL_MINUTES = data.email.sync_interval_minutes
+        if data.email.sync_on_startup is not None:
+            settings.EMAIL_SYNC_ON_STARTUP = data.email.sync_on_startup
+        _persist_settings()
+        # Re-schedule email sync jobs to pick up the new interval.
+        try:
+            from app.services.scheduler_service import SchedulerService
+
+            await SchedulerService.sync_email_accounts()
+        except Exception:
+            logger.debug("Email sync job resync skipped", exc_info=True)
     return {"status": "ok"}
 
 

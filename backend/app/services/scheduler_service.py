@@ -222,6 +222,8 @@ class SchedulerService:
         # Re-register the persisted backup schedule (lost on restart because
         # APScheduler's job store is in-memory).
         await SchedulerService._restore_backup_schedule()
+        # Restore the recurring email-sync job (in-memory job store).
+        await SchedulerService.sync_email_accounts()
         # Run a missed backup shortly after boot, mirroring reminder catch-up.
         if sched.running:
             from apscheduler.triggers.date import DateTrigger
@@ -232,6 +234,17 @@ class SchedulerService:
                 id="backup_catchup",
                 replace_existing=True,
             )
+            # Optional first email sync shortly after boot.
+            from app.core.config import settings
+
+            if settings.EMAIL_SYNC_ON_STARTUP:
+                sched.add_job(
+                    _run_email_sync,
+                    trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=50)),
+                    id="email_sync_boot",
+                    replace_existing=True,
+                    coalesce=True,
+                )
 
     @staticmethod
     async def shutdown() -> None:
@@ -539,6 +552,78 @@ class SchedulerService:
                     await _fire_reminder(r.id, mark_fired=True)
         except Exception:
             logger.warning("Reminder catch-up sweep failed", exc_info=True)
+
+    # ── Email scheduling ─────────────────────────────────────────────
+    # A single recurring 'email_sync' interval job polls every active,
+    # sync-enabled account. It is (re)created whenever accounts or the sync
+    # interval change (EmailAccountService._reschedule_jobs →
+    # sync_email_accounts) and removed when no account remains. An optional
+    # one-off 'email_sync_boot' job runs a first sync shortly after startup
+    # when EMAIL_SYNC_ON_STARTUP is set.
+
+    @staticmethod
+    async def sync_email_accounts() -> int:
+        """Reconcile the recurring email-sync job with the DB + settings.
+
+        Creates the ``email_sync`` interval job when at least one active,
+        sync-enabled account exists (firing every ``EMAIL_SYNC_INTERVAL_MINUTES``
+        minutes), otherwise removes it. No-op (returns 0) when the scheduler
+        isn't running — e.g. during tests. Idempotent via ``replace_existing``.
+        """
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.core.database import async_session
+        from app.models.email_account import EmailAccount
+
+        sched = SchedulerService.get_scheduler()
+        if not sched.running:
+            return 0
+
+        async with async_session() as session:
+            active = (
+                await session.execute(
+                    select(EmailAccount.id).where(
+                        EmailAccount.is_active == True,  # noqa: E712
+                        EmailAccount.sync_enabled == True,  # noqa: E712
+                    )
+                )
+            ).scalars().all()
+
+        job = sched.get_job("email_sync")
+        if not active:
+            if job is not None:
+                sched.remove_job("email_sync")
+            return 0
+
+        interval = max(1, settings.EMAIL_SYNC_INTERVAL_MINUTES)
+        sched.add_job(
+            _run_email_sync,
+            trigger="interval",
+            minutes=interval,
+            id="email_sync",
+            replace_existing=True,
+            coalesce=True,
+            misfire_grace_time=600,
+        )
+        return 1
+
+
+async def _run_email_sync() -> None:
+    """Scheduled email sync — pull new messages for all active accounts.
+
+    Opens its own DB session (APScheduler runs outside FastAPI DI). Never
+    raises; per-account failures are logged by ``EmailSyncService``.
+    """
+    from app.core.database import async_session
+    from app.services.email_service import EmailSyncService
+
+    logger.info("Running scheduled email sync")
+    try:
+        async with async_session() as session:
+            await EmailSyncService(session).sync_all_accounts()
+    except Exception:
+        logger.error("Scheduled email sync failed", exc_info=True)
 
 
 async def _run_cloud_backup(config_id: int) -> None:
