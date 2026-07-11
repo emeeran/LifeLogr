@@ -96,6 +96,12 @@ class Note(Base):
     media: Mapped[list["NoteMedia"]] = relationship(  # noqa: F821
         back_populates="note", cascade="all, delete-orphan", lazy="selectin"
     )
+    pages: Mapped[list["NotePage"]] = relationship(
+        back_populates="note",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="NotePage.sort_order",
+    )
 
 
 class NoteTag(Base):
@@ -116,3 +122,32 @@ class NoteTag(Base):
 
     note: Mapped["Note"] = relationship(back_populates="tag_associations")  # noqa: F821
     tag: Mapped["Tag"] = relationship(back_populates="note_associations", lazy="selectin")  # noqa: F821
+
+
+class NotePage(Base):
+    """A tabbed sub-page within a note (EPIM-style page tabs).
+
+    The note's own ``title``/``body`` is the first ("Main") tab and stays the
+    source of truth for encryption + FTS search; these rows are the
+    supplementary tabs the user can add / rename / reorder / delete.
+    """
+
+    __tablename__ = "note_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    note_id: Mapped[int] = mapped_column(
+        ForeignKey("notes.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    body: Mapped[str] = mapped_column(String, nullable=False, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_note_pages_note_order", "note_id", "sort_order"),)
+
+    note: Mapped["Note"] = relationship(back_populates="pages")

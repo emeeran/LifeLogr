@@ -5,13 +5,14 @@ import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Sunrise, Settings,
   Sun, Moon, BarChart3, Bell, ImageIcon, Users, ListTodo, Mail,
-  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen
+  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 const ui = useUiStore()
 
 const navItems: { view: ViewType; icon: Component; label: string }[] = [
+  { view: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { view: 'calendar', icon: Calendar, label: 'Calendar' },
   { view: 'timeline', icon: Clock, label: 'Timeline' },
   { view: 'notes', icon: NotebookPen, label: 'Notes' },
@@ -102,7 +103,7 @@ function navigate(view: ViewType) {
       <router-link
         v-for="(item, index) in orderedNav"
         :key="item.view"
-        :to="`/${item.view === 'calendar' ? '' : item.view}`"
+        :to="`/${item.view}`"
         draggable="true"
         class="relative flex items-center gap-2 text-xs cursor-grab transition-colors duration-150 active:cursor-grabbing"
         :class="[

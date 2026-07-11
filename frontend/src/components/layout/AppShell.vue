@@ -24,8 +24,8 @@ const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && 
 const showEditor = computed(() => ui.showEditor)
 const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
 
-// Notes view owns the full main area — hide the shared entry right panel + splitter.
-const isNotesView = computed(() => ui.activeView === 'notes')
+// Notes + Dashboard own the full main area — hide the shared entry right panel + splitter.
+const isFullBleedView = computed(() => ui.activeView === 'notes' || ui.activeView === 'dashboard')
 
 const drawerTitle = computed(() => {
   switch (ui.activeDrawer) {
@@ -194,11 +194,11 @@ async function onExtractText(id: number) {
     </Transition>
 
     <!-- Panel splitter -->
-    <PanelSplitter v-if="!isNotesView && (showDetail || showEditor)" />
+    <PanelSplitter v-if="!isFullBleedView && (showDetail || showEditor)" />
 
     <!-- Right panel: entry detail or editor -->
     <div
-      v-if="!isNotesView && (showDetail || showEditor)"
+      v-if="!isFullBleedView && (showDetail || showEditor)"
       class="shrink-0 bg-editor border-l border-border overflow-y-auto"
       :style="{ width: ui.rightPanelWidth + 'px' }"
     >

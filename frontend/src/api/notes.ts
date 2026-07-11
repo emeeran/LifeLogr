@@ -10,6 +10,10 @@ import type {
   NoteFolderUpdate,
   NoteEncryptionStatusResponse,
   NoteMediaResponse,
+  NotePageResponse,
+  NotePageCreate,
+  NotePageUpdate,
+  NotePageReorderItem,
 } from '../types'
 
 export const notesApi = {
@@ -50,6 +54,20 @@ export const notesApi = {
 
   setPinned(id: number, is_pinned: boolean): Promise<NoteResponse> {
     return request(`/notes/${id}/pin`, { method: 'PATCH', body: JSON.stringify({ is_pinned }) })
+  },
+
+  // ── Sub-pages (EPIM-style page tabs) ──
+  createPage(noteId: number, data: NotePageCreate): Promise<NotePageResponse> {
+    return request(`/notes/${noteId}/pages`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  updatePage(noteId: number, pageId: number, data: NotePageUpdate): Promise<NotePageResponse> {
+    return request(`/notes/${noteId}/pages/${pageId}`, { method: 'PATCH', body: JSON.stringify(data) })
+  },
+  deletePage(noteId: number, pageId: number): Promise<void> {
+    return request(`/notes/${noteId}/pages/${pageId}`, { method: 'DELETE' })
+  },
+  reorderPages(noteId: number, items: NotePageReorderItem[]): Promise<{ reordered: number }> {
+    return request(`/notes/${noteId}/pages/reorder`, { method: 'POST', body: JSON.stringify({ items }) })
   },
 
   listFolders(): Promise<NoteFolderResponse[]> {

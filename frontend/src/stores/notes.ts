@@ -6,6 +6,10 @@ import type {
   NoteCreate,
   NoteUpdate,
   NoteListParams,
+  NotePageCreate,
+  NotePageUpdate,
+  NotePageReorderItem,
+  NotePageResponse,
 } from '../types'
 import { notesApi } from '../api/notes'
 
@@ -135,6 +139,65 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  // ── Sub-pages (EPIM-style page tabs) ──────────────────────────────────────
+  // Pages belong to the active note; CRUD updates currentNote.pages in place.
+  function _patchPages(fn: (pages: NotePageResponse[]) => NotePageResponse[]) {
+    if (!currentNote.value) return
+    currentNote.value = { ...currentNote.value, pages: fn(currentNote.value.pages) }
+  }
+
+  async function createPage(data: NotePageCreate): Promise<NotePageResponse | null> {
+    if (!currentNote.value) return null
+    error.value = null
+    try {
+      const page = await notesApi.createPage(currentNote.value.id, data)
+      _patchPages((pages) => [...pages, page])
+      return page
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to create page'
+      throw e
+    }
+  }
+
+  async function updatePage(pageId: number, data: NotePageUpdate): Promise<void> {
+    if (!currentNote.value) return
+    error.value = null
+    try {
+      const page = await notesApi.updatePage(currentNote.value.id, pageId, data)
+      _patchPages((pages) => pages.map((p) => (p.id === pageId ? page : p)))
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to update page'
+      throw e
+    }
+  }
+
+  async function deletePage(pageId: number): Promise<void> {
+    if (!currentNote.value) return
+    error.value = null
+    try {
+      await notesApi.deletePage(currentNote.value.id, pageId)
+      _patchPages((pages) => pages.filter((p) => p.id !== pageId))
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to delete page'
+      throw e
+    }
+  }
+
+  async function reorderPages(items: NotePageReorderItem[]): Promise<void> {
+    if (!currentNote.value) return
+    error.value = null
+    try {
+      await notesApi.reorderPages(currentNote.value.id, items)
+      const order = new Map(items.map((i) => [i.id, i.sort_order]))
+      _patchPages((pages) =>
+        [...pages].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)),
+      )
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to reorder pages'
+      throw e
+    }
+  }
+
   return {
     notes,
     folders,
@@ -153,5 +216,9 @@ export const useNotesStore = defineStore('notes', () => {
     togglePin,
     createFolder,
     deleteFolder,
+    createPage,
+    updatePage,
+    deletePage,
+    reorderPages,
   }
 })

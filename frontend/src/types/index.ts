@@ -93,6 +93,32 @@ export interface NoteFolderUpdate {
   sort_order?: number;
 }
 
+export interface NotePageResponse {
+  id: number;
+  note_id: number;
+  title: string | null;
+  body: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotePageCreate {
+  title?: string | null;
+  body?: string;
+}
+
+export interface NotePageUpdate {
+  title?: string | null;
+  body?: string;
+  sort_order?: number;
+}
+
+export interface NotePageReorderItem {
+  id: number;
+  sort_order: number;
+}
+
 export interface NoteResponse {
   id: number;
   folder_id: number | null;
@@ -103,6 +129,7 @@ export interface NoteResponse {
   is_encrypted: boolean;
   encrypted_at: string | null;
   tags: TagBrief[];
+  pages: NotePageResponse[];
   created_at: string;
   updated_at: string;
 }

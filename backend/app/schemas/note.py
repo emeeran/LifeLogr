@@ -60,6 +60,38 @@ class NoteUpdate(BaseModel):
     color: str | None = Field(default=None, max_length=20)
 
 
+class NotePageCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=255, description="Page tab title")
+    body: str = Field(default="", max_length=1_000_000, description="Markdown body")
+
+
+class NotePageUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=255, description="Set null to clear")
+    body: str | None = Field(default=None, max_length=1_000_000)
+    sort_order: int | None = Field(default=None, ge=0)
+
+
+class NotePageReorderItem(BaseModel):
+    id: int
+    sort_order: int = Field(ge=0)
+
+
+class NotePageReorder(BaseModel):
+    items: list[NotePageReorderItem]
+
+
+class NotePageResponse(BaseModel):
+    id: int
+    note_id: int
+    title: str | None
+    body: str
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class NoteResponse(BaseModel):
     id: int
     folder_id: int | None
@@ -70,6 +102,7 @@ class NoteResponse(BaseModel):
     is_encrypted: bool = False
     encrypted_at: datetime | None = None
     tags: list[TagBrief]
+    pages: list[NotePageResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

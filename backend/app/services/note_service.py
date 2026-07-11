@@ -9,8 +9,16 @@ from sqlalchemy.sql.expression import Select as Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.models.note import Note, NoteFolder, NoteTag
-from app.schemas.note import NoteCreate, NoteFolderCreate, NoteFolderUpdate, NoteUpdate
+from app.models.note import Note, NoteFolder, NotePage, NoteTag
+from app.schemas.note import (
+    NoteCreate,
+    NoteFolderCreate,
+    NoteFolderUpdate,
+    NotePageCreate,
+    NotePageReorderItem,
+    NotePageUpdate,
+    NoteUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +140,67 @@ class NoteService:
         await self.db.commit()
         await self.db.refresh(note)
         return note
+
+    # ── Sub-pages (EPIM-style page tabs) ────────────────────────────────────
+
+    async def create_page(self, note_id: int, data: NotePageCreate) -> NotePage:
+        """Append a new page tab to a note (sort_order = current max + 1)."""
+        await self.get(note_id)  # raises NotFoundError if the note doesn't exist
+        max_order = (
+            await self.db.execute(
+                select(func.coalesce(func.max(NotePage.sort_order), -1)).where(
+                    NotePage.note_id == note_id
+                )
+            )
+        ).scalar_one()
+        page = NotePage(
+            note_id=note_id, title=data.title, body=data.body, sort_order=max_order + 1
+        )
+        self.db.add(page)
+        await self.db.commit()
+        await self.db.refresh(page)
+        return page
+
+    async def update_page(self, note_id: int, page_id: int, data: NotePageUpdate) -> NotePage:
+        page = await self._get_page(note_id, page_id)
+        if data.title is not None:
+            page.title = data.title
+        if data.body is not None:
+            page.body = data.body
+        if data.sort_order is not None:
+            page.sort_order = data.sort_order
+        await self.db.commit()
+        await self.db.refresh(page)
+        return page
+
+    async def delete_page(self, note_id: int, page_id: int) -> None:
+        page = await self._get_page(note_id, page_id)
+        await self.db.delete(page)
+        await self.db.commit()
+
+    async def reorder_pages(self, note_id: int, items: list[NotePageReorderItem]) -> None:
+        """Set sort_order for the given pages (all scoped to note_id)."""
+        await self.get(note_id)
+        order_map = {it.id: it.sort_order for it in items}
+        rows = (
+            await self.db.execute(
+                select(NotePage).where(
+                    NotePage.note_id == note_id, NotePage.id.in_(list(order_map))
+                )
+            )
+        ).scalars().all()
+        for page in rows:
+            page.sort_order = order_map[page.id]
+        await self.db.commit()
+
+    async def _get_page(self, note_id: int, page_id: int) -> NotePage:
+        result = await self.db.execute(
+            select(NotePage).where(NotePage.note_id == note_id, NotePage.id == page_id)
+        )
+        page = result.scalar_one_or_none()
+        if page is None:
+            raise NotFoundError(f"Note page {page_id} not found")
+        return page
 
     async def search(self, query: str, offset: int, limit: int) -> tuple[list[Note], int]:
         """Full-text search via the notes_fts index (falls back to ILIKE on error)."""

@@ -17,6 +17,10 @@ from app.schemas.note import (
     NoteFolderResponse,
     NoteFolderUpdate,
     NoteListResponse,
+    NotePageCreate,
+    NotePageReorder,
+    NotePageResponse,
+    NotePageUpdate,
     NoteResponse,
     NoteUpdate,
 )
@@ -40,6 +44,7 @@ def _to_response(note: Note) -> NoteResponse:
         is_encrypted=note.is_encrypted,
         encrypted_at=note.encrypted_at,
         tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in note.tag_associations if a.tag],
+        pages=[NotePageResponse.model_validate(p) for p in note.pages],
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -87,6 +92,44 @@ async def search_notes(
     return NoteListResponse(
         items=[_to_response(n) for n in notes], total=total, offset=offset, limit=limit
     )
+
+
+# ── Sub-pages (EPIM-style page tabs) ────────────────────────────────────────
+
+
+@router.post("/{note_id}/pages", response_model=NotePageResponse, status_code=201)
+async def create_page(
+    note_id: int, data: NotePageCreate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Append a new page tab to a note."""
+    svc = NoteService(db)
+    return await svc.create_page(note_id, data)
+
+
+@router.post("/{note_id}/pages/reorder")
+async def reorder_pages(
+    note_id: int, data: NotePageReorder, db: AsyncSession = Depends(get_db)
+) -> dict[str, int]:
+    """Re-set sort_order for the given pages (scoped to note_id)."""
+    svc = NoteService(db)
+    await svc.reorder_pages(note_id, data.items)
+    return {"reordered": len(data.items)}
+
+
+@router.patch("/{note_id}/pages/{page_id}", response_model=NotePageResponse)
+async def update_page(
+    note_id: int, page_id: int, data: NotePageUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    svc = NoteService(db)
+    return await svc.update_page(note_id, page_id, data)
+
+
+@router.delete("/{note_id}/pages/{page_id}", status_code=204)
+async def delete_page(
+    note_id: int, page_id: int, db: AsyncSession = Depends(get_db)
+) -> None:
+    svc = NoteService(db)
+    await svc.delete_page(note_id, page_id)
 
 
 @router.get("/folders", response_model=list[NoteFolderResponse])

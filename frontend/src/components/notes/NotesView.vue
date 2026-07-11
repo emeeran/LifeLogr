@@ -12,6 +12,7 @@ import {
   Plus, Search, NotebookPen, Folder, FolderOpen, FileText, FolderPlus,
   Check, Trash2, X, ChevronRight, Pin, Lock, Inbox,
 } from 'lucide-vue-next'
+import { useLocalStorage } from '@vueuse/core'
 import { useNotesStore } from '../../stores/notes'
 import { useUiStore } from '../../stores/ui'
 import { notesApi } from '../../api/notes'
@@ -30,6 +31,26 @@ const allTags = ref<TagResponse[]>([])
 const showNewFolder = ref(false)
 const newFolderName = ref('')
 const folderInputRef = ref<HTMLInputElement | null>(null)
+
+// Resizable tree rail (persisted). Drag the strip between tree and editor.
+const railWidth = useLocalStorage<number>('lifelogr-notes-rail-width', 288)
+const railDragging = ref(false)
+function onRailMousedown(e: MouseEvent) {
+  e.preventDefault()
+  railDragging.value = true
+  const startX = e.clientX
+  const startW = railWidth.value
+  function move(ev: MouseEvent) {
+    railWidth.value = Math.min(560, Math.max(200, startW + (ev.clientX - startX)))
+  }
+  function up() {
+    railDragging.value = false
+    document.removeEventListener('mousemove', move)
+    document.removeEventListener('mouseup', up)
+  }
+  document.addEventListener('mousemove', move)
+  document.addEventListener('mouseup', up)
+}
 
 // Expanded tree nodes: 'all' | 'unfiled' | <folder id as string>
 const expanded = ref<Set<string>>(new Set(['all']))
@@ -91,14 +112,14 @@ async function newNote() {
     return
   }
   const n = await store.createNote({ title: '', body: '', folder_id: folderId })
-  await store.fetchNotes({ limit: 200 })
+  await store.fetchNotes({ limit: 100 })
   await store.fetchFolders()
   await store.selectNote(n.id)
   expanded.value = new Set([...expanded.value, String(folderId)])
 }
 
 async function onDeleted() {
-  await Promise.all([store.fetchNotes({ limit: 200 }), store.fetchFolders()])
+  await Promise.all([store.fetchNotes({ limit: 100 }), store.fetchFolders()])
 }
 
 async function onTagCreated() {
@@ -131,7 +152,7 @@ function cancelNewFolder() {
 async function removeFolder(id: number, name: string) {
   if (!confirm(`Delete notebook "${name}"? Its notes will be un-filed, not deleted.`)) return
   await store.deleteFolder(id)
-  await store.fetchNotes({ limit: 200 })
+  await store.fetchNotes({ limit: 100 })
 }
 
 // Debounced full-text search (notes-only FTS).
@@ -155,28 +176,22 @@ watch(searchQuery, (q) => {
 
 onMounted(async () => {
   ui.setView('notes')
-  await Promise.all([store.fetchNotes({ limit: 200 }), store.fetchFolders(), loadTags()])
+  await Promise.all([store.fetchNotes({ limit: 100 }), store.fetchFolders(), loadTags()])
 })
 </script>
 
 <template>
   <div class="flex h-full bg-surface">
-    <!-- Tree rail (notebooks → notes) -->
-    <aside class="flex w-72 shrink-0 flex-col border-r border-border bg-editor/30">
+    <!-- Tree rail (notebooks → notes) — resizable -->
+    <aside
+      class="flex shrink-0 flex-col border-r border-border bg-editor/30"
+      :style="{ width: railWidth + 'px' }"
+    >
       <!-- Header -->
-      <div class="flex items-center justify-between border-b border-border px-3 py-2.5">
-        <div class="flex items-center gap-1.5">
-          <NotebookPen :size="15" class="text-accent" />
-          <span class="text-sm font-semibold text-text-primary">Notes</span>
-          <span class="text-[10px] text-text-muted">({{ store.total }})</span>
-        </div>
-        <button
-          @click="newNote"
-          class="flex items-center gap-1 rounded bg-accent px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-accent/90"
-          title="New note"
-        >
-          <Plus :size="12" /> New
-        </button>
+      <div class="flex items-center gap-1.5 border-b border-border px-3 py-2.5">
+        <NotebookPen :size="15" class="text-accent" />
+        <span class="text-sm font-semibold text-text-primary">Notes</span>
+        <span class="text-[10px] text-text-muted">({{ store.total }})</span>
       </div>
 
       <!-- Search -->
@@ -226,11 +241,7 @@ onMounted(async () => {
 
         <!-- Tree -->
         <template v-else>
-          <!-- Library -->
-          <div class="px-1 pb-1">
-            <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">Library</span>
-          </div>
-          <!-- All Notes -->
+          <!-- All Notes (unified view) -->
           <button class="tree-row" @click="toggleExpand('all')">
             <ChevronRight :size="13" class="chevron shrink-0" :class="{ open: isExpanded('all') }" />
             <Inbox :size="12" /> <span class="flex-1 text-left">All Notes</span>
@@ -343,6 +354,16 @@ onMounted(async () => {
       </div>
     </aside>
 
+    <!-- Resize handle between tree and editor -->
+    <div
+      class="shrink-0 w-1 cursor-col-resize transition-colors"
+      :class="railDragging ? 'bg-accent' : 'bg-border hover:bg-accent/60'"
+      title="Drag to resize"
+      @mousedown="onRailMousedown"
+    >
+      <div class="h-full w-full" :style="{ cursor: 'col-resize' }" />
+    </div>
+
     <!-- Editor -->
     <div class="flex min-w-0 flex-1 flex-col">
       <NoteEditor
@@ -353,6 +374,7 @@ onMounted(async () => {
         :all-tags="allTags"
         @deleted="onDeleted"
         @tag-created="onTagCreated"
+        @new-note="newNote"
       />
       <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 text-text-muted">
         <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10">
