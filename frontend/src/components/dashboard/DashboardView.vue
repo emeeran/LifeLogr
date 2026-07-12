@@ -197,7 +197,6 @@ async function toggleTask(t: TaskResponse) {
 }
 
 function goPlanner() { ui.setView('planner'); router.push('/planner') }
-function goAnalytics() { ui.setView('analytics'); router.push('/analytics') }
 function goSettings() { ui.setView('settings'); router.push('/settings') }
 function goEmail(accountId?: number) {
   ui.setView('email')
@@ -345,13 +344,13 @@ function initialsOf(s: string) {
               <span class="stat-label">Unread · {{ connectedAccounts }} accts</span>
             </span>
           </button>
-          <button class="stat" @click="goAnalytics">
+          <div class="stat cursor-default">
             <span class="chip bg-rose-500/15 text-rose-400"><Flame :size="15" /></span>
             <span class="stat-body">
               <span class="stat-num">{{ overview?.current_streak ?? 0 }}</span>
               <span class="stat-label">Day streak · best {{ overview?.longest_streak ?? 0 }}</span>
             </span>
-          </button>
+          </div>
         </div>
 
         <!-- Main grid -->

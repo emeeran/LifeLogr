@@ -10,8 +10,6 @@ export const useEntriesStore = defineStore('entries', () => {
   const error = ref<string | null>(null)
   const lastUpdated = ref(Date.now())
 
-  function clearError() { error.value = null }
-
   async function fetchCalendarMonth(year: number, month: number) {
     loading.value = true
     error.value = null
@@ -75,5 +73,5 @@ export const useEntriesStore = defineStore('entries', () => {
     lastUpdated.value = Date.now()
   }
 
-  return { calendarEntries, currentEntry, loading, error, lastUpdated, clearError, fetchCalendarMonth, fetchEntry, createEntry, updateEntry, deleteEntry, refreshAll }
+  return { calendarEntries, currentEntry, loading, error, lastUpdated, fetchCalendarMonth, fetchEntry, createEntry, updateEntry, deleteEntry, refreshAll }
 })

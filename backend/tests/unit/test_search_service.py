@@ -33,26 +33,30 @@ class TestSearch:
     async def test_semantic_search_applies_filters(self, mock_embed, db_session: AsyncSession):
         # Setup mock embedding
         mock_embed.return_value = [0.1, 0.2, 0.3]
-        
+
         # Create entries with different moods, utilizing real Python date objects
-        e1 = Entry(entry_date=date(2026, 5, 3), title="Python matching", body="Python body", mood="excited")
-        e2 = Entry(entry_date=date(2026, 5, 4), title="Python matching", body="Python body", mood="calm")
+        e1 = Entry(
+            entry_date=date(2026, 5, 3), title="Python matching", body="Python body", mood="excited"
+        )
+        e2 = Entry(
+            entry_date=date(2026, 5, 4), title="Python matching", body="Python body", mood="calm"
+        )
         db_session.add_all([e1, e2])
         await db_session.flush()
-        
+
         # Create embeddings corresponding to the entries
         emb1 = EntryEmbedding(entry_id=e1.id, embedding=json.dumps([0.1, 0.2, 0.3]))
         emb2 = EntryEmbedding(entry_id=e2.id, embedding=json.dumps([0.1, 0.2, 0.3]))
         db_session.add_all([emb1, emb2])
         await db_session.commit()
-        
+
         svc = SearchService(db_session)
-        
+
         # Search with mood filter "excited" -> should only return e1
         results, total = await svc.search(query="Python", mood="excited", mode="semantic")
         assert total == 1
         assert results[0].id == e1.id
-        
+
         # Search with mood filter "calm" -> should only return e2
         results, total = await svc.search(query="Python", mood="calm", mode="semantic")
         assert total == 1

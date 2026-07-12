@@ -81,9 +81,7 @@ class TestStartStop:
     async def test_double_start_conflicts(self, client: AsyncClient):
         """Starting while a capture is already running is a 409."""
         eid = await _make_entry(client)
-        with patch(
-            "app.services.recording_service._open_input_stream", return_value=_FakeStream()
-        ):
+        with patch("app.services.recording_service._open_input_stream", return_value=_FakeStream()):
             r1 = await client.post("/api/v1/recordings/start", data={"entry_id": str(eid)})
             assert r1.status_code == 200
             r2 = await client.post("/api/v1/recordings/start", data={"entry_id": str(eid)})

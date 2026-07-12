@@ -10,7 +10,11 @@ from app.schemas.tag import TagBrief
 class EntryCreate(BaseModel):
     entry_date: date
     title: str | None = Field(default=None, max_length=255, description="Entry title")
-    body: str = Field(default="", max_length=1_000_000, description="Markdown body (may be empty for title-only/recording-only entries)")
+    body: str = Field(
+        default="",
+        max_length=1_000_000,
+        description="Markdown body (may be empty for title-only/recording-only entries)",
+    )
     mood: str | None = Field(default=None, max_length=50, description="Mood label")
     tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to associate")
     template_id: int | None = Field(
@@ -34,7 +38,11 @@ class EntryUpdate(BaseModel):
     title: str | None = Field(
         default=None, max_length=255, description="Updated title; null to clear"
     )
-    body: str | None = Field(default=None, max_length=1_000_000, description="Updated Markdown body; may be empty for title-only/recording-only entries")
+    body: str | None = Field(
+        default=None,
+        max_length=1_000_000,
+        description="Updated Markdown body; may be empty for title-only/recording-only entries",
+    )
     mood: str | None = Field(default=None, max_length=50, description="Updated mood; null to clear")
     tag_ids: list[int] | None = Field(
         default=None, description="Tag IDs to associate; null to keep existing"
@@ -82,6 +90,7 @@ class CalendarEntryResponse(BaseModel):
     ``/calendar/{year}/{month}`` payload small even for months with many
     long entries.
     """
+
     id: int
     entry_date: date
     title: str | None

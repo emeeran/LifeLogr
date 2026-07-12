@@ -808,8 +808,6 @@ async def import_file(
 
 def _parse_diarium_json_entry(item: dict[str, Any]) -> dict[str, Any]:
     """Parse a single Diarium JSON entry into our import format."""
-    import re
-
     # Diarium date format: "2026-01-15T00:00:00.0000000+00:00" or similar
     raw_date = str(item.get("date", ""))[:10]
 

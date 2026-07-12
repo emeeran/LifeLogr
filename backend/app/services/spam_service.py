@@ -29,28 +29,94 @@ SPAM_THRESHOLD = 0.5
 
 # TLDs disproportionately used by spam. Weighted heavily.
 _SUSPICIOUS_TLDS = {
-    ".xyz", ".click", ".top", ".work", ".bid", ".loan", ".date", ".stream",
-    ".gq", ".tk", ".ml", ".cf", ".ga", ".kim", ".science", ".review",
-    ".racing", ".accountant", ".cricket", ".party", ".download", ".men",
-    ".pw", ".icu", ".cam", ".sbs", ".cyou", ".monster", ".bond", ".country",
-    ".rest", ".vip", ".fit", ".win",
+    ".xyz",
+    ".click",
+    ".top",
+    ".work",
+    ".bid",
+    ".loan",
+    ".date",
+    ".stream",
+    ".gq",
+    ".tk",
+    ".ml",
+    ".cf",
+    ".ga",
+    ".kim",
+    ".science",
+    ".review",
+    ".racing",
+    ".accountant",
+    ".cricket",
+    ".party",
+    ".download",
+    ".men",
+    ".pw",
+    ".icu",
+    ".cam",
+    ".sbs",
+    ".cyou",
+    ".monster",
+    ".bond",
+    ".country",
+    ".rest",
+    ".vip",
+    ".fit",
+    ".win",
 }
 
 _SPAMMY_WORDS_SUBJECT = {
-    "winner", "you've won", "you have won", "congratulations", "lottery",
-    "free", "guarantee", "guaranteed", "viagra", "cialis", "casino",
-    "crypto", "bitcoin", "make money", "earn money", "work from home",
-    "weight loss", "miracle", "risk-free", "100% free", "act now",
-    "limited time", "dear winner", "claim your", "claim now", "prize",
-    "selected to win", "no prescription", "cheap meds",
+    "winner",
+    "you've won",
+    "you have won",
+    "congratulations",
+    "lottery",
+    "free",
+    "guarantee",
+    "guaranteed",
+    "viagra",
+    "cialis",
+    "casino",
+    "crypto",
+    "bitcoin",
+    "make money",
+    "earn money",
+    "work from home",
+    "weight loss",
+    "miracle",
+    "risk-free",
+    "100% free",
+    "act now",
+    "limited time",
+    "dear winner",
+    "claim your",
+    "claim now",
+    "prize",
+    "selected to win",
+    "no prescription",
+    "cheap meds",
 }
 
 _SPAMMY_WORDS_BODY = {
-    "click here", "buy now", "order now", "best price", "lowest price",
-    "100% guaranteed", "no prescription", "viagra", "cialis", "weight loss",
-    "make money", "earn extra", "work from home", "this is not spam",
-    "money-back guarantee", "risk-free trial", "exclusive deal",
-    "double your income", "instant approval",
+    "click here",
+    "buy now",
+    "order now",
+    "best price",
+    "lowest price",
+    "100% guaranteed",
+    "no prescription",
+    "viagra",
+    "cialis",
+    "weight loss",
+    "make money",
+    "earn extra",
+    "work from home",
+    "this is not spam",
+    "money-back guarantee",
+    "risk-free trial",
+    "exclusive deal",
+    "double your income",
+    "instant approval",
 }
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -140,9 +206,9 @@ class SpamService:
 
     # ── override layers ───────────────────────────────────────────────────
 
-    async def is_blocked(self, addr: str, domain: str) -> bool:
-        if not addr and not domain:
-            return False
+    @staticmethod
+    def _blocklist_conditions(addr: str, domain: str) -> list:
+        """OR-conditions matching a sender by exact address and/or domain."""
         conditions = []
         if addr:
             conditions.append(SpamBlocklist.pattern == addr)
@@ -150,6 +216,12 @@ class SpamService:
             conditions.append(
                 (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
             )
+        return conditions
+
+    async def is_blocked(self, addr: str, domain: str) -> bool:
+        conditions = self._blocklist_conditions(addr, domain)
+        if not conditions:
+            return False
         found = (
             await self.db.execute(select(SpamBlocklist.id).where(or_(*conditions)))
         ).scalar_one_or_none()
@@ -172,24 +244,19 @@ class SpamService:
 
     async def list_rules(self) -> list[SpamBlocklist]:
         return list(
-            (
-                await self.db.execute(
-                    select(SpamBlocklist).order_by(SpamBlocklist.created_at.desc())
-                )
-            ).scalars().all()
+            (await self.db.execute(select(SpamBlocklist).order_by(SpamBlocklist.created_at.desc())))
+            .scalars()
+            .all()
         )
 
-    async def add_rule(
-        self, pattern: str, is_domain: bool, action: str = "junk"
-    ) -> SpamBlocklist:
+    async def add_rule(self, pattern: str, is_domain: bool, action: str = "junk") -> SpamBlocklist:
         pattern = pattern.strip().lower()
         action = action if action in ("junk", "delete") else "junk"
         # De-dupe. If the same pattern/is_domain exists, adopt the new action.
         existing = (
             await self.db.execute(
                 select(SpamBlocklist).where(
-                    (SpamBlocklist.pattern == pattern)
-                    & (SpamBlocklist.is_domain.is_(is_domain))
+                    (SpamBlocklist.pattern == pattern) & (SpamBlocklist.is_domain.is_(is_domain))
                 )
             )
         ).scalar_one_or_none()
@@ -208,15 +275,9 @@ class SpamService:
     async def block_action(self, addr: str, domain: str) -> str | None:
         """Return the configured action ('junk'|'delete') if the sender is
         blocked, else ``None``."""
-        if not addr and not domain:
+        conditions = self._blocklist_conditions(addr, domain)
+        if not conditions:
             return None
-        conditions = []
-        if addr:
-            conditions.append(SpamBlocklist.pattern == addr)
-        if domain:
-            conditions.append(
-                (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
-            )
         row = (
             await self.db.execute(select(SpamBlocklist).where(or_(*conditions)))
         ).scalar_one_or_none()
@@ -232,19 +293,11 @@ class SpamService:
 
     async def remove_rules_for(self, addr: str, domain: str) -> None:
         """Drop blocklist entries matching a sender (used by 'mark not spam')."""
-        conditions = []
-        if addr:
-            conditions.append(SpamBlocklist.pattern == addr)
-        if domain:
-            conditions.append(
-                (SpamBlocklist.is_domain.is_(True)) & (SpamBlocklist.pattern == domain)
-            )
+        conditions = self._blocklist_conditions(addr, domain)
         if not conditions:
             return
         rows = list(
-            (
-                await self.db.execute(select(SpamBlocklist).where(or_(*conditions)))
-            ).scalars().all()
+            (await self.db.execute(select(SpamBlocklist).where(or_(*conditions)))).scalars().all()
         )
         for r in rows:
             await self.db.delete(r)

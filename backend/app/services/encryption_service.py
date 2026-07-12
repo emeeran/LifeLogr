@@ -23,14 +23,19 @@ class EncryptionService:
         self.db = db
 
     @staticmethod
-    def _derive_key(passphrase: str) -> bytes:
-        """Derive a 256-bit key from a passphrase using PBKDF2-HMAC-SHA256."""
+    def _derive_key(passphrase: str, salt: bytes | None = None) -> bytes:
+        """Derive a 256-bit key from a passphrase + salt via PBKDF2-HMAC-SHA256.
+
+        ``salt`` should be a random per-entry salt (modern path). ``None`` falls
+        back to the legacy deterministic (passphrase-derived) salt so entries
+        encrypted before per-entry salts were introduced still decrypt.
+        """
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-        # Use a fixed salt derived from the passphrase itself so the same
-        # passphrase always produces the same key (acceptable for local-only app).
-        salt = passphrase.encode().ljust(32, b"\x00")[:32]
+        if salt is None:
+            # Legacy deterministic salt (pre-per-entry-salt entries).
+            salt = passphrase.encode().ljust(32, b"\x00")[:32]
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -49,11 +54,21 @@ class EncryptionService:
 
     @staticmethod
     def _decrypt(token: str, key: bytes) -> bytes:
-        """Decrypt a base64-encoded nonce+ciphertext token."""
+        """Decrypt a base64-encoded nonce+ciphertext token.
+
+        Raises ``ValueError`` on a wrong passphrase / corrupted token so callers
+        can map it to a 400 rather than surfacing the crypto-internal
+        ``InvalidTag`` as a 500.
+        """
+        from cryptography.exceptions import InvalidTag
+
         raw = base64.b64decode(token)
         nonce, ct = raw[:_NONCE_SIZE], raw[_NONCE_SIZE:]
         aesgcm = AESGCM(key)
-        return aesgcm.decrypt(nonce, ct, None)
+        try:
+            return aesgcm.decrypt(nonce, ct, None)
+        except InvalidTag as exc:
+            raise ValueError("Invalid passphrase or corrupted data") from exc
 
     async def encrypt_entry(self, entry_id: int, passphrase: str) -> Entry:
         """Encrypt the body and mood of an entry in-place. Title is kept readable."""
@@ -62,10 +77,12 @@ class EncryptionService:
         if entry.is_encrypted:
             raise ValueError("Entry is already encrypted")
 
-        key = self._derive_key(passphrase)
+        salt = os.urandom(16)
+        key = self._derive_key(passphrase, salt)
         entry.body = self._encrypt(entry.body.encode(), key)
         if entry.mood is not None:
             entry.mood = self._encrypt(entry.mood.encode(), key)
+        entry.encryption_salt = base64.b64encode(salt).decode()
 
         entry.is_encrypted = True
         entry.encrypted_at = datetime.now(timezone.utc)
@@ -80,11 +97,13 @@ class EncryptionService:
         if not entry.is_encrypted:
             raise ValueError("Entry is not encrypted")
 
-        key = self._derive_key(passphrase)
+        salt = base64.b64decode(entry.encryption_salt) if entry.encryption_salt else None
+        key = self._derive_key(passphrase, salt)
 
         entry.body = self._decrypt(entry.body, key).decode()
         if entry.mood is not None:
             entry.mood = self._decrypt(entry.mood, key).decode()
+        entry.encryption_salt = None
 
         entry.is_encrypted = False
         entry.encrypted_at = None
@@ -117,8 +136,10 @@ class EncryptionService:
         note = await self._get_note(note_id)
         if note.is_encrypted:
             raise ValueError("Note is already encrypted")
-        key = self._derive_key(passphrase)
+        salt = os.urandom(16)
+        key = self._derive_key(passphrase, salt)
         note.body = self._encrypt(note.body.encode(), key)
+        note.encryption_salt = base64.b64encode(salt).decode()
         note.is_encrypted = True
         note.encrypted_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -130,8 +151,10 @@ class EncryptionService:
         note = await self._get_note(note_id)
         if not note.is_encrypted:
             raise ValueError("Note is not encrypted")
-        key = self._derive_key(passphrase)
+        salt = base64.b64decode(note.encryption_salt) if note.encryption_salt else None
+        key = self._derive_key(passphrase, salt)
         note.body = self._decrypt(note.body, key).decode()
+        note.encryption_salt = None
         note.is_encrypted = False
         note.encrypted_at = None
         await self.db.commit()

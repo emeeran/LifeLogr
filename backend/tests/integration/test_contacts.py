@@ -125,10 +125,12 @@ class TestContactsRichFields:
 
     async def test_legacy_phone_row_hydrates_phones(self, client):
         """A row created with only the legacy ``phone`` column still renders a phones list."""
-        c = (await client.post(
-            "/api/v1/contacts",
-            json={"email": "leg@example.com", "phone": "+1999"},
-        )).json()
+        c = (
+            await client.post(
+                "/api/v1/contacts",
+                json={"email": "leg@example.com", "phone": "+1999"},
+            )
+        ).json()
         # Service mirrored phone[0] into phones; assert hydration returns a list.
         got = (await client.get(f"/api/v1/contacts/{c['id']}")).json()
         assert got["phones"] is not None
@@ -142,10 +144,12 @@ class TestContactsRichFields:
         ``updated_at``'s onupdate and invalidating the column, so the sync
         ``model_validate`` raised MissingGreenlet → 500. Reads must not mutate.
         """
-        c = (await client.post(
-            "/api/v1/contacts",
-            json={"email": "leg2@example.com", "phone": "+1-555-legacy"},
-        )).json()
+        c = (
+            await client.post(
+                "/api/v1/contacts",
+                json={"email": "leg2@example.com", "phone": "+1-555-legacy"},
+            )
+        ).json()
         listing = await client.get("/api/v1/contacts?search=leg2")
         assert listing.status_code == 200
         item = next(i for i in listing.json()["items"] if i["id"] == c["id"])
@@ -156,9 +160,9 @@ class TestContactsRichFields:
 
 class TestContactGroups:
     async def test_group_crud_and_membership(self, client):
-        g = (await client.post(
-            "/api/v1/contacts/groups", json={"name": "Work", "color": "#3b82f6"}
-        )).json()
+        g = (
+            await client.post("/api/v1/contacts/groups", json={"name": "Work", "color": "#3b82f6"})
+        ).json()
         assert g["name"] == "Work"
         assert g["member_count"] == 0
 
@@ -167,10 +171,12 @@ class TestContactGroups:
         assert dup.status_code == 409
 
         # Assign a contact to the group via create.
-        c = (await client.post(
-            "/api/v1/contacts",
-            json={"email": "g@example.com", "group_ids": [g["id"]]},
-        )).json()
+        c = (
+            await client.post(
+                "/api/v1/contacts",
+                json={"email": "g@example.com", "group_ids": [g["id"]]},
+            )
+        ).json()
         assert any(grp["id"] == g["id"] for grp in c["groups"])
 
         # Member count reflects; list filters by group.
@@ -180,9 +186,7 @@ class TestContactGroups:
         assert any(item["id"] == c["id"] for item in filtered.json()["items"])
 
         # Clear membership with an empty list.
-        cleared = await client.patch(
-            f"/api/v1/contacts/{c['id']}", json={"group_ids": []}
-        )
+        cleared = await client.patch(f"/api/v1/contacts/{c['id']}", json={"group_ids": []})
         assert cleared.json()["groups"] == []
 
         # Rename + delete.
@@ -194,10 +198,12 @@ class TestContactGroups:
         assert dele.status_code == 204
 
     async def test_unknown_group_id_ignored(self, client):
-        c = (await client.post(
-            "/api/v1/contacts",
-            json={"email": "k@example.com", "group_ids": [999999]},
-        )).json()
+        c = (
+            await client.post(
+                "/api/v1/contacts",
+                json={"email": "k@example.com", "group_ids": [999999]},
+            )
+        ).json()
         assert c["groups"] == []
 
 
@@ -216,9 +222,7 @@ class TestRelatedEmails:
         )
         db_session.add(acct)
         await db_session.flush()
-        folder = EmailFolder(
-            account_id=acct.id, folder_name="INBOX", uidvalidity=1
-        )
+        folder = EmailFolder(account_id=acct.id, folder_name="INBOX", uidvalidity=1)
         db_session.add(folder)
         await db_session.flush()
         db_session.add_all(
@@ -245,9 +249,9 @@ class TestRelatedEmails:
         )
         await db_session.commit()
 
-        c = (await client.post(
-            "/api/v1/contacts", json={"email": "me@example.com", "name": "Me"}
-        )).json()
+        c = (
+            await client.post("/api/v1/contacts", json={"email": "me@example.com", "name": "Me"})
+        ).json()
         emails = (await client.get(f"/api/v1/contacts/{c['id']}/emails")).json()
         assert len(emails) == 2
         assert {e["subject"] for e in emails} == {"Hello", "Sent by me"}
@@ -326,8 +330,14 @@ class TestContactsVcard:
             nickname = "Ada"
             phones = [{"type": "mobile", "value": "+1555"}]
             addresses = [
-                {"type": "home", "street": "2 St", "city": "Town", "region": "CA",
-                 "postal_code": "90210", "country": "US"}
+                {
+                    "type": "home",
+                    "street": "2 St",
+                    "city": "Town",
+                    "region": "CA",
+                    "postal_code": "90210",
+                    "country": "US",
+                }
             ]
             websites = ["https://ada.example.com"]
             dates = [{"type": "birthday", "label": None, "date": "1815-12-10"}]

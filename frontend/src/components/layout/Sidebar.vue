@@ -4,7 +4,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Sunrise, Settings,
-  Sun, Moon, BarChart3, Bell, ImageIcon, Users, ListTodo, Mail,
+  Bell, ImageIcon, Users, ListTodo, Mail,
   ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard, GripVertical
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
@@ -13,11 +13,9 @@ const ui = useUiStore()
 
 const navItems: { view: ViewType; icon: Component; label: string }[] = [
   { view: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { view: 'calendar', icon: Calendar, label: 'Calendar' },
+  { view: 'calendar', icon: Calendar, label: 'Journal' },
   { view: 'timeline', icon: Clock, label: 'Timeline' },
   { view: 'notes', icon: NotebookPen, label: 'Notes' },
-  { view: 'search', icon: Search, label: 'Search' },
-  { view: 'analytics', icon: BarChart3, label: 'Analytics' },
   { view: 'reminders', icon: Bell, label: 'Reminders' },
   { view: 'planner', icon: ListTodo, label: 'Planner' },
   { view: 'contacts', icon: Users, label: 'Contacts' },
@@ -100,8 +98,22 @@ function navigate(view: ViewType) {
       </template>
     </div>
 
-    <!-- Scrollable nav (drag to reorder) -->
-    <div class="flex-1 py-1" :class="ui.sidebarCollapsed ? 'overflow-y-hidden' : 'overflow-y-auto'">
+    <!-- Global search (opens the palette; also Ctrl+K) -->
+    <div class="shrink-0 px-2 pb-1 pt-2">
+      <button
+        class="flex w-full items-center gap-2 rounded-md text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
+        :class="ui.sidebarCollapsed ? 'justify-center px-0 py-2' : 'px-2 py-1.5'"
+        :title="ui.sidebarCollapsed ? 'Search (Ctrl+K)' : undefined"
+        aria-label="Search"
+        @click="ui.openSearchPalette()"
+      >
+        <Search :size="14" />
+        <span v-if="!ui.sidebarCollapsed">Search</span>
+      </button>
+    </div>
+
+    <!-- Scrollable nav (drag to reorder) — scrolls in both expanded and collapsed states -->
+    <div class="custom-scrollbar flex-1 overflow-y-auto py-1">
       <div
         v-if="editMode && !ui.sidebarCollapsed"
         class="mx-2 mb-1 px-2 py-1 rounded bg-sidebar-hover text-[10px] text-sidebar-text-secondary text-center"
@@ -159,7 +171,7 @@ function navigate(view: ViewType) {
       </button>
     </div>
 
-    <!-- Bottom: theme + settings + collapse -->
+    <!-- Bottom: settings + collapse (theme toggle lives in Settings → Appearance) -->
     <div class="border-t border-sidebar-hover py-1">
       <button
         v-if="!ui.sidebarCollapsed"
@@ -172,17 +184,6 @@ function navigate(view: ViewType) {
       >
         <GripVertical :size="14" class="drag-grip" />
         <span>{{ editMode ? 'Done' : 'Edit layout' }}</span>
-      </button>
-      <button
-        class="flex items-center gap-2 w-full text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
-        :class="ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5'"
-        :title="ui.sidebarCollapsed ? (ui.darkMode ? 'Light mode' : 'Dark mode') : undefined"
-        :aria-label="ui.darkMode ? 'Switch to light mode' : 'Switch to dark mode'"
-        @click="ui.toggleTheme()"
-      >
-        <Sun v-if="ui.darkMode" :size="14" />
-        <Moon v-else :size="14" />
-        <span v-if="!ui.sidebarCollapsed">{{ ui.darkMode ? 'Light' : 'Dark' }}</span>
       </button>
       <router-link
         to="/settings"
@@ -212,6 +213,6 @@ function navigate(view: ViewType) {
 
 <style scoped>
 .logo-icon {
-  filter: brightness(0) invert(1);
+  filter: var(--logo-filter);
 }
 </style>

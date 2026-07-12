@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 SearchMode = Literal["keyword", "semantic", "hybrid"]
@@ -36,16 +36,3 @@ class GlobalSearchResponse(BaseModel):
     total: int
     offset: int
     limit: int
-
-
-class SearchFilter(BaseModel):
-    """Filters that can be combined with full-text search."""
-
-    query: str = Field(min_length=1)
-    mood: str | None = None
-    tag_ids: list[int] = Field(default_factory=list)
-    date_from: date | None = None
-    date_to: date | None = None
-    mode: SearchMode = "hybrid"
-    offset: int = Field(default=0, ge=0)
-    limit: int = Field(default=20, ge=1, le=100)

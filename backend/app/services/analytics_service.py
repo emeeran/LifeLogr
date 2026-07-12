@@ -24,6 +24,12 @@ from app.schemas.analytics import (
 )
 
 
+def _word_count_expr():
+    """Approximate SQL word count: body length minus spaces, plus one."""
+    body = Entry.body
+    return func.length(body) - func.length(func.replace(body, " ", "")) + 1
+
+
 class AnalyticsService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -38,11 +44,7 @@ class AnalyticsService:
 
         words_result = (
             await self.db.execute(
-                select(
-                    func.sum(
-                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
-                    )
-                ).where(Entry.is_deleted == False)  # noqa: E712
+                select(func.sum(_word_count_expr())).where(Entry.is_deleted == False)  # noqa: E712
             )
         ).scalar()
         total_words = int(words_result or 0)
@@ -113,18 +115,10 @@ class AnalyticsService:
         rows = (
             await self.db.execute(
                 select(
-                    func.sum(
-                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
-                    ).label("total"),
-                    func.avg(
-                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
-                    ).label("avg"),
-                    func.max(
-                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
-                    ).label("longest"),
-                    func.min(
-                        func.length(Entry.body) - func.length(func.replace(Entry.body, " ", "")) + 1
-                    ).label("shortest"),
+                    func.sum(_word_count_expr()).label("total"),
+                    func.avg(_word_count_expr()).label("avg"),
+                    func.max(_word_count_expr()).label("longest"),
+                    func.min(_word_count_expr()).label("shortest"),
                 ).where(Entry.is_deleted == False)  # noqa: E712
             )
         ).one()

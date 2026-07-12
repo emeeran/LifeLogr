@@ -7,6 +7,7 @@ Files are stored under ``MEDIA_DIR/notes/``.
 """
 
 import logging
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import MediaSizeError, NotFoundError
+from app.core.exceptions import MediaSizeError, NotFoundError, ValidationError
 from app.models.note import Note
 from app.models.note_media import NoteMedia
 from app.services.media_service import (
@@ -25,6 +26,16 @@ from app.services.media_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_under(path: Path, root: Path) -> bool:
+    """True if ``path`` is ``root`` itself or somewhere beneath it."""
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
 
 # Extension → MIME mapping for path-based imports (Tauri native drag-drop gives
 # a path, not a browser MIME type). Unknown extensions are rejected by upload().
@@ -121,10 +132,32 @@ class NoteMediaService:
 
         Used by the Tauri native drag-drop handler (WebKitGTK doesn't deliver
         HTML5 file drops, so the frontend receives a path, not a File object).
+
+        Sandboxed to the user's home directory and the system temp dir (drag-drop
+        staging), with sensitive locations (the app's own data dir, ~/.ssh,
+        ~/.gnupg, ~/.config) denied, so the unauthenticated endpoint can't be
+        used to read arbitrary files.
         """
         p = Path(path).expanduser()
-        if not p.is_file():
-            raise NotFoundError(f"File not found: {path}")
+        try:
+            p = p.resolve(strict=True)
+        except (FileNotFoundError, RuntimeError):
+            raise NotFoundError(f"File not found: {path}") from None
+
+        allowed_roots = [Path.home().resolve(), Path(tempfile.gettempdir()).resolve()]
+        if not any(_is_under(p, root) for root in allowed_roots):
+            raise ValidationError(
+                "Imports are restricted to files under your home directory"
+            ) from None
+        for sensitive in (
+            Path(settings.DATA_DIR).resolve(),
+            Path.home().resolve() / ".ssh",
+            Path.home().resolve() / ".gnupg",
+            Path.home().resolve() / ".config",
+        ):
+            if _is_under(p, sensitive):
+                raise ValidationError("Imports from this location are not allowed") from None
+
         data = p.read_bytes()
         ext = p.suffix.lower().lstrip(".")
         content_type = _EXT_TO_MIME.get(ext, "application/octet-stream")

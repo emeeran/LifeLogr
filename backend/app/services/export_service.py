@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from datetime import date
 
 from fpdf import FPDF
@@ -50,15 +51,15 @@ _ENTRY_HTML = """
 # clip anything else outside Latin-1 — otherwise PDF export raises
 # FPDFUnicodeEncodingException on entries containing those characters.
 _PDF_TEXT_REPLACEMENTS = {
-    "—": "-",   # em dash
-    "–": "-",   # en dash
-    "‘": "'",   # left single quote
-    "’": "'",   # right single quote / apostrophe
-    "“": '"',   # left double quote
-    "”": '"',   # right double quote
+    "—": "-",  # em dash
+    "–": "-",  # en dash
+    "‘": "'",  # left single quote
+    "’": "'",  # right single quote / apostrophe
+    "“": '"',  # left double quote
+    "”": '"',  # right double quote
     "…": "...",  # ellipsis
-    "•": "*",   # bullet
-    " ": " ",   # non-breaking space
+    "•": "*",  # bullet
+    " ": " ",  # non-breaking space
     "™": "(TM)",
     "®": "(R)",
 }
@@ -195,8 +196,7 @@ class ExportService:
             import re
 
             plain = re.sub(r"<[^>]+>", "", body_text)
-            plain = plain.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-            plain = plain.replace("&#39;", "'").replace("&quot;", '"')
+            plain = html.unescape(plain)
             pdf.multi_cell(0, 6, _pdf_text(plain))
 
         return bytes(pdf.output())
@@ -241,12 +241,14 @@ class ExportService:
                     if local_file_path.exists():
                         zip_media_path = f"attachments/{entry.entry_date}/{media.filename}"
                         zip_file.writestr(zip_media_path, local_file_path.read_bytes())
-                        attachments_meta.append({
-                            "filename": media.filename,
-                            "size": media.file_size,
-                            "type": media.media_type,
-                            "path": zip_media_path,
-                        })
+                        attachments_meta.append(
+                            {
+                                "filename": media.filename,
+                                "size": media.file_size,
+                                "type": media.media_type,
+                                "path": zip_media_path,
+                            }
+                        )
 
                 # 3. Create frontmatter manually to avoid PyYAML dependency
                 metadata: dict[str, object] = {
@@ -262,16 +264,16 @@ class ExportService:
                     metadata["attachments"] = attachments_meta
 
                 frontmatter_block = self._dump_yaml(metadata)
-                
+
                 # 4. Format entry body with relative links
                 body_content = entry.body or ""
-                
+
                 unread_attachments: list[dict[str, object]] = []
                 for attachment in attachments_meta:
                     filename = str(attachment.get("filename", ""))
                     if filename and filename not in body_content:
                         unread_attachments.append(attachment)
-                
+
                 if unread_attachments:
                     body_content += "\n\n## Attachments\n"
                     for attachment in unread_attachments:

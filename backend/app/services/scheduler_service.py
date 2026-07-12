@@ -196,6 +196,7 @@ class SchedulerService:
                 replace_existing=True,
                 coalesce=True,
                 misfire_grace_time=3600,
+                max_instances=1,
             )
         else:
             if not backup_path:
@@ -208,6 +209,7 @@ class SchedulerService:
                 replace_existing=True,
                 coalesce=True,
                 misfire_grace_time=3600,
+                max_instances=1,
             )
 
     @staticmethod
@@ -244,6 +246,7 @@ class SchedulerService:
                     id="email_sync_boot",
                     replace_existing=True,
                     coalesce=True,
+                    max_instances=1,
                 )
 
     @staticmethod
@@ -384,9 +387,7 @@ class SchedulerService:
                     backup_path=str(backup_path),
                     retention=int(retention),
                 )
-                logger.info(
-                    "Restored local backup schedule (cron=%s, path=%s)", cron, backup_path
-                )
+                logger.info("Restored local backup schedule (cron=%s, path=%s)", cron, backup_path)
             else:
                 _clear_schedule()
         except Exception:
@@ -465,9 +466,7 @@ class SchedulerService:
         from sqlalchemy import select
 
         async with async_session() as session:
-            reminders = (
-                await session.execute(select(Reminder))
-            ).scalars().all()
+            reminders = (await session.execute(select(Reminder))).scalars().all()
 
         active_ids = {r.id for r in reminders if r.is_active}
         # Remove jobs for reminders that no longer exist or are inactive.
@@ -548,9 +547,7 @@ class SchedulerService:
 
         try:
             async with async_session() as session:
-                reminders = (
-                    await session.execute(select(Reminder))
-                ).scalars().all()
+                reminders = (await session.execute(select(Reminder))).scalars().all()
             now = datetime.now(timezone.utc)
             for r in reminders:
                 if not r.is_active:
@@ -590,13 +587,17 @@ class SchedulerService:
 
         async with async_session() as session:
             active = (
-                await session.execute(
-                    select(EmailAccount.id).where(
-                        EmailAccount.is_active == True,  # noqa: E712
-                        EmailAccount.sync_enabled == True,  # noqa: E712
+                (
+                    await session.execute(
+                        select(EmailAccount.id).where(
+                            EmailAccount.is_active == True,  # noqa: E712
+                            EmailAccount.sync_enabled == True,  # noqa: E712
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         job = sched.get_job("email_sync")
         if not active:
@@ -613,8 +614,15 @@ class SchedulerService:
             replace_existing=True,
             coalesce=True,
             misfire_grace_time=600,
+            max_instances=1,
         )
         return 1
+
+
+# Guards the email sync so the one-off boot job and the recurring interval job
+# (different APScheduler IDs, so per-job max_instances doesn't prevent overlap)
+# can't run concurrently against the single-writer SQLite DB.
+_email_sync_lock = asyncio.Lock()
 
 
 async def _run_email_sync() -> None:
@@ -623,15 +631,19 @@ async def _run_email_sync() -> None:
     Opens its own DB session (APScheduler runs outside FastAPI DI). Never
     raises; per-account failures are logged by ``EmailSyncService``.
     """
-    from app.core.database import async_session
-    from app.services.email_service import EmailSyncService
+    if _email_sync_lock.locked():
+        logger.info("Email sync already in progress; skipping this run")
+        return
+    async with _email_sync_lock:
+        from app.core.database import async_session
+        from app.services.email_service import EmailSyncService
 
-    logger.info("Running scheduled email sync")
-    try:
-        async with async_session() as session:
-            await EmailSyncService(session).sync_all_accounts()
-    except Exception:
-        logger.error("Scheduled email sync failed", exc_info=True)
+        logger.info("Running scheduled email sync")
+        try:
+            async with async_session() as session:
+                await EmailSyncService(session).sync_all_accounts()
+        except Exception:
+            logger.error("Scheduled email sync failed", exc_info=True)
 
 
 async def _run_cloud_backup(config_id: int) -> None:
@@ -657,9 +669,7 @@ async def _run_cloud_backup(config_id: int) -> None:
             if snapshot.status == "completed":
                 _mark_backup_run()
     except Exception:
-        logger.error(
-            "Scheduled cloud backup failed (config_id=%d)", config_id, exc_info=True
-        )
+        logger.error("Scheduled cloud backup failed (config_id=%d)", config_id, exc_info=True)
 
 
 async def _checkpoint_wal_robust(attempts: int = 5, delay: float = 0.5) -> bool:
@@ -766,9 +776,7 @@ async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:
 
     try:
         async with async_session() as session:
-            result = await session.execute(
-                select(Reminder).where(Reminder.id == reminder_id)
-            )
+            result = await session.execute(select(Reminder).where(Reminder.id == reminder_id))
             reminder = result.scalar_one_or_none()
             if reminder is None or not reminder.is_active:
                 return  # deleted or deactivated since the job was queued
@@ -780,9 +788,7 @@ async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:
                 reminder.last_fired_at = datetime.now(timezone.utc)
                 await session.commit()
     except Exception:
-        logger.error(
-            "Failed to fire reminder %d", reminder_id, exc_info=True
-        )
+        logger.error("Failed to fire reminder %d", reminder_id, exc_info=True)
 
 
 def _reminder_due_for_catchup(reminder: Any, now_utc: datetime) -> bool:

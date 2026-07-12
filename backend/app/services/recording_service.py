@@ -154,9 +154,7 @@ class VoiceRecordingService:
                 "not in use by another app, then try again."
             )
 
-        media = await self.media_svc.upload(
-            rec.entry_id, "recording.ogg", "audio/ogg", ogg_bytes
-        )
+        media = await self.media_svc.upload(rec.entry_id, "recording.ogg", "audio/ogg", ogg_bytes)
         recording = VoiceRecording(
             entry_id=rec.entry_id,
             media_id=media.id,

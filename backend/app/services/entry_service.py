@@ -39,7 +39,10 @@ class EntryService:
             await self.db.flush()
         await self.db.commit()
         await self.db.refresh(entry)
-        EnrichmentService.schedule(entry.id, entry.title, entry.body)
+        # Never enrich encrypted entries — their body column holds ciphertext,
+        # which must not be sent to the LLM or indexed.
+        if not entry.is_encrypted:
+            EnrichmentService.schedule(entry.id, entry.title, entry.body)
         return entry
 
     async def get(self, entry_id: int) -> Entry:
@@ -97,11 +100,16 @@ class EntryService:
                 self.db.add_all([EntryTag(entry_id=entry_id, tag_id=tid) for tid in to_add])
             if to_remove:
                 await self.db.execute(
-                    delete(EntryTag).where(EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(to_remove))
+                    delete(EntryTag).where(
+                        EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(to_remove)
+                    )
                 )
         await self.db.commit()
         await self.db.refresh(entry)
-        EnrichmentService.schedule(entry.id, entry.title, entry.body)
+        # Never enrich encrypted entries — their body column holds ciphertext,
+        # which must not be sent to the LLM or indexed.
+        if not entry.is_encrypted:
+            EnrichmentService.schedule(entry.id, entry.title, entry.body)
         return entry
 
     async def soft_delete(self, entry_id: int) -> None:
@@ -242,9 +250,7 @@ class EntryService:
                     "WHERE entries_fts MATCH :q AND e.is_deleted = 0"
                 )
                 total = (await self.db.execute(count_sql, {"q": fts_query})).scalar_one()
-                result = await self.db.execute(
-                    select(Entry).where(Entry.id.in_(entry_ids))
-                )
+                result = await self.db.execute(select(Entry).where(Entry.id.in_(entry_ids)))
                 # Preserve FTS order
                 entry_map = {e.id: e for e in result.scalars().all()}
                 return [entry_map[eid] for eid in entry_ids if eid in entry_map], total

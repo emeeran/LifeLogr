@@ -30,21 +30,25 @@ def _settings_file() -> Path:
     return Path(settings.DATA_DIR) / ".runtime-settings.json"
 
 
+# Persisted mutable settings; the JSON key matches the settings attribute name.
+_PERSISTED_SETTING_FIELDS: tuple[str, ...] = (
+    "OLLAMA_MODEL",
+    "OLLAMA_BASE_URL",
+    "OLLAMA_EMBED_MODEL",
+    "AI_ENABLE_EMBEDDINGS",
+    "AI_ENABLE_TAG_SUGGESTIONS",
+    "AI_ENABLE_SENTIMENT",
+    "AI_ENABLE_SUMMARIZATION",
+    "AI_ENABLE_REFLECTION_PROMPTS",
+    "AI_ENABLE_WRITER_BLOCK_HELPER",
+    "EMAIL_SYNC_INTERVAL_MINUTES",
+    "EMAIL_SYNC_ON_STARTUP",
+)
+
+
 def _persist_settings() -> None:
     """Write current mutable settings to disk so they survive restarts."""
-    data = {
-        "OLLAMA_MODEL": settings.OLLAMA_MODEL,
-        "OLLAMA_BASE_URL": settings.OLLAMA_BASE_URL,
-        "OLLAMA_EMBED_MODEL": settings.OLLAMA_EMBED_MODEL,
-        "AI_ENABLE_EMBEDDINGS": settings.AI_ENABLE_EMBEDDINGS,
-        "AI_ENABLE_TAG_SUGGESTIONS": settings.AI_ENABLE_TAG_SUGGESTIONS,
-        "AI_ENABLE_SENTIMENT": settings.AI_ENABLE_SENTIMENT,
-        "AI_ENABLE_SUMMARIZATION": settings.AI_ENABLE_SUMMARIZATION,
-        "AI_ENABLE_REFLECTION_PROMPTS": settings.AI_ENABLE_REFLECTION_PROMPTS,
-        "AI_ENABLE_WRITER_BLOCK_HELPER": settings.AI_ENABLE_WRITER_BLOCK_HELPER,
-        "EMAIL_SYNC_INTERVAL_MINUTES": settings.EMAIL_SYNC_INTERVAL_MINUTES,
-        "EMAIL_SYNC_ON_STARTUP": settings.EMAIL_SYNC_ON_STARTUP,
-    }
+    data = {name: getattr(settings, name) for name in _PERSISTED_SETTING_FIELDS}
     try:
         Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
         _settings_file().write_text(json.dumps(data, indent=2))
@@ -63,22 +67,9 @@ def load_persisted_settings() -> None:
         return
     try:
         data = json.loads(path.read_text())
-        mapping = {
-            "OLLAMA_MODEL": "OLLAMA_MODEL",
-            "OLLAMA_BASE_URL": "OLLAMA_BASE_URL",
-            "OLLAMA_EMBED_MODEL": "OLLAMA_EMBED_MODEL",
-            "AI_ENABLE_EMBEDDINGS": "AI_ENABLE_EMBEDDINGS",
-            "AI_ENABLE_TAG_SUGGESTIONS": "AI_ENABLE_TAG_SUGGESTIONS",
-            "AI_ENABLE_SENTIMENT": "AI_ENABLE_SENTIMENT",
-            "AI_ENABLE_SUMMARIZATION": "AI_ENABLE_SUMMARIZATION",
-            "AI_ENABLE_REFLECTION_PROMPTS": "AI_ENABLE_REFLECTION_PROMPTS",
-            "AI_ENABLE_WRITER_BLOCK_HELPER": "AI_ENABLE_WRITER_BLOCK_HELPER",
-            "EMAIL_SYNC_INTERVAL_MINUTES": "EMAIL_SYNC_INTERVAL_MINUTES",
-            "EMAIL_SYNC_ON_STARTUP": "EMAIL_SYNC_ON_STARTUP",
-        }
-        for json_key, settings_attr in mapping.items():
-            if json_key in data:
-                setattr(settings, settings_attr, data[json_key])
+        for name in _PERSISTED_SETTING_FIELDS:
+            if name in data:
+                setattr(settings, name, data[name])
         logger.info("Loaded persisted settings from %s", path)
     except Exception:
         logger.warning("Failed to load persisted settings", exc_info=True)
@@ -220,6 +211,17 @@ async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
 async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
     """Update mutable runtime settings (AI feature flags, model)."""
     if data.ai:
+        # The Ollama URL is user-settable and proxies journal content to an
+        # arbitrary host — restrict it to http(s) to block obvious SSRF.
+        if data.ai.ollama_base_url is not None:
+            from urllib.parse import urlparse
+
+            from fastapi import HTTPException
+
+            if urlparse(data.ai.ollama_base_url).scheme.lower() not in ("http", "https"):
+                raise HTTPException(
+                    status_code=400, detail="Ollama URL must use http or https"
+                )
         mapping = {
             "ollama_model": "OLLAMA_MODEL",
             "ollama_base_url": "OLLAMA_BASE_URL",

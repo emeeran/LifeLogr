@@ -66,7 +66,9 @@ class TagService:
             row[0]
             for row in (
                 await self.db.execute(
-                    select(EntryTag.tag_id).where(EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(tag_ids))
+                    select(EntryTag.tag_id).where(
+                        EntryTag.entry_id == entry_id, EntryTag.tag_id.in_(tag_ids)
+                    )
                 )
             ).fetchall()
         }

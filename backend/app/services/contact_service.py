@@ -23,6 +23,7 @@ from app.schemas.contact import (
     ContactUpdate,
     _normalize_email,
 )
+from app.services.media_service import _BLOCKED_SIGNATURES
 
 logger = logging.getLogger(__name__)
 
@@ -253,9 +254,7 @@ def serialize_vcard(c: Contact) -> str:
         postal = addr.get("postal_code", "") if isinstance(addr, dict) else ""
         country = addr.get("country", "") if isinstance(addr, dict) else ""
         atype = addr.get("type", "home") if isinstance(addr, dict) else "home"
-        lines.append(
-            f"ADR;TYPE={atype};;{street};{city};{region};{postal};{country}"
-        )
+        lines.append(f"ADR;TYPE={atype};;{street};{city};{region};{postal};{country}")
     for site in getattr(c, "websites", None) or []:
         lines.append(f"URL:{site}")
     for d in getattr(c, "dates", None) or []:
@@ -268,7 +267,9 @@ def serialize_vcard(c: Contact) -> str:
     for im in getattr(c, "im_handles", None) or []:
         v = im.get("value", "") if isinstance(im, dict) else str(im)
         if v:
-            lines.append(f"IMPP;TYPE={im.get('type', 'other') if isinstance(im, dict) else 'other'}:{v}")
+            lines.append(
+                f"IMPP;TYPE={im.get('type', 'other') if isinstance(im, dict) else 'other'}:{v}"
+            )
     if c.company:
         lines.append(f"ORG:{c.company}")
     if c.title:
@@ -369,9 +370,7 @@ class ContactService:
         The selectin ``groups`` relationship is re-read on the next query.
         """
         await self.db.execute(
-            delete(contact_group_members).where(
-                contact_group_members.c.contact_id == contact_id
-            )
+            delete(contact_group_members).where(contact_group_members.c.contact_id == contact_id)
         )
         if not group_ids:
             return
@@ -403,7 +402,9 @@ class ContactService:
             im_handles=[i.model_dump() for i in data.im_handles] if data.im_handles else None,
             websites=data.websites,
             dates=[d.model_dump() for d in data.dates] if data.dates else None,
-            relationships=[r.model_dump() for r in data.relationships] if data.relationships else None,
+            relationships=[r.model_dump() for r in data.relationships]
+            if data.relationships
+            else None,
             notes=data.notes,
             is_favorite=data.is_favorite,
             source="manual",
@@ -462,8 +463,12 @@ class ContactService:
         favorites_only: bool = False,
     ) -> int:
         """Total non-deleted contacts matching the optional filters."""
-        stmt = select(func.count()).select_from(Contact).where(
-            Contact.is_deleted == False  # noqa: E712
+        stmt = (
+            select(func.count())
+            .select_from(Contact)
+            .where(
+                Contact.is_deleted == False  # noqa: E712
+            )
         )
         if search:
             like = f"%{search.lower()}%"
@@ -579,9 +584,7 @@ class ContactService:
         await self.db.refresh(group)
         return await self._group_response(group)
 
-    async def update_group(
-        self, group_id: int, data: ContactGroupUpdate
-    ) -> ContactGroupResponse:
+    async def update_group(self, group_id: int, data: ContactGroupUpdate) -> ContactGroupResponse:
         group = await self._get_group(group_id)
         if data.name is not None and data.name != group.name:
             await self._assert_group_name_unique(data.name, exclude_id=group_id)
@@ -607,9 +610,7 @@ class ContactService:
             raise NotFoundError(f"Contact group {group_id} not found")
         return group
 
-    async def _assert_group_name_unique(
-        self, name: str, exclude_id: int | None = None
-    ) -> None:
+    async def _assert_group_name_unique(self, name: str, exclude_id: int | None = None) -> None:
         stmt = select(ContactGroup.id).where(ContactGroup.name == name)
         if exclude_id is not None:
             stmt = stmt.where(ContactGroup.id != exclude_id)
@@ -633,10 +634,7 @@ class ContactService:
             conds.append(EmailMessage.to_addresses.like(f"%{a}%"))
             conds.append(EmailMessage.cc_addresses.like(f"%{a}%"))
         stmt = (
-            select(EmailMessage)
-            .where(or_(*conds))
-            .order_by(EmailMessage.sent_at.desc())
-            .limit(100)
+            select(EmailMessage).where(or_(*conds)).order_by(EmailMessage.sent_at.desc()).limit(100)
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
@@ -645,6 +643,10 @@ class ContactService:
     async def set_photo(self, contact_id: int, data: bytes, filename: str) -> Contact:
         if len(data) > _PHOTO_MAX_BYTES:
             raise MediaSizeError("Contact photo must be under 8 MB")
+        for sig, label in _BLOCKED_SIGNATURES.items():
+            if data[: len(sig)] == sig:
+                logger.warning("Blocked contact photo upload (detected %s)", label)
+                raise MediaSizeError(f"File type not allowed: detected {label}")
         contact = await self._get(contact_id)
         ext = "".join(Path(filename).suffix.lower()[-5:]).lower()
         if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
@@ -711,9 +713,7 @@ class ContactService:
                     nickname=entry.get("nickname"),
                     phones=phones_typed or None,
                     phone=phones_typed[0]["value"] if phones_typed else None,
-                    phone_secondary=(
-                        phones_typed[1]["value"] if len(phones_typed) > 1 else None
-                    ),
+                    phone_secondary=(phones_typed[1]["value"] if len(phones_typed) > 1 else None),
                     addresses=entry.get("addresses") or None,
                     websites=entry.get("websites") or None,
                     dates=entry.get("dates") or None,
@@ -785,11 +785,7 @@ class ContactService:
             await self.db.flush()
             return contact
         existing.last_seen_at = now
-        if (
-            existing.source == "email"
-            and display_name
-            and not existing.name
-        ):
+        if existing.source == "email" and display_name and not existing.name:
             existing.name = display_name
         await self.db.flush()
         return existing

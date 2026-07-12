@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import time
@@ -56,7 +57,9 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
     # drive.file: create/access the visible "LifeLogr Backups" folder.
     # drive.appdata: retained so older hidden backups can be migrated out.
-    scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata"
+    scopes = (
+        "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata"
+    )
     auth_base_url = "https://accounts.google.com/o/oauth2/v2/auth"
     state = _state.issue()
 
@@ -160,8 +163,8 @@ async def oauth_callback(
 
 def _render_error_page(detail: str) -> HTMLResponse:
     """Helper to render a beautiful error page."""
-    html = _ERROR_HTML_TEMPLATE.replace("{{DETAIL}}", detail)
-    return HTMLResponse(content=html, status_code=400)
+    page = _ERROR_HTML_TEMPLATE.replace("{{DETAIL}}", html.escape(detail))
+    return HTMLResponse(content=page, status_code=400)
 
 
 _SUCCESS_HTML_PAGE = """<!DOCTYPE html>

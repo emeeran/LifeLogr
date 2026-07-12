@@ -117,9 +117,15 @@ class ContactCreate(BaseModel):
     is_favorite: bool = False
     group_ids: list[int] | None = None
 
-    model_config = ConfigDict(json_schema_extra={
-        "example": {"name": "Ada Lovelace", "email": "ada@example.com", "company": "Analytical Inc."}
-    })
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Ada Lovelace",
+                "email": "ada@example.com",
+                "company": "Analytical Inc.",
+            }
+        }
+    )
 
 
 class ContactUpdate(BaseModel):

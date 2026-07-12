@@ -21,10 +21,6 @@ export const useNotesStore = defineStore('notes', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  function clearError() {
-    error.value = null
-  }
-
   async function fetchNotes(params?: NoteListParams) {
     loading.value = true
     error.value = null
@@ -90,16 +86,6 @@ export const useNotesStore = defineStore('notes', () => {
       if (currentNote.value?.id === id) currentNote.value = null
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to delete note'
-      throw e
-    }
-  }
-
-  async function restoreNote(id: number) {
-    error.value = null
-    try {
-      return await notesApi.restore(id)
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Failed to restore note'
       throw e
     }
   }
@@ -205,14 +191,12 @@ export const useNotesStore = defineStore('notes', () => {
     total,
     loading,
     error,
-    clearError,
     fetchNotes,
     fetchFolders,
     selectNote,
     createNote,
     updateNote,
     deleteNote,
-    restoreNote,
     togglePin,
     createFolder,
     deleteFolder,

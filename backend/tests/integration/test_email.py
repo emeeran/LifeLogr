@@ -80,9 +80,7 @@ class TestEmailAccounts:
         assert listing.status_code == 200
         assert any(a["id"] == acct["id"] for a in listing.json())
 
-        upd = await client.put(
-            f"/api/v1/email/accounts/{acct['id']}", json={"label": "Renamed"}
-        )
+        upd = await client.put(f"/api/v1/email/accounts/{acct['id']}", json={"label": "Renamed"})
         assert upd.status_code == 200
         assert upd.json()["label"] == "Renamed"
 
@@ -185,9 +183,7 @@ class TestEmailAttachments:
         assert body["id"]
 
     async def test_oversize_attachment_rejected(self, client, monkeypatch):
-        monkeypatch.setattr(
-            email_router.settings, "EMAIL_MAX_ATTACHMENT_SIZE_BYTES", 5
-        )
+        monkeypatch.setattr(email_router.settings, "EMAIL_MAX_ATTACHMENT_SIZE_BYTES", 5)
         files = {"file": ("big.txt", b"x" * 20, "text/plain")}
         resp = await client.post("/api/v1/email/attachments", files=files)
         assert resp.status_code == 400

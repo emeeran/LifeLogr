@@ -5,8 +5,10 @@ from __future__ import annotations
 # Patch sqlite3 with pysqlite3 in PyInstaller builds where the bundled
 # sqlite3 has issues with qualified column names (e.g. "entries.title").
 import sys
+
 try:
     import pysqlite3 as _pysqlite3  # type: ignore[import-untyped]
+
     if getattr(sys, "frozen", False):
         sys.modules["sqlite3"] = _pysqlite3
 except ImportError:
@@ -51,6 +53,12 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database tables on startup, clean up on shutdown."""
     logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
+    if settings.SECRET_KEY == "change-me-before-production":
+        logger.warning(
+            "SECRET_KEY is the default — encrypted credentials (IMAP/SMTP/cloud "
+            "OAuth) are keyed off it. Run a deployment that generates a key, or "
+            "set SECRET_KEY in .env. (The packaged launcher does this for you.)"
+        )
     # Load persisted runtime settings (model selections, feature toggles)
     try:
         from app.routers.settings import load_persisted_settings
@@ -155,8 +163,21 @@ async def log_requests(request: Request, call_next: Any) -> Response:
 
 # ── Rate limiting (simple in-memory) ──
 _rate_store: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT = 60
-RATE_WINDOW = 60.0
+
+
+def _parse_rate_limit(raw: str) -> tuple[int, float]:
+    """Parse 'N/period' (e.g. '60/minute') → (count, window_seconds)."""
+    try:
+        count_str, period = raw.lower().split("/", 1)
+        count = int(count_str)
+        window = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(period, 60.0)
+    except (ValueError, AttributeError):
+        return 60, 60.0
+    return max(1, count), window
+
+
+# Driven by settings.RATE_LIMIT (e.g. "60/minute"); falls back to 60/min.
+RATE_LIMIT, RATE_WINDOW = _parse_rate_limit(settings.RATE_LIMIT)
 
 
 @app.middleware("http")
@@ -367,7 +388,7 @@ if _FRONTEND_DIST.is_dir():
         target = file_path if file_path.is_file() else (_FRONTEND_DIST / "index.html")
         # index.html must always revalidate so new content-hashed assets are
         # picked up; the hashed asset files themselves can be cached forever.
-        is_index = (target.name == "index.html")
+        is_index = target.name == "index.html"
         headers = (
             {"Cache-Control": "no-cache, must-revalidate"}
             if is_index

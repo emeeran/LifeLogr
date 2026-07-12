@@ -36,7 +36,9 @@ async def test_create_page_and_it_appears_in_note(client: AsyncClient):
 async def test_update_page(client: AsyncClient):
     note = await _make_note(client)
     nid = note["id"]
-    page = (await client.post(f"/api/v1/notes/{nid}/pages", json={"title": "t", "body": "b"})).json()
+    page = (
+        await client.post(f"/api/v1/notes/{nid}/pages", json={"title": "t", "body": "b"})
+    ).json()
 
     r = await client.patch(
         f"/api/v1/notes/{nid}/pages/{page['id']}",
@@ -66,11 +68,13 @@ async def test_reorder_pages(client: AsyncClient):
     # Reverse the order.
     r = await client.post(
         f"/api/v1/notes/{nid}/pages/reorder",
-        json={"items": [
-            {"id": p3["id"], "sort_order": 0},
-            {"id": p2["id"], "sort_order": 1},
-            {"id": p1["id"], "sort_order": 2},
-        ]},
+        json={
+            "items": [
+                {"id": p3["id"], "sort_order": 0},
+                {"id": p2["id"], "sort_order": 1},
+                {"id": p1["id"], "sort_order": 2},
+            ]
+        },
     )
     assert r.status_code == 200, r.text
 
@@ -116,8 +120,10 @@ async def test_pages_cascade_delete_with_note(client: AsyncClient, db_session):
     await db_session.commit()
 
     leftover = (
-        await db_session.execute(select(NotePage).where(NotePage.id.in_(page_ids)))
-    ).scalars().all()
+        (await db_session.execute(select(NotePage).where(NotePage.id.in_(page_ids))))
+        .scalars()
+        .all()
+    )
     assert leftover == []
 
 

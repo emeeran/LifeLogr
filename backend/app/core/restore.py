@@ -49,9 +49,7 @@ def _check_expected_tables(db_path: Path) -> None:
     try:
         tables = {
             row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         missing = _EXPECTED_TABLES - tables
         if missing:
@@ -83,9 +81,7 @@ async def checkpoint_wal(db_path: Path) -> None:
             )
 
 
-async def _checkpoint_live(
-    live_db: Path, session: AsyncSession | None = None
-) -> None:
+async def _checkpoint_live(live_db: Path, session: AsyncSession | None = None) -> None:
     """Best-effort WAL checkpoint of the live DB before a restore/swap.
 
     Prefers the caller's *session* connection so we don't open a second pooled
@@ -119,9 +115,7 @@ def validate_extracted_db(db_path: Path) -> None:
     if db_path.stat().st_size == 0:
         raise ValueError("Extracted database is empty (0 bytes)")
     if not _is_sqlite_file(db_path):
-        raise ValueError(
-            "Extracted file is not a valid SQLite database (bad header)"
-        )
+        raise ValueError("Extracted file is not a valid SQLite database (bad header)")
     _check_integrity(db_path)
     _check_expected_tables(db_path)
     logger.info("Extracted database validated: %s", db_path)
@@ -224,9 +218,7 @@ async def atomic_restore(
             restored.append("media")
         except BaseException:
             # Media failed — roll back the DB too
-            logger.error(
-                "Media restore failed, rolling back database too", exc_info=True
-            )
+            logger.error("Media restore failed, rolling back database too", exc_info=True)
             if db_swapped and db_backup.exists():
                 await reinit_engine()
                 _atomic_write(db_backup, live_db)

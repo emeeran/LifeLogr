@@ -76,7 +76,9 @@ class NoteService:
         )
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
-            base_q.order_by(Note.is_pinned.desc(), Note.updated_at.desc()).offset(offset).limit(limit)
+            base_q.order_by(Note.is_pinned.desc(), Note.updated_at.desc())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all()), total
 
@@ -153,9 +155,7 @@ class NoteService:
                 )
             )
         ).scalar_one()
-        page = NotePage(
-            note_id=note_id, title=data.title, body=data.body, sort_order=max_order + 1
-        )
+        page = NotePage(note_id=note_id, title=data.title, body=data.body, sort_order=max_order + 1)
         self.db.add(page)
         await self.db.commit()
         await self.db.refresh(page)
@@ -183,12 +183,16 @@ class NoteService:
         await self.get(note_id)
         order_map = {it.id: it.sort_order for it in items}
         rows = (
-            await self.db.execute(
-                select(NotePage).where(
-                    NotePage.note_id == note_id, NotePage.id.in_(list(order_map))
+            (
+                await self.db.execute(
+                    select(NotePage).where(
+                        NotePage.note_id == note_id, NotePage.id.in_(list(order_map))
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for page in rows:
             page.sort_order = order_map[page.id]
         await self.db.commit()
@@ -241,7 +245,9 @@ class NoteService:
             Note.is_deleted == False,  # noqa: E712
             (Note.body.ilike(pattern)) | (Note.title.ilike(pattern)),
         )
-        total = (await self.db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
         result = await self.db.execute(
             base.order_by(Note.updated_at.desc()).offset(offset).limit(limit)
         )
@@ -326,7 +332,8 @@ class NoteService:
     async def _get_folder(self, folder_id: int) -> NoteFolder:
         result = await self.db.execute(
             select(NoteFolder).where(
-                NoteFolder.id == folder_id, NoteFolder.is_deleted == False  # noqa: E712
+                NoteFolder.id == folder_id,
+                NoteFolder.is_deleted == False,  # noqa: E712
             )
         )
         folder = result.scalar_one_or_none()

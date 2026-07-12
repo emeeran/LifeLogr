@@ -115,8 +115,17 @@ class LocalFileProvider:
 
         self._base = Path(base_dir)
 
+    def _safe_target(self, path: str):
+        """Resolve ``path`` under the base dir, rejecting traversal escapes."""
+        target = (self._base / path).resolve()
+        try:
+            target.relative_to(self._base.resolve())
+        except ValueError:
+            raise ValueError(f"Path escapes sync base: {path}") from None
+        return target
+
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
-        target = self._base / path
+        target = self._safe_target(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         return str(target)
@@ -132,7 +141,7 @@ class LocalFileProvider:
         return str(target)
 
     async def download(self, path: str) -> bytes:
-        target = self._base / path
+        target = self._safe_target(path)
         return target.read_bytes()
 
     async def list_files(self, prefix: str) -> list[str]:
@@ -143,7 +152,7 @@ class LocalFileProvider:
         ]
 
     async def delete(self, path: str) -> None:
-        target = self._base / path
+        target = self._safe_target(path)
         if target.exists():
             target.unlink()
 

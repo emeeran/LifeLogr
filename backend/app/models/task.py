@@ -63,9 +63,7 @@ class Task(Base):
         lazy="selectin",
         order_by="Task.sort_order",
     )
-    parent: Mapped["Task | None"] = relationship(
-        back_populates="children", remote_side="Task.id"
-    )
+    parent: Mapped["Task | None"] = relationship(back_populates="children", remote_side="Task.id")
 
     __table_args__ = (
         Index("ix_tasks_list_completed_sort", "list_id", "is_completed", "sort_order"),

@@ -8,6 +8,7 @@ creds are rewritten whenever BackupService refreshes (see BoxProvider).
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import time
@@ -141,7 +142,7 @@ async def oauth_callback(
 
 def _render_error_page(detail: str) -> HTMLResponse:
     return HTMLResponse(
-        content=_ERROR_HTML.replace("{{DETAIL}}", str(detail)), status_code=400
+        content=_ERROR_HTML.replace("{{DETAIL}}", html.escape(str(detail))), status_code=400
     )
 
 

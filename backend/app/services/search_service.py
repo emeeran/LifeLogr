@@ -118,12 +118,9 @@ class SearchService:
 
         # ── ILIKE fallback ──
         pattern = f"%{query}%"
-        base = (
-            select(Note.id, Note.folder_id, Note.updated_at, Note.title, Note.body)
-            .where(
-                Note.is_deleted == False,  # noqa: E712
-                (Note.title.ilike(pattern)) | (Note.body.ilike(pattern)),
-            )
+        base = select(Note.id, Note.folder_id, Note.updated_at, Note.title, Note.body).where(
+            Note.is_deleted == False,  # noqa: E712
+            (Note.title.ilike(pattern)) | (Note.body.ilike(pattern)),
         )
         if tag_ids:
             base = base.where(
@@ -133,9 +130,7 @@ class SearchService:
             await self.db.execute(select(func.count()).select_from(base.subquery()))
         ).scalar_one()
         rows = (
-            await self.db.execute(
-                base.order_by(Note.updated_at.desc()).offset(offset).limit(limit)
-            )
+            await self.db.execute(base.order_by(Note.updated_at.desc()).offset(offset).limit(limit))
         ).all()
         return [
             SearchResultEntry(

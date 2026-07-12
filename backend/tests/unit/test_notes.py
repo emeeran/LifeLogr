@@ -124,12 +124,18 @@ class TestNoteEncryption:
             f"/api/v1/notes/{note['id']}/encryption/decrypt", json={"passphrase": "pw123"}
         )
         assert r.json()["is_encrypted"] is False
-        assert (await client.get(f"/api/v1/notes/{note['id']}")).json()["body"] == "Top secret content"
+        assert (await client.get(f"/api/v1/notes/{note['id']}")).json()[
+            "body"
+        ] == "Top secret content"
 
     async def test_encrypt_already_encrypted_errors(self, client: AsyncClient):
         note = await _create_note(client, body="x")
-        await client.post(f"/api/v1/notes/{note['id']}/encryption/encrypt", json={"passphrase": "pw"})
-        r = await client.post(f"/api/v1/notes/{note['id']}/encryption/encrypt", json={"passphrase": "pw"})
+        await client.post(
+            f"/api/v1/notes/{note['id']}/encryption/encrypt", json={"passphrase": "pw"}
+        )
+        r = await client.post(
+            f"/api/v1/notes/{note['id']}/encryption/encrypt", json={"passphrase": "pw"}
+        )
         assert r.status_code >= 400
 
 
@@ -194,12 +200,8 @@ class TestNoteMedia:
         assert any(m["id"] == mid for m in listed)
 
         # Delete removes it (serve then 404s)
-        assert (
-            await client.delete(f"/api/v1/notes/{note['id']}/media/{mid}")
-        ).status_code == 204
-        assert (
-            await client.get(f"/api/v1/notes/{note['id']}/media/{mid}/file")
-        ).status_code == 404
+        assert (await client.delete(f"/api/v1/notes/{note['id']}/media/{mid}")).status_code == 204
+        assert (await client.get(f"/api/v1/notes/{note['id']}/media/{mid}/file")).status_code == 404
 
     async def test_reject_blocked_type(self, client: AsyncClient):
         note = await _create_note(client)
