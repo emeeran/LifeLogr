@@ -26,6 +26,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.paths import resolve_backup_path
 from app.core.restore import (
     _atomic_media_swap,
     _atomic_write,
@@ -880,3 +881,87 @@ class TestCheckpointWalRobust:
 
         assert await _checkpoint_wal_robust(attempts=3, delay=0) is False
         assert engine.execute_count == 3  # retried all attempts
+
+
+# ── Phase 1: backup-path containment (security) ──────────────────────────────
+
+
+class TestResolveBackupPath:
+    """resolve_backup_path confines unauthenticated backup writes to safe roots."""
+
+    def test_accepts_home_subdir(self, tmp_path: Path, monkeypatch) -> None:
+        home = tmp_path / "home"
+        home.mkdir()
+        backup = home / "Backups"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        assert resolve_backup_path(backup) == backup.resolve()
+
+    def test_accepts_data_dir_subdir(self, tmp_path: Path, monkeypatch) -> None:
+        data = tmp_path / "data"
+        data.mkdir()
+        monkeypatch.setattr(settings, "DATA_DIR", data)
+        sub = data / "backups"
+        assert resolve_backup_path(sub) == sub.resolve()
+
+    def test_accepts_temp_dir(self, tmp_path: Path) -> None:
+        # tmp_path lives under the system temp dir, which is an allowed root.
+        assert resolve_backup_path(tmp_path) == tmp_path.resolve()
+
+    def test_rejects_system_dirs(self) -> None:
+        for bad in ("/etc", "/usr", "/var/lib/lifelogr-test", "/boot"):
+            with pytest.raises(ValueError):
+                resolve_backup_path(bad)
+
+    def test_rejects_empty_and_none(self) -> None:
+        with pytest.raises(ValueError):
+            resolve_backup_path(None)
+        with pytest.raises(ValueError):
+            resolve_backup_path("")
+
+    def test_rejects_symlink_escape(self, tmp_path: Path) -> None:
+        """A symlink inside an allowed root that resolves to /etc is rejected."""
+        link = tmp_path / "escape"
+        link.symlink_to("/etc")
+        with pytest.raises(ValueError):
+            resolve_backup_path(link)
+
+    def test_extra_allowed_root_extends(self, monkeypatch) -> None:
+        # /opt/... is a system area, normally rejected.
+        target = "/opt/lifelogr-allowlist-test"
+        with pytest.raises(ValueError):
+            resolve_backup_path(target)
+        monkeypatch.setattr(settings, "BACKUP_ALLOWED_ROOTS", "/opt")
+        assert resolve_backup_path(target) == Path(target).resolve()
+
+
+class TestBackupPathContainment:
+    """The unauthenticated loopback endpoints must 400 on unsafe backup paths."""
+
+    async def test_run_now_rejects_system_path(self, client: AsyncClient) -> None:
+        r = await client.post("/api/v1/backup/run-now", params={"backup_path": "/etc"})
+        assert r.status_code == 400
+
+    async def test_schedule_rejects_system_path(self, client: AsyncClient) -> None:
+        try:
+            r = await client.post(
+                "/api/v1/backup/schedule",
+                params={"cron": "0 2 * * *", "backup_path": "/etc", "retention": 5},
+            )
+            assert r.status_code == 400
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+
+
+# ── Phase 1: import size cap (DoS) ───────────────────────────────────────────
+
+
+class TestImportSizeCap:
+    async def test_oversized_import_returns_413(
+        self, client: AsyncClient, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(settings, "MAX_IMPORT_SIZE_BYTES", 256)
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("big.tar.gz", b"x" * 1024, "application/gzip")},
+        )
+        assert r.status_code == 413

@@ -133,6 +133,13 @@ class Settings(BaseSettings):
         "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"
     )
     MAX_MEDIA_SIZE_BYTES: int = 26_214_400  # 25 MB
+    # Hard ceiling on a restored .tar.gz upload — the import streams to disk and
+    # aborts with 413 past this, so an unauthenticated loopback request can't
+    # exhaust memory by streaming a huge payload at /backup/import.
+    MAX_IMPORT_SIZE_BYTES: int = 2 * 1024**3  # 2 GiB
+    # Comma-separated extra roots a local backup may target beyond the defaults
+    # (home, app data dir, temp dir) — e.g. "/media,/mnt" for external drives.
+    BACKUP_ALLOWED_ROOTS: str = ""
 
     # Email client defaults (IMAP/SMTP polling sync)
     EMAIL_SYNC_INTERVAL_MINUTES: int = 10

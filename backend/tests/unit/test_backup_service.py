@@ -40,7 +40,7 @@ class TestBackupSnapshots:
 class TestBoxBackup:
     """Box provider wiring — run_backup constructs BoxProvider and uploads."""
 
-    async def test_run_backup_uses_box_provider(self, db_session):
+    async def test_run_backup_uses_box_provider(self, db_session, tmp_path):
         import json
         from unittest.mock import AsyncMock, patch
 
@@ -66,16 +66,22 @@ class TestBoxBackup:
         await db_session.commit()
         await db_session.refresh(config)
 
+        # _build_backup_archive now returns an on-disk Path (streamed upload),
+        # so hand it a real temp file the finally can unlink.
+        archive = tmp_path / "fake-archive.tar.gz"
+        archive.write_bytes(b"archive")
         box_instance = AsyncMock()
         with (
             patch("app.services.cloud_sync_service.BoxProvider", return_value=box_instance) as mock_cls,
-            patch.object(BackupService, "_create_backup_archive", AsyncMock(return_value=b"archive")),
+            patch.object(BackupService, "_build_backup_archive", AsyncMock(return_value=archive)),
             patch.object(BackupService, "count_all", AsyncMock(return_value={"entries": 0, "media": 0, "notes": 0})),
         ):
             svc = BackupService(db_session)
             snap = await svc.run_backup(config.id)
 
         mock_cls.assert_called_once()  # BoxProvider(creds, on_token_refresh=...)
-        box_instance.upload.assert_awaited_once()
+        box_instance.upload_file.assert_awaited_once()
         await box_instance.close()
         assert snap.status == "completed"
+        # The streamed temp archive is cleaned up after upload.
+        assert not archive.exists()

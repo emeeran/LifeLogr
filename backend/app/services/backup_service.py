@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,13 +88,21 @@ class BackupService:
             if provider is not None:
                 await provider.close()
 
-    async def _create_backup_archive(self) -> bytes:
-        """Create a temporary .tar.gz backup archive in memory."""
-        import io
+    async def _build_backup_archive(self) -> Path:
+        """Build the .tar.gz backup on disk (not in memory); return its path.
+
+        Writing to a temp file avoids buffering the entire — potentially
+        multi-GB — archive in RAM: tarfile streams source files straight to
+        disk rather than into a ``BytesIO``. The caller must ``unlink`` the
+        returned path (``run_backup`` does so in a ``finally``).
+        """
+        import os
         import tarfile
+        import tempfile
 
         from sqlalchemy import text
 
+        from app.core.archive import add_backup_members
         from app.core.config import settings
 
         db_file = settings.db_path
@@ -114,21 +123,11 @@ class BackupService:
             except Exception:
                 logger.warning("WAL checkpoint before backup failed", exc_info=True)
 
-        archive_io = io.BytesIO()
-        with tarfile.open(fileobj=archive_io, mode="w:gz") as tar:
-            if db_file.exists():
-                tar.add(str(db_file), arcname="diarium.diarium")
-                # Include WAL/SHM files as belt-and-suspenders
-                wal_file = db_file.with_suffix(db_file.suffix + "-wal")
-                shm_file = db_file.with_suffix(db_file.suffix + "-shm")
-                if wal_file.exists():
-                    tar.add(str(wal_file), arcname="diarium.diarium-wal")
-                if shm_file.exists():
-                    tar.add(str(shm_file), arcname="diarium.diarium-shm")
-            if media_dir.exists():
-                tar.add(str(media_dir), arcname="media")
-
-        return archive_io.getvalue()
+        fd, archive_name = tempfile.mkstemp(suffix=".tar.gz", dir=str(settings.DATA_DIR))
+        os.close(fd)
+        with tarfile.open(archive_name, "w:gz") as tar:
+            add_backup_members(tar, db_file, media_dir)
+        return Path(archive_name)
 
     async def run_backup(self, config_id: int) -> BackupSnapshot:
         """Perform incremental backup; transfer new/modified data since last sync."""
@@ -181,9 +180,10 @@ class BackupService:
         await self.db.refresh(snapshot)
 
         provider: SyncProvider | None = None
+        archive_path: Path | None = None
         try:
             creds = json.loads(decrypt(config.credentials_encrypted))
-            archive_data = await self._create_backup_archive()
+            archive_path = await self._build_backup_archive()
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             filename = f"lifelogr-backup-{timestamp}.tar.gz"
 
@@ -202,7 +202,7 @@ class BackupService:
                     await provider.migrate_appdata_backups()
                 except Exception:
                     logger.warning("Google Drive App Data migration skipped", exc_info=True)
-                await provider.upload(filename, archive_data, encrypted=False)
+                await provider.upload_file(filename, archive_path, encrypted=False)
                 if getattr(provider, "last_location", "folder") == "appdata":
                     # Token lacks drive.file — backup succeeded but landed in the
                     # hidden App Data folder. Keep status=completed; surface how
@@ -219,7 +219,7 @@ class BackupService:
                     username=creds.get("username", ""),
                     password=creds.get("password", ""),
                 )
-                await provider.upload(filename, archive_data, encrypted=False)
+                await provider.upload_file(filename, archive_path, encrypted=False)
             elif config.provider in ("onedrive", "dropbox"):
                 provider_cls: type[OneDriveProvider] | type[DropboxProvider] = (
                     OneDriveProvider if config.provider == "onedrive" else DropboxProvider
@@ -231,7 +231,7 @@ class BackupService:
                     config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
 
                 provider = provider_cls(creds, on_token_refresh=on_refresh)
-                await provider.upload(filename, archive_data, encrypted=False)
+                await provider.upload_file(filename, archive_path, encrypted=False)
             elif config.provider == "box":
 
                 async def on_refresh_box(
@@ -243,7 +243,7 @@ class BackupService:
                     config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
 
                 provider = BoxProvider(creds, on_token_refresh=on_refresh_box)
-                await provider.upload(filename, archive_data, encrypted=False)
+                await provider.upload_file(filename, archive_path, encrypted=False)
             else:
                 raise ValueError(f"Unsupported backup provider: {config.provider}")
 
@@ -263,6 +263,8 @@ class BackupService:
         finally:
             if provider is not None:
                 await provider.close()
+            if archive_path is not None:
+                Path(archive_path).unlink(missing_ok=True)
 
         snapshot.completed_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -371,6 +373,7 @@ class BackupService:
         import tarfile
         import tempfile
         from pathlib import Path
+        from app.core.archive import extract_tar_safely
         from app.core.config import settings
         from app.core.restore import atomic_restore
 
@@ -444,14 +447,8 @@ class BackupService:
             tmpdir = tempfile.mkdtemp()
             try:
                 with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as tar:
-                    # Defence-in-depth: reject path traversal before extraction.
-                    for member in tar.getmembers():
-                        if member.name.startswith("/") or ".." in member.name:
-                            raise ValueError(f"Invalid archive: path traversal in '{member.name}'")
-                    # `filter="data"` (PEP 706) additionally strips symlinks,
-                    # hardlinks, device files and absolute/parent links — closing
-                    # the symlink-escape vector the manual check above does not cover.
-                    tar.extractall(tmpdir, filter="data")
+                    # Shared traversal + symlink guard (see app.core.archive).
+                    extract_tar_safely(tar, tmpdir)
 
                 extracted_db = Path(tmpdir) / "diarium.diarium"
                 if not extracted_db.exists():

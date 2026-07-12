@@ -94,6 +94,10 @@ class SyncProvider(Protocol):
     """Interface for cloud sync providers."""
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str: ...
+
+    async def upload_file(
+        self, path: str, local_path: str, encrypted: bool = False
+    ) -> str: ...
     async def download(self, path: str) -> bytes: ...
     async def list_files(self, prefix: str) -> list[str]: ...
     async def delete(self, path: str) -> None: ...
@@ -115,6 +119,16 @@ class LocalFileProvider:
         target = self._base / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+        return str(target)
+
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
+        """Stream a local file into place (disk-to-disk; no full in-memory copy)."""
+        import shutil
+
+        target = self._base / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(local_path, "rb") as src, open(target, "wb") as dst:
+            shutil.copyfileobj(src, dst)
         return str(target)
 
     async def download(self, path: str) -> bytes:
@@ -161,6 +175,19 @@ class NextcloudProvider:
             content=data,
             auth=self._auth,
         )
+        resp.raise_for_status()
+        return path
+
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
+        """Stream a local file to WebDAV (httpx streams the open file handle)."""
+        client = self._get_client()
+        with open(local_path, "rb") as fh:
+            resp = await client.put(
+                f"{self._url}/remote.php/dav/files/{self._auth[0]}/{path}",
+                content=fh,
+                auth=self._auth,
+                timeout=300.0,
+            )
         resp.raise_for_status()
         return path
 
@@ -413,6 +440,39 @@ class GoogleDriveProvider:
         self.last_location = look_in
         return path
 
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
+        """Stream a local file to Google Drive.
+
+        Existing files are updated with a streaming media PATCH. The first-ever
+        backup for a name has no streaming create path wired, so it falls back
+        to the bytes-based ``_create_in_folder``; subsequent runs stream.
+        """
+        from pathlib import Path
+
+        token = await self._ensure_valid_token()
+        parent = await self._get_folder_or_appdata()
+        look_in = "appdata" if parent == "appDataFolder" else "folder"
+        file_id = await self._find_file_id(path, look_in=look_in)
+        client = self._get_client()
+        if file_id:
+            url = f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
+            with open(local_path, "rb") as fh:
+                resp = await client.patch(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/octet-stream",
+                    },
+                    content=fh,
+                    timeout=300.0,
+                )
+            resp.raise_for_status()
+            self.last_location = look_in
+            return path
+        await self._create_in_folder(path, Path(local_path).read_bytes(), parent)
+        self.last_location = look_in
+        return path
+
     async def _download_by_id(self, file_id: str) -> bytes:
         token = await self._ensure_valid_token()
         client = self._get_client()
@@ -587,6 +647,25 @@ class OneDriveProvider:
         resp.raise_for_status()
         return path
 
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
+        """Stream a local file to OneDrive (httpx streams the open file handle)."""
+        from urllib.parse import quote
+
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        with open(local_path, "rb") as fh:
+            resp = await client.put(
+                f"{self.GRAPH}:{quote(path)}:/content",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/octet-stream",
+                },
+                content=fh,
+                timeout=300.0,
+            )
+        resp.raise_for_status()
+        return path
+
     async def download(self, path: str) -> bytes:
         from urllib.parse import quote
 
@@ -704,6 +783,24 @@ class DropboxProvider:
             content=data,
             timeout=30.0,
         )
+        resp.raise_for_status()
+        return path
+
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
+        """Stream a local file to Dropbox (httpx streams the open file handle)."""
+        token = await self._ensure_valid_token()
+        client = self._get_client()
+        with open(local_path, "rb") as fh:
+            resp = await client.post(
+                f"{self.CONTENT}/files/upload",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Dropbox-API-Arg": self._api_arg(path, mode="overwrite"),
+                    "Content-Type": "application/octet-stream",
+                },
+                content=fh,
+                timeout=300.0,
+            )
         resp.raise_for_status()
         return path
 
@@ -882,6 +979,28 @@ class BoxProvider:
             files=files,
             timeout=120.0,
         )
+        resp.raise_for_status()
+        return path
+
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
+        """Stream a local file to Box via multipart (file streamed, not buffered)."""
+        token = await self._ensure_valid_token()
+        folder_id = await self._get_folder_id()
+        client = self._get_client()
+        fh = open(local_path, "rb")
+        files = {
+            "attributes": (None, json.dumps({"name": path, "parent": {"id": folder_id}})),
+            "file": (path, fh, "application/octet-stream"),
+        }
+        try:
+            resp = await client.post(
+                f"{self.UPLOAD_API}/files/content",
+                headers={"Authorization": f"Bearer {token}"},
+                files=files,
+                timeout=300.0,
+            )
+        finally:
+            fh.close()
         resp.raise_for_status()
         return path
 

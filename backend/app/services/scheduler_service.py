@@ -275,6 +275,14 @@ class SchedulerService:
             sched.start()
             logger.info("Backup scheduler auto-started")
 
+        # Defence-in-depth: a local backup_path must be contained before we
+        # persist it. The endpoint also checks and returns HTTP 400; this guard
+        # protects non-HTTP callers (restored schedules re-fire via _run_backup).
+        if config_id is None and backup_path:
+            from app.core.paths import resolve_backup_path
+
+            resolve_backup_path(backup_path)
+
         trigger = SchedulerService._cron_trigger(cron_expr)
         SchedulerService._register_backup_job(
             trigger, backup_path=backup_path, retention=retention, config_id=config_id
@@ -684,11 +692,15 @@ async def _checkpoint_wal_robust(attempts: int = 5, delay: float = 0.5) -> bool:
 
 async def _run_backup(backup_path: str, retention: int = 10) -> None:
     """Execute the backup job — creates a .tar.gz archive of DB + media."""
+    from app.core.archive import add_backup_members
     from app.core.config import settings
+    from app.core.paths import resolve_backup_path
 
     logger.info(f"Running scheduled backup to {backup_path}")
 
-    path = Path(backup_path).expanduser()
+    # Constrain writes to user-owned space; blocks arbitrary-path writes from
+    # the unauthenticated loopback endpoints and tampered persisted schedules.
+    path = resolve_backup_path(backup_path)
     path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -709,19 +721,7 @@ async def _run_backup(backup_path: str, retention: int = 10) -> None:
     tmpdir = tempfile.mkdtemp()
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
-            if db_file.exists():
-                tar.add(str(db_file), arcname="diarium.diarium")
-                # Belt-and-suspenders: bundle WAL/SHM so the archive is
-                # consistent even if the checkpoint couldn't fully finish, and
-                # opens correctly when extracted by external tools.
-                wal_file = db_file.with_suffix(db_file.suffix + "-wal")
-                shm_file = db_file.with_suffix(db_file.suffix + "-shm")
-                if wal_file.exists():
-                    tar.add(str(wal_file), arcname="diarium.diarium-wal")
-                if shm_file.exists():
-                    tar.add(str(shm_file), arcname="diarium.diarium-shm")
-            if media_dir.exists():
-                tar.add(str(media_dir), arcname="media")
+            add_backup_members(tar, db_file, media_dir)
         logger.info(f"Backup complete: {archive_path}")
         _mark_backup_run()
     except Exception:

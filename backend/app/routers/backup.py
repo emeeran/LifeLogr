@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,13 +82,16 @@ async def run_configured_backup_now(
     a cloud config via ``BackupService.run_backup``). Actually writes the archive
     (unlike ``/export``, which is a throwaway copy).
     """
-    from fastapi import HTTPException
-
+    from app.core.paths import resolve_backup_path
     from app.services.scheduler_service import _load_schedule, _run_backup
 
     if backup_path:
-        archive = await _run_backup(backup_path, retention)
-        return {"mode": "local", "path": backup_path, "archive": archive}
+        try:
+            resolved = resolve_backup_path(backup_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        archive = await _run_backup(str(resolved), retention)
+        return {"mode": "local", "path": str(resolved), "archive": archive}
 
     entry = _load_schedule()
     if not entry:
@@ -157,6 +160,7 @@ async def export_local_backup(
     """Export the SQLite database and media files as a .tar.gz archive."""
     from datetime import datetime, timezone
 
+    from app.core.archive import add_backup_members
     from app.core.restore import checkpoint_wal
 
     tmpdir = tempfile.mkdtemp()
@@ -173,17 +177,7 @@ async def export_local_backup(
         await checkpoint_wal(db_file)
 
     with tarfile.open(archive_path, "w:gz") as tar:
-        if db_file.exists():
-            tar.add(str(db_file), arcname="diarium.diarium")
-            # Include WAL/SHM files as belt-and-suspenders
-            wal_file = db_file.with_suffix(db_file.suffix + "-wal")
-            shm_file = db_file.with_suffix(db_file.suffix + "-shm")
-            if wal_file.exists():
-                tar.add(str(wal_file), arcname="diarium.diarium-wal")
-            if shm_file.exists():
-                tar.add(str(shm_file), arcname="diarium.diarium-shm")
-        if media_dir.exists():
-            tar.add(str(media_dir), arcname="media")
+        add_backup_members(tar, db_file, media_dir)
 
     background_tasks.add_task(shutil.rmtree, tmpdir, ignore_errors=True)
 
@@ -196,68 +190,80 @@ async def export_local_backup(
 
 @router.post("/import")
 async def import_local_backup(file: UploadFile) -> dict[str, Any]:
-    """Import a .tar.gz archive to restore database and media files."""
-    import io
+    """Import a .tar.gz archive to restore database and media files.
+
+    Streams the upload to a temp file with a hard size cap
+    (``MAX_IMPORT_SIZE_BYTES``) so an unauthenticated loopback request can't
+    exhaust memory, then extracts via the shared traversal-guarded helper and
+    atomically swaps the live data.
+    """
     import tarfile
 
+    from app.core.archive import extract_tar_safely
     from app.core.restore import atomic_restore
 
-    content = await file.read()
+    max_bytes = settings.MAX_IMPORT_SIZE_BYTES
     db_file_path: Path = settings.db_path
     media_dir = settings.MEDIA_DIR
 
-    tmpdir = tempfile.mkdtemp()
+    # Spool the upload to disk in 1 MiB chunks, aborting with 413 past the cap.
+    # Starlette already spools UploadFile to disk past ~1 MiB, but awaiting
+    # file.read() materialises the whole payload — stream it ourselves instead.
+    upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
+    upload_path = Path(upload.name)
+    written = 0
     try:
-        # Extract with path traversal protection
-        with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
-            for member in tar.getmembers():
-                if member.name.startswith("/") or ".." in member.name:
-                    from fastapi import HTTPException
-
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid archive: path traversal in '{member.name}'",
-                    )
-            # filter="data" (PEP 706) strips symlinks/hardlinks/device files,
-            # closing the symlink-escape vector the name check above misses.
-            try:
-                tar.extractall(tmpdir, filter="data")
-            except tarfile.TarError as exc:
-                from fastapi import HTTPException
-
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            if written + len(chunk) > max_bytes:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid archive: {exc}",
-                ) from exc
-
-        extracted_db = Path(tmpdir) / "diarium.diarium"
-        # Backward compat: accept old archives that used "dev.db"
-        if not extracted_db.exists():
-            extracted_db = Path(tmpdir) / "dev.db"
-        extracted_media = Path(tmpdir) / "media"
-
-        if extracted_db.exists():
-            try:
-                restored = await atomic_restore(
-                    extracted_db=extracted_db,
-                    extracted_media=extracted_media if extracted_media.exists() else None,
-                    live_db=db_file_path,
-                    live_media=media_dir,
+                    status_code=413,
+                    detail=f"Archive exceeds the {max_bytes}-byte import limit.",
                 )
-            except ValueError as exc:
-                from fastapi import HTTPException
+            upload.write(chunk)
+            written += len(chunk)
+        upload.flush()
+        upload.close()
 
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-        else:
-            restored = []
-            # No DB in archive — just restore media if present
-            if extracted_media.exists():
-                if media_dir.exists():
-                    shutil.rmtree(str(media_dir))
-                shutil.copytree(str(extracted_media), str(media_dir))
-                restored.append("media")
+        extract_dir = tempfile.mkdtemp()
+        try:
+            with tarfile.open(upload_path, mode="r:gz") as tar:
+                try:
+                    extract_tar_safely(tar, extract_dir)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            extracted_db = Path(extract_dir) / "diarium.diarium"
+            # Backward compat: accept old archives that used "dev.db"
+            if not extracted_db.exists():
+                extracted_db = Path(extract_dir) / "dev.db"
+            extracted_media = Path(extract_dir) / "media"
+
+            if extracted_db.exists():
+                try:
+                    restored = await atomic_restore(
+                        extracted_db=extracted_db,
+                        extracted_media=extracted_media if extracted_media.exists() else None,
+                        live_db=db_file_path,
+                        live_media=media_dir,
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            else:
+                restored = []
+                # No DB in archive — just restore media if present
+                if extracted_media.exists():
+                    if media_dir.exists():
+                        shutil.rmtree(str(media_dir))
+                    shutil.copytree(str(extracted_media), str(media_dir))
+                    restored.append("media")
+        finally:
+            shutil.rmtree(extract_dir, ignore_errors=True)
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        upload.close()  # idempotent — safe if already closed after the chunk loop
+        upload_path.unlink(missing_ok=True)
 
     return {"success": True, "restored": restored}
 
@@ -290,9 +296,17 @@ async def schedule_backup(
         result = await db.execute(select(BackupConfig).where(BackupConfig.id == config_id))
         config = result.scalar_one_or_none()
         if not config:
-            from fastapi import HTTPException
-
             raise HTTPException(status_code=404, detail=f"Backup config {config_id} not found")
+
+    # Local backups must target user-owned space (security: unauthenticated
+    # loopback endpoint). SchedulerService.schedule_backup re-checks defensively.
+    if backup_path and config_id is None:
+        from app.core.paths import resolve_backup_path
+
+        try:
+            resolve_backup_path(backup_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     svc = SchedulerService(db)
     return await svc.schedule_backup(cron, backup_path, retention, config_id)
