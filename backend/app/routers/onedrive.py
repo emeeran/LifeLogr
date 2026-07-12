@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import time
@@ -34,7 +35,11 @@ _state = OAuthStateStore()
 def _result_page(ok: bool, detail: str = "") -> HTMLResponse:
     title = "OneDrive Connected" if ok else "Connection Failed"
     emoji = "✅" if ok else "❌"
-    body = "LifeLogr connected to your OneDrive account. You can close this tab." if ok else detail
+    body = (
+        "LifeLogr connected to your OneDrive account. You can close this tab."
+        if ok
+        else html.escape(detail)
+    )
     return HTMLResponse(
         content=(
             "<!DOCTYPE html><html><body style='font-family:sans-serif;background:#0f172a;color:#f8fafc;"

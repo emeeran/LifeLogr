@@ -211,6 +211,17 @@ async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
 async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
     """Update mutable runtime settings (AI feature flags, model)."""
     if data.ai:
+        # The Ollama URL is user-settable and proxies journal content to an
+        # arbitrary host — restrict it to http(s) to block obvious SSRF.
+        if data.ai.ollama_base_url is not None:
+            from urllib.parse import urlparse
+
+            from fastapi import HTTPException
+
+            if urlparse(data.ai.ollama_base_url).scheme.lower() not in ("http", "https"):
+                raise HTTPException(
+                    status_code=400, detail="Ollama URL must use http or https"
+                )
         mapping = {
             "ollama_model": "OLLAMA_MODEL",
             "ollama_base_url": "OLLAMA_BASE_URL",

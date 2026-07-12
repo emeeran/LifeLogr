@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import time
@@ -162,8 +163,8 @@ async def oauth_callback(
 
 def _render_error_page(detail: str) -> HTMLResponse:
     """Helper to render a beautiful error page."""
-    html = _ERROR_HTML_TEMPLATE.replace("{{DETAIL}}", detail)
-    return HTMLResponse(content=html, status_code=400)
+    page = _ERROR_HTML_TEMPLATE.replace("{{DETAIL}}", html.escape(detail))
+    return HTMLResponse(content=page, status_code=400)
 
 
 _SUCCESS_HTML_PAGE = """<!DOCTYPE html>
