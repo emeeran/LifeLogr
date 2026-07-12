@@ -53,6 +53,12 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database tables on startup, clean up on shutdown."""
     logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
+    if settings.SECRET_KEY == "change-me-before-production":
+        logger.warning(
+            "SECRET_KEY is the default — encrypted credentials (IMAP/SMTP/cloud "
+            "OAuth) are keyed off it. Run a deployment that generates a key, or "
+            "set SECRET_KEY in .env. (The packaged launcher does this for you.)"
+        )
     # Load persisted runtime settings (model selections, feature toggles)
     try:
         from app.routers.settings import load_persisted_settings
