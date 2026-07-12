@@ -5,7 +5,7 @@ import { useSearchStore } from '../../stores/search'
 import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
 import { useNotesStore } from '../../stores/notes'
-import { Search as SearchIcon, Calendar, Hash, ArrowRight, Clock, NotebookPen } from 'lucide-vue-next'
+import { Search as SearchIcon, Calendar, Hash, ArrowRight, Clock, NotebookPen, ListTodo } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
 import type { SearchResultEntry } from '../../types'
 import SearchFilters from './SearchFilters.vue'
@@ -45,6 +45,11 @@ function openResult(item: SearchResultEntry) {
   if (item.type === 'note') {
     notesStore.selectNote(item.id)
     router.push('/notes')
+    ui.closeSearchPalette()
+    return
+  }
+  if (item.type === 'task') {
+    router.push('/planner')
     ui.closeSearchPalette()
     return
   }
@@ -93,7 +98,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           ref="inputRef"
           v-model="query"
           class="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-          placeholder="Search entries & notes... (Ctrl+K)"
+          placeholder="Search journals, notes & tasks... (Ctrl+K)"
           @keydown="onKeydown"
         />
         <!-- Search mode toggle -->
@@ -153,7 +158,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
         </div>
 
         <div v-else-if="!query && !showHistory" class="px-4 py-6 text-center text-text-muted text-xs">
-          Type to search across all entries and notes
+          Type to search across journals, notes and tasks
         </div>
 
         <div
@@ -164,16 +169,18 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           @click="openResult(item)"
           @mouseenter="selectedIndex = i"
         >
-          <component :is="item.type === 'note' ? NotebookPen : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
+          <component :is="item.type === 'note' ? NotebookPen : item.type === 'task' ? ListTodo : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-xs font-medium text-text-primary">
                 {{ item.type === 'note'
                   ? (item.title || 'Untitled note')
+                  : item.type === 'task'
+                  ? (item.title || 'Untitled task')
                   : (item.entry_date ? formatDate(item.entry_date) : '') }}
               </span>
               <span v-if="item.type === 'note' && item.updated_at" class="text-[10px] text-text-muted truncate">{{ formatDateTime(item.updated_at) }}</span>
-              <span v-else-if="item.title" class="text-xs text-text-secondary truncate">{{ item.title }}</span>
+              <span v-else-if="item.type === 'entry' && item.title" class="text-xs text-text-secondary truncate">{{ item.title }}</span>
             </div>
             <p class="text-[11px] text-text-muted leading-relaxed mt-0.5 line-clamp-2" v-html="sanitize(item.snippet)" />
             <div class="flex items-center gap-2 mt-1">

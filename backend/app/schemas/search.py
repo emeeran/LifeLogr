@@ -17,7 +17,7 @@ class SearchResultEntry(BaseModel):
     """
 
     id: int
-    type: Literal["entry", "note"] = "entry"
+    type: Literal["entry", "note", "task"] = "entry"
     entry_date: date | None = None
     folder_id: int | None = None
     updated_at: datetime | None = None

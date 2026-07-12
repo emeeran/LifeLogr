@@ -368,7 +368,7 @@ export interface VideoNoteResponse {
 
 export interface SearchResultEntry {
   id: number;
-  type: "entry" | "note";
+  type: "entry" | "note" | "task";
   entry_date: string | null;
   folder_id?: number | null;
   updated_at?: string | null;
