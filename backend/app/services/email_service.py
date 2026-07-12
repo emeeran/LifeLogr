@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -620,6 +621,13 @@ class EmailSyncService:
         att_dir = media_dir / "attachments"
         att_dir.mkdir(parents=True, exist_ok=True)
         for att in attachments_meta:
+            if len(att.payload) > settings.EMAIL_MAX_ATTACHMENT_SIZE_BYTES:
+                logger.debug(
+                    "Skipping oversized inbound attachment (%d bytes): %s",
+                    len(att.payload),
+                    att.filename,
+                )
+                continue
             rel = f"email/{account.id}/attachments/{uuid4().hex}_{_sanitize(att.filename)}"
             (Path(settings.MEDIA_DIR) / rel).write_bytes(att.payload)
             self.db.add(
@@ -804,10 +812,32 @@ class EmailMessageService:
         """
         message = await self._get(message_id)
         move = await self._describe_move(message)
-        # Remove local copy (attachments cascade-delete; disk files orphaned — GC later).
+        orphan_rels = await self._collect_message_files(message)
         await self.db.delete(message)
         await self.db.commit()
+        # Remove the raw .eml + attachment binaries now that the rows are gone.
+        for rel in orphan_rels:
+            try:
+                (Path(settings.MEDIA_DIR) / rel).unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Could not unlink %s", rel, exc_info=True)
         return move
+
+    async def _collect_message_files(self, message: EmailMessage) -> list[str]:
+        """Storage-relative paths for the raw .eml + every attachment (to unlink
+        on delete, so disk doesn't grow with every deleted message)."""
+        rels: list[str] = []
+        if message.raw_path:
+            rels.append(message.raw_path)
+        rows = (
+            await self.db.execute(
+                select(EmailAttachment.storage_path).where(
+                    EmailAttachment.message_id == message.id
+                )
+            )
+        ).all()
+        rels.extend(r[0] for r in rows)
+        return rels
 
     async def _describe_move(self, message: EmailMessage) -> dict | None:
         """Capture (account_id, source folder name, uid) for a background move."""
@@ -1113,7 +1143,26 @@ class EmailComposeService:
 # ── Temp attachment upload ─────────────────────────────────────────────────
 
 
+def _sweep_temp_attachments(max_age_seconds: int = 3600) -> None:
+    """Drop compose temp-attachments older than ``max_age_seconds`` (abandoned
+    composes otherwise leak memory + disk forever)."""
+    now = time.time()
+    expired = [
+        tid
+        for tid, meta in _TEMP_ATTACHMENTS.items()
+        if now - meta.get("ts", now) > max_age_seconds
+    ]
+    for tid in expired:
+        meta = _TEMP_ATTACHMENTS.pop(tid, None)
+        if meta:
+            try:
+                meta["path"].unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Could not unlink temp attachment %s", tid, exc_info=True)
+
+
 def store_temp_attachment(filename: str, content_type: str, payload: bytes) -> dict:
+    _sweep_temp_attachments()
     temp_dir = Path(settings.MEDIA_DIR) / "email" / "_temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_id = secrets.token_urlsafe(12)
@@ -1124,5 +1173,6 @@ def store_temp_attachment(filename: str, content_type: str, payload: bytes) -> d
         "filename": filename,
         "content_type": content_type,
         "size": len(payload),
+        "ts": time.time(),
     }
     return {"id": temp_id, "filename": filename, "file_size": len(payload)}
