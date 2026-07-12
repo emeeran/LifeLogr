@@ -39,9 +39,7 @@ import { ttsApi } from "../../api/tts";
 import { useDragDrop } from "../../composables/useDragDrop";
 import { useLocalStorage } from "@vueuse/core";
 import { useMarkdownPreview } from "../../composables/useMarkdownPreview";
-import { useEditorHistory } from "../../composables/useEditorHistory";
-import { useFindReplace } from "../../composables/useFindReplace";
-import { useAiTools } from "../../composables/useAiTools";
+import { useRichTextEditor } from "../../composables/useRichTextEditor";
 import { useAttachments } from "../../composables/useAttachments";
 import { useAutoSave } from "../../composables/useAutoSave";
 import {
@@ -106,12 +104,19 @@ const defaultTemplateId = useLocalStorage<number | null>(
 // Timeline template filter. null = blank / no template.
 const selectedTemplateId = ref<number | null>(null);
 
-// ── Composables (early — no dependencies on later functions) ──
-const { undoStack, redoStack, pushHistory, doUndo, doRedo } = useEditorHistory(
-  body,
-  textarea,
-);
+// ── Shared editing core (selection, formatting, history, find, AI, shortcuts) ──
 const {
+  cacheSelection,
+  clearSelCache,
+  startSelCache,
+  getSelection,
+  applyToSelection,
+  insertAtCursor,
+  actions,
+  activeFormats,
+  undoStack,
+  redoStack,
+  pushHistory,
   showFind,
   findQuery,
   replaceQuery,
@@ -120,7 +125,26 @@ const {
   jumpToMatch,
   replaceOne,
   replaceAll,
-} = useFindReplace(body, textarea, pushHistory);
+  onTextareaKeydown,
+  onShortcutKeydown,
+  onInput,
+  aiLoading,
+  aiResult,
+  aiResultMode,
+  aiParamValue,
+  runAiTool,
+  aiResultReplace,
+  aiResultInsert,
+  aiResultRetry,
+  aiResultCopy,
+  applyToolParam,
+  clearAiResult,
+} = useRichTextEditor({
+  body,
+  textarea,
+  onChange: markChanged,
+  onSave: save,
+});
 const { attachments, loadAttachments, handleFileUpload, removeAttachment } =
   useAttachments(
     () => hasEntry.value,
@@ -154,32 +178,6 @@ function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
-// ── Cached selection (preserved when editor loses focus) ──
-const cachedSelStart = ref(0);
-const cachedSelEnd = ref(0);
-let selCacheTimer: ReturnType<typeof setTimeout> | null = null;
-
-function cacheSelection() {
-  const el = textarea.value;
-  if (el) {
-    cachedSelStart.value = el.selectionStart;
-    cachedSelEnd.value = el.selectionEnd;
-  }
-}
-
-function startSelCache() {
-  // Cache on blur with a short delay so click handlers in drawer can still read it
-  selCacheTimer = setTimeout(cacheSelection, 0);
-}
-
-function clearSelCache() {
-  if (selCacheTimer) {
-    clearTimeout(selCacheTimer);
-    selCacheTimer = null;
-  }
-  cacheSelection(); // cache immediately on focus too
-}
-
 // ── Dirty tracking ──
 const dirty = ref(false);
 const savedSnapshot = ref("");
@@ -187,6 +185,23 @@ const savedSnapshot = ref("");
 function markDirty() {
   dirty.value = true;
   ui.editorIsDirty = true;
+}
+
+/** Core onChange hook: mark dirty + (journal-only) typewriter scroll + autosave. */
+function markChanged() {
+  markDirty();
+  if (typewriterMode.value) {
+    nextTick(() => {
+      const el = textarea.value;
+      if (!el) return;
+      const { selectionStart } = el;
+      const lines = body.value.slice(0, selectionStart).split("\n").length;
+      const lineHeight = 24; // approximate px
+      const targetScroll = lines * lineHeight - el.clientHeight / 2;
+      el.scrollTo({ top: targetScroll, behavior: "smooth" });
+    });
+  }
+  triggerAutosave();
 }
 
 function snapshot() {
@@ -222,124 +237,6 @@ const stats = computed(() => {
   const readMins = Math.max(1, Math.ceil(words / 200));
   return { chars, words, lines, paragraphs, readMins };
 });
-
-// ── Toolbar formatting ──
-function wrap(before: string, after: string, placeholder = "") {
-  const el = textarea.value;
-  if (!el) return;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const selected = body.value.slice(start, end) || placeholder;
-  const replacement = before + selected + after;
-  body.value = body.value.slice(0, start) + replacement + body.value.slice(end);
-  pushHistory();
-  nextTick(() => {
-    el.focus();
-    el.selectionStart = start + before.length;
-    el.selectionEnd = start + before.length + selected.length;
-  });
-}
-
-function prependLine(prefix: string) {
-  const el = textarea.value;
-  if (!el) return;
-  const start = el.selectionStart;
-  const lineStart = body.value.lastIndexOf("\n", start - 1) + 1;
-  body.value =
-    body.value.slice(0, lineStart) + prefix + body.value.slice(lineStart);
-  pushHistory();
-  nextTick(() => {
-    el.focus();
-    el.selectionStart = el.selectionEnd = start + prefix.length;
-  });
-}
-
-function insertAtCursor(text: string) {
-  const el = textarea.value;
-  if (!el) return;
-  const start = el.selectionStart;
-  body.value =
-    body.value.slice(0, start) + text + body.value.slice(el.selectionEnd);
-  pushHistory();
-  nextTick(() => {
-    el.focus();
-    el.selectionStart = el.selectionEnd = start + text.length;
-  });
-}
-
-function insertTable() {
-  insertAtCursor(
-    "\n| Header | Header |\n|--------|--------|\n| Cell   | Cell   |\n",
-  );
-}
-
-// Build a horizontal-rule divider of `char`s sized to fill the textarea's
-// content width on a single line. We measure with a hidden ruler that mirrors
-// the editor's actual computed font (not canvas measureText, whose font-shorthand
-// parsing can silently fall back when fontFamily is a comma-separated stack), so
-// the count matches what the browser really renders — full width, no wrapping.
-function makeDivider(char = "*"): string {
-  const el = textarea.value;
-  if (!el) return char.repeat(40);
-  const style = window.getComputedStyle(el);
-  const ruler = document.createElement("span");
-  Object.assign(ruler.style, {
-    position: "absolute",
-    visibility: "hidden",
-    whiteSpace: "pre",
-    fontFamily: style.fontFamily,
-    fontSize: style.fontSize,
-    fontWeight: style.fontWeight,
-  });
-  const SAMPLE = 40;
-  ruler.textContent = char.repeat(SAMPLE);
-  document.body.appendChild(ruler);
-  const unit =
-    ruler.getBoundingClientRect().width / SAMPLE ||
-    parseFloat(style.fontSize) ||
-    8;
-  ruler.remove();
-  const padding =
-    parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-  const usable = el.clientWidth - padding;
-  // Fill the line; the 1px guard stops sub-pixel rounding from pushing the last
-  // asterisk onto a wrapped second line.
-  const count = Math.max(8, Math.floor((usable - 1) / unit));
-  return char.repeat(count);
-}
-
-function insertCheckbox() {
-  prependLine("- [ ] ");
-}
-
-const fmt = {
-  bold: () => wrap("**", "**", "bold text"),
-  italic: () => wrap("*", "*", "italic text"),
-  strikethrough: () => wrap("~~", "~~", "strikethrough"),
-  h1: () => prependLine("# "),
-  h2: () => prependLine("## "),
-  ul: () => prependLine("- "),
-  ol: () => prependLine("1. "),
-  quote: () => prependLine("> "),
-  code: () => wrap("`", "`", "code"),
-  codeBlock: () => wrap("\n```\n", "\n```\n", "code block"),
-  link: () => wrap("[", "](url)", "link text"),
-  image: () => wrap("![", "](url)", "alt text"),
-  hr: () => insertAtCursor("\n\n" + makeDivider() + "\n\n"),
-  table: insertTable,
-  checkbox: insertCheckbox,
-  undo: doUndo,
-  redo: doRedo,
-  alignLeft: () =>
-    wrap('<div style="text-align: left">\n', "\n</div>", "left aligned text"),
-  alignCenter: () =>
-    wrap('<div style="text-align: center">\n', "\n</div>", "centered text"),
-  alignRight: () =>
-    wrap('<div style="text-align: right">\n', "\n</div>", "right aligned text"),
-  alignJustify: () =>
-    wrap('<div style="text-align: justify">\n', "\n</div>", "justified text"),
-  highlight: () => wrap("<mark>", "</mark>", "highlighted text"),
-};
 
 const { renderedPreview } = useMarkdownPreview(
   () => body.value,
@@ -456,158 +353,6 @@ aiStatus()
 async function onEncryptionChange(encrypted: boolean) {
   isEncrypted.value = encrypted;
   await loadEntry();
-}
-
-function onInput() {
-  pushHistory();
-  markDirty();
-
-  if (typewriterMode.value) {
-    nextTick(() => {
-      const el = textarea.value;
-      if (!el) return;
-      const { selectionStart } = el;
-      const lines = body.value.slice(0, selectionStart).split("\n").length;
-      const lineHeight = 24; // approximate px
-      const targetScroll = lines * lineHeight - el.clientHeight / 2;
-      el.scrollTo({ top: targetScroll, behavior: "smooth" });
-    });
-  }
-
-  triggerAutosave();
-}
-
-// ── Keyboard shortcuts ──
-function onKeydown(e: KeyboardEvent) {
-  const mod = e.ctrlKey || e.metaKey;
-
-  // Undo / Redo
-  if (mod && e.key === "z" && !e.shiftKey) {
-    e.preventDefault();
-    doUndo();
-    return;
-  }
-  if (
-    mod &&
-    (e.key === "y" || (e.key === "z" && e.shiftKey) || e.key === "Z")
-  ) {
-    e.preventDefault();
-    doRedo();
-    return;
-  }
-
-  // Save
-  if (mod && e.key === "s") {
-    e.preventDefault();
-    save();
-    return;
-  }
-
-  // Find
-  if (mod && e.key === "f") {
-    e.preventDefault();
-    showFind.value = true;
-    return;
-  }
-  if (e.key === "Escape" && showFind.value) {
-    showFind.value = false;
-    return;
-  }
-  if (e.key === "Enter" && showFind.value && findQuery.value) {
-    e.preventDefault();
-    jumpToMatch(e.shiftKey ? -1 : 1);
-    return;
-  }
-
-  // Formatting
-  if (!mod) return;
-  const handlers: Record<string, () => void> = {
-    b: fmt.bold,
-    i: fmt.italic,
-    k: fmt.code,
-    u: fmt.strikethrough,
-  };
-  // Ctrl+Alt+H for horizontal rule
-  if (mod && e.altKey && e.key.toLowerCase() === "h") {
-    e.preventDefault();
-    fmt.hr();
-    return;
-  }
-  const handler = handlers[e.key.toLowerCase()];
-  if (handler) {
-    e.preventDefault();
-    handler();
-  }
-}
-
-function onTextareaKeydown(e: KeyboardEvent) {
-  // Auto-indent on Enter: continue list prefixes
-  if (e.key === "Enter") {
-    const el = textarea.value;
-    if (!el) return;
-    const pos = el.selectionStart;
-    const lineStart = body.value.lastIndexOf("\n", pos - 1) + 1;
-    const currentLine = body.value.slice(lineStart, pos);
-
-    // Match list patterns
-    const listMatch = currentLine.match(/^(\s*)([-*+]|\d+\.)\s/);
-    const checkboxMatch = currentLine.match(/^(\s*)- \[[ x]\]\s/);
-
-    if (listMatch || checkboxMatch) {
-      e.preventDefault();
-      const prefix = checkboxMatch
-        ? checkboxMatch[1] + "- [ ] "
-        : listMatch![0];
-
-      // If current line is empty (just prefix), clear it
-      if (
-        currentLine.trim() === listMatch?.[0]?.trim() ||
-        currentLine.trim() === checkboxMatch?.[0]?.trim()
-      ) {
-        body.value = body.value.slice(0, lineStart) + body.value.slice(pos);
-        nextTick(() => {
-          el.selectionStart = el.selectionEnd = lineStart;
-        });
-        return;
-      }
-
-      // Increment numbered list
-      let newPrefix = prefix;
-      const numMatch = prefix.match(/^(\s*)(\d+)\.\s/);
-      if (numMatch) {
-        newPrefix = numMatch[1] + (parseInt(numMatch[2]) + 1) + ". ";
-      }
-
-      body.value =
-        body.value.slice(0, pos) + "\n" + newPrefix + body.value.slice(pos);
-      pushHistory();
-      nextTick(() => {
-        el.selectionStart = el.selectionEnd = pos + 1 + newPrefix.length;
-      });
-      return;
-    }
-  }
-
-  // Tab → insert spaces (or 2-space indent)
-  if (e.key === "Tab") {
-    e.preventDefault();
-    if (e.shiftKey) {
-      // Dedent: remove up to 2 leading spaces from current line
-      const el = textarea.value!;
-      const pos = el.selectionStart;
-      const lineStart = body.value.lastIndexOf("\n", pos - 1) + 1;
-      const lineContent = body.value.slice(lineStart);
-      if (lineContent.startsWith("  ")) {
-        body.value = body.value.slice(0, lineStart) + lineContent.slice(2);
-        nextTick(() => {
-          el.selectionStart = el.selectionEnd = Math.max(lineStart, pos - 2);
-        });
-      }
-    } else {
-      insertAtCursor("  ");
-    }
-    return;
-  }
 }
 
 // ── Fullscreen escape ──
@@ -751,32 +496,6 @@ function cutToClipboard() {
   }
 }
 
-function getSelection() {
-  const el = textarea.value;
-  if (!el) return "";
-  const start =
-    document.activeElement === el ? el.selectionStart : cachedSelStart.value;
-  const end =
-    document.activeElement === el ? el.selectionEnd : cachedSelEnd.value;
-  return body.value.slice(start, end).trim();
-}
-
-function applyToSelection(newText: string) {
-  const el = textarea.value;
-  if (!el) return;
-  const focused = document.activeElement === el;
-  const start = focused ? el.selectionStart : cachedSelStart.value;
-  const end = focused ? el.selectionEnd : cachedSelEnd.value;
-  body.value = body.value.slice(0, start) + newText + body.value.slice(end);
-  pushHistory();
-  markDirty();
-  nextTick(() => {
-    el.focus();
-    el.selectionStart = start;
-    el.selectionEnd = start + newText.length;
-  });
-}
-
 async function onDropFiles(e: DragEvent) {
   const accepted = dragHandlers.onDrop(e);
   if (!accepted?.length) return;
@@ -844,29 +563,7 @@ async function encryptDecryptSelection() {
 // ── Inline AI tools (context menu) ── (extracted to useAiTools composable)
 // runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, clearAiResult — in composable
 
-// Initialize AI tools composable (needs getSelection/applyToSelection defined above)
-const {
-  aiLoading,
-  aiResult,
-  aiResultMode,
-  aiParamValue,
-  runAiTool,
-  aiResultReplace,
-  aiResultInsert,
-  aiResultRetry,
-  aiResultCopy,
-  applyToolParam,
-  clearAiResult,
-} = useAiTools(
-  body,
-  getSelection,
-  applyToSelection,
-  cachedSelStart,
-  cachedSelEnd,
-  textarea,
-  pushHistory,
-  markDirty,
-);
+// ── Inline AI tools (context menu + drawer) — provided by useRichTextEditor ──
 
 async function toggleTTS() {
   if (ttsPlaying.value) {
@@ -969,58 +666,6 @@ async function applySuggestedTag(name: string) {
   onInput();
 }
 
-// Active formatting detection (throttled to avoid recalculating on every keystroke)
-const activeFormats = ref(new Set<string>());
-
-function computeFormats() {
-  const el = textarea.value;
-  if (!el) {
-    activeFormats.value = new Set<string>();
-    return;
-  }
-  const pos = el.selectionStart;
-  const lineStart = body.value.lastIndexOf("\n", pos - 1) + 1;
-  const currentLine = body.value.slice(lineStart, pos);
-  const s = new Set<string>();
-  if (currentLine.startsWith("# ")) s.add("h1");
-  if (currentLine.startsWith("## ")) s.add("h2");
-  if (
-    currentLine.startsWith("- ") ||
-    currentLine.startsWith("* ") ||
-    currentLine.startsWith("+ ")
-  )
-    s.add("ul");
-  if (/^\d+\.\s/.test(currentLine)) s.add("ol");
-  if (currentLine.startsWith("> ")) s.add("quote");
-
-  // Inline: check surrounding text
-  const before = body.value.slice(Math.max(0, pos - 20), pos);
-  const after = body.value.slice(pos, pos + 20);
-  const full = body.value.slice(Math.max(0, pos - 40), pos + 40);
-
-  if (
-    (before.endsWith("**") && after.startsWith("**")) ||
-    (before.endsWith("**") && body.value.slice(pos).startsWith("**"))
-  )
-    s.add("bold");
-  if (
-    (before.endsWith("*") && !before.endsWith("**") && after.startsWith("*")) ||
-    (before.endsWith("*") &&
-      !before.endsWith("**") &&
-      body.value.slice(pos).startsWith("*"))
-  )
-    s.add("italic");
-  if (full.includes("<mark>") && full.includes("</mark>")) s.add("highlight");
-  if (full.includes("text-align: left")) s.add("alignLeft");
-  if (full.includes("text-align: center")) s.add("alignCenter");
-  if (full.includes("text-align: right")) s.add("alignRight");
-  if (full.includes("text-align: justify")) s.add("alignJustify");
-  activeFormats.value = s;
-}
-
-// Throttle format recalculation at 200ms
-import { watchThrottled } from "@vueuse/core";
-watchThrottled(body, computeFormats, { throttle: 200, immediate: true });
 </script>
 
 <template>
@@ -1125,7 +770,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true });
             :ui="ui"
             @action="
               (name: string) => {
-                const fn = (fmt as any)[name];
+                const fn = (actions as any)[name];
                 if (fn) fn();
               }
             "
@@ -1149,7 +794,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true });
         v-model="findQuery"
         class="flex-1 bg-transparent border-b border-border focus:border-accent px-1 py-0.5 text-xs text-text-primary outline-none"
         placeholder="Find..."
-        @keydown="onKeydown"
+        @keydown="onShortcutKeydown"
       />
       <span class="text-[10px] text-text-muted whitespace-nowrap">
         {{ findIndex >= 0 ? findIndex + 1 : 0 }}/{{ findCount }}
@@ -1224,7 +869,7 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true });
               placeholder="Write your thoughts..."
               @input="onInput"
               @keydown="onTextareaKeydown"
-              @keydown.capture="onKeydown"
+              @keydown.capture="onShortcutKeydown"
               @contextmenu="onContextMenu"
               @focus="clearSelCache"
               @blur="startSelCache"
@@ -1450,8 +1095,8 @@ watchThrottled(body, computeFormats, { throttle: 200, immediate: true });
       @close="showContextMenu = false"
       @copy="copyToClipboard"
       @cut="cutToClipboard"
-      @bold="fmt.bold()"
-      @italic="fmt.italic()"
+      @bold="actions.bold()"
+      @italic="actions.italic()"
       @encrypt="encryptDecryptSelection()"
       @open-ai-drawer="ui.toggleDrawer('ai')"
       @run-ai-tool="(mode: any) => runAiTool(mode)"
