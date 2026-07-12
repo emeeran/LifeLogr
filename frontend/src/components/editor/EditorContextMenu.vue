@@ -6,15 +6,20 @@ import {
 } from 'lucide-vue-next'
 import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
 
-const props = defineProps<{
-  visible: boolean
-  position: { x: number; y: number }
-  aiLoading: boolean
-  aiResult: string | null
-  aiResultMode: string | null
-  aiParamValue: string
-  selectedText: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    visible: boolean
+    position: { x: number; y: number }
+    aiLoading: boolean
+    aiResult: string | null
+    aiResultMode: string | null
+    aiParamValue: string
+    selectedText: string
+    /** Show the Encrypt/Decrypt menu item (journal yes, notes no). */
+    enableEncrypt?: boolean
+  }>(),
+  { enableEncrypt: true },
+)
 
 const activeTool = computed(() =>
   props.aiResultMode ? AI_TOOL_BY_ID[props.aiResultMode] : undefined,
@@ -161,7 +166,7 @@ function startDrag(e: MouseEvent) {
     <button @click="emit('italic'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
       <Italic :size="12" /> Italic
     </button>
-    <button @click="emit('encrypt'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
+    <button v-if="enableEncrypt" @click="emit('encrypt'); emit('close')" class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2">
       <Lock v-if="!isEncrypted(selectedText)" :size="12" />
       <Unlock v-else :size="12" />
       {{ encryptLabel(selectedText) }}

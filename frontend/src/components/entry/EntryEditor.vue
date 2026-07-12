@@ -24,9 +24,9 @@ import {
   Pause,
 } from "lucide-vue-next";
 import EncryptionBadge from "./EncryptionBadge.vue";
-import EditorToolbar from "./EditorToolbar.vue";
+import EditorToolbar from "../editor/EditorToolbar.vue";
 import EditorStatusBar from "./EditorStatusBar.vue";
-import EditorContextMenu from "./EditorContextMenu.vue";
+import EditorContextMenu from "../editor/EditorContextMenu.vue";
 import TagList from "../tags/TagList.vue";
 import MediaViewer from "../media/MediaViewer.vue";
 import MediaGrid from "../media/MediaGrid.vue";
@@ -760,6 +760,7 @@ async function applySuggestedTag(name: string) {
       <Transition name="toolbar-slide">
         <div v-if="showToolbar">
           <EditorToolbar
+            mode="journal"
             :active-formats="activeFormats"
             :undo-count="undoStack.length"
             :redo-count="redoStack.length"

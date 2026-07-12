@@ -198,6 +198,7 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     ul: () => prependLine('- '),
     ol: () => prependLine('1. '),
     checklist: () => prependLine('- [ ] '),
+    checkbox: () => prependLine('- [ ] '), // alias (older toolbars emit 'checkbox')
     quote: () => prependLine('> '),
     link: () => wrap('[', '](url)', 'link text'),
     image: () => wrap('![', '](url)', 'alt text'),
