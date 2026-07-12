@@ -29,8 +29,10 @@ import {
   Reply, ReplyAll, Forward, Paperclip, Download, AlertCircle, CheckCircle2,
   Folder as FolderIcon, Archive, Ban, FileEdit, MailOpen, ChevronDown,
   ChevronRight, ShieldAlert, ListTodo, CheckSquare, Square, User, Globe,
+  Maximize2, Printer,
 } from 'lucide-vue-next'
 import { createTask } from '../../api/planner'
+import { API_ORIGIN } from '../../api/client'
 
 const store = useEmailStore()
 const router = useRouter()
@@ -425,6 +427,74 @@ const blockScopeLabel = computed(() => {
     : m.from_address
 })
 
+// ── Message rendering: rich HTML (renders images) vs plain text ──
+const renderText = ref(false)
+const showFullPage = ref(false)
+
+/** Download URL for a stored attachment (used to resolve inline `cid:` images). */
+function attUrl(messageId: number, attId: number): string {
+  return `${API_ORIGIN}/api/v1/email/messages/${messageId}/attachments/${attId}`
+}
+
+/** The message's HTML body with inline `cid:` images resolved to attachment URLs. */
+const sanitizedHtml = computed<string | null>(() => {
+  const m = store.selectedMessage
+  if (!m?.html_body) return null
+  let html = m.html_body
+  for (const att of m.attachments) {
+    if (att.content_id) {
+      html = html.split(`cid:${att.content_id}`).join(attUrl(m.id, att.id))
+    }
+  }
+  return html
+})
+
+function escapeHtml(s: string): string {
+  return (s || '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
+  )
+}
+
+/** A standalone HTML document for the current message (used for print + full page). */
+function emailDocument(includeHeader: boolean): string {
+  const m = store.selectedMessage
+  if (!m) return ''
+  const useHtml = !renderText.value && sanitizedHtml.value
+  const body = useHtml
+    ? sanitizedHtml.value!
+    : `<pre style="white-space:pre-wrap;word-wrap:break-word;font-family:inherit;margin:0">${escapeHtml(m.text_body || '')}</pre>`
+  const header = includeHeader
+    ? `<h1>${escapeHtml(m.subject || '(no subject)')}</h1>
+       <div style="color:#555;font-size:12px;border-bottom:1px solid #ddd;padding-bottom:8px;margin-bottom:12px">
+         <div><b>From:</b> ${escapeHtml(m.from_name || '')} &lt;${escapeHtml(m.from_address)}&gt;</div>
+         <div><b>To:</b> ${escapeHtml(m.to_addresses.map((t) => t.address).join(', '))}</div>
+         <div><b>Date:</b> ${escapeHtml(formatFullDate(m.sent_at))}</div>
+       </div>`
+    : ''
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(m.subject || '(no subject)')}</title>
+    <style>
+      body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#111;background:#fff}
+      h1{font-size:18px;margin:0 0 8px} img{max-width:100%;height:auto} a{color:#2563eb} table{max-width:100%}
+      @media print{body{margin:0}}
+    </style></head>
+    <body>${header}${body}</body></html>`
+}
+
+function printEmail() {
+  const w = window.open('', '_blank', 'width=820,height=900')
+  if (!w) {
+    showToast('error', 'Pop-up blocked — allow pop-ups to print')
+    return
+  }
+  w.document.open()
+  w.document.write(emailDocument(true))
+  w.document.close()
+  w.focus()
+  // Give embedded images a moment to load before the print dialog opens.
+  setTimeout(() => w.print(), 400)
+}
+
 // ── Add the current message to the Planner as a task ──
 async function addToTask() {
   const m = store.selectedMessage
@@ -770,6 +840,22 @@ onUnmounted(() => {
                       @click="onDelete(store.selectedMessage)">
                       <Trash2 :size="15" />
                     </button>
+                    <div class="mx-0.5 h-5 w-px bg-border" />
+                    <button v-if="store.selectedMessage.text_body && sanitizedHtml"
+                      class="rounded p-1.5 hover:bg-surface-hover"
+                      :class="renderText ? 'text-accent' : 'text-text-muted'"
+                      :title="renderText ? 'Show rich HTML (images)' : 'Show plain text'"
+                      @click="renderText = !renderText">
+                      <FileEdit :size="15" />
+                    </button>
+                    <button class="rounded p-1.5 text-text-muted hover:bg-surface-hover hover:text-accent" title="View full page"
+                      @click="showFullPage = true">
+                      <Maximize2 :size="15" />
+                    </button>
+                    <button class="rounded p-1.5 text-text-muted hover:bg-surface-hover hover:text-accent" title="Print"
+                      @click="printEmail">
+                      <Printer :size="15" />
+                    </button>
                   </div>
                 </div>
 
@@ -794,12 +880,13 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <!-- Body: prefer plain text; fall back to sandboxed HTML -->
-                <pre v-if="store.selectedMessage.text_body"
+                <!-- Body: rich HTML (renders images) when available, else plain text.
+                     Rendered in a sandboxed iframe so email styles/scripts can't reach the app. -->
+                <pre v-if="renderText || !sanitizedHtml"
                   class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-text-primary/90">{{ store.selectedMessage.text_body }}</pre>
-                <iframe v-else-if="store.selectedMessage.html_body"
-                  :srcdoc="store.selectedMessage.html_body" sandbox=""
-                  class="h-[55vh] w-full rounded-md border border-border" />
+                <iframe v-else
+                  :srcdoc="sanitizedHtml" sandbox=""
+                  class="h-[60vh] w-full rounded-md border border-border bg-white" />
 
                 <!-- Attachments -->
                 <div v-if="store.selectedMessage.attachments.length" class="flex flex-wrap gap-2 pt-1">
@@ -969,6 +1056,38 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    </Teleport>
+
+    <!-- ── Full-page view ── -->
+    <Teleport to="body">
+      <div v-if="showFullPage" class="fixed inset-0 z-50 flex bg-black/50 p-4"
+        @click.self="showFullPage = false">
+        <div class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
+          <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+            <div class="min-w-0">
+              <div class="truncate text-sm font-semibold text-text-primary">
+                {{ store.selectedMessage?.subject || '(no subject)' }}
+              </div>
+              <div class="truncate text-[11px] text-text-muted">
+                {{ store.selectedMessage?.from_name || store.selectedMessage?.from_address }}
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-accent"
+                @click="printEmail">
+                <Printer :size="13" /> Print
+              </button>
+              <button class="rounded-md p-1.5 text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                title="Close" @click="showFullPage = false">
+                <X :size="16" />
+              </button>
+            </div>
+          </div>
+          <iframe v-if="sanitizedHtml && !renderText" :srcdoc="emailDocument(false)" sandbox=""
+            class="min-h-0 w-full flex-1 bg-white" />
+          <pre v-else class="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-text-primary/90">{{ store.selectedMessage?.text_body }}</pre>
+        </div>
+      </div>
     </Teleport>
   </div>
 </template>
