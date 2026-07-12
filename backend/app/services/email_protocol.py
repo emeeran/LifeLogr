@@ -329,11 +329,17 @@ async def send_via_smtp(
     smtp = aiosmtplib.SMTP(hostname=host, port=port, use_tls=use_tls, timeout=30)
     await smtp.connect()
     if not use_tls:
-        # Opportunistic STARTTLS on submission port 587.
+        # Opportunistic STARTTLS on submission port 587. If a MITM strips
+        # STARTTLS the credentials would otherwise go in the clear — log loudly
+        # so it's visible (we still proceed; many providers fall back to cleartext).
         try:
             await smtp.starttls()
         except Exception:
-            pass
+            logger.warning(
+                "STARTTLS negotiation with %s failed; continuing without TLS",
+                host,
+                exc_info=True,
+            )
     await smtp.login(username, password)
     try:
         await smtp.send_message(message)

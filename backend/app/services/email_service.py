@@ -1129,7 +1129,7 @@ class EmailComposeService:
                 # Re-sync that folder so the appended message lands in our DB.
                 await EmailSyncService(self.db).sync_folder(imap, account, folder)
         except Exception:
-            logger.debug("APPEND to %s failed", special, exc_info=True)
+            logger.warning("APPEND to %s failed (sent mail not copied to Sent)", special, exc_info=True)
 
     @staticmethod
     def _cleanup_temp_attachments(ids: list[int]) -> None:

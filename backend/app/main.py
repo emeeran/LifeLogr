@@ -157,8 +157,21 @@ async def log_requests(request: Request, call_next: Any) -> Response:
 
 # ── Rate limiting (simple in-memory) ──
 _rate_store: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT = 60
-RATE_WINDOW = 60.0
+
+
+def _parse_rate_limit(raw: str) -> tuple[int, float]:
+    """Parse 'N/period' (e.g. '60/minute') → (count, window_seconds)."""
+    try:
+        count_str, period = raw.lower().split("/", 1)
+        count = int(count_str)
+        window = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(period, 60.0)
+    except (ValueError, AttributeError):
+        return 60, 60.0
+    return max(1, count), window
+
+
+# Driven by settings.RATE_LIMIT (e.g. "60/minute"); falls back to 60/min.
+RATE_LIMIT, RATE_WINDOW = _parse_rate_limit(settings.RATE_LIMIT)
 
 
 @app.middleware("http")

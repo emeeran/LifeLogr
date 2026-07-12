@@ -55,10 +55,14 @@ class Base(DeclarativeBase):
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a database session per request with automatic rollback on error."""
-    async with _engine_lock:
-        factory = async_session
-    session = factory()
+    """Yield a database session per request with automatic rollback on error.
+
+    The session factory is read off the module global without a lock: the read
+    is atomic under the GIL, and ``reinit_engine`` swaps the global *before*
+    draining the old engine so in-flight requests on the old factory keep
+    working. (A lock here serialised every request for no benefit.)
+    """
+    session = async_session()
     try:
         yield session
     except Exception:
