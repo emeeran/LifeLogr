@@ -29,10 +29,11 @@ import {
   Reply, ReplyAll, Forward, Paperclip, Download, AlertCircle, CheckCircle2,
   Folder as FolderIcon, Archive, Ban, FileEdit, MailOpen, ChevronDown,
   ChevronRight, ShieldAlert, ListTodo, CheckSquare, Square, User, Globe,
-  Maximize2, Printer,
+  Maximize2, Printer, Volume2, FileText, ChevronLeft,
 } from 'lucide-vue-next'
 import { createTask } from '../../api/planner'
-import { API_ORIGIN } from '../../api/client'
+import { API_ORIGIN, request } from '../../api/client'
+import { ttsApi } from '../../api/tts'
 
 const store = useEmailStore()
 const router = useRouter()
@@ -512,6 +513,85 @@ async function addToTask() {
   }
 }
 
+// ── Vocalize (TTS) + Summarize (AI) + prev/next nav for the open message ──
+const ttsPlaying = ref(false)
+let ttsAudio: HTMLAudioElement | null = null
+const summarizing = ref(false)
+const summary = ref('')
+const summaryOpen = ref(false)
+
+function messagePlainText(): string {
+  const m = store.selectedMessage
+  if (!m) return ''
+  const fromText = (m.text_body && m.text_body.trim())
+    || (m.html_body ? m.html_body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '')
+  return fromText || m.snippet || ''
+}
+
+async function vocalizeEmail() {
+  const m = store.selectedMessage
+  if (!m) return
+  if (ttsPlaying.value && ttsAudio) {
+    ttsAudio.pause()
+    ttsAudio.currentTime = 0
+    ttsPlaying.value = false
+    return
+  }
+  const text = messagePlainText()
+  if (!text) { showToast('error', 'Nothing to read aloud'); return }
+  try {
+    const blob = await ttsApi.speakBlob(text)
+    if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
+    ttsAudio = new Audio(URL.createObjectURL(blob))
+    ttsAudio.onended = () => { ttsPlaying.value = false }
+    await ttsAudio.play()
+    ttsPlaying.value = true
+  } catch {
+    showToast('error', 'Voice unavailable — is the TTS service running?')
+  }
+}
+
+async function summarizeEmail() {
+  const m = store.selectedMessage
+  if (!m) return
+  summarizing.value = true
+  summary.value = ''
+  try {
+    const data = await request<Record<string, unknown>>('/ai/tool/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ text: messagePlainText() }),
+    })
+    summary.value = String(data.result ?? '').trim()
+    summaryOpen.value = true
+    if (!summary.value) showToast('info', 'No summary returned')
+  } catch {
+    showToast('error', 'Summarize failed — is the AI service running?')
+  } finally {
+    summarizing.value = false
+  }
+}
+
+function goMessage(delta: number) {
+  const msgs = store.messages
+  const m = store.selectedMessage
+  if (!msgs.length || !m) return
+  const idx = msgs.findIndex((x) => x.id === m.id)
+  if (idx === -1) return
+  const next = msgs[idx + delta]
+  if (next) store.openMessage(next.id)
+}
+const canGoPrev = computed(() => {
+  const m = store.selectedMessage
+  if (!m) return false
+  return store.messages.findIndex((x) => x.id === m.id) > 0
+})
+const canGoNext = computed(() => {
+  const m = store.selectedMessage
+  if (!m) return false
+  const idx = store.messages.findIndex((x) => x.id === m.id)
+  return idx >= 0 && idx < store.messages.length - 1
+})
+
 // ── Realtime counts: poll folder + spam counts while the view is open ──
 let pollTimer: ReturnType<typeof setInterval> | null = null
 function onVisibility() {
@@ -525,6 +605,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   document.removeEventListener('visibilitychange', onVisibility)
+  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
 })
 </script>
 
@@ -590,6 +671,17 @@ onUnmounted(() => {
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :disabled="!store.selectedMessage" title="Forward" @click="store.selectedMessage && openCompose(store.selectedMessage, 'forward')">
           <Forward :size="14" /> Forward
+        </button>
+        <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
+          :disabled="!store.selectedMessage || summarizing" :title="summarizing ? 'Summarizing…' : 'AI summary'"
+          @click="store.selectedMessage && summarizeEmail()">
+          <FileText :size="14" /> {{ summarizing ? '…' : 'Summarize' }}
+        </button>
+        <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
+          :class="ttsPlaying ? 'text-accent' : ''"
+          :disabled="!store.selectedMessage" :title="ttsPlaying ? 'Stop voice' : 'Read aloud'"
+          @click="store.selectedMessage && vocalizeEmail()">
+          <Volume2 :size="14" /> {{ ttsPlaying ? 'Stop' : 'Listen' }}
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-50"
           :disabled="store.syncing" @click="onSync" title="Send / Receive">
@@ -1073,6 +1165,26 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1">
+              <button class="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-accent disabled:opacity-40"
+                :disabled="!canGoPrev" title="Previous message" @click="goMessage(-1)">
+                <ChevronLeft :size="14" />
+              </button>
+              <button class="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-accent disabled:opacity-40"
+                :disabled="!canGoNext" title="Next message" @click="goMessage(1)">
+                <ChevronRight :size="14" />
+              </button>
+              <div class="mx-1 h-5 w-px bg-border" />
+              <button class="rounded-md p-1.5 text-text-muted hover:bg-surface-hover disabled:opacity-40"
+                :disabled="!store.selectedMessage || summarizing" :title="summarizing ? 'Summarizing…' : 'AI summary'"
+                @click="store.selectedMessage && summarizeEmail()">
+                <FileText :size="14" />
+              </button>
+              <button class="rounded-md p-1.5 text-text-muted hover:bg-surface-hover disabled:opacity-40"
+                :class="ttsPlaying ? 'text-accent' : ''"
+                :disabled="!store.selectedMessage" :title="ttsPlaying ? 'Stop voice' : 'Read aloud'"
+                @click="store.selectedMessage && vocalizeEmail()">
+                <Volume2 :size="14" />
+              </button>
               <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-accent"
                 @click="printEmail">
                 <Printer :size="13" /> Print
@@ -1086,6 +1198,24 @@ onUnmounted(() => {
           <iframe v-if="sanitizedHtml && !renderText" :srcdoc="emailDocument(false)" sandbox=""
             class="min-h-0 w-full flex-1 bg-white" />
           <pre v-else class="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-text-primary/90">{{ store.selectedMessage?.text_body }}</pre>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- AI summary panel -->
+    <Teleport to="body">
+      <div v-if="summaryOpen" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+        @click.self="summaryOpen = false">
+        <div class="w-full max-w-lg rounded-xl border border-border bg-surface p-5 shadow-xl">
+          <div class="mb-2 flex items-center justify-between">
+            <div class="flex items-center gap-2 text-sm font-semibold text-text-primary">
+              <FileText :size="15" /> AI Summary
+            </div>
+            <button class="rounded-md p-1 text-text-muted hover:bg-surface-hover" title="Close" @click="summaryOpen = false">
+              <X :size="15" />
+            </button>
+          </div>
+          <p class="whitespace-pre-wrap text-xs leading-relaxed text-text-secondary">{{ summary || 'No summary available.' }}</p>
         </div>
       </div>
     </Teleport>
