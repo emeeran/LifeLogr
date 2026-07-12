@@ -29,6 +29,9 @@ class Entry(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_encrypted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     encrypted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Random per-entry PBKDF2 salt (base64). Null on legacy entries encrypted
+    # before salts were introduced (decrypted via the deterministic fallback).
+    encryption_salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
     latitude: Mapped[float | None] = mapped_column(nullable=True)
     longitude: Mapped[float | None] = mapped_column(nullable=True)
     location_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

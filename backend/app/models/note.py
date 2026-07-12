@@ -75,6 +75,9 @@ class Note(Base):
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     is_encrypted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     encrypted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Random per-note PBKDF2 salt (base64). Null on legacy notes encrypted
+    # before salts were introduced (decrypted via the deterministic fallback).
+    encryption_salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

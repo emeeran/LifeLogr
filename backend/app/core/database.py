@@ -242,6 +242,17 @@ _COLUMN_MIGRATIONS = [
         "action",
         "ALTER TABLE spam_blocklist ADD COLUMN action VARCHAR(20) NOT NULL DEFAULT 'junk'",
     ),
+    # Encryption — random per-entry/per-note PBKDF2 salt (null on legacy rows).
+    (
+        "entries",
+        "encryption_salt",
+        "ALTER TABLE entries ADD COLUMN encryption_salt VARCHAR(64)",
+    ),
+    (
+        "notes",
+        "encryption_salt",
+        "ALTER TABLE notes ADD COLUMN encryption_salt VARCHAR(64)",
+    ),
 ]
 
 _INDEX_MIGRATIONS = [
