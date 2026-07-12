@@ -298,19 +298,6 @@ class OllamaService:
         result = await self._generate(prompt, temperature=0.7, num_predict=256)
         return result.strip()
 
-    # ── On this day reflection ─────────────────────────────────────────
-
-    async def reflect_on_past(self, entries_text: str, years_ago: int) -> str:
-        """Generate a warm reflection on past entries from the same date."""
-        prompt = (
-            f"Look at these journal entries written {years_ago} year(s) ago. "
-            f"Write a brief, warm reflection (2-3 sentences) about what the person was experiencing "
-            f"and how they might have grown since then. Be thoughtful and encouraging.\n\n"
-            f"Past entries:\n{entries_text[:2000]}"
-        )
-        result = await self._generate(prompt, temperature=0.6)
-        return result.strip()
-
     # ── Theme detection ────────────────────────────────────────────────
 
     async def detect_themes(self, summaries_by_month: dict[str, list[str]]) -> list[dict[str, Any]]:

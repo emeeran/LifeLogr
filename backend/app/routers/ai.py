@@ -30,8 +30,6 @@ from app.schemas.ai import (
     GenericToolResponse,
     GrammarCheckRequest,
     GrammarCheckResponse,
-    OnThisDayPastEntry,
-    OnThisDayResponse,
     RewriteRequest,
     RewriteResponse,
     RewriteForClarityRequest,
@@ -114,100 +112,6 @@ async def continue_writing(data: ContinueWritingRequest) -> Any:
     svc = OllamaService()
     continuation = await svc.continue_writing(data.text)
     return ContinueWritingResponse(continuation=continuation)
-
-
-# ── On this day ────────────────────────────────────────────────────────
-
-
-@router.get("/on-this-day", response_model=OnThisDayResponse)
-async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
-    """Generate an AI reflection on entries from this date in past years."""
-    try:
-        today = date.today()
-        # Handle Feb 29 on non-leap years by falling back to Feb 28
-        past_dates: list[date] = []
-        for y in range(1, 6):
-            try:
-                past_dates.append(today.replace(year=today.year - y))
-            except ValueError:
-                past_dates.append(today.replace(month=2, day=28, year=today.year - y))
-
-        # Single query for all past dates instead of 5 separate queries
-        result = await db.execute(
-            select(Entry).where(
-                ~Entry.is_deleted,
-                ~Entry.is_encrypted,
-                Entry.entry_date.in_(past_dates),
-            )
-        )
-        all_entries = result.scalars().all()
-
-        # Group entries by year offset
-        past_entries: list[dict[str, Any]] = []
-        for years_ago, past_date in zip(range(1, 6), past_dates):
-            date_entries = [e for e in all_entries if e.entry_date == past_date]
-            if date_entries:
-                text = "\n\n".join(
-                    f"**{e.title or 'Untitled'}** ({years_ago} years ago)\n{e.body[:500]}"
-                    for e in date_entries
-                )
-                first = date_entries[0]
-                past_entries.append(
-                    {
-                        "years_ago": years_ago,
-                        "date": str(past_date),
-                        "title": first.title,
-                        "snippet": (first.body[:150].strip() + "...")
-                        if len(first.body) > 150
-                        else first.body.strip(),
-                        "text": text,
-                        "entry_ids": [e.id for e in date_entries],
-                    }
-                )
-
-        if not past_entries:
-            return OnThisDayResponse(
-                years_ago=0,
-                entries_count=0,
-                reflection="No entries found on this date in previous years.",
-                past_entries=[],
-            )
-
-        # Combine all past entries and generate reflection
-        combined = "\n\n---\n\n".join(p["text"] for p in past_entries)
-        closest = past_entries[0]
-        reflection = "No AI reflection available."
-        try:
-            svc = OllamaService()
-            status = await svc.status()
-            if status.ollama_available:
-                reflection = await svc.reflect_on_past(combined, closest["years_ago"])
-        except Exception:
-            logger.warning("Ollama unavailable for on-this-day reflection", exc_info=True)
-
-        return OnThisDayResponse(
-            years_ago=closest["years_ago"],
-            entries_count=len(past_entries),
-            reflection=reflection,
-            past_entries=[
-                OnThisDayPastEntry(
-                    years_ago=p["years_ago"],
-                    date=str(p["date"]),
-                    title=p["title"],
-                    snippet=p["snippet"],
-                    entry_ids=p.get("entry_ids", []),
-                )
-                for p in past_entries
-            ],
-        )
-    except Exception:
-        logger.error("On-this-day endpoint failed", exc_info=True)
-        return OnThisDayResponse(
-            years_ago=0,
-            entries_count=0,
-            reflection="Could not load on-this-day data. Please try again later.",
-            past_entries=[],
-        )
 
 
 # ── Theme detection ────────────────────────────────────────────────────

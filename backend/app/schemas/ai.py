@@ -130,24 +130,6 @@ class ContinueWritingResponse(BaseModel):
     continuation: str
 
 
-# ── On this day ────────────────────────────────────────────────────────
-
-
-class OnThisDayPastEntry(BaseModel):
-    years_ago: int
-    date: str
-    title: str | None = None
-    snippet: str | None = None
-    entry_ids: list[int] = []
-
-
-class OnThisDayResponse(BaseModel):
-    years_ago: int
-    entries_count: int
-    reflection: str
-    past_entries: list[OnThisDayPastEntry]
-
-
 # ── Theme detection ────────────────────────────────────────────────────
 
 

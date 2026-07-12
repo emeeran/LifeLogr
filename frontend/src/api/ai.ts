@@ -4,7 +4,6 @@ import type {
   AIStatusResponse,
   ExpandResponse,
   GrammarSuggestion,
-  OnThisDayResponse,
   RewriteResponse,
   TagSuggestionResponse,
   ThemesResponse,
@@ -18,9 +17,6 @@ export const aiStatus = () =>
 
 export const suggestTags = (text: string) =>
   request<TagSuggestionResponse>('/ai/suggest-tags', { method: 'POST', body: JSON.stringify({ text }) })
-
-export const getOnThisDay = () =>
-  request<OnThisDayResponse>('/ai/on-this-day')
 
 export const getThemes = (months: number = 6) =>
   request<ThemesResponse>(`/ai/themes?months=${months}`)

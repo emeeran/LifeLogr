@@ -13,7 +13,6 @@ const router = createRouter({
     { path: '/contacts', name: 'contacts', component: () => import('./components/contacts/ContactsView.vue') },
     { path: '/email', name: 'email', component: () => import('./components/email/EmailView.vue') },
     { path: '/media', name: 'media', component: () => import('./components/media/MediaTimelineView.vue') },
-    { path: '/on-this-day', name: 'on-this-day', component: () => import('./components/onthisday/OnThisDayView.vue') },
     { path: '/settings', name: 'settings', component: () => import('./components/settings/SettingsView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],

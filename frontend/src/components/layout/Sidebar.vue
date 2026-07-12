@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useUiStore, type ViewType } from '../../stores/ui'
 import {
-  Calendar, Clock, Search, Sunrise, Settings,
+  Calendar, Clock, Search, Settings,
   Bell, ImageIcon, Users, ListTodo, Mail,
   ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard, GripVertical
 } from 'lucide-vue-next'
@@ -21,7 +21,6 @@ const navItems: { view: ViewType; icon: Component; label: string }[] = [
   { view: 'contacts', icon: Users, label: 'Contacts' },
   { view: 'email', icon: Mail, label: 'Email' },
   { view: 'media', icon: ImageIcon, label: 'Media' },
-  { view: 'on-this-day', icon: Sunrise, label: 'On this day' },
 ]
 
 // User-customisable nav order (persisted). Drag a nav item to reorder.

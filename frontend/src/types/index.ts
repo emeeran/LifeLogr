@@ -332,23 +332,6 @@ export interface RewriteForClarityResponse {
   rewritten_text: string;
 }
 
-// ── AI On This Day ──────────────────────────────────────────────────
-
-export interface OnThisDayPastEntry {
-  years_ago: number;
-  date: string;
-  title: string | null;
-  snippet: string | null;
-  entry_ids: number[];
-}
-
-export interface OnThisDayResponse {
-  years_ago: number;
-  entries_count: number;
-  reflection: string;
-  past_entries: OnThisDayPastEntry[];
-}
-
 // ── AI Themes ───────────────────────────────────────────────────────
 
 export interface ThemeInsight {
