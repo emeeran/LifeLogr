@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  Bold, Italic, Strikethrough, Heading1, Heading2, Heading3, List, ListOrdered,
-  ListChecks, Quote, Code, Link as LinkIcon, Table, Image as ImageIcon, Music,
-  Video, Eye, Pencil, Sparkles, Pin, Trash2, Loader, Volume2, Plus, X,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify, Smile, ChevronUp, ChevronDown,
+  Eye, Pencil, Sparkles, Pin, Trash2, Loader, Volume2, Plus, X,
+  ChevronUp, ChevronDown,
 } from 'lucide-vue-next'
 import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
 import { useDragDrop } from '../../composables/useDragDrop'
+import { useRichTextEditor } from '../../composables/useRichTextEditor'
 import { useLocalStorage } from '@vueuse/core'
-import { callAiTool } from '../../api/ai'
-import { AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
 import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
+import EditorToolbar from '../editor/EditorToolbar.vue'
+import EditorContextMenu from '../editor/EditorContextMenu.vue'
 import NoteEncryptionBadge from './NoteEncryptionBadge.vue'
 import { useNotesStore } from '../../stores/notes'
 import { tagsApi } from '../../api/tags'
@@ -47,8 +46,10 @@ const showAi = ref(false)
 const showTags = ref(false)
 const tagQuery = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
-const selStart = ref(0)
-const selEnd = ref(0)
+// ── Shared editing core (selection, formatting, history, AI, shortcuts) ──
+const core = useRichTextEditor({ body, textarea, onSave: saveNow })
+// Notes' embed / emoji / paste insert at the selection via the core.
+const applyText = core.applyToSelection
 const saving = ref(false)
 const savedAt = ref<number | null>(null)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -61,6 +62,8 @@ function syncFromActive() {
     title.value = props.note.title ?? ''
     body.value = props.note.body
   }
+  // Fresh undo stack per source — undo never crosses a note/page boundary.
+  core.resetHistory()
 }
 
 // Resync when the note changes or the active page changes. If the active page
@@ -225,95 +228,19 @@ function toggleSpeak() {
   speaking.value = true
 }
 
-// ── Selection helpers ────────────────────────────────────────────────────────
-function updateSelection() {
-  const el = textarea.value
-  if (el) {
-    selStart.value = el.selectionStart
-    selEnd.value = el.selectionEnd
-  }
-}
-function getSelection(): string {
-  const el = textarea.value
-  if (el && document.activeElement === el) return el.value.slice(el.selectionStart, el.selectionEnd)
-  return body.value.slice(selStart.value, selEnd.value)
-}
-function applyText(text: string) {
-  const el = textarea.value
-  let s: number
-  let e: number
-  if (el && document.activeElement === el) {
-    s = el.selectionStart
-    e = el.selectionEnd
-  } else {
-    s = selStart.value
-    e = selEnd.value
-  }
-  body.value = body.value.slice(0, s) + text + body.value.slice(e)
-  nextTick(() => {
-    if (el) {
-      el.focus()
-      const pos = s + text.length
-      el.selectionStart = el.selectionEnd = pos
-    }
-  })
-}
-function wrapSelection(before: string, after = before) {
-  const el = textarea.value
-  if (!el) return
-  const s = el.selectionStart
-  const e = el.selectionEnd
-  const sel = body.value.slice(s, e)
-  body.value = body.value.slice(0, s) + before + sel + after + body.value.slice(e)
-  nextTick(() => {
-    el.focus()
-    el.selectionStart = s + before.length
-    el.selectionEnd = e + before.length
-  })
-}
-function prefixLines(prefix: string) {
-  const el = textarea.value
-  if (!el) return
-  const s = el.selectionStart
-  const lineStart = body.value.lastIndexOf('\n', s - 1) + 1
-  body.value = body.value.slice(0, lineStart) + prefix + body.value.slice(lineStart)
-  nextTick(() => el.focus())
-}
-
-// ── Rich formatting (font family / size / alignment) via inline HTML ────────
-// Markdown has no font/size/alignment, so we wrap the selection in spans/divs
-// with inline styles. DOMPurify allows the `style` attribute by default.
+// ── Notes toolbar state (font/size drive inline <span> injection) ──
 const ribbonExpanded = useLocalStorage<boolean>('lifelogr-notes-ribbon-expanded', true)
-const FONTS = [
-  { label: 'System', value: '' },
-  { label: 'Sans', value: 'system-ui, sans-serif' },
-  { label: 'Serif', value: 'Georgia, serif' },
-  { label: 'Mono', value: 'ui-monospace, monospace' },
-  { label: 'Arial', value: 'Arial, sans-serif' },
-  { label: 'Verdana', value: 'Verdana, sans-serif' },
-  { label: 'Courier New', value: '"Courier New", monospace' },
-  { label: 'Comic Sans', value: '"Comic Sans MS", cursive' },
-]
-const FONT_SIZES = [12, 13, 14, 16, 18, 20, 24, 28, 32]
 const selFont = ref('')
 const selSize = ref<number | ''>('')
 
-function applyFont() {
-  const f = FONTS.find((x) => x.value === selFont.value)
-  if (!f) return
-  if (f.value === '') {
-    // "System" clears font: wrap in a neutral span (no style) — harmless.
-    wrapSelection('<span>', '</span>')
-  } else {
-    wrapSelection(`<span style="font-family:${f.value}">`, '</span>')
-  }
+// The shared toolbar emits font/size changes; wrap the selection in a span.
+function onFontChange(v: string) {
+  selFont.value = v
+  if (v) core.wrapFont(v)
 }
-function applySize() {
-  if (selSize.value === '') return
-  wrapSelection(`<span style="font-size:${selSize.value}px">`, '</span>')
-}
-function applyAlign(dir: 'left' | 'center' | 'right' | 'justify') {
-  wrapSelection(`<div style="text-align:${dir}">`, '</div>')
+function onSizeChange(v: number | '') {
+  selSize.value = v
+  if (v !== '') core.wrapSize(v)
 }
 
 // ── Emoji picker ─────────────────────────────────────────────────────────────
@@ -513,17 +440,7 @@ async function uploadClipImage(img: {
   await embedFile(new File([blob], 'pasted.png', { type: 'image/png' }))
 }
 
-// ── Table insertion ──────────────────────────────────────────────────────────
-const showTable = ref(false)
-const tableHover = ref({ rows: 0, cols: 0 })
-function insertTable(rows: number, cols: number) {
-  const header = `| ${Array.from({ length: cols }, (_, i) => `Col ${i + 1}`).join(' | ')} |`
-  const sep = `| ${Array.from({ length: cols }, () => '---').join(' | ')} |`
-  const blank = `| ${Array.from({ length: cols }, () => '').join(' | ')} |`
-  const bodyRows = Math.max(1, rows - 1)
-  applyText('\n' + [header, sep, ...Array.from({ length: bodyRows }, () => blank)].join('\n') + '\n')
-  showTable.value = false
-}
+// ── Paste-to-table helpers (table button itself comes from the shared toolbar) ─
 function htmlTableToMarkdown(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const table = doc.querySelector('table')
@@ -663,44 +580,35 @@ function wrapResizableMedia() {
   })
 }
 
-// ── Right-click → AI tools on selection ──────────────────────────────────────
-const ctxMenu = ref<{ x: number; y: number } | null>(null)
-const ctxLoading = ref(false)
-const ctxTools = [
-  { id: 'polish', label: '✨ Polish' },
-  { id: 'clarity', label: '🎯 Improve clarity' },
-  { id: 'rewrite', label: '🔁 Rewrite' },
-  { id: 'expand', label: '📏 Expand' },
-  { id: 'shorten', label: '✂️ Shorten' },
-  { id: 'simplify', label: '🧒 Simplify' },
-  { id: 'tone', label: '🎨 Change tone' },
-  { id: 'grammar', label: '✔️ Grammar' },
-]
+// ── Right-click → shared AI context menu (selection + AI driven by the core) ──
+const showContextMenu = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
 function onContextMenu(e: MouseEvent) {
-  const sel = getSelection()
-  if (!sel.trim()) return // no selection → let the native menu show
+  if (!core.getSelection().trim()) return // no selection → let the native menu show
   e.preventDefault()
-  const maxLeft = (typeof window !== 'undefined' ? window.innerWidth : 9999) - 200
-  ctxMenu.value = { x: Math.min(e.clientX, Math.max(0, maxLeft)), y: e.clientY }
+  core.cacheSelection()
+  const maxLeft = (typeof window !== 'undefined' ? window.innerWidth : 9999) - 240
+  contextMenuPos.value = { x: Math.min(e.clientX, Math.max(0, maxLeft)), y: e.clientY }
+  showContextMenu.value = true
 }
-function closeCtx() {
-  ctxMenu.value = null
+function copySelection() {
+  const t = core.getSelectionRaw()
+  if (t) navigator.clipboard.writeText(t)
 }
-async function runCtxTool(toolId: string) {
-  const def = AI_TOOL_BY_ID[toolId]
-  ctxMenu.value = null
-  if (!def) return
-  const text = getSelection()
-  if (!text) return
-  ctxLoading.value = true
-  try {
-    const { text: out } = await callAiTool(def, text)
-    if (out) applyText(out)
-  } catch (e: unknown) {
-    alert(e instanceof Error ? e.message : 'AI tool failed')
-  } finally {
-    ctxLoading.value = false
+function cutSelection() {
+  const t = core.getSelectionRaw()
+  if (t) {
+    navigator.clipboard.writeText(t)
+    core.applyToSelection('')
   }
+}
+/** Route a toolbar action: embed uploads are notes-local; everything else is core. */
+function onToolbarAction(name: string) {
+  if (name === 'embedImage') return triggerInsert('image')
+  if (name === 'embedAudio') return triggerInsert('audio')
+  if (name === 'embedVideo') return triggerInsert('video')
+  const fn = (core.actions as any)[name]
+  if (fn) fn()
 }
 
 // Load TTS voices (async on some browsers) + re-wrap media when preview renders.
@@ -760,91 +668,37 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- EPIM-style formatting ribbon (foldable) -->
-    <div class="ribbon-wrap">
-      <div v-if="ribbonExpanded" class="ribbon">
-      <div class="rgroup">
-        <select v-model="selFont" class="ribbon-sel" title="Font" @change="applyFont">
-          <option v-for="f in FONTS" :key="f.label" :value="f.value">{{ f.label }}</option>
-        </select>
-        <select v-model="selSize" class="ribbon-sel ribbon-sel-size" title="Font size" @change="applySize">
-          <option :value="''">A</option>
-          <option v-for="n in FONT_SIZES" :key="n" :value="n">{{ n }}</option>
-        </select>
-      </div>
-      <span class="rsep" />
-      <div class="rgroup">
-        <button class="rbtn" title="Bold" @click="wrapSelection('**')"><Bold :size="14" /></button>
-        <button class="rbtn" title="Italic" @click="wrapSelection('*')"><Italic :size="14" /></button>
-        <button class="rbtn" title="Strikethrough" @click="wrapSelection('~~')"><Strikethrough :size="14" /></button>
-        <button class="rbtn" title="Inline code" @click="wrapSelection('`')"><Code :size="14" /></button>
-      </div>
-      <span class="rsep" />
-      <div class="rgroup">
-        <button class="rbtn" title="Heading 1" @click="prefixLines('# ')"><Heading1 :size="14" /></button>
-        <button class="rbtn" title="Heading 2" @click="prefixLines('## ')"><Heading2 :size="14" /></button>
-        <button class="rbtn" title="Heading 3" @click="prefixLines('### ')"><Heading3 :size="14" /></button>
-      </div>
-      <span class="rsep" />
-      <div class="rgroup">
-        <button class="rbtn" title="Bullet list" @click="prefixLines('- ')"><List :size="14" /></button>
-        <button class="rbtn" title="Numbered list" @click="prefixLines('1. ')"><ListOrdered :size="14" /></button>
-        <button class="rbtn" title="Checklist" @click="prefixLines('- [ ] ')"><ListChecks :size="14" /></button>
-        <button class="rbtn" title="Quote" @click="prefixLines('> ')"><Quote :size="14" /></button>
-      </div>
-      <span class="rsep" />
-      <div class="rgroup">
-        <button class="rbtn" title="Align left" @click="applyAlign('left')"><AlignLeft :size="14" /></button>
-        <button class="rbtn" title="Align center" @click="applyAlign('center')"><AlignCenter :size="14" /></button>
-        <button class="rbtn" title="Align right" @click="applyAlign('right')"><AlignRight :size="14" /></button>
-        <button class="rbtn" title="Justify" @click="applyAlign('justify')"><AlignJustify :size="14" /></button>
-      </div>
-      <span class="rsep" />
-      <div class="rgroup">
-        <button class="rbtn" title="Link" @click="wrapSelection('[', '](url)')"><LinkIcon :size="14" /></button>
-        <div class="relative">
-          <button class="rbtn" :class="{ 'text-accent': showTable }" title="Insert table" @click="showTable = !showTable">
-            <Table :size="14" />
-          </button>
-          <div v-if="showTable" class="fixed inset-0 z-30" @click="showTable = false" />
-          <div
-            v-if="showTable"
-            class="absolute top-8 left-0 z-40 bg-surface border border-border rounded-lg shadow-xl p-2"
-            @mouseleave="tableHover = { rows: 0, cols: 0 }"
-          >
-            <div v-for="r in 5" :key="r" class="flex gap-0.5">
-              <button
-                v-for="c in 5"
-                :key="c"
-                class="w-5 h-5 rounded transition-colors"
-                :class="r <= tableHover.rows && c <= tableHover.cols ? 'bg-accent' : 'bg-surface-hover hover:bg-accent/40'"
-                @mouseenter="tableHover = { rows: r, cols: c }"
-                @click="insertTable(r, c)"
-              />
-            </div>
-            <div class="text-[9px] text-text-muted text-center mt-1">{{ tableHover.rows }} × {{ tableHover.cols }}</div>
-          </div>
+    <!-- Shared formatting toolbar (notes mode) — foldable -->
+    <div class="ribbon-wrap relative">
+      <div v-if="ribbonExpanded">
+        <EditorToolbar
+          mode="notes"
+          :active-formats="core.activeFormats.value"
+          :undo-count="core.undoStack.value.length"
+          :redo-count="core.redoStack.value.length"
+          :show-emoji="showEmoji"
+          :show-find="core.showFind.value"
+          :sel-font="selFont"
+          :sel-size="selSize"
+          @action="onToolbarAction"
+          @toggle-emoji="showEmoji = !showEmoji"
+          @toggle-find="core.showFind.value = !core.showFind.value"
+          @change-font="(v: string) => onFontChange(v)"
+          @change-size="(v: number | '') => onSizeChange(v)"
+        />
+        <div class="flex items-center justify-end px-2 py-0.5 border-t border-border/50">
+          <button class="rbtn" title="Hide toolbar" @click="ribbonExpanded = false"><ChevronUp :size="13" /></button>
         </div>
-        <button class="rbtn" title="Insert image" @click="triggerInsert('image')"><ImageIcon :size="14" /></button>
-        <button class="rbtn" title="Insert audio" @click="triggerInsert('audio')"><Music :size="14" /></button>
-        <button class="rbtn" title="Insert video" @click="triggerInsert('video')"><Video :size="14" /></button>
-        <div class="relative">
-          <button class="rbtn" :class="{ 'text-accent': showEmoji }" title="Emoji" @click="showEmoji = !showEmoji">
-            <Smile :size="14" />
-          </button>
-          <div v-if="showEmoji" class="fixed inset-0 z-30" @click="showEmoji = false" />
-          <div v-if="showEmoji" class="emoji-pop" @click.stop>
-            <button v-for="e in EMOJI" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
-          </div>
+        <!-- Emoji picker (notes-local popover) -->
+        <div v-if="showEmoji" class="fixed inset-0 z-30" @click="showEmoji = false" />
+        <div v-if="showEmoji" class="absolute right-2 top-full z-40 emoji-pop" @click.stop>
+          <button v-for="e in EMOJI" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
         </div>
       </div>
-      <span class="flex-1" />
-      <button class="rbtn" title="Hide toolbar" @click="ribbonExpanded = false"><ChevronUp :size="14" /></button>
-      </div>
-    <button v-else class="ribbon-collapsed" title="Show formatting toolbar" @click="ribbonExpanded = true">
-      <ChevronDown :size="13" /><span class="ml-1 text-[11px] text-text-muted">Formatting</span>
-    </button>
-  </div>
+      <button v-else class="ribbon-collapsed" title="Show formatting toolbar" @click="ribbonExpanded = true">
+        <ChevronDown :size="13" /><span class="ml-1 text-[11px] text-text-muted">Formatting</span>
+      </button>
+    </div>
 
     <!-- Page tabs (EPIM-style leaves with CRUD) -->
     <div class="page-tabs">
@@ -895,9 +749,14 @@ onUnmounted(() => {
           v-show="!showPreview"
           ref="textarea"
           v-model="body"
-          @keyup="updateSelection"
-          @mouseup="updateSelection"
-          @select="updateSelection"
+          @input="core.onInput"
+          @keydown="core.onTextareaKeydown"
+          @keydown.capture="core.onShortcutKeydown"
+          @keyup="core.cacheSelection"
+          @mouseup="core.cacheSelection"
+          @select="core.cacheSelection"
+          @focus="core.clearSelCache"
+          @blur="core.startSelCache"
           @paste="onPaste"
           @contextmenu="onContextMenu"
           class="flex-1 w-full resize-none bg-transparent px-4 py-3 text-sm text-text-primary outline-none custom-scrollbar"
@@ -998,22 +857,30 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <!-- Right-click → AI tools on selection -->
-    <div v-if="ctxMenu" class="ctx-backdrop" @click="closeCtx" @contextmenu.prevent="closeCtx">
-      <div
-        class="ctx-menu"
-        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-        @click.stop
-      >
-        <div class="ctx-head">AI tools · selection</div>
-        <button v-for="t in ctxTools" :key="t.id" class="ctx-item" @click="runCtxTool(t.id)">
-          {{ t.label }}
-        </button>
-        <div class="ctx-sep" />
-        <button class="ctx-item accent" @click="closeCtx(); showAi = true">🧰 Open AI panel</button>
-      </div>
-    </div>
-    <div v-if="ctxLoading" class="ctx-loading">✨ Working…</div>
+    <!-- Right-click → shared AI context menu (no encrypt item in notes) -->
+    <EditorContextMenu
+      :enable-encrypt="false"
+      :visible="showContextMenu"
+      :position="contextMenuPos"
+      :ai-loading="core.aiLoading.value"
+      :ai-result="core.aiResult.value"
+      :ai-result-mode="core.aiResultMode.value"
+      :ai-param-value="core.aiParamValue.value"
+      :selected-text="core.getSelection()"
+      @close="showContextMenu = false"
+      @copy="copySelection"
+      @cut="cutSelection"
+      @bold="core.actions.bold()"
+      @italic="core.actions.italic()"
+      @run-ai-tool="(mode: string) => core.runAiTool(mode)"
+      @open-ai-drawer="showAi = true"
+      @ai-result-replace="core.aiResultReplace"
+      @ai-result-insert="core.aiResultInsert"
+      @ai-result-retry="core.aiResultRetry"
+      @ai-result-copy="core.aiResultCopy"
+      @apply-tool-param="(value: string) => core.applyToolParam(value)"
+      @close-result="core.clearAiResult"
+    />
 
     <!-- AI tools overlay -->
     <div
@@ -1026,7 +893,7 @@ onUnmounted(() => {
       </div>
       <div class="flex-1 overflow-hidden">
         <AiDrawerPanel
-          :get-selection="getSelection"
+          :get-selection="core.getSelection"
           :apply-text="applyText"
           :has-entry="true"
           :entry-id="note.id"
