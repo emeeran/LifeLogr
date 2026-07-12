@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
 
@@ -9,9 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.entry import Entry
 from app.models.video_note import VideoNote
+from app.services.media_service import _BLOCKED_SIGNATURES
+
+logger = logging.getLogger(__name__)
 
 
 class VideoService:
@@ -33,6 +37,17 @@ class VideoService:
     ) -> VideoNote:
         """Upload a video file and create a VideoNote record."""
         await self._get_entry(entry_id)
+
+        if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
+            raise MediaSizeError(f"Video exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        if not content_type.startswith("video/"):
+            raise MediaSizeError(
+                f"File type '{content_type}' not allowed; only video/* is accepted"
+            )
+        for sig, label in _BLOCKED_SIGNATURES.items():
+            if data[: len(sig)] == sig:
+                logger.warning("Blocked video upload (detected %s)", label)
+                raise MediaSizeError(f"File type not allowed: detected {label}")
 
         ext = Path(filename).suffix or ".mp4"
         storage_name = f"videos/{entry_id}/{uuid.uuid4().hex}{ext}"

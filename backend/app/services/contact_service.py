@@ -23,6 +23,7 @@ from app.schemas.contact import (
     ContactUpdate,
     _normalize_email,
 )
+from app.services.media_service import _BLOCKED_SIGNATURES
 
 logger = logging.getLogger(__name__)
 
@@ -642,6 +643,10 @@ class ContactService:
     async def set_photo(self, contact_id: int, data: bytes, filename: str) -> Contact:
         if len(data) > _PHOTO_MAX_BYTES:
             raise MediaSizeError("Contact photo must be under 8 MB")
+        for sig, label in _BLOCKED_SIGNATURES.items():
+            if data[: len(sig)] == sig:
+                logger.warning("Blocked contact photo upload (detected %s)", label)
+                raise MediaSizeError(f"File type not allowed: detected {label}")
         contact = await self._get(contact_id)
         ext = "".join(Path(filename).suffix.lower()[-5:]).lower()
         if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
