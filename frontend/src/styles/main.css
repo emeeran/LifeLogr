@@ -34,6 +34,9 @@ mark {
 :root {
   --editor-font: system-ui;
   --editor-font-size: 14px;
+  /* Logo wordmark forced white so it reads on the teal sidebar in both themes.
+     Declared in plain :root (not @theme) so Tailwind doesn't tree-shake it. */
+  --logo-filter: brightness(0) invert(1);
 }
 
 /* ── Markdown rendered body ─────────────────────────────────────────── */
