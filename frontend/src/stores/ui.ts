@@ -33,6 +33,10 @@ export const useUiStore = defineStore('ui', () => {
   // Scribble pad
   const scribbleOpen = useLocalStorage('lifelogr-scribble-open', false)
 
+  // Distraction-free writing: hides sidebar + center list, full-width editor.
+  // Distinct from the editor's own focusMode/fullscreen (a per-editor control).
+  const zenMode = useLocalStorage('lifelogr-zen-mode', false)
+
   function openSearchPalette() { searchPaletteOpen.value = true }
   function closeSearchPalette() { searchPaletteOpen.value = false }
 
@@ -42,6 +46,8 @@ export const useUiStore = defineStore('ui', () => {
   function closeDrawer() { activeDrawer.value = null }
 
   function toggleScribble() { scribbleOpen.value = !scribbleOpen.value }
+
+  function toggleZenMode() { zenMode.value = !zenMode.value }
 
   function setView(view: ViewType) {
     activeView.value = view
@@ -133,9 +139,9 @@ export const useUiStore = defineStore('ui', () => {
     activeView, sidebarCollapsed, detailPanelOpen, editingEntryId, newEntryDate,
     darkMode, fontFamily, fontSize, rightPanelWidth, defaultTitle, showEditor,
     showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, activeDrawer,
-    scribbleOpen,
+    scribbleOpen, zenMode,
     setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
-    openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer, toggleScribble,
+    openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer, toggleScribble, toggleZenMode,
   }
 })

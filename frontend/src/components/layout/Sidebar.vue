@@ -5,7 +5,7 @@ import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Sunrise, Settings,
   Sun, Moon, BarChart3, Bell, ImageIcon, Users, ListTodo, Mail,
-  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard
+  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard, GripVertical
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
@@ -44,6 +44,8 @@ const orderedNav = computed(() => {
 // HTML5 drag-and-drop state.
 const dragIndex = ref<number | null>(null)
 const dropIndex = ref<number | null>(null)
+// "Edit layout" mode pins the drag handles visible + shows a reorder hint.
+const editMode = ref(false)
 
 function onDragStart(_e: DragEvent, i: number) {
   dragIndex.value = i
@@ -100,12 +102,18 @@ function navigate(view: ViewType) {
 
     <!-- Scrollable nav (drag to reorder) -->
     <div class="flex-1 py-1" :class="ui.sidebarCollapsed ? 'overflow-y-hidden' : 'overflow-y-auto'">
+      <div
+        v-if="editMode && !ui.sidebarCollapsed"
+        class="mx-2 mb-1 px-2 py-1 rounded bg-sidebar-hover text-[10px] text-sidebar-text-secondary text-center"
+      >
+        Drag items to reorder
+      </div>
       <router-link
         v-for="(item, index) in orderedNav"
         :key="item.view"
         :to="`/${item.view}`"
         draggable="true"
-        class="relative flex items-center gap-2 text-xs cursor-grab transition-colors duration-150 active:cursor-grabbing"
+        class="group relative flex items-center gap-2 text-xs cursor-grab transition-colors duration-150 active:cursor-grabbing"
         :class="[
           ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5',
           isActive(item.view)
@@ -123,6 +131,12 @@ function navigate(view: ViewType) {
         @drop="onDrop($event, index)"
         @dragend="onDragEnd"
       >
+        <GripVertical
+          v-if="!ui.sidebarCollapsed"
+          :size="12"
+          class="drag-grip shrink-0 transition-opacity duration-150"
+          :class="editMode ? 'opacity-80' : 'opacity-0 group-hover:opacity-50'"
+        />
         <component :is="item.icon" :size="14" />
         <span v-if="!ui.sidebarCollapsed">{{ item.label }}</span>
       </router-link>
@@ -147,6 +161,18 @@ function navigate(view: ViewType) {
 
     <!-- Bottom: theme + settings + collapse -->
     <div class="border-t border-sidebar-hover py-1">
+      <button
+        v-if="!ui.sidebarCollapsed"
+        class="flex items-center gap-2 w-full text-xs cursor-pointer transition-colors duration-150"
+        :class="editMode
+          ? 'bg-sidebar-hover text-sidebar-text'
+          : 'text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text'"
+        aria-label="Edit navigation layout"
+        @click="editMode = !editMode"
+      >
+        <GripVertical :size="14" class="drag-grip" />
+        <span>{{ editMode ? 'Done' : 'Edit layout' }}</span>
+      </button>
       <button
         class="flex items-center gap-2 w-full text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
         :class="ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5'"

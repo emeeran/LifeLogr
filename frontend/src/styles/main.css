@@ -344,3 +344,23 @@ textarea:focus-visible,
   animation: settings-highlight 1.6s ease-out;
   border-radius: 6px;
 }
+
+/* ── Glassmorphism + motion utilities (additive; use existing tokens) ── */
+.glass-panel {
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.18);
+}
+.transition-smooth {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Sidebar reorder handle affordance (grip icon). */
+.drag-grip {
+  cursor: grab;
+  color: var(--color-sidebar-text-muted);
+}
+.drag-grip:active {
+  cursor: grabbing;
+}

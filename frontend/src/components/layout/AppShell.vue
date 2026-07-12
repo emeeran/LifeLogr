@@ -51,6 +51,10 @@ function onGlobalKeydown(e: KeyboardEvent) {
     e.preventDefault()
     ui.openSearchPalette()
   }
+  if ((e.ctrlKey || e.metaKey) && e.key === '.') {
+    e.preventDefault()
+    ui.toggleZenMode()
+  }
 }
 onMounted(() => document.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
@@ -108,17 +112,17 @@ async function onExtractText(id: number) {
 <template>
   <div class="flex h-screen overflow-hidden bg-surface">
     <!-- Sidebar -->
-    <Sidebar />
+    <Sidebar v-show="!ui.zenMode" />
 
     <!-- Scribble Pad (slide-in panel) -->
     <Transition name="scribble-slide">
-      <div v-if="ui.scribbleOpen" class="shrink-0 w-[280px] overflow-hidden">
+      <div v-if="ui.scribbleOpen && !ui.zenMode" class="shrink-0 w-[280px] overflow-hidden">
         <ScribblePad @close="ui.scribbleOpen = false" />
       </div>
     </Transition>
 
     <!-- Center panel (kept mounted even when drawer is open; just narrows) -->
-    <main v-show="!showDrawer" class="flex-1 flex flex-col min-w-0 bg-surface relative">
+    <main v-show="!showDrawer && !ui.zenMode" class="flex-1 flex flex-col min-w-0 bg-surface relative">
       <router-view v-slot="{ Component }">
         <Transition name="route-fade" mode="out-in">
           <component :is="Component" />
@@ -131,7 +135,7 @@ async function onExtractText(id: number) {
           v-if="ui.showSavePrompt"
           class="absolute inset-0 bg-black/30 flex items-center justify-center z-50"
         >
-          <div class="bg-surface border border-border rounded-lg p-4 w-72 shadow-xl space-y-3">
+          <div class="glass-panel rounded-lg p-4 w-72 space-y-3">
             <div class="flex items-center gap-2 text-sm font-medium text-text-primary">
               <AlertTriangle :size="16" class="text-amber-400" />
               Unsaved changes
@@ -196,13 +200,14 @@ async function onExtractText(id: number) {
     </Transition>
 
     <!-- Panel splitter -->
-    <PanelSplitter v-if="!isFullBleedView && (showDetail || showEditor)" />
+    <PanelSplitter v-if="!ui.zenMode && !isFullBleedView && (showDetail || showEditor)" />
 
-    <!-- Right panel: entry detail or editor -->
+    <!-- Right panel: entry detail or editor (full-width when Zen Mode is on) -->
     <div
-      v-if="!isFullBleedView && (showDetail || showEditor)"
-      class="shrink-0 bg-editor border-l border-border overflow-y-auto"
-      :style="{ width: ui.rightPanelWidth + 'px' }"
+      v-if="ui.zenMode ? showEditor : (!isFullBleedView && (showDetail || showEditor))"
+      class="bg-editor overflow-y-auto transition-all duration-200"
+      :class="ui.zenMode ? 'flex-1 min-w-0' : 'shrink-0 border-l border-border'"
+      :style="ui.zenMode ? undefined : { width: ui.rightPanelWidth + 'px' }"
     >
       <EntryEditor v-if="showEditor" ref="editorRef" />
       <EntryDetail v-else />
@@ -213,6 +218,16 @@ async function onExtractText(id: number) {
 
     <!-- First-run / upgrade "What's New" dialog -->
     <WhatsNewDialog v-model="showWhatsNew" />
+
+    <!-- Zen mode exit affordance -->
+    <button
+      v-if="ui.zenMode"
+      class="fixed top-3 right-3 z-50 flex items-center gap-1 px-2.5 py-1.5 rounded-full glass-panel text-xs text-text-secondary hover:text-text-primary cursor-pointer transition-colors"
+      title="Exit Zen Mode (Ctrl+.)"
+      @click="ui.toggleZenMode()"
+    >
+      <X :size="12" /> Exit Zen
+    </button>
   </div>
 </template>
 
