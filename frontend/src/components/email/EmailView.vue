@@ -411,8 +411,8 @@ async function confirmBlock(action: 'junk' | 'delete') {
         ? `Blocked sender — ${n} message${n === 1 ? '' : 's'} deleted; future mail will be removed.`
         : `Blocked sender — ${n} message${n === 1 ? '' : 's'} moved to Spam; future mail hidden.`,
     )
-  } catch {
-    showToast('error', 'Could not block sender')
+  } catch (e) {
+    showToast('error', `Could not block sender: ${e instanceof Error ? e.message : e}`)
   } finally {
     blocking.value = false
   }

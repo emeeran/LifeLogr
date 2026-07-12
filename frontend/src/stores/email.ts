@@ -244,7 +244,9 @@ export const useEmailStore = defineStore('email', () => {
     const res = await emailApi.blockSender(msg.id, action, scope)
     // The selected message is affected by its own block — clear it.
     if (action === 'delete' || !spamOnly.value) resetSelection()
-    await Promise.all([fetchMessages(), refreshCounts(), fetchSpamRules()])
+    // Refresh the list/counts, but don't fail the action if a refresh hiccups —
+    // the block itself already succeeded (allSettled never rejects).
+    await Promise.allSettled([fetchMessages(), refreshCounts(), fetchSpamRules()])
     return res.affected
   }
 

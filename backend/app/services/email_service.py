@@ -976,6 +976,7 @@ class EmailMessageService:
         )
         for folder in touched_folders:
             await EmailSyncService(self.db)._refresh_folder_counts(folder)
+        await self.db.commit()
 
         return {
             "rule": rule,
