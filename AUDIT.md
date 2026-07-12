@@ -25,6 +25,45 @@ hardening debts.
 > above what the HIGHs below convey. Treat that as the single highest-priority
 > item to fix.
 
+## Resolution status (2026-07-12 — commits `5b82e22`..`b44e1b1`)
+
+All CRITICAL/HIGH correctness, security, and crypto findings have been fixed;
+297 backend tests pass, frontend build green. Remaining items are additive
+test-coverage and lower-severity hardening.
+
+**Resolved**
+- CRITICAL ciphertext-in-FTS + HIGH ciphertext-to-LLM (`5b82e22`) — FTS triggers
+  exclude encrypted entries (encrypt/decrypt toggle triggers); enrichment +
+  on-this-day/themes skip encrypted entries.
+- HIGH deterministic PBKDF2 salt → per-entry random salt w/ legacy read-compat (`e758438`).
+- HIGH decrypt wrong-passphrase 500 → 400 (entry + note) (`5b82e22`).
+- HIGH `notes/from-path` arbitrary file read → sandboxed to `$HOME`+temp, sensitive dirs denied (`ebdd711`).
+- HIGH video upload zero validation → size + MIME + magic-byte checks (`ebdd711`).
+- HIGH contact-photo magic bytes (`ebdd711`).
+- HIGH email-sync double-fire → cross-job `asyncio.Lock` + `max_instances=1` (`6b0e8a8`).
+- HIGH deleted-email disk leak (unlink on delete) + temp-attachment TTL GC + inbound attachment size cap (`3bf70d4`).
+- HIGH (blind) `OLLAMA_BASE_URL` SSRF → scheme validated (`25ebe0e`).
+- HIGH (blind) OAuth reflected-XSS → `html.escape` on error detail (`25ebe0e`).
+- HIGH (blind) `get_db()` global lock removed (`8d5f52c`).
+- MEDIUM (blind) `LocalFileProvider` path traversal → containment (`25ebe0e`).
+- MEDIUM `_append_to_special` logs at WARNING; `RATE_LIMIT` wired to config; STARTTLS failure warns (`8d5f52c`).
+- HIGH `.env.example` documents OAuth/email vars; SECRET_KEY default warns at startup (`b44e1b1`).
+
+**Remaining (not in this pass)**
+- HIGH **additive test coverage**: `email_protocol` MIME parsing, planner
+  `_expand_recurrence`, contact vCard parse/serialize still lack unit tests.
+  These are new tests, not bug fixes — recommended next.
+- MEDIUM backup cloud-path RAM buffering (stream the gzip); lifespan draining of
+  background email tasks (task registry); `/health` liveness/readiness split;
+  `decrypt-text` bare-except narrowing; cloud `httpx` timeouts; AI-endpoint
+  fake-success narrowing.
+- LOW items (SPA containment guard, soft-delete guard on media parent, FTS-fallback
+  surfacing) — defence-in-depth, low severity.
+
+`SECRET_KEY`: auto-rotation was **intentionally not** done (it would break
+already-encrypted credentials); the launcher already generates strong keys, and
+the new startup warning surfaces any non-launcher run still on the default.
+
 ## Reconciliation with the Phase 5 blind review
 
 A context-blind reviewer (no knowledge that a cleanup ran) caught real issues
