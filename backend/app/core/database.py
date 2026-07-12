@@ -349,7 +349,7 @@ async def _backfill_entry_templates(conn: Any) -> None:
 # issue), every ``UPDATE entries`` (soft-delete, edits, AI enrichment) fails with
 # "SQL logic error". A clean rebuild re-aligns the index so the sync triggers
 # keep it consistent from then on.
-_FTS_REBUILD_VERSION = 1
+_FTS_REBUILD_VERSION = 2
 
 
 async def _setup_fts() -> None:
@@ -388,7 +388,7 @@ async def _setup_fts() -> None:
                 await conn.execute(
                     text("""
                     INSERT INTO entries_fts(rowid, title, body)
-                    SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
+                    SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0 AND entries.is_encrypted = 0
                 """)
                 )
                 if force_rebuild:
@@ -403,7 +403,9 @@ async def _setup_fts() -> None:
                     entry_count = int(
                         (
                             await conn.execute(
-                                text("SELECT COUNT(*) FROM entries WHERE is_deleted = 0")
+                                text(
+                                    "SELECT COUNT(*) FROM entries WHERE is_deleted = 0 AND is_encrypted = 0"
+                                )
                             )
                         ).scalar()
                         or 0
@@ -416,7 +418,7 @@ async def _setup_fts() -> None:
                         await conn.execute(
                             text("""
                             INSERT INTO entries_fts(rowid, title, body)
-                            SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
+                            SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0 AND entries.is_encrypted = 0
                         """)
                         )
                 except Exception:
@@ -437,7 +439,7 @@ async def _setup_fts() -> None:
                         await conn.execute(
                             text("""
                             INSERT INTO entries_fts(rowid, title, body)
-                            SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0
+                            SELECT entries.id, COALESCE(entries.title, ''), entries.body FROM entries WHERE entries.is_deleted = 0 AND entries.is_encrypted = 0
                         """)
                         )
                     except Exception:
@@ -459,13 +461,15 @@ async def _setup_fts() -> None:
                     "fts_entry_ad",
                     "fts_entry_soft_del",
                     "fts_entry_restore",
+                    "fts_entry_encrypt",
+                    "fts_entry_decrypt",
                 ):
                     await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
 
                 await conn.execute(
                     text("""
                     CREATE TRIGGER fts_entry_ai AFTER INSERT ON entries
-                    WHEN NEW.is_deleted = 0
+                    WHEN NEW.is_deleted = 0 AND NEW.is_encrypted = 0
                     BEGIN
                         INSERT INTO entries_fts(rowid, title, body)
                         VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
@@ -475,7 +479,9 @@ async def _setup_fts() -> None:
                 # Remove+reinsert (not UPDATE) so this is correct even when the
                 # row was previously removed from FTS (e.g. after a soft delete
                 # followed by content edits) — a plain UPDATE would be a no-op.
-                # Guarded to 0→0 so it can't overlap the soft-del/restore triggers.
+                # Only re-index plaintext→plaintext edits of non-encrypted rows;
+                # encryption/decryption transitions are handled by dedicated
+                # triggers below so ciphertext is never indexed.
                 #
                 # NOTE: we use ``DELETE FROM entries_fts WHERE rowid = ...`` rather
                 # than the FTS5 ``'delete'`` command (``INSERT INTO ft(ft,...)
@@ -487,6 +493,7 @@ async def _setup_fts() -> None:
                     text("""
                     CREATE TRIGGER fts_entry_au AFTER UPDATE ON entries
                     WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 0
+                       AND NEW.is_encrypted = 0 AND OLD.is_encrypted = 0
                     BEGIN
                         DELETE FROM entries_fts WHERE rowid = NEW.id;
                         INSERT INTO entries_fts(rowid, title, body)
@@ -512,13 +519,36 @@ async def _setup_fts() -> None:
                     END
                 """)
                 )
-                # Restore: re-index the entry (1 → 0). Without this the entry
-                # would stay invisible to search until its body changed.
+                # Restore: re-index the entry (1 → 0). Skip encrypted entries —
+                # their body column holds ciphertext, not searchable text.
                 await conn.execute(
                     text("""
                     CREATE TRIGGER fts_entry_restore AFTER UPDATE ON entries
-                    WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 1
+                    WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 1 AND NEW.is_encrypted = 0
                     BEGIN
+                        INSERT INTO entries_fts(rowid, title, body)
+                        VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                    END
+                """)
+                )
+                # Encryption toggle. Encrypted entries must never live in the
+                # search index: on encrypt, drop the now-stale plaintext row; on
+                # decrypt, re-index the restored plaintext body.
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_encrypt AFTER UPDATE ON entries
+                    WHEN NEW.is_encrypted = 1 AND OLD.is_encrypted = 0
+                    BEGIN
+                        DELETE FROM entries_fts WHERE rowid = NEW.id;
+                    END
+                """)
+                )
+                await conn.execute(
+                    text("""
+                    CREATE TRIGGER fts_entry_decrypt AFTER UPDATE ON entries
+                    WHEN NEW.is_encrypted = 0 AND OLD.is_encrypted = 1 AND NEW.is_deleted = 0
+                    BEGIN
+                        DELETE FROM entries_fts WHERE rowid = NEW.id;
                         INSERT INTO entries_fts(rowid, title, body)
                         VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
                     END
@@ -544,7 +574,7 @@ async def _setup_fts() -> None:
                 await conn.execute(
                     text("""
                     INSERT INTO notes_fts(rowid, title, body)
-                    SELECT notes.id, COALESCE(notes.title, ''), notes.body FROM notes WHERE notes.is_deleted = 0
+                    SELECT notes.id, COALESCE(notes.title, ''), notes.body FROM notes WHERE notes.is_deleted = 0 AND notes.is_encrypted = 0
                 """)
                 )
 
@@ -557,13 +587,15 @@ async def _setup_fts() -> None:
                 "fts_note_ad",
                 "fts_note_soft_del",
                 "fts_note_restore",
+                "fts_note_encrypt",
+                "fts_note_decrypt",
             ):
                 await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
 
             await conn.execute(
                 text("""
                 CREATE TRIGGER fts_note_ai AFTER INSERT ON notes
-                WHEN NEW.is_deleted = 0
+                WHEN NEW.is_deleted = 0 AND NEW.is_encrypted = 0
                 BEGIN
                     INSERT INTO notes_fts(rowid, title, body)
                     VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
@@ -574,6 +606,7 @@ async def _setup_fts() -> None:
                 text("""
                 CREATE TRIGGER fts_note_au AFTER UPDATE ON notes
                 WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 0
+                   AND NEW.is_encrypted = 0 AND OLD.is_encrypted = 0
                 BEGIN
                     DELETE FROM notes_fts WHERE rowid = NEW.id;
                     INSERT INTO notes_fts(rowid, title, body)
@@ -601,8 +634,29 @@ async def _setup_fts() -> None:
             await conn.execute(
                 text("""
                 CREATE TRIGGER fts_note_restore AFTER UPDATE ON notes
-                WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 1
+                WHEN NEW.is_deleted = 0 AND OLD.is_deleted = 1 AND NEW.is_encrypted = 0
                 BEGIN
+                    INSERT INTO notes_fts(rowid, title, body)
+                    VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
+                END
+            """)
+            )
+            # Encryption toggle: never index ciphertext notes.
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_encrypt AFTER UPDATE ON notes
+                WHEN NEW.is_encrypted = 1 AND OLD.is_encrypted = 0
+                BEGIN
+                    DELETE FROM notes_fts WHERE rowid = NEW.id;
+                END
+            """)
+            )
+            await conn.execute(
+                text("""
+                CREATE TRIGGER fts_note_decrypt AFTER UPDATE ON notes
+                WHEN NEW.is_encrypted = 0 AND OLD.is_encrypted = 1 AND NEW.is_deleted = 0
+                BEGIN
+                    DELETE FROM notes_fts WHERE rowid = NEW.id;
                     INSERT INTO notes_fts(rowid, title, body)
                     VALUES (NEW.id, COALESCE(NEW.title, ''), NEW.body);
                 END

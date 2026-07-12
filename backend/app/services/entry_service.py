@@ -39,7 +39,10 @@ class EntryService:
             await self.db.flush()
         await self.db.commit()
         await self.db.refresh(entry)
-        EnrichmentService.schedule(entry.id, entry.title, entry.body)
+        # Never enrich encrypted entries — their body column holds ciphertext,
+        # which must not be sent to the LLM or indexed.
+        if not entry.is_encrypted:
+            EnrichmentService.schedule(entry.id, entry.title, entry.body)
         return entry
 
     async def get(self, entry_id: int) -> Entry:
@@ -103,7 +106,10 @@ class EntryService:
                 )
         await self.db.commit()
         await self.db.refresh(entry)
-        EnrichmentService.schedule(entry.id, entry.title, entry.body)
+        # Never enrich encrypted entries — their body column holds ciphertext,
+        # which must not be sent to the LLM or indexed.
+        if not entry.is_encrypted:
+            EnrichmentService.schedule(entry.id, entry.title, entry.body)
         return entry
 
     async def soft_delete(self, entry_id: int) -> None:

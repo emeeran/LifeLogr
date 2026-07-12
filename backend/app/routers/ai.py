@@ -136,6 +136,7 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
         result = await db.execute(
             select(Entry).where(
                 ~Entry.is_deleted,
+                ~Entry.is_encrypted,
                 Entry.entry_date.in_(past_dates),
             )
         )
@@ -225,7 +226,12 @@ async def detect_themes(
             func.strftime("%Y-%m", Entry.entry_date).label("month"),
             Entry.summary,
         )
-        .where(~Entry.is_deleted, Entry.summary.is_not(None), Entry.entry_date >= cutoff)
+        .where(
+            ~Entry.is_deleted,
+            ~Entry.is_encrypted,
+            Entry.summary.is_not(None),
+            Entry.entry_date >= cutoff,
+        )
         .order_by(Entry.entry_date)
     )
 

@@ -49,11 +49,21 @@ class EncryptionService:
 
     @staticmethod
     def _decrypt(token: str, key: bytes) -> bytes:
-        """Decrypt a base64-encoded nonce+ciphertext token."""
+        """Decrypt a base64-encoded nonce+ciphertext token.
+
+        Raises ``ValueError`` on a wrong passphrase / corrupted token so callers
+        can map it to a 400 rather than surfacing the crypto-internal
+        ``InvalidTag`` as a 500.
+        """
+        from cryptography.exceptions import InvalidTag
+
         raw = base64.b64decode(token)
         nonce, ct = raw[:_NONCE_SIZE], raw[_NONCE_SIZE:]
         aesgcm = AESGCM(key)
-        return aesgcm.decrypt(nonce, ct, None)
+        try:
+            return aesgcm.decrypt(nonce, ct, None)
+        except InvalidTag as exc:
+            raise ValueError("Invalid passphrase or corrupted data") from exc
 
     async def encrypt_entry(self, entry_id: int, passphrase: str) -> Entry:
         """Encrypt the body and mood of an entry in-place. Title is kept readable."""

@@ -43,7 +43,10 @@ async def decrypt_entry(
 ) -> Any:
     """Decrypt an entry that was previously encrypted."""
     svc = EncryptionService(db)
-    entry = await svc.decrypt_entry(entry_id, data.passphrase)
+    try:
+        entry = await svc.decrypt_entry(entry_id, data.passphrase)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {
         "entry_id": entry.id,
         "is_encrypted": entry.is_encrypted,
