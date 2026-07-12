@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Awaitable, Callable, Protocol
 
 import httpx
@@ -1049,6 +1049,58 @@ class BoxProvider:
             logger.info("Box provider HTTP client closed.")
 
 
+# ── Pull-side merge helpers ────────────────────────────────────────────
+
+
+# Operation precedence for tie-breaking when payloads carry no timestamp.
+_SYNC_OP_PRECEDENCE = {"create": 1, "update": 2, "delete": 3}
+
+
+def parse_sync_path(path: str) -> tuple[str, int, str] | None:
+    """Parse ``lifelogr/{entity_type}/{entity_id}/{operation}.json``.
+
+    Returns ``(entity_type, entity_id, operation)`` or ``None`` if *path* is not
+    a sync op file (e.g. a ``lifelogr-backup-*.tar.gz`` archive or a directory).
+    """
+    parts = path.split("/")
+    if len(parts) < 3:
+        return None
+    op_file = parts[-1]
+    if not op_file.endswith(".json"):
+        return None
+    try:
+        entity_id = int(parts[-2])
+    except ValueError:
+        return None
+    operation = op_file[: -len(".json")]
+    if operation not in _SYNC_OP_PRECEDENCE:
+        return None
+    return parts[-3], entity_id, operation
+
+
+def _parse_dt_utc(raw: object) -> datetime | None:
+    """Parse an ISO datetime to naive UTC, or ``None`` if unparseable/empty."""
+    if raw is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _parse_date_field(raw: object) -> date | None:
+    """Parse an ISO date (or the date prefix of a datetime) to ``date``."""
+    if raw is None:
+        return None
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
 # ── High-level orchestration ───────────────────────────────────────────
 
 
@@ -1093,16 +1145,119 @@ class CloudSyncService:
         return {"pushed": pushed}
 
     async def pull(self, passphrase: str | None = None) -> dict[str, int]:
-        """Pull changes from cloud provider."""
+        """Pull and apply remote changes (last-writer-wins).
+
+        Each remote file is ``lifelogr/{entity}/{id}/{op}.json`` whose body is
+        the JSON payload queued at push time. Files are grouped by entity; the
+        newest op per entity wins (by payload ``updated_at``, else op precedence
+        delete>update>create). An op applies locally only when the remote write
+        is newer than the local row, so re-pulling is idempotent.
+
+        Entries are fully merged. Media/tag are parsed but skipped for now (they
+        need blob / model wiring beyond this change) and counted as ``skipped``.
+        """
+        from app.services.encryption_service import EncryptionService
+
+        key = EncryptionService._derive_key(passphrase) if passphrase else None
+
         files = await self.provider.list_files("lifelogr/")
-        pulled = 0
+        # Newest op per entity: (operation, payload, updated_at, sort_key).
+        winners: dict[tuple[str, int], tuple[str, dict[str, Any], datetime | None, tuple]] = {}
         for path in files:
-            data = await self.provider.download(path)
-            if passphrase:
-                from app.services.encryption_service import EncryptionService
+            parsed = parse_sync_path(path)
+            if parsed is None:
+                continue
+            entity_type, entity_id, operation = parsed
+            try:
+                content = await self.provider.download(path)
+                if key is not None:
+                    content = EncryptionService._decrypt(content.decode(), key)
+                payload = json.loads(content)
+            except Exception:
+                logger.warning("sync: skipping unreadable remote op %s", path, exc_info=True)
+                continue
+            if not isinstance(payload, dict):
+                continue
+            ts = _parse_dt_utc(payload.get("updated_at"))
+            sort_key = (ts or datetime.min, _SYNC_OP_PRECEDENCE[operation])
+            current = winners.get((entity_type, entity_id))
+            if current is None or sort_key > current[3]:
+                winners[(entity_type, entity_id)] = (operation, payload, ts, sort_key)
 
-                key = EncryptionService._derive_key(passphrase)
-                data = EncryptionService._decrypt(data.decode(), key)
-            pulled += 1
+        applied = 0
+        skipped = 0
+        for (entity_type, entity_id), (operation, payload, _ts, _key) in winners.items():
+            if entity_type == "entry":
+                try:
+                    if await self._apply_entry_op(entity_id, operation, payload):
+                        applied += 1
+                except Exception:
+                    logger.exception("sync: failed applying entry %s %s", entity_id, operation)
+            else:
+                # Media/tag merge is a follow-up (blob handling / model wiring).
+                skipped += 1
+                logger.info("sync: %s merge not implemented; skipped entity %s", entity_type, entity_id)
 
-        return {"pulled": pulled}
+        if applied:
+            status = await self._sync_svc._get_or_create_status("cloud")
+            status.last_sync_at = datetime.now(timezone.utc)
+            await self.db.commit()
+        return {"pulled": applied, "skipped": skipped}
+
+    async def _apply_entry_op(
+        self, entity_id: int, operation: str, payload: dict[str, Any]
+    ) -> bool:
+        """Apply one entry op via last-writer-wins. True if it changed the row.
+
+        Local ``updated_at`` is stored naive-UTC (SQLite ``CURRENT_TIMESTAMP``),
+        so remote timestamps are normalised to naive-UTC for comparison.
+        """
+        from app.models.entry import Entry
+
+        remote_updated = _parse_dt_utc(payload.get("updated_at"))
+        existing = await self.db.get(Entry, entity_id)
+
+        if operation == "delete":
+            if existing is None:
+                return False
+            # No local row to compare, or remote delete is at least as new → honour it.
+            if remote_updated is None or remote_updated >= existing.updated_at:
+                existing.is_deleted = True
+                existing.deleted_at = remote_updated
+                if remote_updated:
+                    existing.updated_at = remote_updated  # explicit set beats onupdate
+                return True
+            return False
+
+        # create / update — skip if the local row is newer (LWW keeps local).
+        if (
+            existing is not None
+            and remote_updated is not None
+            and remote_updated < existing.updated_at
+        ):
+            return False
+
+        entry_date = _parse_date_field(payload.get("entry_date"))
+        if entry_date is None:
+            logger.warning("sync: entry %s payload missing entry_date; skipping", entity_id)
+            return False
+        body = payload.get("body")
+        fields: dict[str, Any] = {
+            "entry_date": entry_date,
+            "title": payload.get("title"),
+            "body": "" if body is None else str(body),
+            "mood": payload.get("mood"),
+            "summary": payload.get("summary"),
+            "is_deleted": bool(payload.get("is_deleted", False)),
+        }
+        target = existing if existing is not None else Entry(id=entity_id)
+        for k, v in fields.items():
+            setattr(target, k, v)
+        if existing is None:
+            created = _parse_dt_utc(payload.get("created_at"))
+            if created:
+                target.created_at = created
+            self.db.add(target)
+        if remote_updated:
+            target.updated_at = remote_updated  # explicit set beats onupdate=func.now()
+        return True
