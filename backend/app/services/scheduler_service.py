@@ -196,6 +196,7 @@ class SchedulerService:
                 replace_existing=True,
                 coalesce=True,
                 misfire_grace_time=3600,
+                max_instances=1,
             )
         else:
             if not backup_path:
@@ -208,6 +209,7 @@ class SchedulerService:
                 replace_existing=True,
                 coalesce=True,
                 misfire_grace_time=3600,
+                max_instances=1,
             )
 
     @staticmethod
@@ -244,6 +246,7 @@ class SchedulerService:
                     id="email_sync_boot",
                     replace_existing=True,
                     coalesce=True,
+                    max_instances=1,
                 )
 
     @staticmethod
@@ -603,8 +606,15 @@ class SchedulerService:
             replace_existing=True,
             coalesce=True,
             misfire_grace_time=600,
+            max_instances=1,
         )
         return 1
+
+
+# Guards the email sync so the one-off boot job and the recurring interval job
+# (different APScheduler IDs, so per-job max_instances doesn't prevent overlap)
+# can't run concurrently against the single-writer SQLite DB.
+_email_sync_lock = asyncio.Lock()
 
 
 async def _run_email_sync() -> None:
@@ -613,15 +623,19 @@ async def _run_email_sync() -> None:
     Opens its own DB session (APScheduler runs outside FastAPI DI). Never
     raises; per-account failures are logged by ``EmailSyncService``.
     """
-    from app.core.database import async_session
-    from app.services.email_service import EmailSyncService
+    if _email_sync_lock.locked():
+        logger.info("Email sync already in progress; skipping this run")
+        return
+    async with _email_sync_lock:
+        from app.core.database import async_session
+        from app.services.email_service import EmailSyncService
 
-    logger.info("Running scheduled email sync")
-    try:
-        async with async_session() as session:
-            await EmailSyncService(session).sync_all_accounts()
-    except Exception:
-        logger.error("Scheduled email sync failed", exc_info=True)
+        logger.info("Running scheduled email sync")
+        try:
+            async with async_session() as session:
+                await EmailSyncService(session).sync_all_accounts()
+        except Exception:
+            logger.error("Scheduled email sync failed", exc_info=True)
 
 
 async def _run_cloud_backup(config_id: int) -> None:
