@@ -89,6 +89,14 @@ async def _generate_embedding(entry_id: int, text: str, ollama: OllamaService) -
                 )
             )
             await session.commit()
+        # Keep the in-memory vector cache in sync (best-effort; the per-search
+        # count check reloads on any divergence regardless).
+        try:
+            from app.services.semantic_cache import get_semantic_cache
+
+            get_semantic_cache().update_entry(entry_id, embedding_vec)
+        except Exception:
+            logger.warning("Failed to update semantic cache for entry %d", entry_id, exc_info=True)
         logger.info("Embedding stored for entry %d (%d dims)", entry_id, len(embedding_vec))
 
     except Exception:

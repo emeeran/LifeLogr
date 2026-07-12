@@ -37,11 +37,20 @@ def _build_engine() -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
 
 
 def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
-    """Enable WAL mode and foreign key enforcement for SQLite."""
+    """Tune SQLite for a local single-writer app: WAL + fast, safe sync.
+
+    WAL enables concurrent readers during writes. ``synchronous=NORMAL`` is safe
+    under WAL (no corruption on an app crash; only the last commit is at risk on
+    an OS-level power loss) and far faster at committing than the default FULL.
+    The cache/temp pragmas keep hot pages and temp tables in RAM.
+    """
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA cache_size=-20000")  # ~20 MiB page cache (default ~2 MiB)
+    cursor.execute("PRAGMA temp_store=MEMORY")
     cursor.close()
 
 

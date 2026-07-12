@@ -123,6 +123,14 @@ class EntryService:
                 await self.db.delete(media)
 
         await self.db.commit()
+        # Best-effort: drop from the vector cache now (ensure_fresh reloads on
+        # any divergence anyway, so a miss here self-heals on the next search).
+        try:
+            from app.services.semantic_cache import get_semantic_cache
+
+            get_semantic_cache().remove_entry(entry_id)
+        except Exception:
+            logger.warning("Failed to drop entry %d from semantic cache", entry_id, exc_info=True)
 
     async def restore(self, entry_id: int) -> Entry:
         """Un-delete a soft-deleted entry.

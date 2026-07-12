@@ -10,6 +10,7 @@ old directory is never auto-deleted.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -132,7 +133,11 @@ async def relocate_storage(
     Returns ``{"old_path", "new_path", "copied_bytes"}``. On failure the live
     app is left untouched (settings + engine restored, old dir intact).
     """
-    target = _validate_target(Path(target_data_dir), _current_data_size())
+    # The size walk stats() every file under MEDIA_DIR — off the event loop so a
+    # large media tree can't stall serving during a storage relocate.
+    target = _validate_target(
+        Path(target_data_dir), await asyncio.to_thread(_current_data_size)
+    )
 
     old_dir = Path(settings.DATA_DIR)
     old_db = settings.db_path

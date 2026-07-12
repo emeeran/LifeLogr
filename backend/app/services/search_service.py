@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date
 
@@ -228,85 +227,51 @@ class SearchService:
     ) -> tuple[list[SearchResultEntry], int]:
         """Search using embedding cosine similarity.
 
-        Uses **numpy vectorisation** instead of a Python loop: all
-        embeddings are loaded into a single 2-D array and cosine similarity
-        is computed in one matrix operation. For N embeddings of D dims
-        this is O(N×D) in C (BLAS) rather than O(N×D) in interpreted Python
-        — typically 50–100× faster for real-world corpus sizes.
+        Vectors are served from an in-memory cache (see ``app.services.semantic_cache``);
+        the per-query DB work is just the filter-passing candidate IDs — no
+        embedding blobs are loaded or JSON-parsed on each search.
         """
-        import numpy as np
-
         from app.services.ollama_service import OllamaService
+        from app.services.semantic_cache import get_semantic_cache
 
         try:
-            ollama = OllamaService()
-            query_vec = await ollama.embed(query)
+            query_vec = await OllamaService().embed(query)
         except Exception:
             logger.warning("Failed to generate embedding for search query", exc_info=True)
             return [], 0
 
-        # Build filtered query for embeddings
+        # Candidate entry_ids: the same filters the old embedding query applied,
+        # but selecting IDs only — the cache supplies the actual vectors.
         stmt = (
-            select(EntryEmbedding.entry_id, EntryEmbedding.embedding)
+            select(EntryEmbedding.entry_id)
             .join(Entry, Entry.id == EntryEmbedding.entry_id)
             .where(~Entry.is_deleted)
         )
-
         from app.services.entry_service import EntryService
-        stmt = EntryService._apply_filters(stmt, tag_ids, mood, None, None)
 
+        stmt = EntryService._apply_filters(stmt, tag_ids, mood, None, None)
         if date_from:
             stmt = stmt.where(Entry.entry_date >= date_from)
         if date_to:
             stmt = stmt.where(Entry.entry_date <= date_to)
+        candidate_ids = [int(i) for i in (await self.db.execute(stmt)).scalars().all()]
 
-        result = await self.db.execute(stmt)
-        rows = result.fetchall()
-        if not rows:
+        ranked = await get_semantic_cache().search(self.db, query_vec, candidate_ids)
+        if not ranked:
             return [], 0
-
-        # ── Vectorised cosine similarity ──────────────────────────
-        entry_ids_raw = [row.entry_id for row in rows]
-        # Stack all embeddings into a single (N, D) float32 matrix.
-        matrix = np.array(
-            [json.loads(row.embedding) for row in rows], dtype=np.float32
-        )
-        q = np.array(query_vec, dtype=np.float32)
-
-        # Cosine similarity = dot(a,b) / (||a|| * ||b||)
-        # Normalise rows and query once, then a single matmul.
-        norms = np.linalg.norm(matrix, axis=1)
-        q_norm = np.linalg.norm(q)
-        if q_norm == 0:
-            return [], 0
-        # Guard against zero-norm rows.
-        safe = norms > 0
-        similarities = np.zeros(len(rows), dtype=np.float32)
-        similarities[safe] = (matrix[safe] @ q) / (norms[safe] * q_norm)
-
-        # Filter + rank in one pass (threshold > 0.1)
-        above = np.where(similarities > 0.1)[0]
-        if len(above) == 0:
-            return [], 0
-        # Sort by score descending
-        ranked = above[np.argsort(-similarities[above])]
         total = len(ranked)
         page = ranked[offset : offset + limit]
-
-        if len(page) == 0:
+        if not page:
             return [], 0
 
-        # Load entry details for the page
-        page_ids = [int(entry_ids_raw[i]) for i in page]
+        page_ids = [eid for eid, _ in page]
         entries_result = await self.db.execute(select(Entry).where(Entry.id.in_(page_ids)))
         entry_map = {e.id: e for e in entries_result.scalars().all()}
 
         items = []
-        for idx in page:
-            eid = int(entry_ids_raw[idx])
+        for eid, score in page:
             entry = entry_map.get(eid)
             if entry:
-                score = float(similarities[idx])
                 items.append(
                     SearchResultEntry(
                         id=entry.id,

@@ -4,6 +4,7 @@ import os
 import tempfile
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -55,3 +56,18 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_semantic_cache():
+    """Isolate the process-wide embedding cache between tests.
+
+    Without this, two tests whose DBs hold the same number of embeddings would
+    reuse each other's vectors (the cache's count check only reloads on a count
+    mismatch), silently corrupting semantic-search assertions.
+    """
+    from app.services.semantic_cache import get_semantic_cache
+
+    get_semantic_cache().reset()
+    yield
+    get_semantic_cache().reset()
