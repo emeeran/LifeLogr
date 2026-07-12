@@ -95,6 +95,8 @@ async function remove(item: MediaTimelineItem) {
 
 /** Open the journal entry this media belongs to in the editor. */
 function openEntry(entryId: number, date: string) {
+  // The editor only renders on the Journal view, so jump there to edit.
+  ui.setView('calendar')
   ui.requestEdit(entryId, date)
 }
 

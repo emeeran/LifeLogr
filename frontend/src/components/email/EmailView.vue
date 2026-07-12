@@ -34,10 +34,15 @@ import {
 import { createTask } from '../../api/planner'
 import { API_ORIGIN, request } from '../../api/client'
 import { ttsApi } from '../../api/tts'
+import PanelSplitter from '../layout/PanelSplitter.vue'
 
 const store = useEmailStore()
 const router = useRouter()
 const settingsTab = useLocalStorage<string>('lifelogr-settings-tab', 'general')
+
+// ── Resizable panes (persisted) ──
+const folderWidth = useLocalStorage<number>('lifelogr-email-folder-width', 208)
+const listWidth = useLocalStorage<number>('lifelogr-email-list-width', 320)
 
 function goToSettings() {
   settingsTab.value = 'email'
@@ -515,10 +520,14 @@ async function addToTask() {
 
 // ── Vocalize (TTS) + Summarize (AI) + prev/next nav for the open message ──
 const ttsPlaying = ref(false)
+const ttsLoading = ref(false)
 let ttsAudio: HTMLAudioElement | null = null
+let ttsBlobUrl = ''
 const summarizing = ref(false)
 const summary = ref('')
 const summaryOpen = ref(false)
+
+function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 function messagePlainText(): string {
   const m = store.selectedMessage
@@ -528,44 +537,57 @@ function messagePlainText(): string {
   return fromText || m.snippet || ''
 }
 
+function stopEmailTts() {
+  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
+  if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = '' }
+  ttsPlaying.value = false
+}
+
 async function vocalizeEmail() {
   const m = store.selectedMessage
   if (!m) return
-  if (ttsPlaying.value && ttsAudio) {
-    ttsAudio.pause()
-    ttsAudio.currentTime = 0
-    ttsPlaying.value = false
-    return
-  }
+  if (ttsPlaying.value || ttsAudio) { stopEmailTts(); return }
   const text = messagePlainText()
   if (!text) { showToast('error', 'Nothing to read aloud'); return }
+  ttsLoading.value = true
   try {
     const blob = await ttsApi.speakBlob(text)
-    if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
-    ttsAudio = new Audio(URL.createObjectURL(blob))
-    ttsAudio.onended = () => { ttsPlaying.value = false }
+    if (!blob.size) { showToast('info', 'Nothing to read aloud'); return }
+    ttsBlobUrl = URL.createObjectURL(blob)
+    ttsAudio = new Audio(ttsBlobUrl)
+    ttsAudio.addEventListener('ended', stopEmailTts)
+    ttsAudio.addEventListener('error', stopEmailTts)
     await ttsAudio.play()
     ttsPlaying.value = true
-  } catch {
-    showToast('error', 'Voice unavailable — is the TTS service running?')
+  } catch (e: unknown) {
+    stopEmailTts()
+    // Surface the backend's real reason (e.g. "Edge TTS needs internet access")
+    // instead of a generic guess — the error string travels in errMsg.
+    showToast('error', `Read aloud failed: ${errMsg(e)}`)
+  } finally {
+    ttsLoading.value = false
   }
 }
 
 async function summarizeEmail() {
   const m = store.selectedMessage
   if (!m) return
+  const text = messagePlainText()
+  if (!text) { showToast('error', 'Nothing to summarize'); return }
   summarizing.value = true
   summary.value = ''
   try {
     const data = await request<Record<string, unknown>>('/ai/tool/summarize', {
       method: 'POST',
-      body: JSON.stringify({ text: messagePlainText() }),
+      body: JSON.stringify({ text }),
     })
     summary.value = String(data.result ?? '').trim()
     summaryOpen.value = true
     if (!summary.value) showToast('info', 'No summary returned')
-  } catch {
-    showToast('error', 'Summarize failed — is the AI service running?')
+  } catch (e: unknown) {
+    // Surface the real cause — e.g. an Ollama timeout on a reasoning model, or
+    // "Cannot reach Ollama" — so the user knows whether it's a model or network issue.
+    showToast('error', `Summarize failed: ${errMsg(e)}`)
   } finally {
     summarizing.value = false
   }
@@ -605,7 +627,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   document.removeEventListener('visibilitychange', onVisibility)
-  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
+  stopEmailTts()
 })
 </script>
 
@@ -679,9 +701,10 @@ onUnmounted(() => {
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :class="ttsPlaying ? 'text-accent' : ''"
-          :disabled="!store.selectedMessage" :title="ttsPlaying ? 'Stop voice' : 'Read aloud'"
+          :disabled="!store.selectedMessage || ttsLoading" :title="ttsPlaying ? 'Stop voice' : ttsLoading ? 'Generating audio…' : 'Read aloud'"
           @click="store.selectedMessage && vocalizeEmail()">
-          <Volume2 :size="14" /> {{ ttsPlaying ? 'Stop' : 'Listen' }}
+          <RefreshCw v-if="ttsLoading" :size="14" class="animate-spin" />
+          <Volume2 v-else :size="14" /> {{ ttsPlaying ? 'Stop' : 'Listen' }}
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-50"
           :disabled="store.syncing" @click="onSync" title="Send / Receive">
@@ -717,7 +740,7 @@ onUnmounted(() => {
       <!-- Three-pane body -->
       <div class="flex min-h-0 flex-1">
         <!-- Folder rail -->
-        <aside class="flex w-52 shrink-0 flex-col border-r border-border bg-surface-hover/40">
+        <aside class="flex shrink-0 flex-col border-r border-border bg-surface-hover/40" :style="{ width: folderWidth + 'px' }">
           <!-- Account header -->
           <div class="border-b border-border px-3 py-3">
             <div class="flex items-center gap-2">
@@ -805,8 +828,10 @@ onUnmounted(() => {
           </div>
         </aside>
 
+        <PanelSplitter v-model="folderWidth" :min="168" :max="340" side="left" />
+
         <!-- Message list (date-grouped) -->
-        <section class="flex w-80 shrink-0 flex-col border-r border-border">
+        <section class="flex shrink-0 flex-col border-r border-border" :style="{ width: listWidth + 'px' }">
           <!-- Selection / bulk-action bar -->
           <div class="flex items-center gap-2 border-b border-border px-3 py-1.5">
             <button class="text-text-muted hover:text-text-primary cursor-pointer" :title="allSelected ? 'Clear selection' : 'Select all'"
@@ -894,6 +919,8 @@ onUnmounted(() => {
             </template>
           </div>
         </section>
+
+        <PanelSplitter v-model="listWidth" :min="240" :max="520" side="left" />
 
         <!-- Reader -->
         <section class="flex min-w-0 flex-1 flex-col">
@@ -1181,9 +1208,10 @@ onUnmounted(() => {
               </button>
               <button class="rounded-md p-1.5 text-text-muted hover:bg-surface-hover disabled:opacity-40"
                 :class="ttsPlaying ? 'text-accent' : ''"
-                :disabled="!store.selectedMessage" :title="ttsPlaying ? 'Stop voice' : 'Read aloud'"
+                :disabled="!store.selectedMessage || ttsLoading" :title="ttsPlaying ? 'Stop voice' : ttsLoading ? 'Generating audio…' : 'Read aloud'"
                 @click="store.selectedMessage && vocalizeEmail()">
-                <Volume2 :size="14" />
+                <RefreshCw v-if="ttsLoading" :size="14" class="animate-spin" />
+                <Volume2 v-else :size="14" />
               </button>
               <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-accent"
                 @click="printEmail">

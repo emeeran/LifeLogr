@@ -6,8 +6,13 @@ import type { TaskResponse, TaskPriority } from '../../types'
 import {
   Plus, Check, Trash2, ListPlus, ChevronRight, Flag, Circle, CheckCircle2, AlertCircle, CheckCircle,
 } from 'lucide-vue-next'
+import { useLocalStorage } from '@vueuse/core'
+import PanelSplitter from '../layout/PanelSplitter.vue'
 
 const store = usePlannerStore()
+
+// ── Resizable lists rail (persisted) ──
+const listWidth = useLocalStorage<number>('lifelogr-planner-list-width', 176)
 
 const newTitle = ref('')
 const newPriority = ref<TaskPriority | ''>('')
@@ -83,7 +88,7 @@ const incompleteCount = computed(() => store.tasks.reduce((n, t) => n + (t.is_co
 <template>
   <div class="h-full flex">
     <!-- Lists sidebar -->
-    <aside class="w-44 shrink-0 border-r border-border overflow-y-auto p-3 space-y-1">
+    <aside class="shrink-0 border-r border-border overflow-y-auto p-3 space-y-1" :style="{ width: listWidth + 'px' }">
       <button @click="store.selectedListId = null; store.fetchTasks()"
         class="w-full text-left px-2.5 py-1.5 rounded-md text-[12px] font-medium transition-colors cursor-pointer"
         :class="store.selectedListId === null ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-surface-hover'">
@@ -114,6 +119,8 @@ const incompleteCount = computed(() => store.tasks.reduce((n, t) => n + (t.is_co
         </div>
       </div>
     </aside>
+
+    <PanelSplitter v-model="listWidth" :min="144" :max="300" side="left" />
 
     <!-- Task area -->
     <div class="flex-1 overflow-y-auto p-5 space-y-3 relative">

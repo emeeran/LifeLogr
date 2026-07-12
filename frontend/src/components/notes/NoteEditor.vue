@@ -16,6 +16,7 @@ import { useNotesStore } from '../../stores/notes'
 import { tagsApi } from '../../api/tags'
 import { notesApi } from '../../api/notes'
 import { isTauri } from '../../api/client'
+import { ttsApi } from '../../api/tts'
 import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse } from '../../types'
 
 const props = defineProps<{
@@ -189,14 +190,11 @@ function onPageDrop(e: DragEvent, targetId: number) {
   void store.reorderPages(reordered.map((id, i) => ({ id, sort_order: i })))
 }
 
-// ── Read aloud (Web Speech API) ──────────────────────────────────────────────
+// ── Read aloud (Edge TTS — shares the global voice from Settings → Features) ──
 const speaking = ref(false)
-const voices = ref<SpeechSynthesisVoice[]>([])
-const selectedVoiceURI = useLocalStorage<string>('lifelogr-tts-voice', '')
-function loadVoices() {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return
-  voices.value = window.speechSynthesis.getVoices()
-}
+const ttsLoading = ref(false)
+let ttsAudio: HTMLAudioElement | null = null
+let ttsBlobUrl = ''
 function stripMarkdown(s: string): string {
   return s
     .replace(/<audio[\s\S]*?<\/audio>/gi, ' ')
@@ -208,24 +206,31 @@ function stripMarkdown(s: string): string {
     .replace(/\s+/g, ' ')
     .trim()
 }
-function toggleSpeak() {
-  const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
-  if (!synth) return
-  if (speaking.value) {
-    synth.cancel()
-    speaking.value = false
-    return
-  }
+function stopSpeak() {
+  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
+  if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = '' }
+  speaking.value = false
+}
+async function toggleSpeak() {
+  if (speaking.value || ttsAudio) { stopSpeak(); return }
   const text = stripMarkdown(body.value)
   if (!text) return
-  const u = new SpeechSynthesisUtterance(text)
-  const v = voices.value.find((vv) => vv.voiceURI === selectedVoiceURI.value)
-  if (v) u.voice = v
-  u.onend = () => (speaking.value = false)
-  u.onerror = () => (speaking.value = false)
-  synth.cancel()
-  synth.speak(u)
-  speaking.value = true
+  ttsLoading.value = true
+  try {
+    const blob = await ttsApi.speakBlob(text)
+    if (!blob.size) return // backend returns empty audio for blank text
+    ttsBlobUrl = URL.createObjectURL(blob)
+    ttsAudio = new Audio(ttsBlobUrl)
+    ttsAudio.addEventListener('ended', stopSpeak)
+    ttsAudio.addEventListener('error', stopSpeak)
+    await ttsAudio.play()
+    speaking.value = true
+  } catch (e: unknown) {
+    stopSpeak()
+    alert(`Read aloud failed: ${e instanceof Error ? e.message : e}`)
+  } finally {
+    ttsLoading.value = false
+  }
 }
 
 // ── Notes toolbar state (font/size drive inline <span> injection) ──
@@ -340,7 +345,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenDrag?.()
   unlistenDrag = null
-  if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel()
+  stopSpeak()
 })
 
 async function onDropFiles(e: DragEvent) {
@@ -611,13 +616,7 @@ function onToolbarAction(name: string) {
   if (fn) fn()
 }
 
-// Load TTS voices (async on some browsers) + re-wrap media when preview renders.
-onMounted(() => {
-  loadVoices()
-  if (typeof window !== 'undefined' && window.speechSynthesis) {
-    window.speechSynthesis.onvoiceschanged = loadVoices
-  }
-})
+// Re-wrap embedded media as resizable nodes whenever the preview renders.
 watch(
   [renderedPreview, showPreview],
   () => {
@@ -784,10 +783,12 @@ onUnmounted(() => {
       <button
         class="actbtn"
         :class="{ 'text-accent': speaking }"
-        :title="speaking ? 'Stop reading' : 'Read aloud (set voice in Settings → Notes)'"
+        :disabled="ttsLoading"
+        :title="speaking ? 'Stop reading' : ttsLoading ? 'Generating audio…' : 'Read aloud (set voice in Settings → Features → Read Aloud)'"
         @click="toggleSpeak"
       >
-        <Volume2 :size="13" /><span class="hidden md:inline">{{ speaking ? 'Stop' : 'Read' }}</span>
+        <Loader v-if="ttsLoading" :size="13" class="animate-spin" />
+        <Volume2 v-else :size="13" /><span class="hidden md:inline">{{ speaking ? 'Stop' : 'Read' }}</span>
       </button>
 
       <span class="act-sep" />

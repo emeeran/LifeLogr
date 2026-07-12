@@ -71,6 +71,8 @@ onMounted(() => { load(); tagsStore.fetchTree(); templatesStore.fetchAll() })
 watch(() => store.lastUpdated, load)
 
 function openEntry(entry: EntryResponse) {
+  // The editor only renders on the Journal view, so jump there to edit.
+  ui.setView('calendar')
   ui.requestEdit(entry.id)
 }
 

@@ -1,22 +1,35 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useUiStore } from '../../stores/ui'
 
-const ui = useUiStore()
+const props = withDefaults(
+  defineProps<{
+    /** Current column width in pixels. */
+    modelValue: number
+    /** Minimum column width. */
+    min?: number
+    /** Maximum column width. */
+    max?: number
+    /** Which edge the handle sits on.
+     *  'left'  — column is on the left of the row, drag right to widen it.
+     *  'right' — column is on the right of the row, drag left to widen it. */
+    side?: 'left' | 'right'
+  }>(),
+  { min: 200, max: 720, side: 'left' },
+)
+const emit = defineEmits<{ 'update:modelValue': [number] }>()
 const dragging = ref(false)
 
 function onMousedown(e: MouseEvent) {
   e.preventDefault()
   dragging.value = true
   const startX = e.clientX
-  const startWidth = ui.rightPanelWidth
+  const startWidth = props.modelValue
 
   function onMousemove(ev: MouseEvent) {
-    // Dragging splitter left = panel gets wider (distance moved right to left)
-    const delta = startX - ev.clientX
-    ui.setRightPanelWidth(startWidth + delta)
+    const delta = ev.clientX - startX
+    const next = props.side === 'left' ? startWidth + delta : startWidth - delta
+    emit('update:modelValue', Math.min(props.max, Math.max(props.min, next)))
   }
-
   function onMouseup() {
     dragging.value = false
     document.removeEventListener('mousemove', onMousemove)

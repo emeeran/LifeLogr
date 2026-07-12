@@ -77,6 +77,7 @@ async function runSystemSetup() {
 const ttsSpeed = useLocalStorage<number>('lifelogr-tts-speed', 1.0)
 const ttsVolume = useLocalStorage<number>('lifelogr-tts-volume', 100)
 const ttsVoice = useLocalStorage<string>('lifelogr-tts-voice', 'en-US-AvaNeural')
+const ttsPitch = useLocalStorage<number>('lifelogr-tts-pitch', 0)
 const ttsVoices = ref<TTSVoice[]>([])
 const ttsVoicesLoading = ref(false)
 const ttsPreviewing = ref(false)
@@ -109,7 +110,7 @@ async function previewVoice() {
 }
 
 function resetTTSDefaults() {
-  ttsVoice.value = 'en-US-AvaNeural'; ttsSpeed.value = 1.0; ttsVolume.value = 100
+  ttsVoice.value = 'en-US-AvaNeural'; ttsSpeed.value = 1.0; ttsVolume.value = 100; ttsPitch.value = 0
   emit('toast', 'success', 'TTS settings reset to defaults')
 }
 
@@ -238,6 +239,10 @@ onMounted(() => { remindersStore.fetchAll(); loadVoices(); checkSystemDeps() })
     </SettingRow>
     <SettingRow indent :label="`Volume (${ttsVolume}%)`">
       <input type="range" v-model.number="ttsVolume" min="0" max="100" step="5" class="w-28 accent-accent" />
+    </SettingRow>
+    <SettingRow indent :label="`Pitch (${ttsPitch > 0 ? '+' : ''}${ttsPitch} Hz)`"
+      description="Lower for a deeper, warmer voice; raise for brighter. Applies to journals, notes and email.">
+      <input type="range" v-model.number="ttsPitch" min="-40" max="40" step="5" class="w-28 accent-accent" />
     </SettingRow>
     <div class="pl-[31px]">
       <SButton variant="outline" size="xs" :icon="ttsPreviewing ? X : Play" :disabled="ttsVoicesLoading" @click="previewVoice">

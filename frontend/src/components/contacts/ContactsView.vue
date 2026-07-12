@@ -20,8 +20,14 @@ import {
 } from 'lucide-vue-next'
 import ContactPanel from './ContactPanel.vue'
 import ContactForm from './ContactForm.vue'
+import { useLocalStorage } from '@vueuse/core'
+import PanelSplitter from '../layout/PanelSplitter.vue'
 
 const store = useContactsStore()
+
+// ── Resizable panes (persisted) ──
+const groupsWidth = useLocalStorage<number>('lifelogr-contacts-groups-width', 208)
+const detailWidth = useLocalStorage<number>('lifelogr-contacts-detail-width', 380)
 
 const selectedId = ref<number | null>(null)
 const showCreateForm = ref(false)
@@ -141,7 +147,7 @@ async function doExport() {
 <template>
   <div class="flex h-full overflow-hidden">
     <!-- Left: groups rail -->
-    <aside class="w-52 shrink-0 border-r border-border bg-surface flex flex-col">
+    <aside class="shrink-0 border-r border-border bg-surface flex flex-col" :style="{ width: groupsWidth + 'px' }">
       <div class="px-3 py-2.5 border-b border-border flex items-center justify-between">
         <span class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Contacts</span>
         <button @click="addGroup" class="p-1 rounded hover:bg-surface-hover text-accent cursor-pointer" title="Add group">
@@ -180,6 +186,8 @@ async function doExport() {
         </div>
       </div>
     </aside>
+
+    <PanelSplitter v-model="groupsWidth" :min="168" :max="340" side="left" />
 
     <!-- Center: list -->
     <div class="flex-1 flex flex-col min-w-0">
@@ -262,8 +270,10 @@ async function doExport() {
       </div>
     </div>
 
+    <PanelSplitter v-model="detailWidth" :min="280" :max="640" side="right" />
+
     <!-- Right: detail panel -->
-    <div class="w-[380px] shrink-0 border-l border-border">
+    <div class="shrink-0 border-l border-border" :style="{ width: detailWidth + 'px' }">
       <ContactPanel :contact="selected" :groups="store.groups" @close="selectedId = null" />
     </div>
 

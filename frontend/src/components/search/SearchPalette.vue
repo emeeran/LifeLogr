@@ -37,6 +37,8 @@ onMounted(() => {
 onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
 
 function openEntry(item: SearchResultEntry) {
+  // The editor only renders on the Journal view, so jump there to edit.
+  ui.setView('calendar')
   ui.startEditing(item.id)
   ui.closeSearchPalette()
 }

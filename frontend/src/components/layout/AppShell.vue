@@ -24,10 +24,10 @@ const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && 
 const showEditor = computed(() => ui.showEditor)
 const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
 
-// Notes + Dashboard + Email own the full main area — hide the shared entry right panel + splitter.
-const isFullBleedView = computed(
-  () => ui.activeView === 'notes' || ui.activeView === 'dashboard' || ui.activeView === 'email',
-)
+// The shared journal editor + detail surface belongs only to the Journal
+// (calendar) view. Notes has its own editor inside NotesView; every other view
+// is full-bleed, so the right panel + splitter stay hidden off-calendar.
+const isJournalView = computed(() => ui.activeView === 'calendar')
 
 const drawerTitle = computed(() => {
   switch (ui.activeDrawer) {
@@ -200,11 +200,18 @@ async function onExtractText(id: number) {
     </Transition>
 
     <!-- Panel splitter -->
-    <PanelSplitter v-if="!ui.zenMode && !isFullBleedView && (showDetail || showEditor)" />
+    <PanelSplitter
+      v-if="!ui.zenMode && isJournalView && (showDetail || showEditor)"
+      :model-value="ui.rightPanelWidth"
+      :min="280"
+      :max="1200"
+      side="right"
+      @update:model-value="ui.setRightPanelWidth"
+    />
 
     <!-- Right panel: entry detail or editor (full-width when Zen Mode is on) -->
     <div
-      v-if="ui.zenMode ? showEditor : (!isFullBleedView && (showDetail || showEditor))"
+      v-if="isJournalView && (ui.zenMode ? showEditor : (showDetail || showEditor))"
       class="bg-editor overflow-y-auto transition-all duration-200"
       :class="ui.zenMode ? 'flex-1 min-w-0' : 'shrink-0 border-l border-border'"
       :style="ui.zenMode ? undefined : { width: ui.rightPanelWidth + 'px' }"
