@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty
     MEDIA_DIR: Path = Path("")  # derived from DATA_DIR if empty
     DATA_DIR: Path = Path("")  # set by Tauri sidecar or defaults to platform dir
+    TTS_CACHE_DIR: Path = Path("")  # derived from DATA_DIR if empty
     CORS_ORIGINS: str = (
         "http://localhost:5173,tauri://localhost,"
         "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"
@@ -216,6 +217,12 @@ class Settings(BaseSettings):
         if not self.MEDIA_DIR or str(self.MEDIA_DIR) == ".":
             self.MEDIA_DIR = self.DATA_DIR / "media"
         self.MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Derive TTS_CACHE_DIR — cached read-aloud audio served via FileResponse
+        # (Range-capable) so playback is instant on repeat and reliable in Tauri.
+        if not self.TTS_CACHE_DIR or str(self.TTS_CACHE_DIR) == ".":
+            self.TTS_CACHE_DIR = self.DATA_DIR / "tts"
+        self.TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     @property
     def db_path(self) -> Path:

@@ -33,10 +33,11 @@ import {
 } from 'lucide-vue-next'
 import { createTask } from '../../api/planner'
 import { API_ORIGIN, request } from '../../api/client'
-import { ttsApi } from '../../api/tts'
+import { useTtsStore } from '../../stores/tts'
 import PanelSplitter from '../layout/PanelSplitter.vue'
 
 const store = useEmailStore()
+const tts = useTtsStore()
 const router = useRouter()
 const settingsTab = useLocalStorage<string>('lifelogr-settings-tab', 'general')
 
@@ -326,6 +327,8 @@ function onSearchInput() {
 
 async function onClickMessage(msg: EmailMessageListResponse) {
   await store.openMessage(msg.id)
+  // Pre-warm read-aloud so the Listen button is instant.
+  tts.prewarmText(messagePlainText())
 }
 
 async function onDelete(msg: EmailMessageListResponse) {
@@ -519,10 +522,6 @@ async function addToTask() {
 }
 
 // ── Vocalize (TTS) + Summarize (AI) + prev/next nav for the open message ──
-const ttsPlaying = ref(false)
-const ttsLoading = ref(false)
-let ttsAudio: HTMLAudioElement | null = null
-let ttsBlobUrl = ''
 const summarizing = ref(false)
 const summary = ref('')
 const summaryOpen = ref(false)
@@ -537,35 +536,20 @@ function messagePlainText(): string {
   return fromText || m.snippet || ''
 }
 
-function stopEmailTts() {
-  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
-  if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = '' }
-  ttsPlaying.value = false
-}
+// Read-aloud drives the shared tts store.
+const ttsText = computed(() => messagePlainText())
+const ttsPlaying = computed(() => tts.isPlayingText(ttsText.value))
+const ttsLoading = computed(() => tts.isLoadingText(ttsText.value))
 
 async function vocalizeEmail() {
   const m = store.selectedMessage
   if (!m) return
-  if (ttsPlaying.value || ttsAudio) { stopEmailTts(); return }
-  const text = messagePlainText()
-  if (!text) { showToast('error', 'Nothing to read aloud'); return }
-  ttsLoading.value = true
+  if (!ttsText.value) { showToast('error', 'Nothing to read aloud'); return }
   try {
-    const blob = await ttsApi.speakBlob(text)
-    if (!blob.size) { showToast('info', 'Nothing to read aloud'); return }
-    ttsBlobUrl = URL.createObjectURL(blob)
-    ttsAudio = new Audio(ttsBlobUrl)
-    ttsAudio.addEventListener('ended', stopEmailTts)
-    ttsAudio.addEventListener('error', stopEmailTts)
-    await ttsAudio.play()
-    ttsPlaying.value = true
+    await tts.toggleText(ttsText.value)
   } catch (e: unknown) {
-    stopEmailTts()
-    // Surface the backend's real reason (e.g. "Edge TTS needs internet access")
-    // instead of a generic guess — the error string travels in errMsg.
+    // Surface the backend's real reason (e.g. "Edge TTS needs internet access").
     showToast('error', `Read aloud failed: ${errMsg(e)}`)
-  } finally {
-    ttsLoading.value = false
   }
 }
 
@@ -627,7 +611,8 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   document.removeEventListener('visibilitychange', onVisibility)
-  stopEmailTts()
+  // Stop read-aloud only if an email is what's currently playing (single global stream).
+  if (ttsPlaying.value || ttsLoading.value) tts.stop()
 })
 </script>
 

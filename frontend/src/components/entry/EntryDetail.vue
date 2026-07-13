@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useEntriesStore } from '../../stores/entries'
 import { useUiStore } from '../../stores/ui'
+import { useTtsStore } from '../../stores/tts'
 import { marked } from 'marked'
 
 marked.use({ gfm: true, breaks: true })
@@ -10,11 +11,11 @@ import EntryHeader from './EntryHeader.vue'
 import MediaGrid from '../media/MediaGrid.vue'
 import { Pencil, Play, Pause, FileAudio, Volume2, Loader } from 'lucide-vue-next'
 import { recordingsApi } from '../../api/recordings'
-import { ttsApi } from '../../api/tts'
 import type { VoiceRecordingResponse } from '../../types'
 
 const entries = useEntriesStore()
 const ui = useUiStore()
+const tts = useTtsStore()
 
 const entry = computed(() => entries.currentEntry)
 
@@ -58,42 +59,30 @@ function stopPlayback() {
     currentAudio = null
   }
   playingId.value = null
-  ttsPlaying.value = false
+  tts.stop()
 }
 
-// ── TTS Read Aloud ──
-const ttsPlaying = ref(false)
-const ttsLoading = ref(false)
+// ── TTS Read Aloud (drives the shared tts store) ──
+const ttsEntryId = computed(() => entry.value?.id ?? -1)
+const ttsPlaying = computed(() => tts.isPlayingEntry(ttsEntryId.value))
+const ttsLoading = computed(() => tts.isLoadingEntry(ttsEntryId.value))
 
 async function toggleTTS() {
-  if (ttsPlaying.value) {
-    stopPlayback()
-    return
-  }
   if (!entry.value) return
-  stopPlayback()
-  ttsLoading.value = true
+  // Stop any recording playback before starting read-aloud (separate audio element).
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; playingId.value = null }
   try {
-    // Fetch audio as blob — more reliable in Tauri webview than direct HTTP URL
-    const url = ttsApi.entryUrl(entry.value.id)
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`)
-    const blob = await res.blob()
-    const blobUrl = URL.createObjectURL(blob)
-    const audio = new Audio(blobUrl)
-    audio.addEventListener('canplay', () => { ttsLoading.value = false; ttsPlaying.value = true })
-    audio.addEventListener('ended', () => { ttsPlaying.value = false; URL.revokeObjectURL(blobUrl) })
-    audio.addEventListener('error', () => { ttsLoading.value = false; ttsPlaying.value = false; URL.revokeObjectURL(blobUrl) })
-    currentAudio = audio
-    playingId.value = -1 // sentinel for TTS
-    await audio.play()
-    ttsPlaying.value = true
-    ttsLoading.value = false
-  } catch {
-    ttsLoading.value = false
-    ttsPlaying.value = false
+    await tts.toggleEntry(entry.value.id)
+  } catch (e) {
+    console.error('[EntryDetail] read aloud failed:', e)
   }
 }
+
+// Pre-warm audio when an entry opens so read-aloud is instant (skip encrypted —
+// its body is ciphertext here and can't be synthesized server-side).
+watch(ttsEntryId, (id) => {
+  if (id > 0 && entry.value && !entry.value.is_encrypted) tts.prewarmEntry(id)
+}, { immediate: true })
 </script>
 
 <template>

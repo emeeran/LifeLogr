@@ -35,7 +35,7 @@ import EmojiPicker from "../common/EmojiPicker.vue";
 import { useTemplatesStore } from "../../stores/templates";
 import { aiStatus, suggestTags } from "../../api/ai";
 import { encryptText, decryptText } from "../../api/encryption";
-import { ttsApi } from "../../api/tts";
+import { useTtsStore } from "../../stores/tts";
 import { useDragDrop } from "../../composables/useDragDrop";
 import { useLocalStorage } from "@vueuse/core";
 import { useMarkdownPreview } from "../../composables/useMarkdownPreview";
@@ -52,6 +52,7 @@ import FloatingPlayback from "../recordings/FloatingPlayback.vue";
 
 const entries = useEntriesStore();
 const ui = useUiStore();
+const tts = useTtsStore();
 
 const isNew = computed(() => ui.editingEntryId === -1);
 const hasEntry = computed(
@@ -86,9 +87,18 @@ const showTagDropdown = ref(false);
 const aiAvailable = ref<boolean | null>(null);
 const suggestedTags = ref<string[]>([]);
 const suggestingTags = ref(false);
-const ttsPlaying = ref(false);
-const ttsLoading = ref(false);
-let ttsAudio: HTMLAudioElement | null = null;
+// Read-aloud drives the shared tts store; these mirror it for this screen.
+const ttsText = computed(() => [title.value, body.value].filter(Boolean).join("\n\n"));
+const ttsPlaying = computed(() =>
+  hasEntry.value && !isEncrypted.value
+    ? tts.isPlayingEntry(ui.editingEntryId!)
+    : tts.isPlayingText(ttsText.value),
+);
+const ttsLoading = computed(() =>
+  hasEntry.value && !isEncrypted.value
+    ? tts.isLoadingEntry(ui.editingEntryId!)
+    : tts.isLoadingText(ttsText.value),
+);
 const isEncrypted = ref(false);
 const focusMode = ref(false);
 const typewriterMode = ref(false);
@@ -293,6 +303,7 @@ async function loadEntry() {
       } else {
         body.value = entry.body;
         title.value = entry.title ?? "";
+        tts.prewarmEntry(entry.id);
       }
       tagIds.value = entry.tags.map((t) => t.id);
       entryDate.value = entry.entry_date;
@@ -450,6 +461,7 @@ async function save() {
       snapshot();
       entries.refreshAll();
       entries.currentEntry = entry;
+      if (!isEncrypted.value) tts.prewarmEntry(entry.id);
       ui.detailPanelOpen = true;
       ui.startEditing(null);
     } else {
@@ -463,6 +475,7 @@ async function save() {
         body: body.value,
         tag_ids: tagIds.value,
       });
+      if (!isEncrypted.value) tts.prewarmEntry(ui.editingEntryId!);
       snapshot();
       entries.refreshAll();
       ui.startEditing(null);
@@ -566,47 +579,15 @@ async function encryptDecryptSelection() {
 // ── Inline AI tools (context menu + drawer) — provided by useRichTextEditor ──
 
 async function toggleTTS() {
-  if (ttsPlaying.value) {
-    if (ttsAudio) {
-      ttsAudio.pause();
-      ttsAudio = null;
-    }
-    ttsPlaying.value = false;
-    return;
-  }
-  const text = [title.value, body.value].filter(Boolean).join("\n\n");
-  if (!text.trim()) return;
-  ttsLoading.value = true;
   try {
-    if (hasEntry.value) {
-      const url = ttsApi.entryUrl(ui.editingEntryId!);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`TTS ${res.status}: ${await res.text()}`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      ttsAudio = new Audio(blobUrl);
-      ttsAudio.addEventListener("ended", () => URL.revokeObjectURL(blobUrl));
-      ttsAudio.addEventListener("error", () => URL.revokeObjectURL(blobUrl));
+    if (hasEntry.value && !isEncrypted.value) {
+      await tts.toggleEntry(ui.editingEntryId!);
     } else {
-      const blob = await ttsApi.speakBlob(text);
-      const blobUrl = URL.createObjectURL(blob);
-      ttsAudio = new Audio(blobUrl);
-      ttsAudio.addEventListener("ended", () => URL.revokeObjectURL(blobUrl));
-      ttsAudio.addEventListener("error", () => URL.revokeObjectURL(blobUrl));
+      if (!ttsText.value.trim()) return;
+      await tts.toggleText(ttsText.value);
     }
-    ttsAudio.addEventListener("ended", () => {
-      ttsPlaying.value = false;
-    });
-    ttsAudio.addEventListener("error", () => {
-      ttsPlaying.value = false;
-    });
-    ttsPlaying.value = true;
-    ttsLoading.value = false;
-    await ttsAudio.play();
   } catch (e: unknown) {
     alert(`Read Aloud failed: ${errMsg(e)}`);
-  } finally {
-    ttsLoading.value = false;
   }
 }
 

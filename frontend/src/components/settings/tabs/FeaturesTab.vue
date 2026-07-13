@@ -97,11 +97,11 @@ async function previewVoice() {
   if (ttsPreviewing.value && previewAudio) { previewAudio.pause(); ttsPreviewing.value = false; return }
   ttsPreviewing.value = true
   try {
-    const blob = await ttsApi.speakBlob('This is how your journal will sound when read aloud.')
-    const url = URL.createObjectURL(blob)
-    previewAudio = new Audio(url)
+    const { key } = await ttsApi.speakUrl('This is how your journal will sound when read aloud.')
+    if (!key) { ttsPreviewing.value = false; return }
+    previewAudio = new Audio(ttsApi.fileUrl(key))
     previewAudio.volume = ttsVolume.value / 100
-    previewAudio.onended = () => { ttsPreviewing.value = false; URL.revokeObjectURL(url) }
+    previewAudio.onended = () => { ttsPreviewing.value = false }
     await previewAudio.play()
   } catch (e: unknown) {
     ttsPreviewing.value = false

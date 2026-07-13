@@ -16,7 +16,7 @@ import { useNotesStore } from '../../stores/notes'
 import { tagsApi } from '../../api/tags'
 import { notesApi } from '../../api/notes'
 import { isTauri } from '../../api/client'
-import { ttsApi } from '../../api/tts'
+import { useTtsStore } from '../../stores/tts'
 import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse } from '../../types'
 
 const props = defineProps<{
@@ -27,6 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{ deleted: []; 'tag-created': []; 'new-note': [] }>()
 
 const store = useNotesStore()
+const tts = useTtsStore()
 const { isDragging, handlers: dragHandlers } = useDragDrop()
 
 // ── Page tabs ────────────────────────────────────────────────────────────────
@@ -80,6 +81,8 @@ watch(
       return
     }
     syncFromActive()
+    // Pre-warm read-aloud for the opened source (skip encrypted main — body is ciphertext).
+    if (!(isMain.value && props.note.is_encrypted)) tts.prewarmText(ttsText.value)
     if (saveTimer) {
       clearTimeout(saveTimer)
       saveTimer = null
@@ -101,6 +104,7 @@ async function doSave() {
     try {
       await store.updateNote(props.note.id, { title: title.value, body: body.value })
       savedAt.value = Date.now()
+      if (!props.note.is_encrypted) tts.prewarmText(ttsText.value)
     } catch {
       /* store surfaces error */
     } finally {
@@ -190,11 +194,7 @@ function onPageDrop(e: DragEvent, targetId: number) {
   void store.reorderPages(reordered.map((id, i) => ({ id, sort_order: i })))
 }
 
-// ── Read aloud (Edge TTS — shares the global voice from Settings → Features) ──
-const speaking = ref(false)
-const ttsLoading = ref(false)
-let ttsAudio: HTMLAudioElement | null = null
-let ttsBlobUrl = ''
+// ── Read aloud (drives the shared tts store; voice set in Settings → Features) ──
 function stripMarkdown(s: string): string {
   return s
     .replace(/<audio[\s\S]*?<\/audio>/gi, ' ')
@@ -206,30 +206,15 @@ function stripMarkdown(s: string): string {
     .replace(/\s+/g, ' ')
     .trim()
 }
-function stopSpeak() {
-  if (ttsAudio) { ttsAudio.pause(); ttsAudio = null }
-  if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = '' }
-  speaking.value = false
-}
+const ttsText = computed(() => stripMarkdown(body.value))
+const speaking = computed(() => tts.isPlayingText(ttsText.value))
+const ttsLoading = computed(() => tts.isLoadingText(ttsText.value))
 async function toggleSpeak() {
-  if (speaking.value || ttsAudio) { stopSpeak(); return }
-  const text = stripMarkdown(body.value)
-  if (!text) return
-  ttsLoading.value = true
+  if (!ttsText.value) return
   try {
-    const blob = await ttsApi.speakBlob(text)
-    if (!blob.size) return // backend returns empty audio for blank text
-    ttsBlobUrl = URL.createObjectURL(blob)
-    ttsAudio = new Audio(ttsBlobUrl)
-    ttsAudio.addEventListener('ended', stopSpeak)
-    ttsAudio.addEventListener('error', stopSpeak)
-    await ttsAudio.play()
-    speaking.value = true
+    await tts.toggleText(ttsText.value)
   } catch (e: unknown) {
-    stopSpeak()
     alert(`Read aloud failed: ${e instanceof Error ? e.message : e}`)
-  } finally {
-    ttsLoading.value = false
   }
 }
 
@@ -345,7 +330,8 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenDrag?.()
   unlistenDrag = null
-  stopSpeak()
+  // Stop read-aloud only if this note is what's currently playing (single global stream).
+  if (speaking.value || ttsLoading.value) tts.stop()
 })
 
 async function onDropFiles(e: DragEvent) {
