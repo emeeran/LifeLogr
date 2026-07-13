@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
+import { request } from './api/client'
 import AppShell from './components/layout/AppShell.vue'
 import SplashScreen from './components/layout/SplashScreen.vue'
 
@@ -9,10 +10,12 @@ const memorialTitle = useLocalStorage<boolean>('lifelogr-memorial-title', true)
 const showSplash = ref(false)
 
 // Memorial audio: plays only while the dedication splash is on screen.
-// Stops (and drops any pending interaction listener) the moment the splash
-// dismisses — by its 10s timer, a click, or Esc. Browsers block unmuted
-// autoplay before the first interaction, so a rejected play() waits for the
-// first click/keypress; if the splash closes first, that listener is removed.
+// Browsers block unmuted autoplay on a cold load, so we ask the local backend
+// to play the bundled Garden.mp3 through the system audio device (no autoplay
+// restriction there). If no player is available the backend returns
+// mode:"browser" and we fall back to the in-browser <audio>, which still needs
+// a click/keypress to start. Either way, audio stops the moment the splash
+// dismisses — by its 10s timer, a click, or Esc.
 const memorialAudio = ref<HTMLAudioElement | null>(null)
 let memorialInteractCleanup: (() => void) | null = null
 
@@ -20,14 +23,29 @@ function stopMemorialAudio() {
   const a = memorialAudio.value
   if (a) { a.pause(); a.currentTime = 0 }
   if (memorialInteractCleanup) { memorialInteractCleanup(); memorialInteractCleanup = null }
+  // Best-effort: tell the backend to stop its player too (no-op if it wasn't).
+  request('/memorial/audio/stop', { method: 'POST' }).catch(() => {})
 }
 
-function playMemorialAudio() {
+async function playMemorialAudio() {
+  // Prefer backend-driven system audio (bypasses the browser autoplay policy).
+  try {
+    const data = await request<{ mode: string }>('/memorial/audio/start', { method: 'POST' })
+    if (data.mode === 'system') return // backend is playing — nothing more to do
+  } catch {
+    /* endpoint missing/unreachable → try the in-browser fallback below */
+  }
+  playMemorialAudioInBrowser()
+}
+
+function playMemorialAudioInBrowser() {
   const a = memorialAudio.value
   if (!a) return
   const p = a.play()
   if (p && typeof p.then === 'function') {
     p.catch(() => {
+      // Autoplay blocked: retry on the first click/keypress. If the splash
+      // closes first, stopMemorialAudio removes this listener.
       memorialInteractCleanup = () => {
         window.removeEventListener('pointerdown', startOnInteract)
         window.removeEventListener('keydown', startOnInteract)
