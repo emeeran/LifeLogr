@@ -32,6 +32,7 @@ import logging
 import numpy as np
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Select
 
 from app.models.embedding import EntryEmbedding
 from app.models.entry import Entry
@@ -39,7 +40,7 @@ from app.models.entry import Entry
 logger = logging.getLogger(__name__)
 
 
-def _live_embeddings_stmt():
+def _live_embeddings_stmt() -> Select[tuple[int, str]]:
     """Live (non-deleted) embeddings — the universe the cache mirrors."""
     return (
         select(EntryEmbedding.entry_id, EntryEmbedding.embedding)
@@ -48,7 +49,7 @@ def _live_embeddings_stmt():
     )
 
 
-def _live_embedding_count_stmt():
+def _live_embedding_count_stmt() -> Select[tuple[int]]:
     return (
         select(func.count())
         .select_from(EntryEmbedding)

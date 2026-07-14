@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+# The stored priority is one of these three literals or NULL.
+Priority = Literal["low", "medium", "high"]
 
 
 class TaskList(Base):
@@ -45,7 +49,7 @@ class Task(Base):
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # "low" | "medium" | "high" | null
-    priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    priority: Mapped[Priority | None] = mapped_column(String(20), nullable=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

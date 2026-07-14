@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Priority = Literal["low", "medium", "high"]
+from app.models.task import Priority
 
 
 # ── Task lists ─────────────────────────────────────────────────────────────

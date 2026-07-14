@@ -14,9 +14,10 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from typing import Any
 
 
-def _load_journal(zf: zipfile.ZipFile) -> dict | None:
+def _load_journal(zf: zipfile.ZipFile) -> dict[str, Any] | None:
     """Find and parse Journal.json inside the export ZIP, else None."""
     for name in zf.namelist():
         if name.endswith("Journal.json"):
@@ -28,14 +29,14 @@ def _load_journal(zf: zipfile.ZipFile) -> dict | None:
     return None
 
 
-def parse_dayone_zip(content: bytes) -> list[dict]:
+def parse_dayone_zip(content: bytes) -> list[dict[str, str | None | list[str] | float]]:
     """Parse a Day One export ZIP into entry dicts (empty on non-Day One ZIP)."""
     try:
         zf = zipfile.ZipFile(io.BytesIO(content), "r")
     except zipfile.BadZipFile:
         return []
 
-    out: list[dict] = []
+    out: list[dict[str, str | None | list[str] | float]] = []
     with zf:
         journal = _load_journal(zf)
         if journal is None:

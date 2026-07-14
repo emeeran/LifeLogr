@@ -13,12 +13,13 @@ data: ``manual``/``vcard`` contacts only get ``last_seen_at`` touched, while
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Integer, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.contact_group import contact_group_members
+from app.models.contact_group import ContactGroup, contact_group_members
 
 
 class Contact(Base):
@@ -37,7 +38,7 @@ class Contact(Base):
     # legacy search (Contact.phone.ilike) and older readers keep working.
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     phone_secondary: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    phones: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    phones: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)  # job title
@@ -46,11 +47,11 @@ class Contact(Base):
     nickname: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # EPIM-style structured fields.
-    addresses: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    im_handles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    addresses: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    im_handles: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     websites: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    dates: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    relationships: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    dates: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    relationships: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -71,6 +72,6 @@ class Contact(Base):
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    groups: Mapped[list["ContactGroup"]] = relationship(  # noqa: F821
+    groups: Mapped[list[ContactGroup]] = relationship(
         secondary=contact_group_members, lazy="selectin"
     )

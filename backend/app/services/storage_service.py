@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +42,7 @@ def _atomic_copy(src: Path, dst: Path) -> None:
         raise
 
 
-def _iter_files(root: Path):
+def _iter_files(root: Path) -> Iterator[Path]:
     """Yield every regular file under *root* (recursive)."""
     if root.is_dir():
         for p in root.rglob("*"):
@@ -175,7 +176,7 @@ async def relocate_storage(
         logger.error("Relocate failed during copy; cleaning target", exc_info=True)
         _cleanup(staged)
         if target.exists() and not any(target.iterdir()):
-            target.rmdir(missing_ok=True)
+            target.rmdir()
         raise
 
     # 3. Validate the staged DB before committing.

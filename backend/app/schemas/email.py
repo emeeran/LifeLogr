@@ -115,7 +115,7 @@ class EmailMessageListResponse(BaseModel):
     folder_id: int
     from_address: str
     from_name: str | None
-    to_addresses: list
+    to_addresses: list[str]
     subject: str | None
     snippet: str | None
     sent_at: datetime | None
@@ -129,8 +129,8 @@ class EmailMessageListResponse(BaseModel):
 
 
 class EmailMessageResponse(EmailMessageListResponse):
-    cc_addresses: list | None
-    bcc_addresses: list | None
+    cc_addresses: list[str] | None
+    bcc_addresses: list[str] | None
     reply_to: str | None
     text_body: str | None
     html_body: str | None
