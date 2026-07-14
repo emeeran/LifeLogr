@@ -12,8 +12,17 @@ permissions:
   actions: write
 
 jobs:
+  # ── Test gate ──
+  # `needs:` can't reference jobs in another workflow, so the supported way to
+  # gate a release on CI is to call CI as a reusable workflow. The build jobs
+  # below depend on this — a tag can't produce installers unless backend lint/
+  # type/test, frontend build, and the Playwright e2e suite are all green.
+  tests:
+    uses: ./.github/workflows/ci.yml
+
   # ── Linux Desktop (AppImage + deb) ──
   build-linux:
+    needs: [tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +93,7 @@ jobs:
 
   # ── Windows Desktop (MSI) ──
   build-windows:
+    needs: [tests]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,6 +146,7 @@ jobs:
 
   # ── macOS Desktop (DMG) ──
   build-mac:
+    needs: [tests]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
