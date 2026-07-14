@@ -187,6 +187,6 @@ async def stop_audio() -> dict[str, bool]:
 # If the tab/app is closed mid-splash, the frontend never calls /stop. Tear down
 # any lingering player when the interpreter exits so audio doesn't outlive it
 # (ffplay -autoexit would end on its own, but this covers vlc/mpg123/sox too).
-import atexit
+import atexit  # noqa: E402  (deliberate: register teardown at module load)
 
 atexit.register(_force_kill_sync)
