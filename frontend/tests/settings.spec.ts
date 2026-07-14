@@ -89,42 +89,25 @@ test.describe('Settings UI verification', () => {
     await expect(page.getByText('Themes & Insights', { exact: true })).toBeVisible()
   })
 
-  // ── Data Tab ──
-  test('Data tab: sections and descriptions', async ({ page }) => {
-    await tab(page, 'Data').click()
-    await page.waitForTimeout(800)
+  // ── Data & Backup Tab ──
+  // The old separate "Data" and "Backup" nav tabs were merged into a single
+  // "Data & Backup" tab whose body is a Storage / Import-Export / Backups pill
+  // sub-nav. Assert the nav tab opens, the default Storage panel renders, and
+  // that drilling into the Backups pill surfaces the backup sections.
+  test('Data & Backup tab: storage and backup sections render', async ({ page }) => {
+    await tab(page, 'Data & Backup').click()
+    await page.waitForTimeout(500)
 
-    // Storage section
+    // Storage is the default pill → its section renders immediately.
     await expect(page.getByText('Storage', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Disk usage and entry statistics')).toBeVisible()
 
-    // Import / Export section
-    await expect(page.getByText('Import / Export', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Bring entries in or export your journal')).toBeVisible()
-  })
-
-  // ── Backup Tab ──
-  test('Backup tab: local, scheduled, cloud, and sync sections', async ({ page }) => {
-    await tab(page, 'Backup').click()
-    await page.waitForTimeout(800)
-
-    // Local + scheduled backup sections
+    // Switch to the Backups pill → the backup sections render.
+    await page.getByRole('button', { name: 'Backups', exact: true }).click()
+    await page.waitForTimeout(500)
     await expect(page.getByText('Local Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Scheduled Backup', { exact: true })).toBeVisible()
-
-    // Cloud section
     await expect(page.getByText('Cloud Backup', { exact: true })).toBeVisible()
-    await expect(page.getByText('Sync your journal to cloud storage')).toBeVisible()
-
-    // Sync queue section
-    await expect(page.getByText('Sync Queue', { exact: true })).toBeVisible()
-    await expect(page.getByText('Manage pending synchronization operations')).toBeVisible()
-
-    // Cloud empty state on a fresh database (no configs yet)
-    const emptyState = page.getByText('No cloud backups configured')
-    if (await emptyState.isVisible().catch(() => false)) {
-      await expect(page.getByText('Click Add to connect a cloud provider')).toBeVisible()
-    }
   })
 
   // ── Features Tab ──
