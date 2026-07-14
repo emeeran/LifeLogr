@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main, master]
+  workflow_call: # lets Build & Release gate installer builds on these tests
 
 jobs:
   backend:
@@ -103,5 +104,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run Playwright settings tests
-        run: npx playwright test tests/settings.spec.ts --reporter=line
+      - name: Run Playwright e2e tests
+        # settings = UI smoke; entries = create→search round-trip through the
+        # real backend, so a dead/wrong backend fails the suite.
+        run: npx playwright test tests/settings.spec.ts tests/entries.spec.ts --reporter=line
