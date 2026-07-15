@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, datetime, timezone
-from typing import Any, Awaitable, Callable, Protocol
+from pathlib import Path
+from typing import Any, Awaitable, Callable, IO, Protocol
 
 import httpx
 from sqlalchemy import func, select
@@ -111,11 +112,9 @@ class LocalFileProvider:
     """Local filesystem sync provider (for testing/dev)."""
 
     def __init__(self, base_dir: str = "/tmp/lifelogr-sync") -> None:
-        from pathlib import Path
-
         self._base = Path(base_dir)
 
-    def _safe_target(self, path: str):
+    def _safe_target(self, path: str) -> Path:
         """Resolve ``path`` under the base dir, rejecting traversal escapes."""
         target = (self._base / path).resolve()
         try:
@@ -375,7 +374,7 @@ class GoogleDriveProvider:
                 return "appDataFolder"
             raise
 
-    async def _query_files(self, query: str, *, spaces: str = "") -> list[dict]:
+    async def _query_files(self, query: str, *, spaces: str = "") -> list[dict[str, Any]]:
         """Run a Drive files.list query and return the raw file dicts."""
         from urllib.parse import quote
 
@@ -386,7 +385,8 @@ class GoogleDriveProvider:
         client = self._get_client()
         resp = await client.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10.0)
         resp.raise_for_status()
-        return resp.json().get("files", [])
+        files: list[dict[str, Any]] = resp.json().get("files", [])
+        return files
 
     async def _find_file_id(self, path: str, *, look_in: str = "folder") -> str | None:
         """Find the Drive file ID for *path* in the backup folder or App Data."""
@@ -968,9 +968,11 @@ class BoxProvider:
             timeout=15.0,
         )
         resp.raise_for_status()
-        for entry in resp.json().get("entries", []):
+        entries: list[dict[str, Any]] = resp.json().get("entries", [])
+        for entry in entries:
             if entry.get("type") == "file" and entry.get("name") == name:
-                return entry["id"]
+                file_id: str = entry["id"]
+                return file_id
         raise ValueError(f"File '{name}' not found in Box folder")
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
@@ -978,7 +980,8 @@ class BoxProvider:
         folder_id = await self._get_folder_id()
         client = self._get_client()
         # Box file upload is multipart: an `attributes` JSON field + the file.
-        files = {
+        # Value type widened so the dict conforms to httpx's RequestFiles union.
+        files: dict[str, tuple[str | None, bytes | str] | tuple[str | None, bytes | str, str | None]] = {
             "attributes": (None, json.dumps({"name": path, "parent": {"id": folder_id}})),
             "file": (path, data),
         }
@@ -997,7 +1000,7 @@ class BoxProvider:
         folder_id = await self._get_folder_id()
         client = self._get_client()
         fh = open(local_path, "rb")
-        files = {
+        files: dict[str, tuple[str | None, bytes | str] | tuple[str | None, bytes | IO[bytes], str | None]] = {
             "attributes": (None, json.dumps({"name": path, "parent": {"id": folder_id}})),
             "file": (path, fh, "application/octet-stream"),
         }
@@ -1171,7 +1174,7 @@ class CloudSyncService:
 
         files = await self.provider.list_files("lifelogr/")
         # Newest op per entity: (operation, payload, updated_at, sort_key).
-        winners: dict[tuple[str, int], tuple[str, dict[str, Any], datetime | None, tuple]] = {}
+        winners: dict[tuple[str, int], tuple[str, dict[str, Any], datetime | None, tuple[datetime, int]]] = {}
         for path in files:
             parsed = parse_sync_path(path)
             if parsed is None:
