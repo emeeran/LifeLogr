@@ -1,6 +1,6 @@
 [project]
 name = "lifelogr"
-version = "0.6.0"
+version = "0.6.1"
 description = "Privacy-first, offline-first journaling app for Linux"
 readme = "README.md"
 requires-python = ">=3.11"
