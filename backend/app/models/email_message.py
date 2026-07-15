@@ -45,9 +45,9 @@ class EmailMessage(Base):
     # Parsed headers
     from_address: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    to_addresses: Mapped[list[str]] = mapped_column(JSON, nullable=False)
-    cc_addresses: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    bcc_addresses: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    to_addresses: Mapped[list[dict[str, str | None]]] = mapped_column(JSON, nullable=False)
+    cc_addresses: Mapped[list[dict[str, str | None]] | None] = mapped_column(JSON, nullable=True)
+    bcc_addresses: Mapped[list[dict[str, str | None]] | None] = mapped_column(JSON, nullable=True)
     reply_to: Mapped[str | None] = mapped_column(String(500), nullable=True)
     subject: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
