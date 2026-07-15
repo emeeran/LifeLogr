@@ -13,7 +13,8 @@ async function dismissWhatsNew(page: Page) {
   await dismiss.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
   if (await dismiss.isVisible().catch(() => false)) {
     await dismiss.click()
-    await page.waitForTimeout(200)
+    // Wait for the dialog to finish closing instead of a fixed sleep.
+    await expect(dismiss).toBeHidden({ timeout: 2000 })
   }
 }
 

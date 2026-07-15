@@ -12,7 +12,8 @@ async function dismissWhatsNew(page: Page) {
   await dismiss.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
   if (await dismiss.isVisible().catch(() => false)) {
     await dismiss.click()
-    await page.waitForTimeout(200)
+    // Wait for the dialog to finish closing instead of a fixed sleep.
+    await expect(dismiss).toBeHidden({ timeout: 2000 })
   }
 }
 
@@ -25,9 +26,10 @@ test.describe('Settings UI verification', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await dismissWhatsNew(page)
-    // Navigate to settings - click the settings icon/link in the sidebar
+    // Click the Settings link in the sidebar. The per-test assertions and the
+    // tab() clicks below are auto-retrying, so they wait for SettingsView to
+    // mount on their own — no fixed sleep needed here.
     await page.locator('text=Settings').first().click()
-    await page.waitForTimeout(500)
   })
 
   // ── General Tab ──
@@ -53,7 +55,7 @@ test.describe('Settings UI verification', () => {
   // ── AI Tab ──
   test('AI tab: connection settings, embed model, test button', async ({ page }) => {
     await tab(page, 'AI').click()
-    await page.waitForTimeout(800)
+    // toBeVisible auto-retries as the tab mounts — no fixed sleep needed.
 
     // Section header + description
     await expect(page.getByText('AI Configuration', { exact: true })).toBeVisible()
@@ -96,15 +98,14 @@ test.describe('Settings UI verification', () => {
   // that drilling into the Backups pill surfaces the backup sections.
   test('Data & Backup tab: storage and backup sections render', async ({ page }) => {
     await tab(page, 'Data & Backup').click()
-    await page.waitForTimeout(500)
 
     // Storage is the default pill → its section renders immediately.
     await expect(page.getByText('Storage', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Disk usage and entry statistics')).toBeVisible()
 
-    // Switch to the Backups pill → the backup sections render.
+    // Switch to the Backups pill → the backup sections render (toBeVisible
+    // waits for the swap; no fixed sleep).
     await page.getByRole('button', { name: 'Backups', exact: true }).click()
-    await page.waitForTimeout(500)
     await expect(page.getByText('Local Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Scheduled Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Cloud Backup', { exact: true })).toBeVisible()
@@ -113,7 +114,6 @@ test.describe('Settings UI verification', () => {
   // ── Features Tab ──
   test('Features tab: TTS voice selector, notifications', async ({ page }) => {
     await tab(page, 'Features').click()
-    await page.waitForTimeout(800)
 
     // Read Aloud section
     await expect(page.getByText('Read Aloud', { exact: true })).toBeVisible()
@@ -134,7 +134,6 @@ test.describe('Settings UI verification', () => {
   // ── About Tab ──
   test('About tab: info card, danger zone', async ({ page }) => {
     await tab(page, 'About').click()
-    await page.waitForTimeout(500)
 
     // Hero: brand name + tagline
     await expect(page.locator('h2').filter({ hasText: 'LifeLogr' })).toBeVisible()
@@ -152,21 +151,23 @@ test.describe('Settings UI verification', () => {
   // ── CSS: settings-select class ──
   test('CSS utility classes applied to selects and inputs', async ({ page }) => {
     await tab(page, 'General').click()
-    await page.waitForTimeout(500)
 
-    // Check that selects have the settings-select class
+    // A count check doesn't auto-retry like toBeVisible, so wait for at least
+    // one styled control to render before counting them.
     const styledSelects = page.locator('select.settings-select')
+    await expect(styledSelects.first()).toBeVisible()
     await expect(styledSelects.count()).resolves.toBeGreaterThanOrEqual(2)
 
-    // Check that inputs have the settings-input class
     const styledInputs = page.locator('input.settings-input')
+    await expect(styledInputs.first()).toBeVisible()
     await expect(styledInputs.count()).resolves.toBeGreaterThanOrEqual(1)
   })
 
   // ── Keyboard navigation ──
   test('Focus rings on tab navigation', async ({ page }) => {
     await tab(page, 'General').click()
-    await page.waitForTimeout(500)
+    // Wait for the General tab to render before driving keyboard focus onto it.
+    await expect(page.getByText('Appearance', { exact: true })).toBeVisible()
 
     // Tab to first interactive element and check focus outline
     await page.keyboard.press('Tab')
