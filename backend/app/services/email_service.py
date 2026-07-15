@@ -70,6 +70,29 @@ class _TempAttachment(TypedDict):
     ts: float
 
 
+class SendResult(TypedDict):
+    """Result of send/save_draft — unpacked into schemas.EmailSendResult."""
+
+    success: bool
+    sent_message_id: int | None
+    error: str | None
+
+
+class TestResult(TypedDict):
+    """Result of test_connection — unpacked into schemas.EmailAccountTestResult."""
+
+    success: bool
+    error: str | None
+
+
+class TempAttachmentMeta(TypedDict):
+    """Result of store_temp_attachment — unpacked into schemas.TempAttachmentResponse."""
+
+    id: str
+    filename: str
+    file_size: int
+
+
 _TEMP_ATTACHMENTS: dict[str, _TempAttachment] = {}
 
 
@@ -320,7 +343,7 @@ class EmailAccountService:
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
 
-    async def test_connection(self, account_id: int) -> dict[str, object]:
+    async def test_connection(self, account_id: int) -> TestResult:
         account = await self.get(account_id)
         password = security.decrypt(account.password_encrypted)
         try:
@@ -1037,7 +1060,7 @@ class EmailComposeService:
             return
         self._reply_original = await EmailMessageService(self.db)._get(message_id)
 
-    async def send(self, data: EmailCompose) -> dict[str, object]:
+    async def send(self, data: EmailCompose) -> SendResult:
         account = await EmailAccountService(self.db).get(data.account_id)
         await self._load_reply_original(data.in_reply_to_message_id)
         msg = self._build_message(account, data)
@@ -1059,7 +1082,7 @@ class EmailComposeService:
         self._cleanup_temp_attachments(data.attachment_ids)
         return {"success": True, "sent_message_id": None, "error": None}
 
-    async def save_draft(self, data: EmailCompose) -> dict[str, object]:
+    async def save_draft(self, data: EmailCompose) -> SendResult:
         account = await EmailAccountService(self.db).get(data.account_id)
         await self._load_reply_original(data.in_reply_to_message_id)
         msg = self._build_message(account, data, as_draft=True)
@@ -1177,7 +1200,7 @@ def _sweep_temp_attachments(max_age_seconds: int = 3600) -> None:
                 logger.debug("Could not unlink temp attachment %s", tid, exc_info=True)
 
 
-def store_temp_attachment(filename: str, content_type: str, payload: bytes) -> dict[str, str | int]:
+def store_temp_attachment(filename: str, content_type: str, payload: bytes) -> TempAttachmentMeta:
     _sweep_temp_attachments()
     temp_dir = Path(settings.MEDIA_DIR) / "email" / "_temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
