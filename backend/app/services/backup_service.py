@@ -52,7 +52,6 @@ class BackupService:
             GoogleDriveProvider,
             NextcloudProvider,
             OneDriveProvider,
-            SyncProvider,
         )
 
         config = await self._get_config(config_id)
@@ -143,7 +142,6 @@ class BackupService:
             GoogleDriveProvider,
             NextcloudProvider,
             OneDriveProvider,
-            SyncProvider,
         )
 
         config = await self._get_config(config_id)
@@ -368,7 +366,6 @@ class BackupService:
             GoogleDriveProvider,
             NextcloudProvider,
             OneDriveProvider,
-            SyncProvider,
         )
 
         config = await self._get_config(config_id)

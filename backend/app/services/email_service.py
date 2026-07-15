@@ -1095,7 +1095,6 @@ class EmailComposeService:
         self, account: EmailAccount, data: EmailCompose, as_draft: bool = False
     ) -> MIMEMessage:
         from email.message import EmailMessage as MimeMessage
-        from email.message import EmailMessage as MimeMessage
         from email.utils import formatdate, make_msgid
 
         msg = MimeMessage()
