@@ -1,9 +1,12 @@
 """Business logic for backup configuration and execution."""
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +15,9 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.core.security import decrypt, encrypt, reencrypt
 from app.models.backup import BackupConfig, BackupSnapshot
 from app.schemas.backup import BackupConfigCreate
+
+if TYPE_CHECKING:
+    from app.services.cloud_sync_service import SyncProvider
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +52,6 @@ class BackupService:
             GoogleDriveProvider,
             NextcloudProvider,
             OneDriveProvider,
-            SyncProvider,
         )
 
         config = await self._get_config(config_id)
@@ -137,7 +142,6 @@ class BackupService:
             GoogleDriveProvider,
             NextcloudProvider,
             OneDriveProvider,
-            SyncProvider,
         )
 
         config = await self._get_config(config_id)
@@ -202,7 +206,7 @@ class BackupService:
                     await provider.migrate_appdata_backups()
                 except Exception:
                     logger.warning("Google Drive App Data migration skipped", exc_info=True)
-                await provider.upload_file(filename, archive_path, encrypted=False)
+                await provider.upload_file(filename, str(archive_path), encrypted=False)
                 if getattr(provider, "last_location", "folder") == "appdata":
                     # Token lacks drive.file — backup succeeded but landed in the
                     # hidden App Data folder. Keep status=completed; surface how
@@ -219,7 +223,7 @@ class BackupService:
                     username=creds.get("username", ""),
                     password=creds.get("password", ""),
                 )
-                await provider.upload_file(filename, archive_path, encrypted=False)
+                await provider.upload_file(filename, str(archive_path), encrypted=False)
             elif config.provider in ("onedrive", "dropbox"):
                 provider_cls: type[OneDriveProvider] | type[DropboxProvider] = (
                     OneDriveProvider if config.provider == "onedrive" else DropboxProvider
@@ -231,7 +235,7 @@ class BackupService:
                     config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
 
                 provider = provider_cls(creds, on_token_refresh=on_refresh)
-                await provider.upload_file(filename, archive_path, encrypted=False)
+                await provider.upload_file(filename, str(archive_path), encrypted=False)
             elif config.provider == "box":
 
                 async def on_refresh_box(
@@ -243,7 +247,7 @@ class BackupService:
                     config.credentials_encrypted = reencrypt(encrypt(json.dumps(creds)))
 
                 provider = BoxProvider(creds, on_token_refresh=on_refresh_box)
-                await provider.upload_file(filename, archive_path, encrypted=False)
+                await provider.upload_file(filename, str(archive_path), encrypted=False)
             else:
                 raise ValueError(f"Unsupported backup provider: {config.provider}")
 
@@ -271,7 +275,7 @@ class BackupService:
         await self.db.refresh(snapshot)
         return snapshot
 
-    def _cloud_provider_for(self, config: BackupConfig, creds: dict[str, str]):
+    def _cloud_provider_for(self, config: BackupConfig, creds: dict[str, str]) -> SyncProvider:
         """Instantiate the cloud provider for *config* with a refresh callback.
 
         Centralised so provider construction stays consistent; used by
@@ -362,7 +366,6 @@ class BackupService:
             GoogleDriveProvider,
             NextcloudProvider,
             OneDriveProvider,
-            SyncProvider,
         )
 
         config = await self._get_config(config_id)

@@ -17,6 +17,7 @@ import re
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.contact import Contact
 from app.models.email_message import EmailMessage
@@ -207,7 +208,7 @@ class SpamService:
     # ── override layers ───────────────────────────────────────────────────
 
     @staticmethod
-    def _blocklist_conditions(addr: str, domain: str) -> list:
+    def _blocklist_conditions(addr: str, domain: str) -> list[ColumnElement[bool]]:
         """OR-conditions matching a sender by exact address and/or domain."""
         conditions = []
         if addr:

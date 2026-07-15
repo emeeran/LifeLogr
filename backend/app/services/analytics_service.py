@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.entry import Entry
 from app.models.media import Media
@@ -24,7 +25,7 @@ from app.schemas.analytics import (
 )
 
 
-def _word_count_expr():
+def _word_count_expr() -> ColumnElement[int]:
     """Approximate SQL word count: body length minus spaces, plus one."""
     body = Entry.body
     return func.length(body) - func.length(func.replace(body, " ", "")) + 1

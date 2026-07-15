@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, TypedDict, cast
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +83,25 @@ _TEL_TYPE_MAP = {
 }
 
 
-def parse_vcard(text: str) -> list[dict[str, object]]:
+class VCardContact(TypedDict, total=False):
+    """A parsed vCard. List fields mirror the JSON columns on Contact."""
+
+    name: str
+    nickname: str
+    company: str
+    title: str
+    notes: str
+    emails: list[str]
+    phones: list[str]
+    phones_typed: list[dict[str, str]]
+    addresses: list[dict[str, str | None]]
+    websites: list[str]
+    dates: list[dict[str, str | None]]
+    im: list[dict[str, str]]
+    categories: list[str]
+
+
+def parse_vcard(text: str) -> list[VCardContact]:
     """Parse vCard text into a list of contact dicts.
 
     Each dict has keys: name, emails (list[str]), phones (list[str]),
@@ -91,13 +110,13 @@ def parse_vcard(text: str) -> list[dict[str, object]]:
     model are extracted. ``phones`` is kept as plain strings for backward
     compatibility; ``phones_typed`` carries the type label.
     """
-    contacts: list[dict[str, object]] = []
-    current: dict[str, object] | None = None
+    contacts: list[VCardContact] = []
+    current: dict[str, Any] | None = None
 
-    def _ensure(key: str) -> list:
+    def _ensure(key: str) -> list[Any]:
         assert current is not None
-        val = current.setdefault(key, [])
-        return val  # type: ignore[return-value]
+        val: list[Any] = current.setdefault(key, [])
+        return val
 
     for line in _unfold(text):
         name, value, params = _split_property(line)
@@ -115,7 +134,7 @@ def parse_vcard(text: str) -> list[dict[str, object]]:
             continue
         if name == "END" and value.upper() == "VCARD":
             if current is not None:
-                contacts.append(current)
+                contacts.append(cast(VCardContact, current))
             current = None
             continue
         if current is None:
@@ -730,9 +749,9 @@ class ContactService:
             else:
                 # Enrich: never overwrite user data; fill blanks only.
                 if not existing.name and entry.get("name"):
-                    existing.name = entry.get("name")  # type: ignore[assignment]
+                    existing.name = entry.get("name")
                 if not existing.company and entry.get("company"):
-                    existing.company = entry.get("company")  # type: ignore[assignment]
+                    existing.company = entry.get("company")
         await self.db.commit()
         return count
 

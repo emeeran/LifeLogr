@@ -25,7 +25,7 @@ _TAG_KEYS = {"tags", "tag"}
 _RATING_TO_MOOD = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}
 
 
-def _field(row: dict, keys: set[str]) -> str | None:
+def _field(row: dict[str, str | None], keys: set[str]) -> str | None:
     """First non-empty value whose header matches one of *keys* (case-insensitive)."""
     for header, value in row.items():
         if header is None or value is None:
@@ -35,14 +35,14 @@ def _field(row: dict, keys: set[str]) -> str | None:
     return None
 
 
-def parse_csv(text: str) -> list[dict]:
+def parse_csv(text: str) -> list[dict[str, str | None | list[str]]]:
     """Parse CSV *text* into entry dicts. Rows lacking date/body are skipped."""
     try:
         dialect = csv.Sniffer().sniff(text[:4096])
     except csv.Error:
         dialect = csv.excel  # sensible default (comma-delimited)
 
-    out: list[dict] = []
+    out: list[dict[str, str | None | list[str]]] = []
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     for row in reader:
         date_raw = _field(row, _DATE_KEYS)
