@@ -19,7 +19,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from email.message import Message
+from email.message import EmailMessage, Message
 
 import aiosmtplib
 from email_validator import EmailNotValidError, validate_email
@@ -39,9 +39,9 @@ def normalize_email(addr: str) -> str:
         raise ValueError(f"Invalid email address {addr!r}: {exc}") from exc
 
 
-def decode_addresses(header_values: list[str]) -> list[dict]:
+def decode_addresses(header_values: list[str]) -> list[dict[str, str | None]]:
     """Parse RFC 5322 address headers into ``[{"name": str|None, "address": str}]``."""
-    out: list[dict] = []
+    out: list[dict[str, str | None]] = []
     for name, addr in email.utils.getaddresses(header_values):
         if not addr:
             continue
@@ -85,9 +85,9 @@ class ParsedMessage:
     subject: str | None
     from_name: str | None
     from_address: str | None
-    to_addresses: list[dict] = field(default_factory=list)
-    cc_addresses: list[dict] = field(default_factory=list)
-    bcc_addresses: list[dict] = field(default_factory=list)
+    to_addresses: list[dict[str, str | None]] = field(default_factory=list)
+    cc_addresses: list[dict[str, str | None]] = field(default_factory=list)
+    bcc_addresses: list[dict[str, str | None]] = field(default_factory=list)
     reply_to: str | None = None
     sent_at: datetime | None = None
     in_reply_to: str | None = None
@@ -103,7 +103,7 @@ def parse_message(raw: bytes) -> ParsedMessage:
     from email import policy
     from email.parser import BytesParser
 
-    msg: Message = BytesParser(policy=policy.default).parsebytes(raw)
+    msg: EmailMessage = BytesParser(policy=policy.default).parsebytes(raw)
 
     def _header(name: str) -> str | None:
         val = msg.get(name)
@@ -154,7 +154,8 @@ def parse_message(raw: bytes) -> ParsedMessage:
             is_inline = "inline" in disposition or cid is not None
             filename = part.get_filename() or "attachment"
             try:
-                payload = part.get_payload(decode=True) or b""
+                raw_payload = part.get_payload(decode=True) or b""
+                payload: bytes = raw_payload if isinstance(raw_payload, bytes) else b""
                 if not payload and part.get_content_type().startswith("text/"):
                     payload = part.get_content().encode("utf-8", "replace")
             except Exception:
@@ -263,15 +264,20 @@ class ImapClient:
                 count = int(data[0])
             except (TypeError, ValueError):
                 count = 0
-        uidvalidity = self.imap.untagged_responses.get("UIDVALIDITY", [b"0"])[0]
+        uid_raw = self.imap.untagged_responses.get("UIDVALIDITY", [b"0"])[0]
+        uidvalidity: int | None
         try:
-            uidvalidity = int(uidvalidity)
+            uidvalidity = int(uid_raw) if isinstance(uid_raw, (bytes, int)) else None
         except (TypeError, ValueError):
             uidvalidity = None
         return count, uidvalidity
 
     async def uid_search(self, criteria: str) -> list[int]:
-        typ, data = await asyncio.to_thread(self.imap.uid, "SEARCH", None, criteria)
+        # None charset is the documented IMAP SEARCH idiom (imaplib omits the
+        # CHARSET argument); the stub types uid *args as str so ignore here.
+        typ, data = await asyncio.to_thread(
+            self.imap.uid, "SEARCH", None, criteria  # type: ignore[arg-type]
+        )
         if typ != "OK" or not data or not data[0]:
             return []
         return [int(x) for x in data[0].split()]
