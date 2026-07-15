@@ -100,16 +100,16 @@ async def run_configured_backup_now(
     config_id = entry.get("config_id")
     if config_id is not None:
         svc = BackupService(db)
-        snapshot = await svc.run_backup(int(config_id))
+        snapshot = await svc.run_backup(config_id)
         return {
             "mode": "cloud",
-            "config_id": int(config_id),
+            "config_id": config_id,
             "status": snapshot.status,
             "error": snapshot.error_message,
         }
 
     sched_path = str(entry.get("backup_path", ""))
-    sched_retention = int(entry.get("retention", 10))
+    sched_retention = entry.get("retention", 10)
     archive = await _run_backup(sched_path, sched_retention)
     return {"mode": "local", "path": sched_path, "archive": archive}
 

@@ -10,7 +10,7 @@ import tarfile
 import tempfile
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,20 @@ logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 _scheduler: Any = None
+
+
+class ScheduleEntry(TypedDict, total=False):
+    """Persisted active backup schedule, round-tripped through JSON on disk.
+
+    ``cron`` is always present; then either ``config_id`` (cloud mode) or
+    ``backup_path`` + ``retention`` (local mode). ``last_run`` is optional.
+    """
+
+    cron: str
+    config_id: int
+    backup_path: str
+    retention: int
+    last_run: str
 
 
 # ── Schedule persistence ─────────────────────────────────────────────────
@@ -35,7 +49,7 @@ def _schedule_store_path() -> Path:
     return Path(settings.DATA_DIR) / ".backup-schedule.json"
 
 
-def _persist_schedule(entry: dict[str, object]) -> None:
+def _persist_schedule(entry: ScheduleEntry) -> None:
     """Write the active backup schedule to disk (best-effort)."""
     try:
         path = _schedule_store_path()
@@ -45,13 +59,16 @@ def _persist_schedule(entry: dict[str, object]) -> None:
         logger.warning("Failed to persist backup schedule", exc_info=True)
 
 
-def _load_schedule() -> dict[str, object] | None:
+def _load_schedule() -> ScheduleEntry | None:
     """Read the persisted active schedule, or None if absent/unreadable."""
     path = _schedule_store_path()
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
+        # JSON structure isn't statically verifiable; trust the on-disk shape
+        # (written only by _persist_schedule with a ScheduleEntry).
+        return cast(ScheduleEntry, data) if isinstance(data, dict) else None
     except Exception:
         logger.warning("Failed to load persisted backup schedule", exc_info=True)
         return None
@@ -71,7 +88,9 @@ def _mark_backup_run() -> None:
     The startup catch-up sweep uses this to tell a missed backup from one that
     already ran today.
     """
-    entry = _load_schedule() or {}
+    entry = _load_schedule()
+    if entry is None:
+        return
     entry["last_run"] = datetime.now(timezone.utc).isoformat()
     _persist_schedule(entry)
 
@@ -292,13 +311,16 @@ class SchedulerService:
         )
 
         # Persist so the job survives restarts. Preserve last_run if re-saving.
-        prev = _load_schedule() or {}
-        entry: dict[str, object] = {"cron": cron_expr}
-        if "last_run" in prev:
+        prev = _load_schedule()
+        entry: ScheduleEntry = {"cron": cron_expr}
+        if prev and "last_run" in prev:
             entry["last_run"] = prev["last_run"]
         if config_id is not None:
             entry["config_id"] = config_id
         else:
+            # _register_backup_job above raises ValueError if backup_path is
+            # falsy when config_id is None, so it is guaranteed non-None here.
+            assert backup_path is not None
             entry["backup_path"] = backup_path
             entry["retention"] = retention
         _persist_schedule(entry)
@@ -700,7 +722,7 @@ async def _checkpoint_wal_robust(attempts: int = 5, delay: float = 0.5) -> bool:
     return False
 
 
-async def _run_backup(backup_path: str, retention: int = 10) -> None:
+async def _run_backup(backup_path: str, retention: int = 10) -> str:
     """Execute the backup job — creates a .tar.gz archive of DB + media."""
     from app.core.archive import add_backup_members
     from app.core.config import settings
