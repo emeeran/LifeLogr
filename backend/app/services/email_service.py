@@ -6,7 +6,9 @@ import logging
 import secrets
 import time
 from datetime import datetime, timezone
+from email.message import EmailMessage as MIMEMessage
 from pathlib import Path
+from typing import Any, TypedDict
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select
@@ -58,7 +60,17 @@ _FOLDER_NAME_HINTS = {
 
 # In-memory temp-attachment registry for compose (single-process desktop app).
 # {temp_id: {"path": Path, "filename": str, "content_type": str, "size": int}}
-_TEMP_ATTACHMENTS: dict[str, dict] = {}
+
+
+class _TempAttachment(TypedDict):
+    path: Path
+    filename: str
+    content_type: str
+    size: int
+    ts: float
+
+
+_TEMP_ATTACHMENTS: dict[str, _TempAttachment] = {}
 
 
 def _special_use(folder_name: str, flags: str) -> str | None:
@@ -648,7 +660,7 @@ class EmailSyncService:
     async def _extract_contacts(self, parsed: ParsedMessage, account: EmailAccount) -> None:
         owner = account.email_address.lower()
         contact_svc = ContactService(self.db)
-        candidates: list[tuple[str | None, str | None]] = []
+        candidates: list[tuple[str | None, str]] = []
         if parsed.from_address and parsed.from_address.lower() != owner:
             candidates.append((parsed.from_name, parsed.from_address))
         for entry in parsed.to_addresses + parsed.cc_addresses:
@@ -717,7 +729,7 @@ class EmailMessageService:
         items = list((await self.db.execute(base)).scalars().all())
         return items, total
 
-    async def get_message(self, message_id: int) -> dict:
+    async def get_message(self, message_id: int) -> dict[str, Any]:
         message = await self._get(message_id)
         attachments = list(
             (
@@ -802,7 +814,7 @@ class EmailMessageService:
         except Exception:
             logger.debug("IMAP flag push failed for message %s", message.id, exc_info=True)
 
-    async def delete_message(self, message_id: int) -> dict | None:
+    async def delete_message(self, message_id: int) -> dict[str, Any] | None:
         """Delete the local copy immediately and return a move descriptor for
         the background server-side trash move (or ``None`` if none applicable).
 
@@ -839,7 +851,7 @@ class EmailMessageService:
         rels.extend(r[0] for r in rows)
         return rels
 
-    async def _describe_move(self, message: EmailMessage) -> dict | None:
+    async def _describe_move(self, message: EmailMessage) -> dict[str, Any] | None:
         """Capture (account_id, source folder name, uid) for a background move."""
         folder = (
             await self.db.execute(select(EmailFolder).where(EmailFolder.id == message.folder_id))
@@ -851,7 +863,7 @@ class EmailMessageService:
             "moves": [(folder.folder_name, message.uid)],
         }
 
-    async def bulk_delete(self, message_ids: list[int]) -> dict:
+    async def bulk_delete(self, message_ids: list[int]) -> dict[str, Any]:
         """Local-delete many messages; return grouped move descriptors.
 
         Each message's server-side trash move is batched per account into one
@@ -896,7 +908,7 @@ class EmailMessageService:
 
     async def block_sender(
         self, message_id: int, action: str = "junk", scope: str = "domain"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Block the sender of ``message_id`` and apply ``action`` to every
         existing message from them in the same account.
 
@@ -1056,7 +1068,10 @@ class EmailComposeService:
         self._cleanup_temp_attachments(data.attachment_ids)
         return {"success": True, "sent_message_id": None, "error": None}
 
-    def _build_message(self, account: EmailAccount, data: EmailCompose, as_draft: bool = False):
+    def _build_message(
+        self, account: EmailAccount, data: EmailCompose, as_draft: bool = False
+    ) -> MIMEMessage:
+        from email.message import EmailMessage as MimeMessage
         from email.message import EmailMessage as MimeMessage
         from email.utils import formatdate, make_msgid
 
@@ -1133,10 +1148,10 @@ class EmailComposeService:
             logger.warning("APPEND to %s failed (sent mail not copied to Sent)", special, exc_info=True)
 
     @staticmethod
-    def _cleanup_temp_attachments(ids: list[int]) -> None:
+    def _cleanup_temp_attachments(ids: list[str]) -> None:
         # ids here are temp string ids carried in EmailCompose.attachment_ids
         for temp_id in ids:
-            meta = _TEMP_ATTACHMENTS.pop(str(temp_id), None)
+            meta = _TEMP_ATTACHMENTS.pop(temp_id, None)
             if meta:
                 meta["path"].unlink(missing_ok=True)
 
@@ -1162,7 +1177,7 @@ def _sweep_temp_attachments(max_age_seconds: int = 3600) -> None:
                 logger.debug("Could not unlink temp attachment %s", tid, exc_info=True)
 
 
-def store_temp_attachment(filename: str, content_type: str, payload: bytes) -> dict:
+def store_temp_attachment(filename: str, content_type: str, payload: bytes) -> dict[str, str | int]:
     _sweep_temp_attachments()
     temp_dir = Path(settings.MEDIA_DIR) / "email" / "_temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
