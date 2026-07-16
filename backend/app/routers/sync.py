@@ -145,3 +145,26 @@ async def cloud_pull(data: CloudSyncRequest, db: AsyncSession = Depends(get_db))
     # Ensure any updated credentials from provider are saved
     await db.commit()
     return CloudSyncResponse(pulled=result["pulled"], provider=data.provider)
+
+
+@router.post("/all")
+async def sync_all(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Sync everything in one go: IMAP mail + Google Calendar + Google Tasks.
+
+    Each leg is isolated — a mail failure still runs Google sync, and
+    ``GoogleSyncService`` isolates Calendar vs Tasks internally.
+    """
+    from app.services.email_service import EmailSyncService
+    from app.services.google_sync_service import GoogleSyncService
+
+    result: dict[str, Any] = {}
+    try:
+        await EmailSyncService(db).sync_all_accounts()
+        result["mail"] = {"ok": True}
+    except Exception as exc:  # noqa: BLE001 — report, don't abort the other legs
+        result["mail"] = {"ok": False, "error": str(exc)}
+    try:
+        result["google"] = await GoogleSyncService(db).sync_all()
+    except Exception as exc:  # noqa: BLE001
+        result["google"] = {"ok": False, "error": str(exc)}
+    return result

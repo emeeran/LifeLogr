@@ -256,6 +256,7 @@ from app.routers.backup import router as backup_router  # noqa: E402
 from app.routers.contacts import router as contacts_router  # noqa: E402
 from app.routers.email import router as email_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
+from app.routers.google_sync import router as google_sync_router  # noqa: E402
 from app.routers.box import router as box_router  # noqa: E402
 from app.routers.dropbox import router as dropbox_router  # noqa: E402
 from app.routers.onedrive import router as onedrive_router  # noqa: E402
@@ -293,6 +294,7 @@ app.include_router(media_router)
 app.include_router(recordings_router)
 app.include_router(backup_router)
 app.include_router(google_drive_router)
+app.include_router(google_sync_router)
 app.include_router(box_router)
 app.include_router(onedrive_router)
 app.include_router(dropbox_router)

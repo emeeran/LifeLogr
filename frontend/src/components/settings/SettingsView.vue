@@ -14,10 +14,12 @@ import {
   Heart,
   Mail,
   StickyNote,
+  CalendarCheck,
 } from "lucide-vue-next";
 import GeneralTab from "./tabs/GeneralTab.vue";
 import AITab from "./tabs/AITab.vue";
 import DataBackupTab from "./tabs/DataBackupTab.vue";
+import GoogleSyncTab from "./tabs/GoogleSyncTab.vue";
 import FeaturesTab from "./tabs/FeaturesTab.vue";
 import DedicationTab from "./tabs/DedicationTab.vue";
 import AboutTab from "./tabs/AboutTab.vue";
@@ -31,6 +33,7 @@ const tabs = [
   { id: "ai", label: "AI", icon: Brain },
   { id: "notes", label: "Notes", icon: StickyNote },
   { id: "email", label: "Email", icon: Mail },
+  { id: "google", label: "Google", icon: CalendarCheck },
   { id: "features", label: "Features", icon: Sparkles },
   { id: "data-backup", label: "Data & Backup", icon: HardDrive },
   { id: "dedication", label: "Dedication", icon: Heart },
@@ -496,6 +499,7 @@ provide("settings-highlight", highlightKey);
         <GeneralTab v-if="activeTab === 'general'" @toast="showToast" />
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
         <EmailTab v-if="activeTab === 'email'" @toast="showToast" />
+        <GoogleSyncTab v-if="activeTab === 'google'" @toast="showToast" />
         <NotesTab v-if="activeTab === 'notes'" @toast="showToast" />
         <FeaturesTab v-if="activeTab === 'features'" @toast="showToast" />
         <DataBackupTab v-if="activeTab === 'data-backup'" @toast="showToast" />
