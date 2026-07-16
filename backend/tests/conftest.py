@@ -37,9 +37,20 @@ async def db_engine():
 
 
 @pytest_asyncio.fixture
-async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Direct DB session for test assertions."""
+async def db_session(db_engine, monkeypatch) -> AsyncGenerator[AsyncSession, None]:
+    """Direct DB session for test assertions.
+
+    Also repoints the app's background ``async_session`` factory
+    (``app.core.database.async_session``) at this test engine. Code that runs
+    outside FastAPI DI — e.g. the scheduler helpers in ``scheduler_service`` —
+    imports ``async_session`` lazily and would otherwise hit the production DB,
+    breaking FK integrity against test-seeded rows and hiding background writes
+    from assertions.
+    """
     session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    import app.core.database as dbmod
+
+    monkeypatch.setattr(dbmod, "async_session", session_factory)
     async with session_factory() as session:
         yield session
 
@@ -71,3 +82,33 @@ def _reset_semantic_cache():
     get_semantic_cache().reset()
     yield
     get_semantic_cache().reset()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_scheduler_singleton():
+    """Stop the APScheduler singleton leaking across tests.
+
+    ``AsyncIOScheduler`` binds to the current event loop; with
+    ``asyncio_mode = "auto"`` the loop closes at the end of each test. If a
+    prior test (e.g. an integration test driving the app via the ``client``
+    fixture) left ``scheduler_service._scheduler`` running on that now-closed
+    loop, the next test that touches it raises ``RuntimeError: Event loop is
+    closed`` — which cascades through every later test in the module. Reset
+    (best-effort shutdown, always clear the reference) before and after each
+    test so every test starts on a fresh scheduler.
+    """
+    import app.services.scheduler_service as mod
+
+    def _reset() -> None:
+        try:
+            sched = getattr(mod, "_scheduler", None)
+            if sched is not None and getattr(sched, "running", False):
+                sched.shutdown(wait=False)
+        except Exception:
+            pass
+        mod._scheduler = None
+
+    _reset()
+    yield
+    _reset()
+
