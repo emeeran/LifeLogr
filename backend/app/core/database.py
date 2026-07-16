@@ -262,6 +262,35 @@ _COLUMN_MIGRATIONS = [
         "encryption_salt",
         "ALTER TABLE notes ADD COLUMN encryption_salt VARCHAR(64)",
     ),
+    # ── Google Calendar/Tasks sync provenance on calendar + task entities ──
+    (
+        "schedule_events",
+        "external_id",
+        "ALTER TABLE schedule_events ADD COLUMN external_id VARCHAR(255)",
+    ),
+    (
+        "schedule_events",
+        "source",
+        "ALTER TABLE schedule_events ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'manual'",
+    ),
+    ("schedule_events", "etag", "ALTER TABLE schedule_events ADD COLUMN etag VARCHAR(255)"),
+    ("schedule_events", "synced_at", "ALTER TABLE schedule_events ADD COLUMN synced_at DATETIME"),
+    ("tasks", "external_id", "ALTER TABLE tasks ADD COLUMN external_id VARCHAR(255)"),
+    (
+        "tasks",
+        "source",
+        "ALTER TABLE tasks ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'manual'",
+    ),
+    ("tasks", "etag", "ALTER TABLE tasks ADD COLUMN etag VARCHAR(255)"),
+    ("tasks", "synced_at", "ALTER TABLE tasks ADD COLUMN synced_at DATETIME"),
+    ("task_lists", "external_id", "ALTER TABLE task_lists ADD COLUMN external_id VARCHAR(255)"),
+    (
+        "task_lists",
+        "source",
+        "ALTER TABLE task_lists ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'manual'",
+    ),
+    ("task_lists", "etag", "ALTER TABLE task_lists ADD COLUMN etag VARCHAR(255)"),
+    ("task_lists", "synced_at", "ALTER TABLE task_lists ADD COLUMN synced_at DATETIME"),
 ]
 
 _INDEX_MIGRATIONS = [
@@ -290,6 +319,21 @@ _INDEX_MIGRATIONS = [
     (
         "ix_note_folders_deleted",
         "CREATE INDEX IF NOT EXISTS ix_note_folders_deleted ON note_folders (is_deleted)",
+    ),
+    # Google sync upsert lookups (find a local row by its Google resource id).
+    (
+        "ix_schedule_events_source_external",
+        "CREATE INDEX IF NOT EXISTS ix_schedule_events_source_external "
+        "ON schedule_events (source, external_id)",
+    ),
+    (
+        "ix_tasks_source_external",
+        "CREATE INDEX IF NOT EXISTS ix_tasks_source_external ON tasks (source, external_id)",
+    ),
+    (
+        "ix_task_lists_source_external",
+        "CREATE INDEX IF NOT EXISTS ix_task_lists_source_external "
+        "ON task_lists (source, external_id)",
     ),
 ]
 

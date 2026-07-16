@@ -37,6 +37,11 @@ class ScheduleEvent(Base):
     excluded_dates: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ── Google Calendar sync provenance (NULL / 'manual' for user-created) ──
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
+    etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
