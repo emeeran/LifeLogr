@@ -270,6 +270,11 @@ _COLUMN_MIGRATIONS = [
     ),
     (
         "schedule_events",
+        "external_calendar_id",
+        "ALTER TABLE schedule_events ADD COLUMN external_calendar_id VARCHAR(255)",
+    ),
+    (
+        "schedule_events",
         "source",
         "ALTER TABLE schedule_events ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'manual'",
     ),

@@ -39,6 +39,8 @@ class ScheduleEvent(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # ── Google Calendar sync provenance (NULL / 'manual' for user-created) ──
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The Google calendar id the event lives in (needed to PATCH/DELETE it back).
+    external_calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
     etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
