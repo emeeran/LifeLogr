@@ -67,6 +67,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Failed to load persisted settings", exc_info=True)
     await init_db()
+    # Startup self-checks (warn-only; never block boot). See app.core.startup_checks.
+    try:
+        from app.core.startup_checks import check_data_integrity
+
+        await check_data_integrity()
+    except Exception:
+        logger.warning("Startup data-integrity check failed", exc_info=True)
     # Start backup scheduler
     try:
         from app.services.scheduler_service import SchedulerService
@@ -87,6 +94,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
     except Exception:
         logger.warning("Failed to start backup scheduler", exc_info=True)
+    # Verify the backup system is armed (self-heals a missing auto_backup job).
+    try:
+        from app.core.startup_checks import check_backup_health
+
+        await check_backup_health()
+    except Exception:
+        logger.warning("Startup backup-health check failed", exc_info=True)
     yield
     logger.info("Shutting down...")
     # Stop backup scheduler
@@ -350,6 +364,31 @@ async def health_check() -> Any:
             checks["ollama"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
     except Exception:
         checks["ollama"] = "unreachable"
+
+    # 5. Startup self-checks (soft — last result from boot, not re-run per request).
+    try:
+        from app.core.startup_checks import get_backup_status, get_integrity_status
+
+        integ = get_integrity_status()
+        if not integ.get("ran"):
+            checks["integrity"] = "not_checked"
+        elif integ.get("ok"):
+            checks["integrity"] = "ok"
+        else:
+            checks["integrity"] = f"fk_violations:{integ.get('fk_violations', -1)}"
+
+        backup = get_backup_status()
+        if not backup.get("ran"):
+            checks["backup"] = "not_checked"
+        elif not backup.get("scheduled"):
+            checks["backup"] = "unscheduled"
+        elif backup.get("stale"):
+            checks["backup"] = "stale"
+        else:
+            checks["backup"] = "scheduled"
+    except Exception:
+        checks["integrity"] = "unavailable"
+        checks["backup"] = "unavailable"
 
     if not healthy:
         return JSONResponse(
