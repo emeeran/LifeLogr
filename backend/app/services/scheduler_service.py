@@ -376,6 +376,8 @@ class SchedulerService:
         await SchedulerService._restore_backup_schedule()
         # Restore the recurring email-sync job (in-memory job store).
         await SchedulerService.sync_email_accounts()
+        # Restore the recurring Google Calendar+Tasks sync job (if connected).
+        await SchedulerService.sync_google()
         # Run a missed backup shortly after boot, mirroring reminder catch-up.
         if sched.running:
             from apscheduler.triggers.date import DateTrigger
@@ -778,6 +780,49 @@ class SchedulerService:
         )
         return 1
 
+    @staticmethod
+    async def sync_google() -> int:
+        """Reconcile the recurring google-sync job with the DB.
+
+        Creates the ``google_sync`` interval job when a ``GoogleSyncAccount``
+        exists (two-way Calendar+Tasks, every ``GOOGLE_SYNC_INTERVAL_MINUTES``),
+        otherwise removes it. No-op (returns 0) when the scheduler isn't running.
+        Idempotent via ``replace_existing``.
+        """
+        from sqlalchemy import select
+
+        from app.core.config import settings
+        from app.core.database import async_session
+        from app.models.google_sync import GoogleSyncAccount
+
+        sched = SchedulerService.get_scheduler()
+        if not sched.running:
+            return 0
+
+        async with async_session() as session:
+            has_account = (
+                await session.execute(select(GoogleSyncAccount.id).limit(1))
+            ).scalar_one_or_none() is not None
+
+        job = sched.get_job("google_sync")
+        if not has_account:
+            if job is not None:
+                sched.remove_job("google_sync")
+            return 0
+
+        interval = max(1, settings.GOOGLE_SYNC_INTERVAL_MINUTES)
+        sched.add_job(
+            _run_google_sync,
+            trigger="interval",
+            minutes=interval,
+            id="google_sync",
+            replace_existing=True,
+            coalesce=True,
+            misfire_grace_time=600,
+            max_instances=1,
+        )
+        return 1
+
 
 # Guards the email sync so the one-off boot job and the recurring interval job
 # (different APScheduler IDs, so per-job max_instances doesn't prevent overlap)
@@ -804,6 +849,31 @@ async def _run_email_sync() -> None:
                 await EmailSyncService(session).sync_all_accounts()
         except Exception:
             logger.error("Scheduled email sync failed", exc_info=True)
+
+
+# Guards Google sync so the recurring job can't overlap (single-writer SQLite).
+_google_sync_lock = asyncio.Lock()
+
+
+async def _run_google_sync() -> None:
+    """Scheduled two-way Google Calendar+Tasks sync.
+
+    Opens its own DB session (APScheduler runs outside FastAPI DI). Never raises;
+    per-service failures are logged by ``GoogleSyncService``.
+    """
+    if _google_sync_lock.locked():
+        logger.info("Google sync already in progress; skipping this run")
+        return
+    async with _google_sync_lock:
+        from app.core.database import async_session
+        from app.services.google_sync_service import GoogleSyncService
+
+        logger.info("Running scheduled Google sync")
+        try:
+            async with async_session() as session:
+                await GoogleSyncService(session).sync_all()
+        except Exception:
+            logger.error("Scheduled Google sync failed", exc_info=True)
 
 
 async def _run_cloud_backup(config_id: int) -> None:

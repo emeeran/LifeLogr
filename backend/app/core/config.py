@@ -148,6 +148,9 @@ class Settings(BaseSettings):
     EMAIL_SYNC_ON_STARTUP: bool = True
     EMAIL_INITIAL_SYNC_BATCH: int = 100  # messages per FETCH round-trip
 
+    # Google Calendar+Tasks two-way sync (mail is separate, on IMAP).
+    GOOGLE_SYNC_INTERVAL_MINUTES: int = 15
+
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
