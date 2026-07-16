@@ -159,9 +159,10 @@ a = Analysis(
         'webbrowser',
         'antigravity',
         'this',
-        'imaplib',
+        # NOTE: imaplib & smtplib are intentionally NOT excluded — the email
+        # stack needs them (email_protocol uses imaplib; aiosmtplib wraps
+        # smtplib). Excluding either breaks the frozen binary at import time.
         'nntplib',
-        'smtplib',
         'poplib',
         'telnetlib',
         'ftplib',
