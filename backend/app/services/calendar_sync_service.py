@@ -88,6 +88,18 @@ class CalendarSyncService:
         self.account = account
         self.api = api
 
+    async def _mark_synced(self, ev: ScheduleEvent) -> None:
+        """Persist + reload the server-generated ``updated_at``, then mirror it.
+
+        ``synced_at == updated_at`` guarantees a just-pulled row isn't seen as
+        locally changed (push picks up ``updated_at > synced_at``). Using
+        ``refresh`` (awaited) rather than a plain attribute read avoids the async
+        lazy-load ``MissingGreenlet`` error on server-generated columns.
+        """
+        await self.db.flush()  # pending → persistent so refresh can reload it
+        await self.db.refresh(ev)
+        ev.synced_at = ev.updated_at
+
     async def sync(self) -> dict[str, Any]:
         if not self.account.calendar_enabled:
             return {"skipped": "calendar disabled"}
@@ -166,8 +178,7 @@ class CalendarSyncService:
             if existing is not None and not existing.is_deleted:
                 existing.is_deleted = True
                 existing.deleted_at = datetime.now()
-                await self.db.flush()
-                existing.synced_at = existing.updated_at
+                await self._mark_synced(existing)
             return
 
         start, all_day = _google_to_local(ev.get("start"))
@@ -194,9 +205,7 @@ class CalendarSyncService:
         else:
             for key, value in fields.items():
                 setattr(existing, key, value)
-        await self.db.flush()
-        # synced_at == updated_at so a freshly pulled row isn't seen as "changed".
-        existing.synced_at = existing.updated_at
+        await self._mark_synced(existing)
 
     # ── Push (local → Google) ────────────────────────────────────────────
 
@@ -257,8 +266,7 @@ class CalendarSyncService:
                     if_match=ev.etag,
                 )
                 ev.etag = resp.json().get("etag")
-                await self.db.flush()
-                ev.synced_at = ev.updated_at
+                await self._mark_synced(ev)
                 stats["updated"] += 1
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 412:
@@ -289,5 +297,4 @@ class CalendarSyncService:
             ev.start_at, ev.end_at, ev.all_day = start, end, all_day
             ev.rrule = _rrule_from_google(remote.get("recurrence"))
             ev.etag = remote.get("etag")
-            await self.db.flush()
-            ev.synced_at = ev.updated_at
+            await self._mark_synced(ev)

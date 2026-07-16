@@ -60,6 +60,17 @@ class TasksSyncService:
         self.account = account
         self.api = api
 
+    async def _mark_synced(self, obj: Task | TaskList) -> None:
+        """Persist + reload server-generated ``updated_at``, then mirror it.
+
+        See ``CalendarSyncService._mark_synced`` for rationale (refresh avoids the
+        async lazy-load greenlet error; ``synced_at == updated_at`` marks a row as
+        not-locally-changed).
+        """
+        await self.db.flush()  # pending → persistent so refresh can reload it
+        await self.db.refresh(obj)
+        obj.synced_at = obj.updated_at
+
     async def sync(self) -> dict[str, Any]:
         if not self.account.tasks_enabled:
             return {"skipped": "tasks disabled"}
@@ -107,8 +118,7 @@ class TasksSyncService:
         else:
             for k, v in fields.items():
                 setattr(existing, k, v)
-        await self.db.flush()
-        existing.synced_at = existing.updated_at
+        await self._mark_synced(existing)
         return existing
 
     async def _sync_list(self, glist_id: str, local_list: TaskList, stats: dict[str, int]) -> None:
@@ -144,8 +154,7 @@ class TasksSyncService:
             if existing is not None and not existing.is_deleted:
                 existing.is_deleted = True
                 existing.deleted_at = datetime.now()
-                await self.db.flush()
-                existing.synced_at = existing.updated_at
+                await self._mark_synced(existing)
             return
 
         # Resolve parent subtask link (if the parent task is already local).
@@ -176,8 +185,7 @@ class TasksSyncService:
         else:
             for k, v in fields.items():
                 setattr(existing, k, v)
-        await self.db.flush()
-        existing.synced_at = existing.updated_at
+        await self._mark_synced(existing)
 
     # ── Push (local → Google) ────────────────────────────────────────────
 
@@ -237,8 +245,7 @@ class TasksSyncService:
                 await self.api.request(
                     "PATCH", f"{_TASKS_BASE}/lists/{glist_id}/tasks/{t.external_id}", json_body=body
                 )
-                await self.db.flush()
-                t.synced_at = t.updated_at
+                await self._mark_synced(t)
                 stats["updated"] += 1
             except httpx.HTTPStatusError:
                 logger.warning("Failed to push Google task %s", t.external_id, exc_info=True)
