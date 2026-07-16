@@ -8,6 +8,7 @@ import logging
 import shutil
 import tarfile
 import tempfile
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -35,64 +36,194 @@ class ScheduleEntry(TypedDict, total=False):
     last_run: str
 
 
-# ── Schedule persistence ─────────────────────────────────────────────────
-# APScheduler's default job store is in-memory, so the ``auto_backup`` job is
-# lost every time the process exits. We persist the active schedule to disk
-# and re-register it on startup (SchedulerService.start →
-# _restore_backup_schedule) so a daily backup survives app restarts.
+# ── Schedule persistence (DB-backed; source of truth) ────────────────────
+# The active schedule lives as a singleton row (id=1) in ``backup_schedule``.
+# APScheduler's default job store is in-memory, so the ``auto_backup`` job
+# vanishes on every process exit; ``_restore_backup_schedule`` re-registers it
+# from the DB on startup.
+#
+# The DB survives app restarts, data-dir relocations and reinstalls. The
+# earlier JSON-only store (``.backup-schedule.json``) did not — it was silently
+# lost on such events, stopping daily backups with no fallback. That file is now
+# only a one-time legacy input, migrated into the DB on the first post-upgrade
+# boot (see ``_restore_backup_schedule``).
+
+_SCHEDULE_ID = 1  # the single active-schedule row
+
+
+@dataclass(slots=True)
+class ActiveSchedule:
+    """Snapshot of the active schedule row (plain data; safe off the session)."""
+
+    cron: str
+    config_id: int | None
+    backup_path: str | None
+    retention: int
+    last_run_at: datetime | None
 
 
 def _schedule_store_path() -> Path:
-    """Filesystem path to the persisted active backup schedule."""
+    """Path to the *legacy* on-disk schedule (migration input only)."""
     from app.core.config import settings
 
     return Path(settings.DATA_DIR) / ".backup-schedule.json"
 
 
-def _persist_schedule(entry: ScheduleEntry) -> None:
-    """Write the active backup schedule to disk (best-effort)."""
-    try:
-        path = _schedule_store_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(entry))
-    except Exception:
-        logger.warning("Failed to persist backup schedule", exc_info=True)
+def _load_legacy_schedule() -> ScheduleEntry | None:
+    """Read the legacy on-disk schedule, or None if absent/unreadable.
 
-
-def _load_schedule() -> ScheduleEntry | None:
-    """Read the persisted active schedule, or None if absent/unreadable."""
+    Used only by the one-time migration in ``_restore_backup_schedule``.
+    """
     path = _schedule_store_path()
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text())
         # JSON structure isn't statically verifiable; trust the on-disk shape
-        # (written only by _persist_schedule with a ScheduleEntry).
+        # (written by the legacy code path with a ScheduleEntry).
         return cast(ScheduleEntry, data) if isinstance(data, dict) else None
     except Exception:
-        logger.warning("Failed to load persisted backup schedule", exc_info=True)
+        logger.warning("Failed to read legacy backup schedule", exc_info=True)
         return None
 
 
-def _clear_schedule() -> None:
-    """Remove the persisted schedule (best-effort)."""
+def _clear_legacy_schedule() -> None:
+    """Remove the legacy on-disk schedule (best-effort)."""
     try:
         _schedule_store_path().unlink(missing_ok=True)
     except Exception:
-        logger.warning("Failed to clear persisted backup schedule", exc_info=True)
+        logger.warning("Failed to clear legacy backup schedule", exc_info=True)
 
 
-def _mark_backup_run() -> None:
-    """Stamp the schedule store with the time of the last successful run.
+async def _save_schedule(entry: ScheduleEntry) -> None:
+    """Upsert the singleton active-schedule row (source of truth).
+
+    ``last_run_at`` is intentionally not written here, so re-saving a schedule
+    preserves the existing run history.
+    """
+    from sqlalchemy import select
+
+    from app.core.database import async_session
+    from app.models.backup import BackupSchedule
+
+    async with async_session() as session:
+        row = (
+            await session.execute(
+                select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = BackupSchedule(id=_SCHEDULE_ID, cron=entry["cron"])
+            session.add(row)
+        row.cron = entry["cron"]
+        row.config_id = entry.get("config_id")
+        row.backup_path = entry.get("backup_path")
+        row.retention = int(entry.get("retention", 10) or 10)
+        await session.commit()
+
+
+async def _get_active_schedule() -> ActiveSchedule | None:
+    """Return the active schedule as a plain record (read while the session is open)."""
+    from sqlalchemy import select
+
+    from app.core.database import async_session
+    from app.models.backup import BackupSchedule
+
+    async with async_session() as session:
+        row = (
+            await session.execute(
+                select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return ActiveSchedule(
+            cron=row.cron,
+            config_id=row.config_id,
+            backup_path=row.backup_path,
+            retention=row.retention,
+            last_run_at=row.last_run_at,
+        )
+
+
+async def _delete_schedule() -> None:
+    """Remove the active-schedule row (called on unschedule)."""
+    from sqlalchemy import delete
+
+    from app.core.database import async_session
+    from app.models.backup import BackupSchedule
+
+    async with async_session() as session:
+        await session.execute(
+            delete(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
+        )
+        await session.commit()
+
+
+async def _mark_backup_run() -> None:
+    """Stamp the active schedule with the time of the last successful run.
 
     The startup catch-up sweep uses this to tell a missed backup from one that
     already ran today.
     """
-    entry = _load_schedule()
-    if entry is None:
-        return
-    entry["last_run"] = datetime.now(timezone.utc).isoformat()
-    _persist_schedule(entry)
+    from sqlalchemy import select
+
+    from app.core.database import async_session
+    from app.models.backup import BackupSchedule
+
+    async with async_session() as session:
+        row = (
+            await session.execute(
+                select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
+            )
+        ).scalar_one_or_none()
+        if row is not None:
+            row.last_run_at = datetime.now(timezone.utc)
+            await session.commit()
+
+
+async def _set_config_schedule_cron(config_id: int, cron: str) -> None:
+    """Keep ``backup_config.schedule_cron`` in sync for a cloud schedule.
+
+    The DB ``backup_schedule`` row is the scheduler's source of truth; this only
+    mirrors the cron onto the config row so the legacy column isn't misleading.
+    """
+    from sqlalchemy import select
+
+    from app.core.database import async_session
+    from app.models.backup import BackupConfig
+
+    async with async_session() as session:
+        cfg = (
+            await session.execute(select(BackupConfig).where(BackupConfig.id == config_id))
+        ).scalar_one_or_none()
+        if cfg is not None:
+            cfg.schedule_cron = cron
+            await session.commit()
+
+
+async def _clear_config_schedule_cron() -> None:
+    """Clear ``schedule_cron`` on every config (the active schedule was removed)."""
+    from sqlalchemy import select
+
+    from app.core.database import async_session
+    from app.models.backup import BackupConfig
+
+    async with async_session() as session:
+        configs = (
+            (
+                await session.execute(
+                    select(BackupConfig).where(BackupConfig.schedule_cron.isnot(None))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not configs:
+            return
+        for cfg in configs:
+            cfg.schedule_cron = None
+        await session.commit()
 
 
 def _last_scheduled_occurrence(cron_expr: str, now: datetime) -> datetime | None:
@@ -310,20 +441,19 @@ class SchedulerService:
             trigger, backup_path=backup_path, retention=retention, config_id=config_id
         )
 
-        # Persist so the job survives restarts. Preserve last_run if re-saving.
-        prev = _load_schedule()
+        # Persist to the DB (source of truth) so the job survives restarts.
+        # last_run_at on the existing row is preserved by _save_schedule.
         entry: ScheduleEntry = {"cron": cron_expr}
-        if prev and "last_run" in prev:
-            entry["last_run"] = prev["last_run"]
         if config_id is not None:
             entry["config_id"] = config_id
+            await _set_config_schedule_cron(config_id, cron_expr)
         else:
             # _register_backup_job above raises ValueError if backup_path is
             # falsy when config_id is None, so it is guaranteed non-None here.
             assert backup_path is not None
             entry["backup_path"] = backup_path
             entry["retention"] = retention
-        _persist_schedule(entry)
+        await _save_schedule(entry)
 
         job = sched.get_job("auto_backup")
         return {
@@ -345,36 +475,51 @@ class SchedulerService:
             "reminders_scheduled": len(reminder_jobs),
         }
 
+    async def get_active_schedule(self) -> ActiveSchedule | None:
+        """Return the active schedule record, or None if none is configured."""
+        return await _get_active_schedule()
+
     async def unschedule_backup(self) -> dict[str, bool]:
         """Remove the automated backup job and its persisted schedule."""
         sched = self.get_scheduler()
         if sched.get_job("auto_backup"):
             sched.remove_job("auto_backup")
-        _clear_schedule()
+        await _delete_schedule()
+        await _clear_config_schedule_cron()
+        _clear_legacy_schedule()  # tidy any leftover legacy file
         return {"removed": True}
 
     @staticmethod
     async def _restore_backup_schedule() -> None:
         """Re-register the persisted backup job after a restart.
 
-        APScheduler's default job store is in-memory, so the ``auto_backup``
-        job vanishes when the process exits. ``schedule_backup`` persists the
-        active schedule to disk; this reads it back and re-adds the job so a
-        daily backup survives app restarts. No-op when nothing is persisted.
+        Source of truth is the ``backup_schedule`` DB row. If none exists but a
+        legacy ``.backup-schedule.json`` is present (pre-upgrade install), migrate
+        it into the DB and remove the file. No-op when nothing is active.
         """
         sched = SchedulerService.get_scheduler()
         if not sched.running:
             return
-        entry = _load_schedule()
-        if not entry:
-            return
 
-        cron = entry.get("cron")
-        if not cron:
-            return
-        config_id = entry.get("config_id")
-        backup_path = entry.get("backup_path")
-        retention = entry.get("retention", 10)
+        active = await _get_active_schedule()
+        if active is None:
+            # One-time upgrade migration from the legacy JSON store.
+            legacy = _load_legacy_schedule()
+            if not legacy or not legacy.get("cron"):
+                return
+            await _save_schedule(legacy)
+            _clear_legacy_schedule()
+            active = await _get_active_schedule()
+            if active is None:
+                return
+            logger.info(
+                "Migrated backup schedule from legacy file (cron=%s)", legacy["cron"]
+            )
+
+        cron = active.cron
+        config_id = active.config_id
+        backup_path = active.backup_path
+        retention = active.retention
 
         try:
             if config_id is not None:
@@ -395,7 +540,8 @@ class SchedulerService:
                         "Persisted backup config %s no longer exists; clearing schedule",
                         config_id,
                     )
-                    _clear_schedule()
+                    await _delete_schedule()
+                    await _clear_config_schedule_cron()
                     return
                 SchedulerService._register_backup_job(
                     SchedulerService._cron_trigger(cron), config_id=int(config_id)
@@ -411,7 +557,7 @@ class SchedulerService:
                 )
                 logger.info("Restored local backup schedule (cron=%s, path=%s)", cron, backup_path)
             else:
-                _clear_schedule()
+                await _delete_schedule()
         except Exception:
             logger.warning("Failed to restore backup schedule", exc_info=True)
 
@@ -424,42 +570,34 @@ class SchedulerService:
         stale), the backup runs immediately — so a laptop that was closed at
         2am still gets its daily backup when opened the next morning.
         """
-        entry = _load_schedule()
-        if not entry:
-            return
-        cron = entry.get("cron")
-        if not cron:
+        active = await _get_active_schedule()
+        if active is None:
             return
 
         now_local = datetime.now()  # naive local time — schedules are local
-        last_occurrence = _last_scheduled_occurrence(cron, now_local)
+        last_occurrence = _last_scheduled_occurrence(active.cron, now_local)
         if last_occurrence is None:
             return
 
-        last_run_raw = entry.get("last_run")
         last_run: datetime | None = None
-        if last_run_raw:
-            try:
-                parsed = datetime.fromisoformat(str(last_run_raw))
-                last_run = parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
-            except ValueError:
-                last_run = None
+        if active.last_run_at is not None:
+            lr = active.last_run_at
+            # _mark_backup_run stores UTC; match the reminder catch-up pattern:
+            # convert an aware value to local, treat a naive value as-is.
+            last_run = lr.astimezone().replace(tzinfo=None) if lr.tzinfo else lr
 
         if last_run is not None and last_run >= last_occurrence:
             return  # already backed up for the most recent scheduled occurrence
         if (now_local - last_occurrence) > timedelta(hours=48):
             return  # too stale to catch up automatically
 
-        config_id = entry.get("config_id")
         try:
-            if config_id is not None:
-                logger.info("Running missed cloud backup (config_id=%s)", config_id)
-                await _run_cloud_backup(int(config_id))
-            else:
+            if active.config_id is not None:
+                logger.info("Running missed cloud backup (config_id=%s)", active.config_id)
+                await _run_cloud_backup(active.config_id)
+            elif active.backup_path:
                 logger.info("Running missed local backup")
-                await _run_backup(
-                    str(entry.get("backup_path", "")), int(entry.get("retention", 10))
-                )
+                await _run_backup(active.backup_path, active.retention)
         except Exception:
             logger.warning("Backup catch-up failed", exc_info=True)
 
@@ -689,7 +827,7 @@ async def _run_cloud_backup(config_id: int) -> None:
                 snapshot.status,
             )
             if snapshot.status == "completed":
-                _mark_backup_run()
+                await _mark_backup_run()
     except Exception:
         logger.error("Scheduled cloud backup failed (config_id=%d)", config_id, exc_info=True)
 
@@ -755,7 +893,7 @@ async def _run_backup(backup_path: str, retention: int = 10) -> str:
         with tarfile.open(archive_path, "w:gz") as tar:
             add_backup_members(tar, db_file, media_dir)
         logger.info(f"Backup complete: {archive_path}")
-        _mark_backup_run()
+        await _mark_backup_run()
     except Exception:
         logger.error("Backup failed", exc_info=True)
         if archive_path.exists():

@@ -83,7 +83,7 @@ async def run_configured_backup_now(
     (unlike ``/export``, which is a throwaway copy).
     """
     from app.core.paths import resolve_backup_path
-    from app.services.scheduler_service import _load_schedule, _run_backup
+    from app.services.scheduler_service import SchedulerService, _run_backup
 
     if backup_path:
         try:
@@ -93,25 +93,22 @@ async def run_configured_backup_now(
         archive = await _run_backup(str(resolved), retention)
         return {"mode": "local", "path": str(resolved), "archive": archive}
 
-    entry = _load_schedule()
-    if not entry:
+    active = await SchedulerService(db).get_active_schedule()
+    if active is None:
         raise HTTPException(status_code=404, detail="No backup schedule is configured")
 
-    config_id = entry.get("config_id")
-    if config_id is not None:
+    if active.config_id is not None:
         svc = BackupService(db)
-        snapshot = await svc.run_backup(config_id)
+        snapshot = await svc.run_backup(active.config_id)
         return {
             "mode": "cloud",
-            "config_id": config_id,
+            "config_id": active.config_id,
             "status": snapshot.status,
             "error": snapshot.error_message,
         }
 
-    sched_path = str(entry.get("backup_path", ""))
-    sched_retention = entry.get("retention", 10)
-    archive = await _run_backup(sched_path, sched_retention)
-    return {"mode": "local", "path": sched_path, "archive": archive}
+    archive = await _run_backup(active.backup_path or "", active.retention)
+    return {"mode": "local", "path": active.backup_path, "archive": archive}
 
 
 @router.get("/snapshots")
