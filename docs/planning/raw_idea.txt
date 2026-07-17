@@ -1,0 +1,21 @@
+# Project Idea: Diariumlinux
+
+## What is it?
+Daily journal app with cloud drive back up - EXACT REPLICA OF DIRIUM journaling app.
+
+
+## Core Features
+- [ ] Daily Journal
+- [ ] Tag
+- [ ] Media attachment
+- [ ] Voice Recorded Journal
+
+## Target Users
+[Diarium journaling lovers who can not access in Linux]
+
+## Scale & Constraints
+- Expected load:  single user
+- Tech constraints: FastAPI, uv, Ubuntu 24.x, SQLite (dev)
+
+## Out of Scope (v1)
+- [ ] ...

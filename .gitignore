@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.venv/
+venv/
+*.egg-info/
+*.egg
+dist/
+build/
+local/ 
+
+# Environment
+.env
+*.env.local
+
+# Editors
+.vscode/settings.json
+.idea/
+*.swp
+*~
+
+# Testing / Coverage
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+.python-version
+
+# DB & data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+*.diary
+backend/media/
+
+# Build artifacts
+.vite/
+package-lock.json
+frontend/test-results/
+backend/test-results/
+frontend/playwright-report/
+
+# Packaging / distribution
+*.AppImage
+*.deb
+*.rpm
+
+# Tauri / desktop build
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/
+# PyInstaller sidecar binaries built fresh by CI/dev.sh — never commit
+desktop/src-tauri/lifelogr-backend-*
+desktop/build/
+desktop/dist/
+
+# Root-level node_modules (no root package.json)
+node_modules/
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+
+# Pre-downloaded Whisper model (build artifact, ~148MB — never commit)
+backend/models/

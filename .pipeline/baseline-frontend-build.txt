@@ -1,0 +1,75 @@
+
+> frontend@0.0.0 build
+> vue-tsc -b && vite build
+
+vite v8.0.11 building client environment for production...
+[2Ktransforming...✓ 1989 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                    1.34 kB │ gzip:  0.49 kB
+dist/assets/tariq-memorial-tribute-BfPJ0CMO.jpg  131.77 kB
+dist/assets/GoToDateModal-BdwvKeEb.css             0.17 kB │ gzip:  0.11 kB
+dist/assets/ContactsView-CY7Aloc1.css              0.39 kB │ gzip:  0.16 kB
+dist/assets/RemindersView-Bs1lo60M.css             0.55 kB │ gzip:  0.23 kB
+dist/assets/PlannerView-B3IRx79M.css               0.62 kB │ gzip:  0.20 kB
+dist/assets/WhatsNewDialog-iKMTZSB_.css            0.69 kB │ gzip:  0.29 kB
+dist/assets/DashboardView-BOzFiBdH.css             5.97 kB │ gzip:  1.36 kB
+dist/assets/SettingsView-BvO6GO3f.css              6.99 kB │ gzip:  2.04 kB
+dist/assets/NotesView-p4zuDF2E.css                 8.50 kB │ gzip:  1.57 kB
+dist/assets/index-BmaRlPKa.css                    84.26 kB │ gzip: 14.54 kB
+dist/assets/chevron-left-Bp6bkuFL.js               0.13 kB │ gzip:  0.14 kB
+dist/assets/chevron-right-DN0WWaQH.js              0.13 kB │ gzip:  0.14 kB
+dist/assets/x-N4P48_qJ.js                          0.15 kB │ gzip:  0.15 kB
+dist/assets/circle-check-EZfN7HaQ.js               0.17 kB │ gzip:  0.16 kB
+dist/assets/dist-js-B-A6gwsI.js                    0.19 kB │ gzip:  0.17 kB
+dist/assets/circle-check-big-DBgaMDkN.js           0.19 kB │ gzip:  0.18 kB
+dist/assets/folder-DNYHJzaO.js                     0.22 kB │ gzip:  0.18 kB
+dist/assets/download-xNTeGQkD.js                   0.23 kB │ gzip:  0.19 kB
+dist/assets/maximize-2-BE1a7dbw.js                 0.23 kB │ gzip:  0.18 kB
+dist/assets/circle-alert-Co-0Xqes.js               0.25 kB │ gzip:  0.18 kB
+dist/assets/external-link-hsVrDr79.js              0.25 kB │ gzip:  0.19 kB
+dist/assets/map-pin-FntPE828.js                    0.25 kB │ gzip:  0.22 kB
+dist/assets/inbox-D-UEY5mL.js                      0.28 kB │ gzip:  0.23 kB
+dist/assets/analytics-KQth2fYa.js                  0.28 kB │ gzip:  0.18 kB
+dist/assets/dist-js-CrWWb5be.js                    0.29 kB │ gzip:  0.18 kB
+dist/assets/folder-open-oCUf6zhv.js                0.29 kB │ gzip:  0.22 kB
+dist/assets/film-JRYCl3OT.js                       0.40 kB │ gzip:  0.24 kB
+dist/assets/usePagination-B46-Vrx-.js              0.46 kB │ gzip:  0.28 kB
+dist/assets/calendar-days---f9kO2z.js              0.49 kB │ gzip:  0.26 kB
+dist/assets/SearchView-Dsj2EUa3.js                 0.57 kB │ gzip:  0.40 kB
+dist/assets/upload-DLO7JwBT.js                     0.57 kB │ gzip:  0.35 kB
+dist/assets/image-DPxuUsgQ.js                      0.63 kB │ gzip:  0.33 kB
+dist/assets/reminders-CRxzh8kS.js                  0.75 kB │ gzip:  0.39 kB
+dist/assets/user-Ca4sz6rU.js                       0.79 kB │ gzip:  0.42 kB
+dist/assets/useFormat-DhpjDGTC.js                  0.87 kB │ gzip:  0.47 kB
+dist/assets/client-Ch2a6C3x.js                     0.92 kB │ gzip:  0.61 kB
+dist/assets/planner-_JTprb9u.js                    1.05 kB │ gzip:  0.45 kB
+dist/assets/core-CjW-0LZI.js                       1.07 kB │ gzip:  0.53 kB
+dist/assets/createLucideIcon-BesF8v9I.js           1.20 kB │ gzip:  0.70 kB
+dist/assets/planner-BiW-_mYn.js                    1.52 kB │ gzip:  0.72 kB
+dist/assets/WhatsNewDialog-J4x9huPV.js             1.74 kB │ gzip:  0.99 kB
+dist/assets/AttachmentsPanel-B01u0AEP.js           2.19 kB │ gzip:  1.01 kB
+dist/assets/dist-js-C1YKfPFP.js                    2.75 kB │ gzip:  1.16 kB
+dist/assets/GoToDateModal-CFunq45Z.js              3.28 kB │ gzip:  1.42 kB
+dist/assets/CHANGELOG-C2K21LZU.js                  3.65 kB │ gzip:  2.03 kB
+dist/assets/dist-BsVLW1t3.js                       4.95 kB │ gzip:  2.21 kB
+dist/assets/OnThisDayView-Ci0NeQzD.js              4.95 kB │ gzip:  2.03 kB
+dist/assets/AiDrawerPanel-D91LMDkp.js              5.67 kB │ gzip:  2.25 kB
+dist/assets/pinia-BwrkPctX.js                      5.97 kB │ gzip:  2.82 kB
+dist/assets/email-CETDTTzl.js                      6.47 kB │ gzip:  2.25 kB
+dist/assets/AnalyticsView-Brm8ILNS.js              6.64 kB │ gzip:  2.16 kB
+dist/assets/MediaTimelineView-ChG9e1wg.js          8.70 kB │ gzip:  3.22 kB
+dist/assets/CalendarGrid-CrSPgSCP.js               9.77 kB │ gzip:  3.44 kB
+dist/assets/RemindersView-eUXw4phH.js             13.00 kB │ gzip:  4.58 kB
+dist/assets/DashboardView--B1lJBN1.js             14.15 kB │ gzip:  4.99 kB
+dist/assets/webview-DNSgPd1P.js                   16.69 kB │ gzip:  3.64 kB
+dist/assets/PlannerView-A2aKra5s.js               20.64 kB │ gzip:  6.12 kB
+dist/assets/TimelineView-Y9xN7SR_.js              29.01 kB │ gzip:  8.89 kB
+dist/assets/EmailView-BEaG04Ws.js                 37.23 kB │ gzip: 10.24 kB
+dist/assets/NotesView-D8fo7Dlo.js                 38.65 kB │ gzip: 12.80 kB
+dist/assets/ContactsView-BewSlL2j.js              44.20 kB │ gzip: 10.62 kB
+dist/assets/vendor-vue-B1dM2GiU.js               103.63 kB │ gzip: 39.83 kB
+dist/assets/SettingsView-E_b4dneg.js             114.07 kB │ gzip: 32.76 kB
+dist/assets/index-CftzxGxf.js                    211.93 kB │ gzip: 65.02 kB
+
+✓ built in 1.57s

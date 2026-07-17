@@ -1,0 +1,370 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Search highlight ── */
+mark {
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ── Light theme (default) ── */
+@theme {
+  --color-sidebar: #00695C;
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-secondary: #B2DFDB;
+  --color-sidebar-text-muted: #80CBC4;
+  --color-sidebar-hover: rgba(255, 255, 255, 0.12);
+  --color-surface: #FAFAFA;
+  --color-editor: #FFFFFF;
+  --color-surface-hover: #F4F4F5;
+  --color-accent: #6366F1;
+  --color-accent-hover: #4F46E5;
+  --color-danger: #EF4444;
+  --color-text-primary: #09090B;
+  --color-text-secondary: #27272A;
+  --color-text-muted: #71717A;
+  --color-border: #E4E4E7;
+  --color-tag-chip: #6366F1;
+}
+
+/* ── Editor font defaults (overridden by JS on store init) ── */
+:root {
+  --editor-font: system-ui;
+  --editor-font-size: 14px;
+  /* Logo wordmark forced white so it reads on the teal sidebar in both themes.
+     Declared in plain :root (not @theme) so Tailwind doesn't tree-shake it. */
+  --logo-filter: brightness(0) invert(1);
+}
+
+/* ── Markdown rendered body ─────────────────────────────────────────── */
+.md-body {
+  line-height: 1.7;
+}
+.md-body h1 { font-size: 1.75em; font-weight: 700; margin: 1em 0 0.5em; color: var(--color-text-primary); }
+.md-body h2 { font-size: 1.4em; font-weight: 600; margin: 0.9em 0 0.4em; color: var(--color-text-primary); border-bottom: 1px solid var(--color-border); padding-bottom: 0.25em; }
+.md-body h3 { font-size: 1.15em; font-weight: 600; margin: 0.8em 0 0.35em; color: var(--color-text-primary); }
+.md-body h4 { font-size: 1em; font-weight: 600; margin: 0.7em 0 0.3em; color: var(--color-text-secondary); }
+
+.md-body p { margin: 0.6em 0; }
+
+.md-body strong { font-weight: 700; color: var(--color-text-primary); }
+.md-body em { font-style: italic; }
+.md-body del { opacity: 0.6; text-decoration: line-through; }
+
+.md-body a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+.md-body a:hover { opacity: 0.85; }
+
+.md-body ul { list-style: disc; padding-left: 1.5em; margin: 0.5em 0; }
+.md-body ol { list-style: decimal; padding-left: 1.5em; margin: 0.5em 0; }
+.md-body li { margin: 0.2em 0; }
+.md-body li > ul, .md-body li > ol { margin: 0.15em 0; }
+
+.md-body blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding: 0.4em 0.8em;
+  margin: 0.7em 0;
+  background: var(--color-surface-hover);
+  border-radius: 0 4px 4px 0;
+  color: var(--color-text-secondary);
+}
+.md-body blockquote p { margin: 0.25em 0; }
+
+.md-body code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.88em;
+  background: var(--color-surface-hover);
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  color: var(--color-accent);
+}
+.md-body pre {
+  background: var(--color-editor);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.8em 1em;
+  margin: 0.7em 0;
+  overflow-x: auto;
+}
+.md-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  color: var(--color-text-primary);
+  border-radius: 0;
+}
+
+.md-body hr {
+  border: none;
+  border-top: 2px solid var(--color-border);
+  margin: 1.5em 0;
+}
+
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.7em 0;
+  font-size: 0.92em;
+}
+.md-body th {
+  background: var(--color-surface-hover);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.4em 0.7em;
+  border: 1px solid var(--color-border);
+}
+.md-body td {
+  padding: 0.35em 0.7em;
+  border: 1px solid var(--color-border);
+}
+
+.md-body img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 0.5em 0;
+}
+
+/* Task lists */
+.md-body input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  margin-right: 0.4em;
+  transform: scale(1.1);
+  vertical-align: middle;
+}
+
+/* ── Dark theme overrides (un-layered, wins over @theme) ── */
+.dark {
+  --color-sidebar: #004D40;
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-secondary: #80CBC4;
+  --color-sidebar-text-muted: #4DB6AC;
+  --color-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --color-surface: #09090B;
+  --color-editor: #121214;
+  --color-surface-hover: #1C1C1E;
+  --color-accent: #6366F1;
+  --color-accent-hover: #818CF8;
+  --color-danger: #EF4444;
+  --color-text-primary: #F4F4F5;
+  --color-text-secondary: #D4D4D8;
+  --color-text-muted: #71717A;
+  --color-border: #27272A;
+  --color-tag-chip: #6366F1;
+  --logo-filter: brightness(0) invert(1);
+}
+
+/* ── Custom scrollbar (shared) ── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ── Shared animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideInFromBottom {
+  from { transform: translateY(8px); }
+  to { transform: translateY(0); }
+}
+.animate-in {
+  animation-duration: 0.3s;
+  animation-fill-mode: both;
+}
+.fade-in { animation-name: fadeIn; }
+.slide-in-from-bottom-2 { animation-name: slideInFromBottom; }
+
+/* ── Focus ring for all interactive elements ── */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[role="switch"]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* ── Reusable select styling ── */
+.settings-select {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.settings-select:hover {
+  border-color: var(--color-accent);
+}
+
+/* ── Reusable text input styling ── */
+.settings-input {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  transition: border-color 0.15s;
+}
+.settings-input:hover {
+  border-color: var(--color-accent);
+}
+.settings-input:focus {
+  border-color: var(--color-accent);
+}
+
+/* ── Reusable button utilities ── */
+.btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: var(--color-accent);
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.btn-primary:hover {
+  background-color: var(--color-accent-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+}
+
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.btn-secondary:hover {
+  color: var(--color-accent);
+}
+
+.btn-danger {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 11px;
+  font-weight: 500;
+  background-color: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.btn-danger:hover {
+  background-color: color-mix(in srgb, var(--color-danger) 25%, transparent);
+}
+
+/* ── Settings: shared design tokens & components ─────────────────────── */
+/* Provides a consistent type scale so settings surfaces aren't a flat wall
+   of 10–12px muted text. Section titles anchor at 13px semibold primary;
+   row labels 13px; helpers 11px. Reusable .sbtn kills the proliferation of
+   inline button class strings across the settings tabs. */
+
+.sbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+  border: 1px solid transparent;
+}
+.sbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sbtn-sm { padding: 3px 8px; font-size: 11px; }
+.sbtn-xs { padding: 2px 7px; font-size: 10.5px; }
+
+.sbtn-primary { background: var(--color-accent); color: #fff; }
+.sbtn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+
+.sbtn-ghost {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  border-color: transparent;
+}
+.sbtn-ghost:hover:not(:disabled) { color: var(--color-accent); }
+
+.sbtn-outline {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+.sbtn-outline:hover:not(:disabled) { border-color: color-mix(in srgb, var(--color-accent) 50%, transparent); color: var(--color-accent); }
+
+.sbtn-accent-soft {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+}
+.sbtn-accent-soft:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 25%, transparent); }
+
+.sbtn-danger-soft {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+.sbtn-danger-soft:hover:not(:disabled) { background: color-mix(in srgb, var(--color-danger) 25%, transparent); }
+
+.sbtn-danger { background: var(--color-danger); color: #fff; }
+.sbtn-danger:hover:not(:disabled) { background: #dc2626; }
+
+/* Highlight pulse for settings search "jump to" target. */
+@keyframes settings-highlight {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
+}
+.settings-highlight {
+  animation: settings-highlight 1.6s ease-out;
+  border-radius: 6px;
+}
+
+/* ── Glassmorphism + motion utilities (additive; use existing tokens) ── */
+.glass-panel {
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.18);
+}
+.transition-smooth {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Sidebar reorder handle affordance (grip icon). */
+.drag-grip {
+  cursor: grab;
+  color: var(--color-sidebar-text-muted);
+}
+.drag-grip:active {
+  cursor: grabbing;
+}

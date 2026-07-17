@@ -1,0 +1,24 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for LifeLogr",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-execute",
+    "shell:allow-spawn",
+    "shell:allow-stdin-write",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        { "name": "lifelogr-backend", "sidecar": true, "args": true }
+      ]
+    },
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "fs:allow-write-file",
+    "fs:allow-read-file",
+    "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-read-text"
+  ]
+}
