@@ -1,0 +1,71 @@
+[project]
+name = "lifelogr"
+version = "0.7.0"
+description = "Privacy-first, offline-first journaling app for Linux"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aioimaplib>=1.0.1",
+    "aiosmtplib>=3.0.0",
+    "aiosqlite>=0.22.1",
+    "apscheduler>=3.11.2",
+    "cryptography>=48.0.0",
+    "edge-tts>=7.2.8",
+    "email-validator>=2.0.0",
+    "fastapi>=0.136.1",
+    "fpdf2>=2.8.3",
+    "httpx>=0.28.1",
+    "html2text>=2024.2.26",
+    "markdown-it-py>=4.2.0",
+    "numpy>=2.4.6",
+    "pillow>=12.2.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.0",
+    "pysqlite3-binary>=0.5.4.post2; sys_platform == 'linux'",
+    "pytesseract>=0.3.13",
+    "python-dateutil>=2.9.0",
+    "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.18",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.14.0",
+    "sqlalchemy>=2.0.49",
+    "uvicorn>=0.46.0",
+]
+
+[project.optional-dependencies]
+ocr = ["pytesseract>=0.3.13", "pillow>=12.2.0"]
+pdf = ["weasyprint>=68.1"]
+tts = ["edge-tts>=7.2.8"]
+image = ["pillow>=12.2.0"]
+all = ["lifelogr[ocr,pdf,tts,image]"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.0.0",
+    "pyinstaller>=6.20.0",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.15.12",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+strict = true
+
+# Third-party libs without type stubs — silence import-untyped errors.
+[[tool.mypy.overrides]]
+module = ["edge_tts", "apscheduler.*", "aioimaplib", "aiosmtplib", "dateutil.*"]
+ignore_missing_imports = true
+
+[tool.uv]
+override-dependencies = ["pathlib ; sys_platform == 'never'"]
