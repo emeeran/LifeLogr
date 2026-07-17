@@ -93,11 +93,9 @@ watch(
   { immediate: true },
 )
 
-// Debounced autosave for the active source.
-watch([title, body], () => {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(doSave, 900)
-})
+// Autosave is intentionally OFF — edits persist on explicit Save (saveNow), on
+// page switch (selectPage), and on close (the onUnmounted flush below). Saving
+// is your responsibility before switching notes, or the outgoing edits are lost.
 
 async function doSave() {
   if (isMain.value) {
@@ -336,6 +334,8 @@ onMounted(async () => {
   }
 })
 onUnmounted(() => {
+  // Manual-save mode: flush any unsaved edits to the active source on close.
+  void doSave()
   unlistenDrag?.()
   unlistenDrag = null
   unlistenSnip?.()
