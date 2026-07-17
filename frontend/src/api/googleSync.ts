@@ -23,6 +23,22 @@ export const googleSyncApi = {
     return request("/google/status");
   },
 
+  /** Whether the app's Google OAuth client_id/secret are configured (secret never returned). */
+  getClientCredentials(): Promise<{ configured: boolean; client_id?: string | null }> {
+    return request("/google/client-credentials");
+  },
+
+  /** Store the app's Google OAuth client_id/secret (encrypted) for Calendar/Tasks/Contacts sync. */
+  setClientCredentials(
+    client_id: string,
+    client_secret: string,
+  ): Promise<{ configured: boolean; client_id: string }> {
+    return request("/google/client-credentials", {
+      method: "PUT",
+      body: JSON.stringify({ client_id, client_secret }),
+    });
+  },
+
   /** Run a two-way Calendar+Tasks+Contacts sync immediately. */
   sync(): Promise<{
     calendar?: Record<string, unknown> | null;

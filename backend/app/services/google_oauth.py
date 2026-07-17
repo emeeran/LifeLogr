@@ -20,8 +20,6 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
 
 REDIRECT_URI = "http://127.0.0.1:18765/api/v1/google/callback"
@@ -54,14 +52,14 @@ def build_auth_url(client_id: str, state: str) -> str:
     return f"{AUTH_BASE_URL}?{urlencode(params)}"
 
 
-async def exchange_code(code: str) -> Credentials:
+async def exchange_code(code: str, client_id: str, client_secret: str) -> Credentials:
     """Exchange an authorization code for a credentials bundle.
 
-    Raises ``RuntimeError`` if the client isn't configured or Google didn't
-    return a refresh token, or ``httpx.HTTPStatusError`` on a failed exchange.
+    ``client_id``/``client_secret`` are resolved by the caller (DB-stored app
+    config first, then ``settings`` env — see ``routers/google_sync.py``).
+    Raises ``RuntimeError`` if either is missing or Google didn't return a
+    refresh token, or ``httpx.HTTPStatusError`` on a failed exchange.
     """
-    client_id = settings.GOOGLE_CLIENT_ID
-    client_secret = settings.GOOGLE_CLIENT_SECRET
     if not client_id or not client_secret:
         raise RuntimeError("GOOGLE_CLIENT_ID/SECRET are not configured")
 

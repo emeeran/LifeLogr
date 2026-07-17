@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oauth_state import OAuthStateStore
-from app.core.security import encrypt
+from app.core.security import decrypt, encrypt
+from app.models.backup import BackupConfig
 from app.models.google_sync import GoogleSyncAccount
 from app.services.google_oauth import build_auth_url, exchange_code
 from app.services.google_sync_service import GoogleSyncService
@@ -34,10 +35,66 @@ class GoogleToggles(BaseModel):
     contacts_enabled: bool | None = None
 
 
+class GoogleClientCredentials(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+async def _resolve_client_creds(db: AsyncSession) -> tuple[str, str]:
+    """Google OAuth client_id/secret: DB-stored app config first, then env.
+
+    Mirrors ``routers/google_drive.py``: a ``BackupConfig(provider="google_sync")``
+    row holds an encrypted ``{client_id, client_secret}`` blob the user pasted in
+    Settings; if absent, fall back to ``GOOGLE_CLIENT_ID/SECRET`` env vars (dev).
+    """
+    client_id = settings.GOOGLE_CLIENT_ID
+    client_secret = settings.GOOGLE_CLIENT_SECRET
+    config = (
+        await db.execute(select(BackupConfig).where(BackupConfig.provider == "google_sync"))
+    ).scalar_one_or_none()
+    if config is not None:
+        try:
+            stored = json.loads(decrypt(config.credentials_encrypted))
+            client_id = stored.get("client_id") or client_id
+            client_secret = stored.get("client_secret") or client_secret
+        except Exception:
+            logger.warning("Failed to decrypt stored Google sync client creds", exc_info=True)
+    return client_id, client_secret
+
+
+@router.get("/client-credentials")
+async def get_client_credentials(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Whether Google OAuth client credentials are configured. Never returns the secret."""
+    client_id, _secret = await _resolve_client_creds(db)
+    return {"configured": bool(client_id), "client_id": client_id or None}
+
+
+@router.put("/client-credentials")
+async def set_client_credentials(
+    body: GoogleClientCredentials, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Store the Google OAuth client_id/secret (encrypted) for Calendar/Tasks/Contacts sync."""
+    client_id = body.client_id.strip()
+    client_secret = body.client_secret.strip()
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=422, detail="client_id and client_secret are required")
+    payload = json.dumps({"client_id": client_id, "client_secret": client_secret})
+    config = (
+        await db.execute(select(BackupConfig).where(BackupConfig.provider == "google_sync"))
+    ).scalar_one_or_none()
+    if config is None:
+        config = BackupConfig(provider="google_sync", credentials_encrypted=encrypt(payload))
+        db.add(config)
+    else:
+        config.credentials_encrypted = encrypt(payload)
+    await db.commit()
+    return {"configured": True, "client_id": client_id}
+
+
 @router.get("/auth-url")
 async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     """Generate the Google OAuth consent URL (calendar + tasks + contacts scopes)."""
-    client_id = settings.GOOGLE_CLIENT_ID
+    client_id, _secret = await _resolve_client_creds(db)
     if not client_id:
         raise HTTPException(status_code=400, detail="Google OAuth client_id is not configured")
     # Reconcile the scheduler in case a reconnect flips an account back on.
@@ -58,7 +115,14 @@ async def oauth_callback(
         return _render("Authentication Failed", "Invalid or expired OAuth state.", ok=False)
 
     try:
-        creds = await exchange_code(code)
+        client_id, client_secret = await _resolve_client_creds(db)
+        if not client_id or not client_secret:
+            return _render(
+                "Authentication Failed",
+                "Google OAuth client_id/secret are not configured. Add them in Settings → Google.",
+                ok=False,
+            )
+        creds = await exchange_code(code, client_id, client_secret)
     except Exception as exc:  # noqa: BLE001 — surface any exchange failure to the user
         return _render("Authentication Failed", str(exc), ok=False)
 
