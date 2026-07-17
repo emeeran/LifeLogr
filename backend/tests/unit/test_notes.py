@@ -338,7 +338,11 @@ class TestNoteMediaOcr:
 class TestNoteWebClip:
     """Web-page → markdown fallback (desktop primary path is image capture)."""
 
-    async def test_extracts_markdown(self, client: AsyncClient):
+    async def test_extracts_markdown(self, client: AsyncClient, monkeypatch):
+        # Avoid real DNS in the test: example.com is treated as public.
+        monkeypatch.setattr(
+            "app.services.web_clip_service._hostname_resolves_internal", lambda host: False
+        )
         html = (
             "<html><body><article><h1>Recipe</h1>"
             "<p>Preheat the oven to 180C. Bake for 30 minutes.</p></article></body></html>"
@@ -371,7 +375,10 @@ class TestNoteWebClip:
         )
         assert r.status_code == 400
 
-    async def test_rejects_non_html(self, client: AsyncClient):
+    async def test_rejects_non_html(self, client: AsyncClient, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.web_clip_service._hostname_resolves_internal", lambda host: False
+        )
         with respx.mock:
             respx.get("https://example.com/file.pdf").mock(
                 return_value=httpx.Response(
@@ -389,3 +396,36 @@ class TestNoteWebClip:
             "/api/v1/notes/web-clip", json={"url": "file:///etc/passwd"}
         )
         assert r.status_code == 422
+
+    async def test_blocks_redirect_to_internal(self, client: AsyncClient, monkeypatch):
+        # Regression for the SSRF-via-redirect bypass: an external host that
+        # 302-redirects to a link-local/internal address must be blocked, even
+        # though the *initial* URL is public.
+        monkeypatch.setattr(
+            "app.services.web_clip_service._hostname_resolves_internal", lambda host: False
+        )
+        with respx.mock:
+            respx.get("https://attacker.example/clip").mock(
+                return_value=httpx.Response(
+                    302, headers={"location": "http://169.254.169.254/latest/meta-data/"}
+                )
+            )
+            respx.get("http://169.254.169.254/latest/meta-data/").mock(
+                return_value=httpx.Response(
+                    200, text="<p>secret</p>", headers={"content-type": "text/html"}
+                )
+            )
+            r = await client.post(
+                "/api/v1/notes/web-clip", json={"url": "https://attacker.example/clip"}
+            )
+        assert r.status_code == 400
+
+    async def test_blocks_hostname_resolving_internal(self, client: AsyncClient, monkeypatch):
+        # DNS-rebinding guard: a hostname that resolves to an internal IP is blocked.
+        monkeypatch.setattr(
+            "app.services.web_clip_service._hostname_resolves_internal", lambda host: True
+        )
+        r = await client.post(
+            "/api/v1/notes/web-clip", json={"url": "https://internal.example/"}
+        )
+        assert r.status_code == 400
