@@ -1,0 +1,199 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# contents: write — build-linux creates the GitHub Release + tag on version tags.
+# actions: write — actions/upload-artifact@v4 needs it on every job.
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  # ── Test gate ──
+  # `needs:` can't reference jobs in another workflow, so the supported way to
+  # gate a release on CI is to call CI as a reusable workflow. The build jobs
+  # below depend on this — a tag can't produce installers unless backend lint/
+  # type/test, frontend build, and the Playwright e2e suite are all green.
+  tests:
+    uses: ./.github/workflows/ci.yml
+
+  # ── Linux Desktop (AppImage + deb) ──
+  build-linux:
+    needs: [tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0.0" --locked
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with: { enable-cache: true }
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev upx-ucl
+
+      - name: Build frontend
+        run: |
+          VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
+          echo "VITE_APP_VERSION=$VER"
+          cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
+
+      - name: Build backend binary
+        run: |
+          cd backend && uv sync
+          uv run pyinstaller ../desktop/scripts/pyinstaller.spec \
+            --noconfirm --distpath ../desktop/dist --workpath ../desktop/build/pyinstaller
+
+      - name: Prepare sidecar
+        run: |
+          cp desktop/dist/lifelogr-backend \
+            desktop/src-tauri/lifelogr-backend-x86_64-unknown-linux-gnu
+          chmod +x desktop/src-tauri/lifelogr-backend-x86_64-unknown-linux-gnu
+
+      - name: Verify backend binary
+        run: |
+          ./desktop/dist/lifelogr-backend --host 127.0.0.1 --port 18765 &
+          PID=$!; sleep 5
+          curl -sf http://127.0.0.1:18765/health | grep -q ok
+          kill $PID 2>/dev/null || true
+
+      - name: Build Tauri (AppImage + deb)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tauriScript: cargo tauri
+          # Only create/publish a Release on real version tags; on a manual
+          # workflow_dispatch this is empty, so we just build + upload the artifact.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: 'LifeLogr ${{ github.ref_name }}'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: desktop/src-tauri/target/release/bundle/
+
+  # ── Windows Desktop (MSI) ──
+  build-windows:
+    needs: [tests]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0.0" --locked
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with: { enable-cache: true }
+
+      - name: Install UPX
+        run: choco install upx
+
+      - name: Build frontend
+        shell: bash
+        run: |
+          VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
+          echo "VITE_APP_VERSION=$VER"
+          cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
+
+      - name: Build backend binary
+        run: |
+          cd backend && uv sync
+          uv run pyinstaller ../desktop/scripts/pyinstaller.spec --noconfirm --distpath ../desktop/dist --workpath ../desktop/build/pyinstaller
+
+      - name: Prepare sidecar
+        run: |
+          copy desktop\dist\lifelogr-backend.exe desktop\src-tauri\lifelogr-backend-x86_64-pc-windows-msvc.exe
+
+      - name: Build Tauri (MSI)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          tauriScript: cargo tauri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: desktop/src-tauri/target/release/bundle/
+
+  # ── macOS Desktop (DMG) ──
+  build-mac:
+    needs: [tests]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0.0" --locked
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with: { enable-cache: true }
+
+      - name: Install UPX
+        run: brew install upx
+
+      - name: Build frontend
+        run: |
+          VER=$(grep -m1 '"version"' desktop/src-tauri/tauri.conf.json | sed 's/.*: *"\(.*\)".*/\1/')
+          echo "VITE_APP_VERSION=$VER"
+          cd frontend && npm ci && VITE_APP_VERSION="$VER" npm run build
+
+      - name: Build backend binary
+        run: |
+          cd backend && uv sync
+          uv run pyinstaller ../desktop/scripts/pyinstaller.spec --noconfirm --distpath ../desktop/dist --workpath ../desktop/build/pyinstaller
+
+      - name: Prepare sidecar
+        run: |
+          cp desktop/dist/lifelogr-backend \
+            desktop/src-tauri/lifelogr-backend-aarch64-apple-darwin
+          chmod +x desktop/src-tauri/lifelogr-backend-aarch64-apple-darwin
+
+      - name: Build Tauri (DMG)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          tauriScript: cargo tauri
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: desktop/src-tauri/target/release/bundle/

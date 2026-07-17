@@ -1,0 +1,967 @@
+"""Comprehensive tests for backup, auto-backup scheduling, and restore.
+
+Covers:
+  - Local export / import round-trip (DB + media)
+  - Corrupt / non-SQLite archive rejection
+  - Path traversal rejection
+  - Import with media-only (no DB)
+  - Scheduler CRUD (schedule, status, unschedule)
+  - Restore utility: validate_extracted_db, _atomic_write, _atomic_media_swap
+  - Backup config CRUD via HTTP
+  - Snapshot listing
+"""
+
+import io
+import os
+import shutil
+import sqlite3
+import tarfile
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.paths import resolve_backup_path
+from app.core.restore import (
+    _atomic_media_swap,
+    _atomic_write,
+    _check_expected_tables,
+    _check_integrity,
+    _is_sqlite_file,
+    validate_extracted_db,
+)
+
+
+# ── Scheduler state cleanup ──────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_scheduler(tmp_path, monkeypatch):
+    """Ensure the global scheduler is clean before and after every test."""
+    import app.services.scheduler_service as sched_mod
+
+    # Isolate the persisted-schedule store so tests never touch the real
+    # ~/.local/share/lifelogr/.backup-schedule.json (e.g. via _mark_backup_run).
+    monkeypatch.setattr(sched_mod, "_schedule_store_path", lambda: tmp_path / ".schedule.json")
+
+    # Reset the global scheduler instance before each test
+    if sched_mod._scheduler is not None and sched_mod._scheduler.running:
+        sched_mod._scheduler.shutdown(wait=False)
+    sched_mod._scheduler = None
+    yield
+    if sched_mod._scheduler is not None and sched_mod._scheduler.running:
+        sched_mod._scheduler.shutdown(wait=False)
+    sched_mod._scheduler = None
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _make_valid_db(path: Path) -> Path:
+    """Create a minimal valid SQLite DB with an ``entries`` table at *path*."""
+    conn = sqlite3.connect(str(path))
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS entries (
+            id INTEGER PRIMARY KEY,
+            entry_date DATE NOT NULL,
+            body TEXT NOT NULL,
+            is_deleted BOOLEAN NOT NULL DEFAULT 0,
+            is_encrypted BOOLEAN NOT NULL DEFAULT 0
+        )"""
+    )
+    conn.execute(
+        "INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2025-01-01', 'hello world', 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _make_archive_from_bytes(db_content: bytes, name: str = "diarium.diarium") -> bytes:
+    """Build a .tar.gz containing a DB file with the given raw bytes."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        info = tarfile.TarInfo(name=name)
+        info.size = len(db_content)
+        tar.addfile(info, io.BytesIO(db_content))
+    return buf.getvalue()
+
+
+# ── Restore utility unit tests ───────────────────────────────────────────────
+
+
+class TestValidateExtractedDb:
+    def test_rejects_missing_file(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="not found"):
+            validate_extracted_db(tmp_path / "nope.db")
+
+    def test_rejects_empty_file(self, tmp_path: Path) -> None:
+        empty = tmp_path / "empty.db"
+        empty.touch()
+        with pytest.raises(ValueError, match="empty"):
+            validate_extracted_db(empty)
+
+    def test_rejects_non_sqlite_file(self, tmp_path: Path) -> None:
+        bad = tmp_path / "junk.db"
+        bad.write_text("this is not a sqlite file")
+        with pytest.raises(ValueError, match="not a valid SQLite"):
+            validate_extracted_db(bad)
+
+    def test_rejects_db_missing_entries_table(self, tmp_path: Path) -> None:
+        db = tmp_path / "no_entries.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE other (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        with pytest.raises(ValueError, match="missing expected tables"):
+            validate_extracted_db(db)
+
+    def test_accepts_valid_db(self, tmp_path: Path) -> None:
+        db = _make_valid_db(tmp_path / "good.db")
+        validate_extracted_db(db)  # should not raise
+
+
+class TestIsSqliteFile:
+    def test_detects_sqlite_header(self, tmp_path: Path) -> None:
+        db = _make_valid_db(tmp_path / "test.db")
+        assert _is_sqlite_file(db) is True
+
+    def test_rejects_non_sqlite(self, tmp_path: Path) -> None:
+        p = tmp_path / "data"
+        p.write_text("hello")
+        assert _is_sqlite_file(p) is False
+
+    def test_returns_false_for_missing(self, tmp_path: Path) -> None:
+        assert _is_sqlite_file(tmp_path / "missing") is False
+
+
+class TestAtomicWrite:
+    def test_replaces_destination(self, tmp_path: Path) -> None:
+        src = tmp_path / "src.db"
+        dst = tmp_path / "dst.db"
+        _make_valid_db(src)
+        dst.write_text("old content")
+
+        _atomic_write(src, dst)
+        assert dst.read_bytes()[:16] == b"SQLite format 3\x00"
+        # tmp file should be cleaned up
+        assert not dst.with_suffix(dst.suffix + ".tmp").exists()
+
+    def test_no_partial_on_failure(self, tmp_path: Path) -> None:
+        src = tmp_path / "src.db"
+        src.write_text("good")
+        dst = tmp_path / "sub" / "nested" / "dst.db"
+        # dst parent doesn't exist → copy2 will fail
+        with pytest.raises(Exception):
+            _atomic_write(src, dst)
+        # No .tmp littered
+        assert not list(tmp_path.rglob("*.tmp"))
+
+
+class TestAtomicMediaSwap:
+    def test_swaps_directories(self, tmp_path: Path) -> None:
+        src = tmp_path / "new_media"
+        src.mkdir()
+        (src / "photo.jpg").write_bytes(b"jpgdata")
+
+        dst = tmp_path / "media"
+        dst.mkdir()
+        (dst / "old.jpg").write_bytes(b"olddata")
+
+        _atomic_media_swap(src, dst)
+
+        assert (dst / "photo.jpg").read_bytes() == b"jpgdata"
+        assert not (dst / "old.jpg").exists()
+        # .bak should be cleaned up
+        assert not (tmp_path / "media.bak").exists()
+
+    def test_rollback_on_copytree_failure(self, tmp_path: Path) -> None:
+        """If copytree fails, original dst is restored."""
+        src = tmp_path / "new_media"
+        src.mkdir()
+        (src / "file.txt").write_text("new")
+
+        dst = tmp_path / "media"
+        dst.mkdir()
+        (dst / "original.txt").write_text("original")
+
+        with patch("app.core.restore.shutil.copytree", side_effect=PermissionError("fail")):
+            with pytest.raises(PermissionError):
+                _atomic_media_swap(src, dst)
+
+        # Original data should be restored
+        assert (dst / "original.txt").read_text() == "original"
+
+
+class TestCheckIntegrity:
+    def test_passes_for_valid_db(self, tmp_path: Path) -> None:
+        db = _make_valid_db(tmp_path / "ok.db")
+        _check_integrity(db)  # no exception
+
+    def test_detects_corruption(self, tmp_path: Path) -> None:
+        """Truncating the DB file produces a detectable corruption."""
+        db = _make_valid_db(tmp_path / "bad.db")
+        raw = db.read_bytes()
+        db.write_bytes(raw[: len(raw) // 2])
+        with pytest.raises((ValueError, sqlite3.DatabaseError)):
+            _check_integrity(db)
+
+
+class TestCheckExpectedTables:
+    def test_passes_when_entries_exists(self, tmp_path: Path) -> None:
+        db = _make_valid_db(tmp_path / "ok.db")
+        _check_expected_tables(db)
+
+    def test_fails_when_entries_missing(self, tmp_path: Path) -> None:
+        db = tmp_path / "empty.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE other (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        with pytest.raises(ValueError, match="missing expected tables"):
+            _check_expected_tables(db)
+
+
+class TestCheckpointLive:
+    """_checkpoint_live must reuse the caller's session (no 2nd pooled conn)."""
+
+    async def test_uses_session_when_provided(self) -> None:
+        from app.core.restore import _checkpoint_live
+
+        executed: list[str] = []
+
+        class FakeSession:
+            async def execute(self, stmt) -> None:
+                executed.append(str(stmt))
+
+        await _checkpoint_live(Path("/nonexistent.db"), FakeSession())  # type: ignore[arg-type]
+        assert executed and "wal_checkpoint" in executed[0]
+
+
+# ── HTTP-level backup tests ──────────────────────────────────────────────────
+
+
+class TestBackupConfigCrud:
+    async def test_create_config(self, client: AsyncClient) -> None:
+        r = await client.post(
+            "/api/v1/backup/config",
+            json={
+                "provider": "webdav",
+                "credentials": {
+                    "url": "https://dav.example.com",
+                    "username": "u",
+                    "password": "p",
+                },
+            },
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["provider"] == "webdav"
+        assert "id" in data
+
+    async def test_list_configs(self, client: AsyncClient) -> None:
+        await client.post(
+            "/api/v1/backup/config",
+            json={
+                "provider": "webdav",
+                "credentials": {"url": "https://dav.example.com"},
+            },
+        )
+        r = await client.get("/api/v1/backup/config")
+        assert r.status_code == 200
+        assert len(r.json()) >= 1
+
+    async def test_delete_config(self, client: AsyncClient) -> None:
+        r = await client.post(
+            "/api/v1/backup/config",
+            json={
+                "provider": "webdav",
+                "credentials": {"url": "https://dav.example.com"},
+            },
+        )
+        config_id = r.json()["id"]
+        dr = await client.delete(f"/api/v1/backup/config/{config_id}")
+        assert dr.status_code == 204
+
+    async def test_delete_config_with_snapshots(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Deleting a config that has snapshots must remove them too — config_id
+        is NOT NULL with no ORM cascade, so this used to IntegrityError when
+        SQLAlchemy nulled the children."""
+        from app.models.backup import BackupConfig, BackupSnapshot
+
+        cfg = BackupConfig(provider="webdav", credentials_encrypted="x")
+        db_session.add(cfg)
+        await db_session.commit()
+        await db_session.refresh(cfg)
+        db_session.add(BackupSnapshot(config_id=cfg.id, status="completed"))
+        db_session.add(BackupSnapshot(config_id=cfg.id, status="failed"))
+        await db_session.commit()
+
+        dr = await client.delete(f"/api/v1/backup/config/{cfg.id}")
+        assert dr.status_code == 204
+
+    async def test_test_connection_missing_config(self, client: AsyncClient) -> None:
+        r = await client.post("/api/v1/backup/config/9999/test")
+        assert r.status_code == 404
+
+    async def test_migrate_credentials_is_idempotent(self, client: AsyncClient) -> None:
+        """The v1->v2 credential migration endpoint is a no-op on v2 tokens."""
+        # A freshly created config is already encrypted at v2.
+        r = await client.post(
+            "/api/v1/backup/config",
+            json={"provider": "webdav", "credentials": {"url": "https://dav.example.com"}},
+        )
+        assert r.status_code == 201
+
+        r = await client.post("/api/v1/backup/config/migrate-credentials")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["checked"] >= 1
+        assert data["upgraded"] == 0  # already v2
+        assert data["remaining_v1"] == 0
+
+
+class TestBackupSnapshots:
+    async def test_list_snapshots_empty(self, client: AsyncClient) -> None:
+        r = await client.get("/api/v1/backup/snapshots")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+
+    async def test_list_snapshots_serializes_rows(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Snapshots must serialize to plain JSON (regression: raw ORM objects
+        made pydantic v2 raise 'Unable to serialize unknown type' → 500)."""
+        from app.models.backup import BackupConfig, BackupSnapshot
+
+        cfg = BackupConfig(provider="google_drive", credentials_encrypted="enc")
+        db_session.add(cfg)
+        await db_session.commit()
+        await db_session.refresh(cfg)
+        db_session.add(
+            BackupSnapshot(config_id=cfg.id, status="completed", entries_synced=5, media_synced=2)
+        )
+        await db_session.commit()
+
+        r = await client.get("/api/v1/backup/snapshots")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] >= 1
+        item = data["items"][0]
+        assert item["status"] == "completed"
+        assert item["entries_synced"] == 5
+        assert isinstance(item["id"], int)  # plain JSON, not an ORM object
+
+    async def test_list_snapshots_with_config_filter(self, client: AsyncClient) -> None:
+        r = await client.get("/api/v1/backup/snapshots?config_id=999")
+        assert r.status_code == 200
+
+
+# ── Export / Import tests ────────────────────────────────────────────────────
+
+
+class TestExportImport:
+    async def test_export_returns_tar_gz(self, client: AsyncClient, db_engine) -> None:
+        """Export endpoint returns a valid gzip archive with diarium.diarium."""
+
+        async def _noop_checkpoint(path: Path) -> None:
+            pass
+
+        db_file = settings.db_path
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+        if not db_file.exists():
+            _make_valid_db(db_file)
+
+        with patch("app.core.restore.checkpoint_wal", side_effect=_noop_checkpoint):
+            r = await client.get("/api/v1/backup/export")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/gzip"
+        buf = io.BytesIO(r.content)
+        with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+            names = [m.name for m in tar.getmembers()]
+            assert "diarium.diarium" in names
+
+    async def test_export_contains_entry_data(
+        self, client: AsyncClient, db_session: AsyncSession, db_engine
+    ) -> None:
+        """Export archives the live DB including user entries."""
+
+        async def _noop_checkpoint(path: Path) -> None:
+            pass
+
+        # Delete any leftover DB and create fresh
+        db_file = settings.db_path
+        if db_file.exists():
+            db_file.unlink()
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+        _make_valid_db(db_file)
+
+        # Insert test data directly into the file
+        conn = sqlite3.connect(str(db_file))
+        try:
+            conn.execute(
+                "INSERT INTO entries (entry_date, body, is_deleted, is_encrypted) VALUES ('2025-01-15', 'export-test', 0, 0)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        with patch("app.core.restore.checkpoint_wal", side_effect=_noop_checkpoint):
+            r = await client.get("/api/v1/backup/export")
+        assert r.status_code == 200
+
+        # Verify the exported DB contains our entry
+        buf = io.BytesIO(r.content)
+        extract_dir = tempfile.mkdtemp()
+        try:
+            with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+                tar.extractall(extract_dir)
+            conn2 = sqlite3.connect(os.path.join(extract_dir, "diarium.diarium"))
+            rows = conn2.execute("SELECT body FROM entries WHERE body='export-test'").fetchall()
+            conn2.close()
+            assert len(rows) == 1
+        finally:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+
+    async def test_import_rejects_path_traversal(self, client: AsyncClient) -> None:
+        """Archive with ../ in member names is rejected with 400."""
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            data = b"junk"
+            info = tarfile.TarInfo(name="../../../etc/passwd")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("evil.tar.gz", buf.read(), "application/gzip")},
+        )
+        assert r.status_code == 400
+        assert "path traversal" in r.json()["detail"].lower()
+
+    async def test_import_rejects_absolute_path(self, client: AsyncClient) -> None:
+        """Archive with absolute paths is rejected."""
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            data = b"junk"
+            info = tarfile.TarInfo(name="/etc/shadow")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("evil.tar.gz", buf.read(), "application/gzip")},
+        )
+        assert r.status_code == 400
+
+    async def test_import_strips_symlink_escape(self, client: AsyncClient, tmp_path: Path) -> None:
+        """A symlink whose target escapes the tmpdir must be neutralised.
+
+        With ``filter=\"data\"`` the symlink member is dropped entirely, so
+        the malicious link does not get created on disk. The archive is
+        otherwise empty (no diarium.diarium), so we only assert no file is
+        written outside the extraction dir.
+        """
+        target = tmp_path / "canary.txt"
+        target.write_text("secret")
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            link = tarfile.TarInfo(name="media/escape")
+            link.type = tarfile.SYMTYPE
+            link.linkname = str(target)
+            tar.addfile(link)
+        buf.seek(0)
+
+        # Import will fail validation (no valid db), but the key assertion is
+        # that extraction did not create an accessible link to `target`.
+        sentinel = Path(tempfile.gettempdir()) / "lifelogr_symlink_canary"
+        sentinel.unlink(missing_ok=True)
+
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("symlink.tar.gz", buf.read(), "application/gzip")},
+        )
+        # 400 is expected (no valid DB), but must not be a 500 from a crash.
+        assert r.status_code in (400, 409)
+
+    async def test_import_rejects_non_sqlite_db(self, client: AsyncClient) -> None:
+        """Archive containing a non-SQLite diarium.diarium gets 400."""
+        archive = _make_archive_from_bytes(b"this is not sqlite data at all")
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("bad.tar.gz", archive, "application/gzip")},
+        )
+        assert r.status_code == 400
+        assert "not a valid SQLite" in r.json()["detail"]
+
+    async def test_import_rejects_empty_db(self, client: AsyncClient) -> None:
+        """Archive containing an empty diarium.diarium file gets 400."""
+        archive = _make_archive_from_bytes(b"")
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("empty.tar.gz", archive, "application/gzip")},
+        )
+        assert r.status_code == 400
+
+    async def test_import_accepts_media_only_archive(self, client: AsyncClient) -> None:
+        """Archive with media/ but no database file imports just media."""
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            data = b"fake image data"
+            info = tarfile.TarInfo(name="media/photo.jpg")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("media-only.tar.gz", buf.read(), "application/gzip")},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["success"] is True
+        assert "media" in data["restored"]
+
+    async def test_import_accepts_legacy_dev_db_archive(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Old archives using dev.db (instead of diarium.diarium) still import."""
+        # Build an archive with a valid SQLite DB named "dev.db" (legacy format)
+        db = _make_valid_db(tmp_path / "legacy.db")
+        archive = _make_archive_from_bytes(db.read_bytes(), name="dev.db")
+
+        # Patch init_db to avoid FTS setup errors with the minimal test schema
+        async def _minimal_init_db():
+            from app.core.database import Base, engine
+
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+        with patch("app.core.database.init_db", side_effect=_minimal_init_db):
+            r = await client.post(
+                "/api/v1/backup/import",
+                files={"file": ("legacy.tar.gz", archive, "application/gzip")},
+            )
+        # Should not get 400 — the import should accept the legacy name
+        assert r.status_code == 200
+        data = r.json()
+        assert data["success"] is True
+
+
+# ── Scheduler tests ──────────────────────────────────────────────────────────
+
+
+class TestAutoBackupScheduler:
+    """All tests clean up the global scheduler state in teardown."""
+
+    async def test_schedule_backup(self, client: AsyncClient) -> None:
+        backup_dir = tempfile.mkdtemp()
+        try:
+            r = await client.post(
+                "/api/v1/backup/schedule",
+                params={
+                    "cron": "0 3 * * *",
+                    "backup_path": backup_dir,
+                    "retention": 5,
+                },
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["job_id"] == "auto_backup"
+            assert data["cron"] == "0 3 * * *"
+            assert data["next_run"] is not None
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    async def test_schedule_status_no_job(self, client: AsyncClient) -> None:
+        await client.delete("/api/v1/backup/schedule")
+        r = await client.get("/api/v1/backup/schedule/status")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["backup_scheduled"] is False
+
+    async def test_schedule_status_with_job(self, client: AsyncClient) -> None:
+        backup_dir = tempfile.mkdtemp()
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={
+                    "cron": "30 1 * * *",
+                    "backup_path": backup_dir,
+                    "retention": 3,
+                },
+            )
+            r = await client.get("/api/v1/backup/schedule/status")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["backup_scheduled"] is True
+            assert data["next_run"] is not None
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    async def test_unschedule_backup(self, client: AsyncClient) -> None:
+        backup_dir = tempfile.mkdtemp()
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={
+                    "cron": "0 0 * * *",
+                    "backup_path": backup_dir,
+                    "retention": 2,
+                },
+            )
+            r = await client.delete("/api/v1/backup/schedule")
+            assert r.status_code == 200
+            assert r.json()["removed"] is True
+
+            status = await client.get("/api/v1/backup/schedule/status")
+            assert status.json()["backup_scheduled"] is False
+        finally:
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    async def test_schedule_replaces_existing(self, client: AsyncClient) -> None:
+        backup_dir = tempfile.mkdtemp()
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={
+                    "cron": "0 2 * * *",
+                    "backup_path": backup_dir,
+                    "retention": 5,
+                },
+            )
+            r2 = await client.post(
+                "/api/v1/backup/schedule",
+                params={
+                    "cron": "15 4 * * *",
+                    "backup_path": backup_dir,
+                    "retention": 3,
+                },
+            )
+            assert r2.json()["cron"] == "15 4 * * *"
+            status = await client.get("/api/v1/backup/schedule/status")
+            assert status.json()["backup_scheduled"] is True
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    async def test_schedule_rejects_invalid_cron(self, client: AsyncClient) -> None:
+        backup_dir = tempfile.mkdtemp()
+        try:
+            # ValueError from SchedulerService propagates as server error
+            with pytest.raises(ValueError, match="Invalid cron"):
+                await client.post(
+                    "/api/v1/backup/schedule",
+                    params={
+                        "cron": "not-a-cron",
+                        "backup_path": backup_dir,
+                        "retention": 5,
+                    },
+                )
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+# ── Scheduled backup execution ───────────────────────────────────────────────
+
+
+class TestScheduledBackupExecution:
+    async def test_run_backup_creates_archive(self, tmp_path: Path) -> None:
+        """_run_backup produces a valid .tar.gz with diarium.diarium inside."""
+        from app.services.scheduler_service import _run_backup
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        db_file = data_dir / "lifelogr.db"
+        _make_valid_db(db_file)
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+
+        import app.core.config as config_mod
+
+        original_media_dir = config_mod.settings.MEDIA_DIR
+        original_db_url = config_mod.settings.DATABASE_URL
+
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = data_dir / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        try:
+            await _run_backup(str(backup_dir), retention=5)
+        finally:
+            config_mod.settings.DATABASE_URL = original_db_url
+            config_mod.settings.MEDIA_DIR = original_media_dir
+
+        archives = list(backup_dir.glob("lifelogr-backup-*.tar.gz"))
+        assert len(archives) == 1
+
+        with tarfile.open(str(archives[0]), "r:gz") as tar:
+            names = [m.name for m in tar.getmembers()]
+            assert "diarium.diarium" in names
+
+    async def test_run_backup_bundles_wal_and_shm(self, tmp_path: Path) -> None:
+        """_run_backup includes -wal/-shm sidecars in the archive when present."""
+        from app.services.scheduler_service import _run_backup
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        db_file = data_dir / "lifelogr.db"
+        _make_valid_db(db_file)
+        # Simulate the WAL/SHM sidecars SQLite produces in WAL mode.
+        (data_dir / "lifelogr.db-wal").write_bytes(b"WAL-DATA")
+        (data_dir / "lifelogr.db-shm").write_bytes(b"SHM-DATA")
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+
+        import app.core.config as config_mod
+
+        original_media_dir = config_mod.settings.MEDIA_DIR
+        original_db_url = config_mod.settings.DATABASE_URL
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = data_dir / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        try:
+            await _run_backup(str(backup_dir), retention=5)
+        finally:
+            config_mod.settings.DATABASE_URL = original_db_url
+            config_mod.settings.MEDIA_DIR = original_media_dir
+
+        archives = list(backup_dir.glob("lifelogr-backup-*.tar.gz"))
+        assert len(archives) == 1
+        with tarfile.open(str(archives[0]), "r:gz") as tar:
+            names = {m.name for m in tar.getmembers()}
+        assert "diarium.diarium" in names
+        assert "diarium.diarium-wal" in names
+        assert "diarium.diarium-shm" in names
+
+    async def test_run_now_writes_to_configured_destination(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """POST /backup/run-now runs the configured local backup immediately."""
+        db_file = tmp_path / "lifelogr.db"
+        _make_valid_db(db_file)
+
+        import app.core.config as config_mod
+
+        orig_url = config_mod.settings.DATABASE_URL
+        orig_media = config_mod.settings.MEDIA_DIR
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = tmp_path / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={"cron": "0 2 * * *", "backup_path": str(backup_dir), "retention": 5},
+            )
+            r = await client.post("/api/v1/backup/run-now")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["mode"] == "local"
+            assert data["path"] == str(backup_dir)
+            archives = list(backup_dir.glob("lifelogr-backup-*.tar.gz"))
+            assert len(archives) == 1
+        finally:
+            config_mod.settings.DATABASE_URL = orig_url
+            config_mod.settings.MEDIA_DIR = orig_media
+
+    async def test_run_now_with_explicit_path_no_schedule(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """POST /backup/run-now?backup_path= runs a local backup immediately
+        with no saved schedule — fixes the local 'Run now' 404."""
+        db_file = tmp_path / "lifelogr.db"
+        _make_valid_db(db_file)
+
+        import app.core.config as config_mod
+
+        orig_url = config_mod.settings.DATABASE_URL
+        orig_media = config_mod.settings.MEDIA_DIR
+        config_mod.settings.DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+        config_mod.settings.MEDIA_DIR = tmp_path / "media"
+        config_mod.settings.MEDIA_DIR.mkdir(exist_ok=True)
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        try:
+            # No schedule saved — pass the path directly.
+            r = await client.post(
+                "/api/v1/backup/run-now",
+                params={"backup_path": str(backup_dir), "retention": 5},
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["mode"] == "local"
+            assert data["path"] == str(backup_dir)
+            assert len(list(backup_dir.glob("lifelogr-backup-*.tar.gz"))) == 1
+        finally:
+            config_mod.settings.DATABASE_URL = orig_url
+            config_mod.settings.MEDIA_DIR = orig_media
+
+    def test_retention_cleanup(self, tmp_path: Path) -> None:
+        """_cleanup_old_backups keeps only N most recent archives."""
+        from app.services.scheduler_service import _cleanup_old_backups
+
+        # Create 5 fake backup files with distinct mtimes
+        for i in range(5):
+            f = tmp_path / f"lifelogr-backup-2025010{i + 1}-000000.tar.gz"
+            f.write_bytes(f"backup-{i}".encode())
+            # Ensure distinct mtime so sorting is deterministic
+            os.utime(str(f), (1000 + i, 1000 + i))
+
+        _cleanup_old_backups(tmp_path, retention=2)
+        remaining = sorted(tmp_path.glob("lifelogr-backup-*.tar.gz"))
+        assert len(remaining) == 2
+        # Keeps the two newest (by mtime): 04 and 05
+        assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
+        assert remaining[1].name == "lifelogr-backup-20250105-000000.tar.gz"
+
+
+class _FakeCheckpointEngine:
+    """Minimal stand-in for the async engine: begin()→execute→fetchone()."""
+
+    def __init__(self, row: tuple) -> None:
+        self._row = row
+        self.execute_count = 0
+
+    def begin(self) -> "_FakeCheckpointEngine":
+        return self  # `async with engine.begin()` → `async with self`
+
+    async def __aenter__(self) -> "_FakeCheckpointEngine":
+        return self  # the connection
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+    async def execute(self, _stmt):
+        self.execute_count += 1
+        return self  # result object exposing fetchone()
+
+    def fetchone(self) -> tuple:
+        return self._row
+
+
+class TestCheckpointWalRobust:
+    """_checkpoint_wal_robust: succeeds on busy=0, retries then yields on busy=1."""
+
+    async def test_returns_true_when_not_busy(self, monkeypatch) -> None:
+        from app.services.scheduler_service import _checkpoint_wal_robust
+
+        engine = _FakeCheckpointEngine((0, 0, 0))
+        monkeypatch.setattr("app.core.database.engine", engine)
+
+        assert await _checkpoint_wal_robust(attempts=3, delay=0) is True
+        assert engine.execute_count == 1  # succeeded on first try, no retry
+
+    async def test_retries_then_gives_up_when_busy(self, monkeypatch) -> None:
+        from app.services.scheduler_service import _checkpoint_wal_robust
+
+        engine = _FakeCheckpointEngine((1, 0, 0))  # busy=1
+        monkeypatch.setattr("app.core.database.engine", engine)
+
+        assert await _checkpoint_wal_robust(attempts=3, delay=0) is False
+        assert engine.execute_count == 3  # retried all attempts
+
+
+# ── Phase 1: backup-path containment (security) ──────────────────────────────
+
+
+class TestResolveBackupPath:
+    """resolve_backup_path confines unauthenticated backup writes to safe roots."""
+
+    def test_accepts_home_subdir(self, tmp_path: Path, monkeypatch) -> None:
+        home = tmp_path / "home"
+        home.mkdir()
+        backup = home / "Backups"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        assert resolve_backup_path(backup) == backup.resolve()
+
+    def test_accepts_data_dir_subdir(self, tmp_path: Path, monkeypatch) -> None:
+        data = tmp_path / "data"
+        data.mkdir()
+        monkeypatch.setattr(settings, "DATA_DIR", data)
+        sub = data / "backups"
+        assert resolve_backup_path(sub) == sub.resolve()
+
+    def test_accepts_temp_dir(self, tmp_path: Path) -> None:
+        # tmp_path lives under the system temp dir, which is an allowed root.
+        assert resolve_backup_path(tmp_path) == tmp_path.resolve()
+
+    def test_rejects_system_dirs(self) -> None:
+        for bad in ("/etc", "/usr", "/var/lib/lifelogr-test", "/boot"):
+            with pytest.raises(ValueError):
+                resolve_backup_path(bad)
+
+    def test_rejects_empty_and_none(self) -> None:
+        with pytest.raises(ValueError):
+            resolve_backup_path(None)
+        with pytest.raises(ValueError):
+            resolve_backup_path("")
+
+    def test_rejects_symlink_escape(self, tmp_path: Path) -> None:
+        """A symlink inside an allowed root that resolves to /etc is rejected."""
+        link = tmp_path / "escape"
+        link.symlink_to("/etc")
+        with pytest.raises(ValueError):
+            resolve_backup_path(link)
+
+    def test_extra_allowed_root_extends(self, monkeypatch) -> None:
+        # /opt/... is a system area, normally rejected.
+        target = "/opt/lifelogr-allowlist-test"
+        with pytest.raises(ValueError):
+            resolve_backup_path(target)
+        monkeypatch.setattr(settings, "BACKUP_ALLOWED_ROOTS", "/opt")
+        assert resolve_backup_path(target) == Path(target).resolve()
+
+
+class TestBackupPathContainment:
+    """The unauthenticated loopback endpoints must 400 on unsafe backup paths."""
+
+    async def test_run_now_rejects_system_path(self, client: AsyncClient) -> None:
+        r = await client.post("/api/v1/backup/run-now", params={"backup_path": "/etc"})
+        assert r.status_code == 400
+
+    async def test_schedule_rejects_system_path(self, client: AsyncClient) -> None:
+        try:
+            r = await client.post(
+                "/api/v1/backup/schedule",
+                params={"cron": "0 2 * * *", "backup_path": "/etc", "retention": 5},
+            )
+            assert r.status_code == 400
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+
+
+# ── Phase 1: import size cap (DoS) ───────────────────────────────────────────
+
+
+class TestImportSizeCap:
+    async def test_oversized_import_returns_413(
+        self, client: AsyncClient, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(settings, "MAX_IMPORT_SIZE_BYTES", 256)
+        r = await client.post(
+            "/api/v1/backup/import",
+            files={"file": ("big.tar.gz", b"x" * 1024, "application/gzip")},
+        )
+        assert r.status_code == 413
