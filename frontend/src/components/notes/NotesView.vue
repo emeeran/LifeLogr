@@ -174,9 +174,26 @@ watch(searchQuery, (q) => {
   }, 300)
 })
 
+// "Always open a fresh new note when Notes loads." Requires at least one
+// notebook (every note belongs to one); if there are none yet, the editor
+// stays empty so you can create a notebook first.
+async function openFreshNote() {
+  if (!store.folders.length) return
+  const folderId = store.currentNote?.folder_id ?? store.folders[0].id
+  try {
+    const n = await store.createNote({ title: '', body: '', folder_id: folderId })
+    await store.fetchNotes({ limit: 100 })
+    await store.selectNote(n.id)
+    expanded.value = new Set([...expanded.value, String(folderId)])
+  } catch {
+    /* leave editor empty */
+  }
+}
+
 onMounted(async () => {
   ui.setView('notes')
   await Promise.all([store.fetchNotes({ limit: 100 }), store.fetchFolders(), loadTags()])
+  await openFreshNote()
 })
 </script>
 
