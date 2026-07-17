@@ -1,6 +1,9 @@
 # LifeLogr — User Manual
 
-> Privacy-first, offline-first daily journaling for Linux, Windows, macOS, Android, and iOS.
+> **Privacy-first, offline-first journaling for Linux (Ubuntu 24.04).**
+> All your data stays on your machine. AI runs locally via Ollama; OCR via Tesseract; read-aloud via Edge TTS.
+
+*Version 0.7.0*
 
 ---
 
@@ -8,1157 +11,494 @@
 
 1. [Getting Started](#1-getting-started)
 2. [Interface Overview](#2-interface-overview)
-3. [Creating & Editing Entries](#3-creating--editing-entries)
-4. [Templates](#4-templates)
-5. [Tags](#5-tags)
-6. [Markdown Guide](#6-markdown-guide)
-7. [Search](#7-search)
-8. [Calendar View](#8-calendar-view)
-9. [Timeline View](#9-timeline-view)
-10. [Media & Attachments](#10-media--attachments)
-11. [Voice Recording & Transcription](#11-voice-recording--transcription)
-12. [AI Writing Assistant](#12-ai-writing-assistant)
-13. [Geotagging & Map View](#13-geotagging--map-view)
-14. [Analytics](#14-analytics)
-15. [Reminders](#15-reminders)
-16. [Version History](#16-version-history)
-17. [Encryption](#17-encryption)
-18. [Export & Import](#18-export--import)
-19. [Backup & Sync](#19-backup--sync)
-20. [Settings](#20-settings)
-21. [Keyboard Shortcuts](#21-keyboard-shortcuts)
-22. [Plugins](#22-plugins)
-23. [Troubleshooting](#23-troubleshooting)
+3. [Desktop vs Web — Which Build Are You In?](#3-desktop-vs-web--which-build-are-you-in)
+4. [Journal Entries](#4-journal-entries)
+5. [Notes Mode](#5-notes-mode)
+6. [Clipping & OCR (Screen-Snip / Web-Clip)](#6-clipping--ocr-screen-snip--web-clip)
+7. [Templates](#7-templates)
+8. [Tags](#8-tags)
+9. [Markdown Reference](#9-markdown-reference)
+10. [Search](#10-search)
+11. [Calendar & Timeline Views](#11-calendar--timeline-views)
+12. [Media & Attachments](#12-media--attachments)
+13. [Voice Recording](#13-voice-recording)
+14. [Read Aloud (TTS)](#14-read-aloud-tts)
+15. [AI Writing Assistant](#15-ai-writing-assistant)
+16. [Reminders](#16-reminders)
+17. [Planner (Tasks)](#17-planner-tasks)
+18. [Contacts](#18-contacts)
+19. [Email](#19-email)
+20. [Dashboard & Analytics](#20-dashboard--analytics)
+21. [Encryption](#21-encryption)
+22. [Export & Import](#22-export--import)
+23. [Backup & Cloud Sync](#23-backup--cloud-sync)
+24. [Google Calendar & Tasks Sync](#24-google-calendar--tasks-sync)
+25. [Settings](#25-settings)
+26. [Keyboard Shortcuts](#26-keyboard-shortcuts)
+27. [Troubleshooting](#27-troubleshooting)
+28. [Data, Privacy & File Locations](#28-data-privacy--file-locations)
 
 ---
 
 ## 1. Getting Started
 
-### System Requirements
+### System requirements
+- **Linux:** Ubuntu 24.04 LTS (or equivalent modern distro), Python 3.11+ (web build only), glibc.
+- **Optional, for AI/OCR:** [Ollama](https://ollama.com) (text AI), Tesseract (OCR — auto-installed by the `.deb`).
+- A working microphone (for voice recording) and speakers/headphones (for read-aloud).
 
-| Platform | Requirements |
-|----------|-------------|
-| Linux | Ubuntu 20.04+ or equivalent, glibc 2.31+ |
-| Windows | Windows 10/11 (x64) |
-| macOS | macOS 12 Monterey+ |
-| Android | Android 10+ |
-| iOS | iOS 16+ |
-
-### Installation
-
-#### Desktop (Linux/Windows/macOS)
-
-**Option A — Run from source (developers)**
+### Install the desktop app (Tauri)
+A native window with everything bundled. **Required if you want screen-snipping.**
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/lifelogr.git
-cd lifelogr
-
-# Launch both frontend and backend
-chmod +x dev.sh
-./dev.sh
+sudo dpkg -i LifeLogr_0.7.0_amd64.deb
+sudo apt-get install -f
 ```
+Launch **LifeLogr** from your app menu.
 
-The `dev.sh` script automatically finds available ports and starts both the FastAPI backend and Vite frontend. Press `Ctrl+C` to stop both servers.
-
-**Option B — Pre-built package**
-- **Linux**: Download the `.AppImage` or `.deb` file from releases. AppImages run without installation. DEB packages install via `sudo dpkg -i lifelogr_*.deb`.
-- **Windows**: Download the `.msi` installer and run it.
-- **macOS**: Download the `.dmg` file, drag to Applications.
-
-**Option C — Docker**
+### Install the web app (browser)
+Lighter; the backend serves the app and you use it in a browser tab. The Python virtualenv is built on your machine during install (needs network).
 ```bash
-docker compose up -d
-# Access at http://localhost:8000
+sudo dpkg -i lifelogr-web_0.7.0_amd64.deb
+sudo apt-get install -f
 ```
+Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser tab on a free local port. Stop it with `lifelogr --stop`.
 
-#### Mobile (Android/iOS)
+> **Upgrading:** fully **quit** the running app before relaunching (closing the window may leave the old process alive). Web app: `lifelogr --stop`.
 
-- **Android**: Download the `.apk` from releases and install, or get it from Google Play.
-- **iOS**: Install from the App Store or use TestFlight for beta builds.
-
-### First Launch
-
-When you first open LifeLogr:
-
-1. The **calendar view** loads showing the current month
-2. A **new entry** is automatically opened in the right panel
-3. The **sidebar** on the left provides navigation to all features
-4. Start writing — your entry is saved automatically as you type
+### First launch
+1. The sidebar lists the main areas: **Dashboard, Journal, Timeline, Notes, Reminders, Planner, Contacts, Email, Media**.
+2. Open **Journal** to write a dated entry, or **Notes** for standalone notebooks.
+3. (Optional) Go to **Settings → AI**, set your Ollama model (a CPU-friendly model like `gemma3:4b` is recommended) to enable the AI features.
 
 ---
 
 ## 2. Interface Overview
 
-LifeLogr uses a three-panel layout:
-
 ```
-┌──────────┬──────────────────┬─────────────────────┐
-│          │                  │                     │
-│ Sidebar  │   Content Area   │    Editor Panel     │
-│ (nav)    │  (calendar,      │  (entry editor +    │
-│          │   timeline,      │   preview)          │
-│          │   analytics)     │                     │
-│          │                  │                     │
-└──────────┴──────────────────┴─────────────────────┘
+┌──────────┬──────────────────────────────────────┐
+│ Sidebar  │   Active view (Journal / Notes /     │
+│ (nav +   │   Planner / Email / Dashboard …)     │
+│  search) │   plus an editor panel on the right  │
+│          │   for entries and notes              │
+└──────────┴──────────────────────────────────────┘
 ```
 
-When a tool drawer (AI Assistant, Voice Recording, or Attachments) is open, the content area is hidden to give the editor and drawer full space:
-
-```
-┌──────────┬───────────────────────┬─────────────────────┐
-│          │                       │                     │
-│ Sidebar  │    Tool Drawer        │    Editor Panel     │
-│ (nav)    │  (AI, Recording,      │  (entry editor +    │
-│          │   Attachments)        │   preview)          │
-│          │                       │                     │
-└──────────┴───────────────────────┴─────────────────────┘
-```
-
-### Sidebar
-
-The sidebar provides navigation to all major views:
-
-| Icon | View | Description |
-|------|------|-------------|
-| Calendar | **Calendar** | Monthly view with entry indicators |
-| List | **Timeline** | Chronological list of all entries |
-| Search | **Search** | Opens global search palette |
-| Bar Chart | **Analytics** | Writing statistics and insights |
-| Book | **Digest** | AI-generated weekly summary of your journaling |
-| Map | **Map** | Geotagged entries on a map |
-| Bell | **Reminders** | Manage journaling reminders |
-| Sunrise | **On This Day** | AI reflection on entries from past years |
-| Settings | **Settings** | App preferences and data management |
-
-**Sidebar controls:**
-- Click the hamburger icon at the top to collapse/expand
-- The **new entry** (+) button creates a blank entry
-- The **theme toggle** (sun/moon) at the bottom switches dark/light mode
-- Sidebar auto-collapses on screens narrower than 768px
-
-### Editor Panel
-
-The right panel contains the entry editor with:
-- **Title field** — set the entry title
-- **Date field** — change the entry date
-- **Formatting toolbar** — collapsible markdown formatting buttons (closed by default; click "Formatting" to expand)
-- **Body editor** — the main writing area
-- **Bottom bar** — word count, template picker, tag manager, media, recording, geotag, AI tools, and save controls
+- **Sidebar** — navigation between modes. You can reorder the nav items by dragging. At the bottom: theme toggle and **Settings**.
+- **Search** — press `Ctrl+K` anywhere to open the global search palette.
+- **Editor panel** — when you open a journal entry or a note, it appears on the right with a title field, a markdown formatting toolbar (collapsible), the body, and a bottom action bar (tags, media, AI tools, read-aloud, save).
 
 ---
 
-## 3. Creating & Editing Entries
+## 3. Desktop vs Web — Which Build Are You In?
 
-### Creating a New Entry
+| Capability | Desktop (Tauri) | Web (browser) |
+|---|:---:|:---:|
+| Screen-snippet (`Ctrl+Shift+S` / ✂️) | ✅ | ❌ |
+| Web-clip text (🌐) | ✅ | ✅ |
+| OCR | ✅ (auto after a snip) | endpoint exists; no in-app button¹ |
+| Voice recording | ✅ | ✅ |
+| All other features (AI, encryption, sync, etc.) | ✅ | ✅ |
+| **Data directory** | `~/.local/share/com.lifelogr.desktop/` | `~/.local/share/lifelogr/` |
 
-1. Click the **+** button in the sidebar, or
-2. Click on any **date** in the calendar view, or
-3. Press the new entry keyboard shortcut
-
-A new entry is created with today's date (or the selected calendar date). If you have a **default template** set, its content is automatically inserted.
-
-### Editing an Entry
-
-1. Click any entry in the calendar, timeline, or search results
-2. The entry opens in the editor panel on the right
-3. Start editing — changes are **auto-saved** after 2 seconds of inactivity
-4. The save indicator shows when changes are pending
-
-### Editor Toolbar
-
-The formatting toolbar provides these controls:
-
-| Button | Shortcut | Action |
-|--------|----------|--------|
-| **B** | `Ctrl+B` | Bold text |
-| *I* | `Ctrl+I` | Italic text |
-| ~~S~~ | `Ctrl+U` | Strikethrough |
-| `Code` | `Ctrl+K` | Inline code |
-| Code block | — | Multi-line code block |
-| Link | — | Insert hyperlink |
-| Image | — | Insert image |
-| Find | `Ctrl+F` | Find & replace |
-| H1 / H2 | — | Headings |
-| List | — | Bullet list |
-| 1. List | — | Numbered list |
-| Quote | — | Blockquote |
-| Checkbox | — | Task checkbox |
-| Table | — | Insert table |
-| Line | `Ctrl+Alt+H` | Horizontal separator |
-| Undo | `Ctrl+Z` | Undo last action |
-| Redo | `Ctrl+Y` | Redo last action |
-
-### Word Statistics
-
-The bottom of the editor shows real-time stats:
-- **Words** — total word count
-- **Characters** — character count
-- **Lines** — line count
-- **Paragraphs** — paragraph count
-- **Reading time** — estimated reading time
-
-### Preview Mode
-
-Toggle between edit and preview mode to see how your markdown renders. The preview supports:
-- Full GitHub Flavored Markdown (GFM)
-- Tables, task lists, strikethrough
-- Line breaks rendered as `<br>`
-- Syntax-highlighted code blocks
-
-### Switching Entries
-
-If you have unsaved changes and try to switch to another entry, LifeLogr shows a **save prompt** with three options:
-- **Save** — save current changes, then switch
-- **Discard** — discard changes, then switch
-- **Cancel** — stay on the current entry
+¹ The two builds use **separate databases** by default. To share one journal between them, point one build at the other's data directory via **Settings → Data & Backup → Storage location** (and copy the `.secret_key` so encrypted items still decrypt).
 
 ---
 
-## 4. Templates
+## 4. Journal Entries
 
-Templates let you pre-fill new entries with structured content.
+Journal entries are **date-bound** (one per day, by default).
 
-### Built-in Templates
+### Create an entry
+- Click a day in the **Calendar**, or use the **new entry** action.
+- A new entry for that date opens in the editor. If you've set a **default template**, its content is pre-filled.
 
-LifeLogr includes four built-in templates:
+### Entry fields
+- **Title** — optional heading.
+- **Date** — the entry's date.
+- **Mood** — a short mood label (shown on the dashboard's mood distribution).
+- **Body** — markdown (see [§9](#9-markdown-reference)).
+- **Summary** — a one-line summary (can be AI-generated; see [§15](#15-ai-writing-assistant)).
+- **Tags** — assign tags (see [§8](#8-tags)).
+- **Location** — optional latitude/longitude/place name (geotag data; stored for future map features).
+- **Media** — attach images/audio/video/documents (see [§12](#12-media--attachments)).
 
-| Template | Structure |
-|----------|-----------|
-| **Daily Reflection** | How I'm feeling / What I did today / Grateful for |
-| **Gratitude Journal** | Three things I'm grateful for / Why |
-| **Travel Log** | Location / Highlights / Photos & Memories |
-| **Weekly Review** | Wins this week / Challenges / Goals for next week |
+### Saving
+- Press **`Ctrl+S`** or click **Save**. A status indicator shows when a save is in progress/complete.
+- **Notes** use manual save (see [§5](#5-notes-mode)); journal entries save on demand and on navigate.
 
-Built-in templates cannot be edited or deleted.
-
-### Creating a Custom Template
-
-1. Open any entry in the editor
-2. Click the **template button** (grid/layout icon) in the bottom toolbar
-3. In the template picker, click **"Create Template"**
-4. Enter a **name** and **body** (markdown supported)
-5. Click **Save**
-
-### Applying a Template
-
-- **New entry**: Click the template button, select a template — the template body fills the editor
-- **Existing entry**: Click the template button, select a template — content is appended to the current body
-
-### Setting a Default Template
-
-1. Go to **Settings** (gear icon in sidebar)
-2. Under **Preferences**, find the **Default Template** dropdown
-3. Select a template — all new entries will start with this template's content
-
-### Managing Templates
-
-- **Edit**: Click the pencil icon on any custom template in the picker
-- **Delete**: Click the trash icon on any custom template
-- Built-in templates show a **lock icon** and cannot be modified
+### Formatting toolbar
+Bold, italic, strikethrough, inline code, code block, link, headings, bullet/numbered lists, checklists, blockquote, alignment, tables, emoji, find & replace — plus **AI tools** and (in Notes) the **clip** buttons. See [§26](#26-keyboard-shortcuts) for shortcuts.
 
 ---
 
-## 5. Tags
+## 5. Notes Mode
 
-Tags organize and categorize your entries.
+Notes are standalone, non-date-bound documents organized into **notebooks**.
 
-### Creating Tags
+### Structure
+- **Notebooks** (folders) — create them in the left tree; each can have a color.
+- **Notes** — belong to a notebook; can be **pinned** and **color-coded**.
+- **Pages** — each note has tabbed pages (like sections). Add/rename/reorder/delete pages.
 
-1. In the editor, click the **tag button** (tag icon) in the bottom toolbar
-2. Type a tag name in the search field
-3. Click **"Create: tagname"** to create a new tag
-4. Click tags to toggle them on/off for the current entry
+### The editor
+- Full markdown editor (shared with journal entries): formatting toolbar, live preview, find & replace.
+- **Manual save** — Notes do **not** autosave as you type. Click **Save** (or leave the note) to persist. *Switching to another note without saving discards the outgoing note's edits.*
+- On opening **Notes**, a **fresh blank note** is created and opened automatically (ready to write or clip).
 
-### Hierarchical Tags
+### Embedding media
+- Drag-and-drop, paste, or use the embed (🖼️/🎵/🎬) buttons. In the desktop app you can also drop a file from your file manager (native path import).
+- Embedded images are shown resizable in the preview.
 
-Tags support parent-child relationships:
-- Create a parent tag first (e.g., "Travel")
-- When creating a child tag, select the parent from the dropdown
-- Child tags appear nested under their parent
+### Encrypting a note
+See [§21](#21-encryption).
 
-### Filtering by Tags
-
-- In the **calendar view**, use the tag filter dropdown to show only entries with specific tags
-- In the **search palette**, click tag pills to narrow search results
-- Tag pills show the count of entries using each tag
-
-### Managing Tags
-
-- Navigate to the tag management view through settings or the tag panel
-- **Rename** a tag to update it across all entries
-- **Delete** a tag to remove it from all entries
-- Tag counts update automatically
+### Searching notes
+Notes are included in the global search palette (`Ctrl+K`) and have their own FTS5 search.
 
 ---
 
-## 6. Markdown Guide
+## 6. Clipping & OCR (Screen-Snip / Web-Clip)
 
-LifeLogr supports full **GitHub Flavored Markdown (GFM)**.
+Capture content into a note, embed it as a picture, and read its text with OCR.
 
-### Basic Formatting
+### Screen snip (desktop app only)
+1. Open a **non-encrypted note** in Notes mode.
+2. Trigger a snip:
+   - **`Ctrl+Shift+S`** (works from anywhere), or
+   - the **✂️ scissors** button in the formatting toolbar.
+3. The app hides itself, captures the screen, then shows the capture in a full-screen **crop overlay**. *(On Wayland, approve the screen-capture portal prompt the first time.)*
+4. **Drag a rectangle** over the region you want and release.
+5. The cropped image is **embedded into the note**, then **OCR runs automatically** and the recognized text is inserted beneath the image in a collapsible `📷 OCR` block — and becomes **searchable**.
+
+> Browsers can't capture your screen, so the snip is **desktop-only**. If `Ctrl+Shift+S` does nothing, another app may have grabbed that key — use the ✂️ toolbar button.
+
+### Web-clip (both builds)
+- Click the **🌐 globe** button and enter a URL.
+- LifeLogr fetches the page **server-side** and inserts its main text as markdown.
+- The fetch is **SSRF-hardened** (internal/loopback addresses are blocked on every hop, including redirects).
+- On the desktop app the page text is inserted the same way; OCR applies to images you snip, not to web-clipped text (it's already text).
+
+### OCR requirements
+- **Tesseract** must be installed (the `.deb` declares it as a dependency; if missing, OCR returns a helpful error with install instructions).
+- OCR works on any embedded image via the OCR endpoint; in the UI it's triggered automatically by a snip.
+
+---
+
+## 7. Templates
+
+Templates pre-fill new entries with structured markdown.
+
+- **Built-in templates** ship with the app (e.g., daily reflection, gratitude) and can't be edited.
+- **Custom templates** — create your own from the template picker (name + markdown body).
+- **Apply** — when creating an entry, pick a template to pre-fill; for an existing entry, applying a template appends its content.
+- **Default template** — set in Settings so every new entry starts with that template.
+
+---
+
+## 8. Tags
+
+Tags are shared across journal entries and notes, and support **hierarchy** (parent → child).
+
+- **Assign** — open the tag panel in the editor; click tags to toggle, or type to create a new one (optionally under a parent).
+- **Filter** — use tags to narrow the calendar/timeline and the search palette (click tag pills).
+- **Manage** — rename or delete tags; changes propagate to all tagged entries/notes.
+
+---
+
+## 9. Markdown Reference
+
+LifeLogr renders **GitHub-Flavored Markdown** in the preview pane (sanitized via DOMPurify).
 
 ```markdown
-**Bold text**
-*Italic text*
-~~Strikethrough~~
-`Inline code`
-```
+**bold**  *italic*  ~~strike~~  `code`
 
-### Headings
-
-```markdown
 # Heading 1
 ## Heading 2
 ### Heading 3
+
+- bullet
+- another
+
+1. first
+2. second
+
+- [x] done
+- [ ] todo
+
+> blockquote
+
+[link](https://example.com)
+![image](image-url)
+
+| A | B |
+|---|---|
+| 1 | 2 |
 ```
 
-### Lists
+- Horizontal rule: type `---` or use the toolbar.
+- Embedded media (uploaded via the app) is inserted as `![name](/api/v1/.../file)` and rendered inline; audio/video get inline players.
 
-```markdown
-- Bullet item
-- Another item
+---
 
-1. Numbered item
-2. Second item
+## 10. Search
+
+Press **`Ctrl+K`** to open the global search palette.
+
+### Three modes
+| Mode | What it does |
+|---|---|
+| **Keyword** (`Aa`) | Full-text search (SQLite FTS5, BM25-ranked) across titles and bodies. |
+| **Semantic** (`AI`) | Meaning-based search using local embeddings (`nomic-embed-text`). Finds conceptually similar content without exact words. |
+| **Hybrid** (`Mix`, default) | Combines keyword + semantic via Reciprocal Rank Fusion. |
+
+### Scope & filters
+- Results span **entries, notes, and tasks** in one stream.
+- Filter by **mood**, **tags**, and **date range**.
+- Navigate with `↑`/`↓`, open with `Enter`, close with `Esc`.
+
+> Semantic/hybrid modes need the embedding model. Pull it from **Settings → AI** or run `ollama pull nomic-embed-text`.
+
+---
+
+## 11. Calendar & Timeline Views
+
+- **Calendar (Journal)** — month grid; days with entries are marked. Click a day to open/create that day's entry. Filter by tag.
+- **Timeline** — reverse-chronological list of entries with previews; click to open.
+
+---
+
+## 12. Media & Attachments
+
+- **Supported:** images (JPG/PNG/GIF/WebP/BMP/TIFF), audio (MP3/WAV/OGG/M4A…), video (MP4/WebM/MOV), PDF, CSV, text. Max **25 MB** per file.
+- **Attach** — drag-and-drop, paste, the embed buttons, or (desktop) drop a file from your file manager.
+- **Gallery (Media mode)** — browse all media across entries; timeline view and global-search integration.
+- Images are auto-compressed to WebP for storage; original quality is preserved where it matters for OCR.
+- Inline images in notes are resizable in the preview.
+
+---
+
+## 13. Voice Recording
+
+> **Note:** LifeLogr records audio (via the system microphone). **Speech-to-text transcription was removed** in a recent release — recordings are stored as audio attachments only.
+
+- Click the **microphone** in the editor's bottom bar (desktop: granted automatically; grant permission if prompted).
+- A timer shows while recording; click **Stop** to save the clip to the entry.
+- Playback inline; delete unwanted clips.
+- On Linux, recording needs GStreamer plugins (the desktop `.deb` depends on them).
+
+---
+
+## 14. Read Aloud (TTS)
+
+- Select text (or open an entry/note) and choose **Read aloud**.
+- Audio is generated locally-cached via **Microsoft Edge TTS** (`edge-tts`) and streamed with seek support.
+- Configure **voice, rate, volume, and pitch** in **Settings → Features → Read Aloud** (the setting persists).
+- The TTS cache lives under `<data-dir>/tts/`.
+
+---
+
+## 15. AI Writing Assistant
+
+All AI runs **locally via Ollama** — nothing is sent to the cloud. Requires Ollama running and a model set in **Settings → AI**.
+
+### On-demand tools (select text → AI / right-click menu)
+- **Grammar check**, **Spell check**
+- **Rewrite** (with style options)
+- **Change tone**, **Expand**, **Clarity**
+- **Summarize**, **Key points**, **Action items**
+- **Shorten**, **Simplify**, **Polish**
+- **Translate** (pick a language)
+- **Add structure**, **Generate title**
+- **Define**, **Voice** (active/passive)
+
+Each result can be **Replaced**, **Inserted**, or **Copied**.
+
+### Automatic analysis (runs in the background after you save)
+- **Summary** — a one-line summary (shown in timeline/search previews).
+- **Sentiment** — primary/secondary emotion + valence (powers the mood timeline on the dashboard).
+- **Reflection prompts** — questions to reflect further (shown on the entry).
+- **Tag suggestions** — suggested tags appear as pills; click to add.
+- **Themes** — recurring topics detected across your writing.
+- **Continue writing** — a writer's-block helper that suggests a continuation.
+
+### Feature toggles
+Enable/disable each AI feature individually in **Settings → AI / Features** (embeddings, tag suggestions, sentiment, summarization, reflection prompts, writer's-block helper). If Ollama is unavailable, everything degrades gracefully — saving still works.
+
+> **CPU tip:** avoid "thinking" models (they can hang on CPU). `gemma3:4b` works well.
+
+---
+
+## 16. Reminders
+
+- Create time-based reminders (title, optional message, time, days of the week).
+- **Enable/disable**, edit, **test** (preview the notification), or delete.
+- Reminders fire while the app is running and show a desktop notification; clicking it focuses LifeLogr.
+
+---
+
+## 17. Planner (Tasks)
+
+- Organize work into **task lists** with **tasks** (and subtasks); mark complete, reorder.
+- Optionally **sync with Google Tasks** (two-way) — see [§24](#24-google-calendar--tasks-sync).
+- Tasks are included in global search.
+
+---
+
+## 18. Contacts
+
+- A full **address book**: contacts with names, emails, phones, photos, notes.
+- Group contacts (**Contact groups**), mark **favorites**, and search/filter.
+- **Import/Export vCard** (`.vcf`).
+- Contacts can be linked to email messages.
+
+---
+
+## 19. Email
+
+A built-in **IMAP/SMTP** client.
+
+- Add multiple **email accounts**; folders are auto-detected (INBOX, Sent, Trash, Junk, …).
+- Read threaded conversations; **compose and send** with attachments.
+- **Spam blocking** with a blocklist and rules.
+- Email is included in the app's navigation as its own mode.
+
+---
+
+## 20. Dashboard & Analytics
+
+The **Dashboard** shows insights about your journaling:
+
+- **Overview** — total entries, total words, total media, longest/current streaks, date range.
+- **Writing habits** — day-of-week frequency + a GitHub-style **heatmap**.
+- **Word stats** — averages, longest/shortest entries.
+- **Tag stats** — most-used tags.
+- **Mood distribution** + **sentiment timeline** (powered by AI sentiment).
+- **Media stats** — counts and storage.
+
+---
+
+## 21. Encryption
+
+Protect sensitive items with **AES-256-GCM** encryption (passphrase-derived key, per-item salt).
+
+- **Encrypt** an entry or note from its editor controls — set a passphrase.
+- A **lock icon** shows it's encrypted; the body is ciphertext at rest.
+- **Decrypt** by entering the same passphrase.
+- You can also encrypt/decrypt just a **text selection**.
+
+> ⚠️ **If you forget the passphrase, encrypted content cannot be recovered.** And never delete `<data-dir>/.secret_key` — it's required for decryption.
+
+---
+
+## 22. Export & Import
+
+- **Export** your journal as **Markdown** (a ZIP of `.md` files), **HTML** (a styled single file), or **PDF** (requires WeasyPrint; desktop).
+- **Import** from **CSV**, **Day One** (`.diary`/JSON), or **Markdown** archives.
+- After importing, run **Deduplicate** to find/remove duplicate entries.
+
+> Exports never include encrypted content in cleartext.
+
+---
+
+## 23. Backup & Cloud Sync
+
+- **Local backup** — a full `.tar.gz` of database + media. Create/restore from Settings.
+- **Scheduled backup** — automatic, DB-backed schedule (managed via APScheduler); runs catch-up on startup if missed.
+- **Cloud providers** (OAuth, loopback callback on `127.0.0.1:18765`): **Google Drive, OneDrive, Dropbox, Box**. Credentials are stored encrypted.
+- The web app's launcher prefers port **18765** so OAuth sign-in callbacks complete (it falls back to 8000-8019 if taken).
+
+---
+
+## 24. Google Calendar & Tasks Sync
+
+Two-way sync with Google (mail stays on IMAP via the Email mode).
+
+- Connect your Google account in **Settings → Google**.
+- Toggle **Calendar** and/or **Tasks** sync independently.
+- Trigger a full sync with **Sync all** (`POST /sync/all`); changes propagate both directions with provenance tracking.
+- Requires the Google Calendar + Tasks scopes and a test user when first authorized.
+
+---
+
+## 25. Settings
+
+Open from the sidebar (gear icon). Tabs:
+
+| Tab | What you configure |
+|---|---|
+| **General** | Appearance (theme, font family/size), default template, other preferences. |
+| **AI** | Ollama endpoint + model, pull the embedding model, AI feature toggles. |
+| **Notes** | Notes-specific options. |
+| **Email** | Email account setup. |
+| **Google** | Google account connection, Calendar/Tasks sync toggles. |
+| **Features** | Read-aloud voice/rate/volume/pitch, system-setup checks (Ollama, GStreamer, Tesseract). |
+| **Data & Backup** | Storage location, import/export, backup schedule, cloud providers, reset. |
+| **Dedication** | Memorial/dedication settings. |
+| **About** | Version + credits. |
+
+---
+
+## 26. Keyboard Shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Global search palette | `Ctrl+K` |
+| Screen snip (desktop, in Notes) | `Ctrl+Shift+S` |
+| Save | `Ctrl+S` |
+| Find & replace | `Ctrl+F` |
+| Bold / Italic / Strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` |
+| Inline code (in editor) | `Ctrl+K` |
+| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
+| Search palette: navigate/open/close | `↑` `↓` / `Enter` / `Esc` |
+| Close overlay/modal | `Esc` |
+
+---
+
+## 27. Troubleshooting
+
+**The app didn't change after I upgraded.**
+The old process is still running. Fully quit it (web: `lifelogr --stop`; desktop: quit from the app menu) and relaunch.
+
+**OCR says "install tesseract".**
+Run `sudo apt install tesseract-ocr`, or **Settings → Features → System Setup**.
+
+**Screen snip does nothing (desktop).**
+Another app may have grabbed `Ctrl+Shift+S` — use the ✂️ toolbar button. On **Wayland**, approve the screen-capture portal prompt. (If you built the app yourself, ensure the `snip` Cargo feature was enabled and `libpipewire-0.3-dev` was present at build time.)
+
+**AI tools hang or never return.**
+You're likely using a "thinking" model on CPU. In **Settings → AI**, switch to a non-thinking model such as `gemma3:4b`.
+
+**I can't see my journal in the other build (desktop vs web).**
+The two builds use separate data directories by default. Relink via **Settings → Data & Backup → Storage location** (carry `.secret_key`).
+
+**Voice recording doesn't work.**
+Grant microphone permission; on Linux ensure GStreamer plugins are installed (`sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-plugins-bad`).
+
+**Search isn't finding entries.**
+Keyword search works offline; semantic/hybrid modes need the embedding model — pull `nomic-embed-text` in Settings → AI.
+
+**Database errors.**
+Back up first, then use **Settings → Data & Backup** to restore from a backup (or reset, as a last resort).
+
+---
+
+## 28. Data, Privacy & File Locations
+
+Everything is stored locally under one data directory:
+
+| Build | Default data directory |
+|---|---|
+| Desktop (Tauri) | `~/.local/share/com.lifelogr.desktop/` |
+| Web | `~/.local/share/lifelogr/` |
+
+Contents:
+```
+lifelogr.db       # your database (entries, notes, tasks, contacts, …)
+.secret_key       # REQUIRED for encryption — never delete
+media/            # uploaded images/audio/video
+tts/              # read-aloud audio cache
+backups/          # scheduled local backups
+server.log        # web-app log (web build only)
 ```
 
-### Task Lists
-
-```markdown
-- [x] Completed task
-- [ ] Pending task
-```
-
-### Links and Images
-
-```markdown
-[Link text](https://example.com)
-![Image alt](image-url.jpg)
-```
-
-### Blockquotes
-
-```markdown
-> This is a quote
-> Multiple lines
-```
-
-### Code Blocks
-
-````markdown
-```python
-def hello():
-    print("Hello, World!")
-```
-````
-
-### Tables
-
-```markdown
-| Column 1 | Column 2 |
-|----------|----------|
-| Cell 1   | Cell 2   |
-```
-
-### Horizontal Rule
-
-Insert a visible horizontal separator with `Ctrl+Alt+H`, or type:
-
-```markdown
-────────────────────────────────
-```
-
-In preview mode, standard `---` markdown syntax also renders as a horizontal rule.
-
-### Line Breaks
-
-Press `Enter` twice for a new paragraph, or end a line with two spaces for a soft line break.
-
----
-
-## 7. Search
-
-### Global Search Palette
-
-Press **`Ctrl+K`** from anywhere in the app to open the search palette.
-
-```
-┌─────────────────────────────────────────┐
-│  🔍 Search entries...    [Aa][AI][Mix]  │
-│                                         │
-│  #travel #nature #work ...              │
-│                                         │
-│  📅 2026-05-19  My morning routine...   │
-│  📅 2026-05-18  Today I visited...      │
-│  📅 2026-05-15  Reflections on...       │
-│                                         │
-│  3 results  ↑↓ Navigate  Enter Open     │
-└─────────────────────────────────────────┘
-```
-
-### Search Modes
-
-The search palette supports three modes, toggled via the segmented control at the top-right:
-
-| Mode | Label | Description |
-|------|-------|-------------|
-| **Keyword** | `Aa` | Traditional full-text search with exact text matching (BM25) |
-| **Semantic** | `AI` | AI-powered meaning-based search using embeddings — finds conceptually similar content even without exact word matches |
-| **Hybrid** | `Mix` | Combines keyword and semantic results using Reciprocal Rank Fusion (default, recommended) |
-
-> Semantic and hybrid modes require the `nomic-embed-text` embedding model. Pull it from Settings → AI Features, or run `ollama pull nomic-embed-text`.
-
-### Search Features
-
-- **Full-text search** — searches entry titles and body content
-- **Semantic search** — finds entries by meaning, not just keywords
-- **Live results** — results update as you type (with debounce)
-- **Highlighted snippets** — matching text is highlighted with `<mark>` tags
-- **Tag filtering** — click tag pills below the search box to narrow results
-- **Keyboard navigation** — use `↑`/`↓` arrows to navigate, `Enter` to open, `Esc` to close
-
-### Search Controls
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+K` | Open/close search palette |
-| `↑` / `↓` | Navigate results |
-| `Enter` | Open selected entry |
-| `Esc` | Close search palette |
-| Click tag pill | Filter by tag |
-
----
-
-## 8. Calendar View
-
-The calendar shows your entries organized by month.
-
-### Calendar Features
-
-- **Month navigation** — Previous/Next buttons to browse months
-- **Today button** — Jump back to the current month
-- **Entry dots** — Small dots appear on days that have entries
-- **Click a day** — Opens the entry for that date (or creates a new one)
-- **Tag filtering** — Filter calendar to show entries with specific tags
-
-### Calendar Layout
-
-```
-┌───────────────────────────────────┐
-│  ◀  May 2026            Today ▶   │
-├─────┬─────┬─────┬─────┬─────┬─────┬─────┤
-│ Sun │ Mon │ Tue │ Wed │ Thu │ Fri │ Sat │
-├─────┼─────┼─────┼─────┼─────┼─────┼─────┤
-│     │     │     │  1  │  2  │  3  │  4  │
-│  5  │  6  │  7  │  8  │  9  │ 10  │ 11  │
-│ 12  │ 13  │ 14  │ 15● │ 16  │ 17  │ 18● │
-│ 19● │ 20  │ 21  │ 22  │ 23  │ 24  │ 25  │
-│ 26  │ 27  │ 28  │ 29  │ 30  │ 31  │     │
-└─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-```
-
-Days with entries are marked with a dot (●). The current day is highlighted.
-
----
-
-## 9. Timeline View
-
-The timeline shows all entries in reverse chronological order.
-
-### Timeline Features
-
-- **Scrollable list** — entries grouped by date
-- **Entry previews** — shows title and first few lines of body
-- **Tag indicators** — colored dots show tags on each entry
-- **Pagination** — loads 20 entries at a time with a "Load more" button
-- **Click to edit** — clicking an entry opens it in the editor
-
----
-
-## 10. Media & Attachments
-
-### Supported File Types
-
-| Category | Formats |
-|----------|---------|
-| Images | JPG, PNG, GIF, WebP |
-| Videos | MP4, WebM, MOV |
-| Audio | MP3, WAV, OGG, WebM |
-| Documents | PDF, TXT, MD, JSON, CSV |
-
-**Maximum file size:** 25 MB per file
-
-### Uploading Media
-
-1. Open an entry in the editor
-2. Click the **paperclip/attachment** button in the bottom toolbar
-3. Choose a file from your device — or **drag and drop** files directly
-4. Add an optional caption
-5. The file uploads and appears in the attachment panel
-
-### Managing Attachments
-
-- **View** — click an attachment to view it full-screen
-- **Caption** — add or edit captions for your files
-- **Delete** — click the trash icon to remove an attachment
-- **Count** — the attachment button shows the count of media files
-
-### Inline Images
-
-When uploading images, they can be displayed inline in the entry body or as a gallery in the attachment panel.
-
----
-
-## 11. Voice Recording & Transcription
-
-### Recording Audio
-
-1. Open an entry in the editor
-2. Click the **microphone button** in the bottom toolbar
-3. Grant microphone permission if prompted
-4. A recording timer appears — speak your entry
-5. Click **Stop** to end the recording
-6. The audio file is saved and attached to the entry
-
-### Transcribing Recordings
-
-After recording (or uploading an audio file):
-
-1. Click the **transcribe button** on the recording
-2. The audio is processed using local Whisper transcription
-3. Once complete, the transcription text is inserted into the entry body
-4. Transcription status is shown on each recording
-
-### Managing Recordings
-
-- **Playback** — click play to listen to recordings inline
-- **Duration** — recording length is displayed
-- **Transcription status** — shows if a recording has been transcribed
-- **Delete** — remove unwanted recordings
-
-> **Note:** Voice transcription requires the `faster-whisper` library. Install it with `uv pip install -e ".[stt]"` or `uv pip install faster-whisper`. Supported audio formats: WebM, OGG, MP3, WAV, M4A, and Opus.
-
----
-
-## 12. AI Writing Assistant
-
-LifeLogr integrates with **Ollama** for local AI-powered writing assistance and intelligence features. All processing happens on your machine — no data is sent to external servers.
-
-### Prerequisites
-
-1. Install [Ollama](https://ollama.ai) on your system
-2. Pull the main model: `ollama pull llama3.2:3b`
-3. Pull the embedding model (for semantic search & analysis): `ollama pull nomic-embed-text`
-4. Start Ollama: `ollama serve`
-
-### On-Demand AI Features
-
-#### Grammar Check
-1. Select text in the editor
-2. Click the **AI button** → **Grammar Check**
-3. Review suggestions and apply corrections
-
-#### Spell Check
-1. Click **AI** → **Spell Check**
-2. Spelling errors are highlighted with corrections
-3. Apply individual or all corrections
-
-#### Rewrite
-1. Select text and click **AI** → **Rewrite**
-2. Choose a style (formal, casual, concise, etc.)
-3. Review the rewritten text and apply if desired
-
-#### Voice (Active / Passive)
-1. Select text and click **AI → Voice**
-2. Pick **Active** or **Passive** from the pills
-3. Review and apply the converted text
-
-#### Rewrite for Clarity
-1. Select text and click **AI** → **Clarity**
-2. The text is simplified and rewritten for maximum readability
-3. Ambiguous phrasing is removed while preserving meaning
-
-#### Expand
-Select text and click **AI → Expand** to elaborate with more detail, sensory description, and emotional depth while preserving your voice and tense.
-
-#### Change Tone
-Select text, click **AI → Tone**, then pick a tone (formal, casual, friendly, etc.) from the pills. The meaning stays the same; only the style changes.
-
-#### Define
-Select a word or phrase and click **AI → Define** for a concise definition and short usage example.
-
-#### Summarize & Productivity Tools
-The AI drawer and the right-click **AI Tools** menu also offer one-click transformations. Each works the same way: select text, run the tool, review the result, then **Replace**, **Insert**, or **Copy**.
-- **Summarize** — a 2–3 sentence TL;DR
-- **Key Points** — the 3–7 main points as a bullet list
-- **Action Items** — extract to-dos as a markdown checklist
-- **Shorten** — condense to roughly half the length, keeping the meaning
-- **Simplify** — plain-language / ELI5 rewrite
-- **Polish** — improve word choice and flow
-- **Translate** — translate into a chosen language (pick from the language pills)
-- **Structure** — reorganize with markdown headings and bullets
-- **Title** — generate a concise title for the selection
-
-> All AI tools are defined in a single registry, so the same set appears in the drawer and the context menu. They run locally through Ollama — no text leaves your machine.
-
-#### Read Aloud (Text-to-Speech)
-Select text (or open an entry) and choose **Read Aloud** to hear it spoken. Audio is generated on the fly via Microsoft Edge TTS (`edge-tts`, bundled with the app) and streamed as MP3. You can pick a voice and adjust rate/volume. Requires an internet connection for the TTS service.
-
-#### Auto-Tag Suggestions
-After saving an entry, AI analyzes the content and suggests relevant tags. Suggestions appear as clickable pills below the tag dropdown — click to add, ignore to dismiss. The AI considers your existing tag names and reuses them where appropriate.
-
-#### Writer's Block Helper
-Stuck writing? Click the **lightbulb button** in the editor toolbar. The AI generates a 1-3 sentence continuation of your current text, shown as ghost text. Accept it to insert, or dismiss to try again.
-
-#### AI Status
-- The AI button shows connection status
-- Green = Ollama connected and model loaded
-- Red = Ollama unavailable — check if the service is running
-
-### Automatic AI Analysis (Enrichment Pipeline)
-
-Every time you save an entry, LifeLogr runs AI analysis in the background. This is non-blocking — your save completes instantly, and analysis runs afterward.
-
-#### Sentiment Analysis
-Each entry is analyzed for emotional content:
-- **Primary emotion** — the dominant feeling (happy, anxious, grateful, etc.)
-- **Secondary emotion** — a secondary feeling
-- **Intensity** — emotional strength on a scale of 1-10
-- **Valence** — positive/negative score from -1.0 to 1.0
-
-Sentiment data powers the **Mood Timeline** chart in Analytics and the **Weekly Digest** emotional trajectory.
-
-#### Auto-Summaries
-The AI generates a concise one-line summary of each entry. This summary appears in:
-- **Timeline view** — as preview text
-- **Search results** — alongside the snippet
-- **Weekly Digest** — used as input for the weekly narrative
-- **Similar entries** — helps identify related content
-
-#### Reflection Prompts
-Each entry receives 3 AI-generated reflection prompts — questions designed to encourage deeper thinking about your experiences. Find them in the **"Reflect Further"** section when viewing an entry.
-
-### Semantic Search & Similar Entries
-
-#### How It Works
-When you save an entry, the AI generates a 768-dimensional vector embedding using `nomic-embed-text`. These embeddings capture the *meaning* of your text, enabling:
-- **Semantic search** — find entries by concept, not just keywords
-- **Similar entries** — discover related entries across your entire journal
-
-#### Finding Similar Entries
-When viewing an entry, scroll to the **"Related Entries"** section at the bottom. This shows the most similar entries from your journal with similarity scores. Click any to navigate.
-
-### Weekly Digest
-
-The **Digest** view (book icon in sidebar) provides AI-generated weekly summaries of your journaling.
-
-#### What's in a Digest
-- **Themes** — key topics and subjects from the week, shown as tag pills
-- **Emotional Trajectory** — a narrative of how your mood shifted through the week
-- **Notable Moments** — highlighted events and experiences
-- **Summary** — a warm, coherent narrative covering the week
-
-#### Generating a Digest
-- Digests are **auto-generated weekly** (Sunday at 2 AM via the scheduler)
-- You can also click **"Generate Now"** to create one on demand
-- Past digests are listed below the latest one
-
-> Digests use a map-reduce approach: each entry's AI summary is combined and sent to the LLM for a coherent weekly narrative.
-
-### On This Day
-
-Navigate to **On This Day** in the sidebar (sunrise icon) to see entries from today's date in past years. The AI generates a reflection on your personal growth and how things have changed.
-
-### Recurring Themes
-
-The **Analytics** view includes a **Recurring Themes** section that uses AI to detect patterns across your journaling over time — career growth, health, relationships, creativity, and more. Each theme shows:
-- **Frequency** — how many entries touch on this theme
-- **Active months** — when it appeared
-- **Description** — what the theme encompasses
-
-### Feature Toggles
-
-All AI features can be individually enabled or disabled from **Settings → AI Features**:
-
-| Toggle | What it controls |
-|--------|-----------------|
-| Embeddings | Semantic search and similar entries |
-| Tag Suggestions | Auto-tag suggestions on save |
-| Sentiment Analysis | Mood detection and mood timeline |
-| Summarization | Auto-summaries for entries |
-| Reflection Prompts | AI-generated reflection questions |
-| Writer's Block Helper | Continuation suggestions in editor |
-
-> **Note:** AI features require Ollama to be running locally. If Ollama is unavailable, all features gracefully degrade — your entries save normally, and analysis is skipped.
-
----
-
-## 13. Geotagging & Map View
-
-### Adding a Location
-
-1. Open an entry in the editor
-2. Click the **location/pin button** in the bottom toolbar
-3. In the geotag modal:
-   - Click **"Use my location"** to auto-detect via GPS
-   - Or manually enter latitude and longitude
-   - The location name is auto-filled via reverse geocoding
-4. Click **Save**
-
-### Map View
-
-Navigate to **Map** in the sidebar to see all geotagged entries:
-
-- Entries are listed with their location names
-- Click an entry to open it
-- Nearby entries can be searched by location
-
-### Removing a Location
-
-Open the geotag modal and click **"Remove location"**.
-
----
-
-## 14. Analytics
-
-The analytics dashboard provides insights into your journaling habits.
-
-### Overview Statistics
-
-| Metric | Description |
-|--------|-------------|
-| Total entries | Count of all journal entries |
-| Total words | Cumulative word count |
-| Total media | Count of attached files |
-| Total recordings | Count of voice recordings |
-| Longest streak | Most consecutive days with entries |
-| Current streak | Current consecutive writing days |
-| Date range | Earliest to latest entry date |
-
-### Writing Habits
-
-- **Day-of-week chart** — bar chart showing which days you write most
-- **Heatmap** — GitHub-style contribution heatmap for the year
-  - Navigate between years
-  - Each cell represents a day; darker = more entries
-
-### Word Statistics
-
-- Average words per entry
-- Longest entry (word count)
-- Shortest entry (word count)
-
-### Tag Statistics
-
-- Usage count for each tag
-- Most-used tags ranked
-
-### Media Statistics
-
-- Total images, videos, and recordings
-- Total storage space used
-
-### Mood Timeline
-
-A line chart showing your emotional valence over time (powered by AI sentiment analysis). Each data point represents an entry, with the Y-axis showing valence (-1.0 negative to 1.0 positive) and points colored by primary emotion.
-
-> Requires AI sentiment analysis to be enabled. Only entries that have been analyzed by the AI enrichment pipeline appear on the chart.
-
-### Recurring Themes
-
-AI-detected patterns across your journaling. Shows themes that appear across multiple months with frequency counts and descriptions. See [Section 12 — Recurring Themes](#12-ai-writing-assistant) for details.
-
----
-
-## 15. Reminders
-
-### Creating a Reminder
-
-1. Navigate to **Reminders** in the sidebar
-2. Click **"Add Reminder"**
-3. Fill in the details:
-   - **Title** — reminder name (e.g., "Evening journal")
-   - **Message** — optional text to show with the notification
-   - **Time** — when to trigger (24-hour format)
-   - **Days** — which days of the week (Mon=0 to Sun=6)
-4. Click **Save**
-
-### Managing Reminders
-
-- **Toggle** — enable/disable a reminder without deleting it
-- **Edit** — modify time, days, or message
-- **Test** — click the test button to preview the notification
-- **Delete** — permanently remove a reminder
-
-### Notification Behavior
-
-When a reminder triggers:
-- A system notification appears with the title and message
-- Clicking the notification opens LifeLogr
-- Reminders only fire while the app is running
-
----
-
-## 16. Version History
-
-LifeLogr automatically saves revision snapshots of your entries.
-
-### Viewing History
-
-1. Open an entry
-2. Access the revision history (through entry details or settings)
-3. A list of all revisions is shown with timestamps and reasons
-
-### Comparing Versions
-
-- Select two revisions to see a **diff** comparison
-- Changes in title and body are highlighted
-- Additions shown in green, deletions in red
-
-### Restoring a Version
-
-1. Navigate to the revision you want to restore
-2. Click **"Restore"**
-3. The entry is updated to match that revision
-4. A new revision snapshot is created (the restore is reversible)
-
----
-
-## 17. Encryption
-
-Encrypt individual entries to protect sensitive content.
-
-### Encrypting an Entry
-
-1. Open the entry
-2. Access the encryption option (through entry controls)
-3. Enter a **passphrase** — this is required to decrypt later
-4. Click **Encrypt**
-5. The entry body is encrypted using AES-256-GCM
-6. A **lock icon** appears indicating the entry is encrypted
-
-### Decrypting an Entry
-
-1. Open the encrypted entry
-2. Enter the **passphrase** you used to encrypt
-3. Click **Decrypt**
-4. The content is revealed
-
-> **Important:** If you forget your passphrase, encrypted content **cannot be recovered**. Store passphrases securely.
-
----
-
-## 18. Export & Import
-
-### Exporting Entries
-
-#### Markdown Export
-1. Go to **Settings** → **Export**
-2. Click **"Export Markdown"**
-3. A ZIP file downloads containing all entries as markdown files
-
-#### HTML Export
-1. Go to **Settings** → **Export**
-2. Optionally set a date range
-3. Click **"Export HTML"**
-4. A single styled HTML file downloads
-
-#### PDF Export
-1. Go to **Settings** → **Export**
-2. Optionally set a date range
-3. Click **"Export PDF"**
-4. A PDF document downloads
-
-> **Note:** PDF export requires WeasyPrint — desktop-only feature.
-
-### Importing Entries
-
-#### From File
-1. Go to **Settings** → **Import**
-2. Supported formats:
-   - **Diarium** `.diary` files
-   - **JSON** arrays of entries
-   - **Markdown** ZIP archives
-3. Select the file and click **Import**
-4. A summary shows imported and skipped (duplicate) entries
-
-#### From Backup
-1. Go to **Settings** → **Backup & Restore**
-2. Select a `.tar.gz` backup file
-3. Click **Restore**
-
-### Deduplication
-
-After importing, run **"Deduplicate"** from Settings to find and remove duplicate entries. A summary shows how many duplicates were removed.
-
----
-
-## 19. Backup & Sync
-
-### Local Backup
-
-1. Go to **Settings** → **Backup**
-2. Click **"Export Backup"** to download a `.tar.gz` of your database and media
-3. Click **"Import Backup"** to restore from a previous backup
-
-### Cloud Backup
-
-LifeLogr supports multiple cloud storage providers:
-
-| Provider | Protocol |
-|----------|----------|
-| WebDAV | HTTP-based (Nextcloud, ownCloud, etc.) |
-| Google Drive | OAuth2 |
-| OneDrive | OAuth2 |
-| Dropbox | OAuth2 |
-| NAS | WebDAV or SMB |
-
-#### Setting Up Cloud Backup
-
-1. Go to **Settings** → **Cloud Backup**
-2. Click **"Add Provider"**
-3. Select your provider
-4. Enter credentials
-5. Click **"Test Connection"** to verify
-6. Save the configuration
-
-#### Scheduled Backups
-
-1. After configuring a provider, set up a schedule
-2. Enter a **cron expression** (e.g., `0 2 * * *` for 2 AM daily)
-3. Backups run automatically at the specified times
-4. Check status in the backup dashboard
-
-### Sync
-
-The sync system tracks local changes and pushes/pulls them to your cloud storage:
-
-- **Push** — upload local changes to the cloud
-- **Pull** — download remote changes to local
-- **Queue** — view pending sync operations
-- **Status** — see last sync time and pending count
-
----
-
-## 20. Settings
-
-Access settings via the **gear icon** in the sidebar.
-
-### Appearance
-
-| Setting | Options | Description |
-|---------|---------|-------------|
-| Theme | Dark / Light | Toggle between dark and light themes |
-| Font Family | System, Segoe UI, Inter, Roboto, Lora, Merriweather, JetBrains Mono, Monospace | Change the editor font |
-| Font Size | 12px – 24px | Adjust text size |
-| Sidebar | Collapsed / Expanded | Toggle sidebar visibility |
-
-### Preferences
-
-| Setting | Description |
-|---------|-------------|
-| Default Template | Template applied to all new entries |
-| Auto-geotag | Automatically detect location for new entries |
-| TTS Voice | Voice used for text-to-speech |
-
-### AI Features
-
-| Setting | Description |
-|---------|-------------|
-| Embeddings | Enable/disable semantic search and similar entries |
-| Tag Suggestions | Enable/disable auto-tag suggestions after save |
-| Sentiment Analysis | Enable/disable mood detection for entries |
-| Summarization | Enable/disable auto-summaries |
-| Reflection Prompts | Enable/disable AI reflection questions |
-| Writer's Block Helper | Enable/disable continuation suggestions |
-| Ollama Status | Shows connection status and model availability |
-| Pull Embedding Model | Downloads `nomic-embed-text` for semantic features |
-
-### Data Management
-
-| Action | Description |
-|--------|-------------|
-| Import | Import entries from file |
-| Export Markdown | Download entries as markdown ZIP |
-| Export HTML | Download entries as styled HTML |
-| Export PDF | Download entries as PDF |
-| Deduplicate | Find and remove duplicate entries |
-| Reset Database | Delete all data (irreversible, requires confirmation) |
-
-### Backup & Sync
-
-| Action | Description |
-|--------|-------------|
-| Export Backup | Download full backup (.tar.gz) |
-| Import Backup | Restore from backup file |
-| Cloud Provider | Configure cloud backup |
-| Schedule | Set automatic backup times |
-
----
-
-## 21. Keyboard Shortcuts
-
-### Global
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+K` | Open global search palette |
-| `Esc` | Close current modal/overlay/panel |
-
-### Editor
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+B` | Bold |
-| `Ctrl+I` | Italic |
-| `Ctrl+U` | Strikethrough |
-| `Ctrl+K` | Inline code |
-| `Ctrl+Alt+H` | Insert horizontal separator |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` | Redo |
-| `Ctrl+F` | Find & replace |
-| `Ctrl+S` | Save entry |
-
-### Search Palette
-
-| Shortcut | Action |
-|----------|--------|
-| `↑` / `↓` | Navigate results |
-| `Enter` | Open selected entry |
-| `Esc` | Close search |
-
----
-
-## 22. Plugins
-
-LifeLogr supports a plugin architecture for extending functionality.
-
-### Installing a Plugin
-
-1. Go to **Settings** → **Plugins**
-2. Click **"Install Plugin"**
-3. Provide:
-   - **Name** — plugin identifier
-   - **Version** — plugin version
-   - **Description** — what the plugin does
-   - **Entry point** — Python module path (e.g., `my_plugin.main`)
-4. Click **Install**
-
-### Managing Plugins
-
-- **Enable/Disable** — toggle plugins without uninstalling
-- **View hooks** — see which app events a plugin responds to
-- **Uninstall** — remove a plugin completely
-- **Priority** — plugins run in priority order when multiple handle the same event
-
----
-
-## 23. Troubleshooting
-
-### App Won't Start
-
-**Desktop (from source):**
-```bash
-# Ensure dependencies are installed
-cd backend && uv sync
-cd ../frontend && npm install
-
-# Check if ports are available
-./dev.sh
-```
-
-**Desktop (installed):**
-- Linux: Check if AppImage has execute permission (`chmod +x`)
-- Windows: Run as administrator if needed
-- macOS: Right-click → Open if blocked by Gatekeeper
-
-### Database Issues
-
-If you see database errors:
-
-1. **Backup your data** first
-2. Go to Settings → Reset Database (last resort)
-3. Or restore from a backup file
-
-### Search Not Finding Entries
-
-- The search index rebuilds automatically on startup if stale
-- Try restarting the application to trigger a reindex
-- Check that entries are not marked as deleted
-
-### Ollama/AI Not Working
-
-1. Verify Ollama is running: `ollama list`
-2. Check the model is installed: `ollama pull llama3.2:3b`
-3. Verify the URL in Settings matches your Ollama endpoint (default: `http://localhost:11434`)
-
-### Media Upload Fails
-
-- Check file size (max 25 MB)
-- Verify the file type is supported
-- Check disk space for media storage
-- Look for error messages in the upload status
-
-### Voice Recording Not Working
-
-- Grant microphone permissions in your browser/system
-- Check that no other application is using the microphone
-- On Linux (Tauri desktop app), ensure GStreamer plugins are installed:
-  ```
-  sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-plugins-bad
-  ```
-
-### Transcription Fails
-
-- Ensure `faster-whisper` is installed: `uv pip install faster-whisper`
-- Or install the STT extra: `uv pip install -e ".[stt]"`
-- Check that the Whisper model (`base` by default) can load without errors
-- Supported audio formats: WebM, OGG, MP3, WAV, M4A, Opus
-
-### Data Storage Locations
-
-| Platform | Database | Media |
-|----------|----------|-------|
-| Linux (Tauri) | `~/.local/share/com.lifelogr.desktop/lifelogr.db` | `~/.local/share/com.lifelogr.desktop/media/` |
-| Linux (dev) | `~/.local/share/lifelogr/lifelogr.db` | `~/.local/share/lifelogr/media/` |
-| Windows | `%APPDATA%\lifelogr\lifelogr.db` | `%APPDATA%\lifelogr\media\` |
-| macOS | `~/Library/Application Support/lifelogr/lifelogr.db` | `~/Library/Application Support/lifelogr/media/` |
-| Dev mode | `./dev.db` | `./media/` |
-
-### Getting Help
-
-- **Issues**: Report bugs at the project's GitHub Issues page
-- **Logs**: Check the terminal/console for error messages
-- **Data recovery**: Always maintain regular backups
-
----
-
-## Appendix A: Quick Reference Card
-
-```
-╔══════════════════════════════════════════════════╗
-║              DAILYBYTE QUICK REFERENCE           ║
-╠══════════════════════════════════════════════════╣
-║                                                  ║
-║  NAVIGATION                                      ║
-║  Ctrl+K    Search          Esc    Close overlay  ║
-║                                                  ║
-║  EDITOR                                          ║
-║  Ctrl+B    Bold            Ctrl+I  Italic        ║
-║  Ctrl+U    Strikethrough   Ctrl+K  Inline code   ║
-║  Ctrl+Alt+H Separator      Ctrl+S  Save          ║
-║  Ctrl+Z    Undo            Ctrl+Y  Redo          ║
-║  Ctrl+F    Find/Replace                              ║
-║                                                  ║
-║  MARKDOWN                                        ║
-║  **bold**  *italic*     ~~strike~~  `code`       ║
-║  # H1      ## H2        > quote     - list       ║
-║  [link]()  ![img]()     | table |                ║
-║                                                  ║
-║  VIEWS                                           ║
-║  Calendar  Timeline  Search  Analytics  Map      ║
-║  Digest  Reminders  On This Day  Settings        ║
-║                                                  ║
-╚══════════════════════════════════════════════════╝
-```
+**Privacy:** the backend binds to `127.0.0.1` only (no remote access, no auth — it's single-user). AI runs on-device via Ollama. Cloud backup/sync is **opt-in** and uses OAuth; credentials are stored encrypted. You can relocate the data directory at any time from Settings.
