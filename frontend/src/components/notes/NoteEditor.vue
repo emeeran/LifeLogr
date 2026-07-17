@@ -398,6 +398,10 @@ async function onPaste(e: ClipboardEvent) {
 
 async function onPasteTauri(e: ClipboardEvent) {
   const cd = e.clipboardData
+  // Read the text SYNCHRONOUSLY, before any await: ClipboardEvent.clipboardData
+  // is defanged once the handler yields (after `await`), so a getData() call
+  // after the image probe below would return '' and silently drop pasted text.
+  const text = cd?.getData('text/plain') ?? ''
   const cdImage = cd
     ? Array.from(cd.items).find((it) => it.kind === 'file' && it.type.startsWith('image/'))
     : null
@@ -408,17 +412,20 @@ async function onPasteTauri(e: ClipboardEvent) {
     return
   }
   e.preventDefault()
-  try {
-    const { readImage } = await import('@tauri-apps/plugin-clipboard-manager')
-    const img = await readImage()
-    if (img) {
-      await uploadClipImage(img)
-      return
+  // Only probe the system clipboard for an image when there is no text — that
+  // async probe must never get a chance to discard the synchronously-read text.
+  if (!text) {
+    try {
+      const { readImage } = await import('@tauri-apps/plugin-clipboard-manager')
+      const img = await readImage()
+      if (img) {
+        await uploadClipImage(img)
+        return
+      }
+    } catch {
+      /* clipboard has no image */
     }
-  } catch {
-    /* clipboard has no image */
   }
-  const text = cd?.getData('text/plain') ?? ''
   if (text) applyText(text)
 }
 
