@@ -36,6 +36,8 @@ import {
   CheckSquare,
   Focus,
   Layout,
+  Scissors,
+  Globe,
 } from "lucide-vue-next";
 import { useUiStore } from "../../stores/ui";
 
@@ -53,6 +55,8 @@ defineProps<{
   // notes-only: current selection font/size (drives inline <span> injection)
   selFont?: string;
   selSize?: number | "";
+  // notes-only: clipping tools (screen snip / web clip) are desktop-only.
+  isDesktop?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -191,6 +195,15 @@ const journalEmojis = ["📝", "💭", "✨", "🙏", "🩺", "💡"];
           class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
           title="Embed video" @click="fire('embedVideo')"
         ><Video :size="13" /></button>
+        <button
+          v-if="isDesktop"
+          class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+          title="Snip screen region (Ctrl+Shift+S) → OCR" @click="fire('clipSnip')"
+        ><Scissors :size="13" /></button>
+        <button
+          class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+          title="Clip web page" @click="fire('clipWeb')"
+        ><Globe :size="13" /></button>
       </template>
       <span class="w-px h-4 bg-border mx-0.5" />
       <button

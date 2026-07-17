@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 from typing import Any
 
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schemas.media import MediaResponse, MediaTimelineItem, MediaTimelineResponse
 from app.services.media_service import MediaService
+from app.services.ocr_service import ocr_image_bytes
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
 logger = logging.getLogger(__name__)
@@ -113,15 +113,9 @@ async def ocr_media(media_id: int, db: AsyncSession = Depends(get_db)) -> dict[s
 
     file_data, _content_type, _filename = await svc.get_file(media.id)
     try:
-        import pytesseract  # type: ignore[import-untyped]
-        from PIL import Image
+        text = await asyncio.to_thread(ocr_image_bytes, file_data)
     except ImportError as exc:
         raise HTTPException(status_code=501, detail=f"OCR unavailable: {exc}") from exc
-
-    try:
-        text = await asyncio.to_thread(
-            pytesseract.image_to_string, Image.open(io.BytesIO(file_data))
-        )
     except Exception as exc:
         # Most common cause: the `tesseract` system binary isn't installed.
         logger.error("OCR failed: %s", exc, exc_info=True)

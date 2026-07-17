@@ -126,6 +126,16 @@ export const notesApi = {
     return request(`/notes/${noteId}/media/${mediaId}`, { method: 'DELETE' })
   },
 
+  /** OCR a note image; the caller inserts the returned text into the note body. */
+  ocrNoteMedia(noteId: number, mediaId: number): Promise<{ text: string }> {
+    return request(`/notes/${noteId}/media/${mediaId}/ocr`, { method: 'POST' })
+  },
+
+  /** Clip a web page to markdown (text fallback for the desktop image capture). */
+  webClip(url: string): Promise<{ markdown: string }> {
+    return request('/notes/web-clip', { method: 'POST', body: JSON.stringify({ url }) })
+  },
+
   mediaFileUrl(noteId: number, mediaId: number): string {
     return `${API_ORIGIN}/api/v1/notes/${noteId}/media/${mediaId}/file`
   },

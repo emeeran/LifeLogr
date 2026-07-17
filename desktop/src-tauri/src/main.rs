@@ -5,7 +5,9 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use log::{error, info, warn};
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
+use tauri::ipc::Response;
+use tauri_plugin_global_shortcut::{Builder as ShortcutBuilder, GlobalShortcutExt, ShortcutState};
 use tauri_plugin_shell::ShellExt;
 
 /// Read backend port from DIARI_PORT env var, defaulting to 18765.
@@ -32,9 +34,17 @@ fn check_deps() -> serde_json::Value {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
+    // Tesseract is required for note-image OCR (declared in deb `depends`).
+    let tesseract = std::process::Command::new("tesseract")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
     serde_json::json!({
         "ollama": ollama,
         "gst_plugins_bad": gst_plugins_bad,
+        "tesseract": tesseract,
         "all_installed": ollama,
     })
 }
@@ -149,6 +159,59 @@ fn init_logging(data_dir: &std::path::Path) {
     info!("Logging initialised — writing to {}", log_path.display());
 }
 
+/// Capture the first available monitor as a PNG byte buffer.
+///
+/// We grab the first monitor rather than detecting "primary" so the call works
+/// across xcap versions whose monitor-selection API differs. For the typical
+/// single-monitor setup this is the whole screen.
+#[cfg(feature = "snip")]
+fn capture_primary_monitor_png() -> Result<Vec<u8>, String> {
+    use image::ImageFormat;
+    let monitors = xcap::Monitor::all().map_err(|e| format!("enumerate monitors: {e}"))?;
+    let monitor = monitors
+        .into_iter()
+        .next()
+        .ok_or_else(|| "no display available for capture".to_string())?;
+    let img = monitor
+        .capture_image()
+        .map_err(|e| format!("screen capture failed: {e}"))?;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::from(img)
+        .write_to(&mut buf, ImageFormat::Png)
+        .map_err(|e| format!("encode PNG: {e}"))?;
+    Ok(buf.into_inner())
+}
+
+/// Capture the screen for a note snip.
+///
+/// Hides the main window first (so the app itself isn't in the screenshot),
+/// waits briefly for the compositor to settle, captures the screen, then
+/// restores + focuses the window so the frontend can render the crop overlay.
+/// Returns the full-screen PNG; the frontend crops it to the user's selection.
+#[cfg(feature = "snip")]
+#[tauri::command]
+async fn capture_screen(app: tauri::AppHandle) -> Result<Response, String> {
+    let main_win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let _ = main_win.hide();
+    // Let the window actually disappear before grabbing pixels.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let png = capture_primary_monitor_png();
+
+    let _ = main_win.show();
+    let _ = main_win.set_focus();
+    Ok(Response::new(png?))
+}
+
+/// Stub used when built without the `snip` feature (no xcap / pipewire dev).
+#[cfg(not(feature = "snip"))]
+#[tauri::command]
+async fn capture_screen(_app: tauri::AppHandle) -> Result<Response, String> {
+    Err("Screen snip is not included in this build (rebuilt without the 'snip' feature).".into())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -158,7 +221,19 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .invoke_handler(tauri::generate_handler![check_deps, run_setup])
+        .plugin(
+            // Ctrl+Shift+S (Cmd+Shift+S on macOS) triggers a note snip from
+            // anywhere; the handler just emits an event the frontend listens
+            // for so the crop overlay runs in the webview.
+            ShortcutBuilder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let _ = app.emit("snip-requested", ());
+                    }
+                })
+                .build(),
+        )
+        .invoke_handler(tauri::generate_handler![check_deps, run_setup, capture_screen])
         .setup(|app| {
             // Resolve data directory
             let data_dir = app
@@ -173,6 +248,12 @@ fn main() {
 
             let port = backend_port();
             info!("Starting LifeLogr desktop with backend port {port}");
+
+            // Register the global snip hotkey. Non-fatal if the OS already
+            // grabbed it — the toolbar button still works.
+            if let Err(e) = app.global_shortcut().register("CommandOrControl+Shift+S") {
+                warn!("Could not register snip shortcut (it may be taken by the OS): {e}");
+            }
 
             // Reclaim the port from any stale sidecar left by a previous run,
             // so OUR sidecar can bind it (see reclaim_port).

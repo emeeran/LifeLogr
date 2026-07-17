@@ -12,12 +12,14 @@ import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import EditorContextMenu from '../editor/EditorContextMenu.vue'
 import NoteEncryptionBadge from './NoteEncryptionBadge.vue'
+import SnipOverlay from './SnipOverlay.vue'
+import WebClipModal from './WebClipModal.vue'
 import { useNotesStore } from '../../stores/notes'
 import { tagsApi } from '../../api/tags'
 import { notesApi } from '../../api/notes'
 import { isTauri } from '../../api/client'
 import { useTtsStore } from '../../stores/tts'
-import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse } from '../../types'
+import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse, NoteMediaResponse } from '../../types'
 
 const props = defineProps<{
   note: NoteResponse
@@ -263,7 +265,7 @@ async function onFilePicked(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
   if (f) await embedFile(f)
 }
-async function embedFile(file: File) {
+async function embedFile(file: File): Promise<NoteMediaResponse | null> {
   const t = file.type
   try {
     const media = await notesApi.uploadMedia(props.note.id, file)
@@ -279,8 +281,10 @@ async function embedFile(file: File) {
     } else {
       applyText(`[${name}](${url})`)
     }
+    return media
   } catch (e: unknown) {
     alert(e instanceof Error ? e.message : 'Media upload failed')
+    return null
   }
 }
 
@@ -323,13 +327,19 @@ onMounted(async () => {
         void handleDroppedPaths((p.paths as string[]) ?? [])
       }
     })
+    const { listen } = await import('@tauri-apps/api/event')
+    unlistenSnip = await listen('snip-requested', () => {
+      void startSnip()
+    })
   } catch (e) {
-    console.warn('Tauri drag-drop unavailable', e)
+    console.warn('Tauri drag-drop/snip unavailable', e)
   }
 })
 onUnmounted(() => {
   unlistenDrag?.()
   unlistenDrag = null
+  unlistenSnip?.()
+  unlistenSnip = null
   // Stop read-aloud only if this note is what's currently playing (single global stream).
   if (speaking.value || ttsLoading.value) tts.stop()
 })
@@ -429,6 +439,82 @@ async function uploadClipImage(img: {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
   if (!blob) return
   await embedFile(new File([blob], 'pasted.png', { type: 'image/png' }))
+}
+
+// ── Screen snip (desktop only) — capture → crop → embed → OCR ────────────────
+const snipping = ref(false)
+const snipSrc = ref('')
+const ocrBusy = ref(false)
+let unlistenSnip: (() => void) | null = null
+
+async function startSnip() {
+  if (!isTauri) return
+  // Pages aren't encrypted; only the encrypted main body can't take new text.
+  if (isMain.value && props.note.is_encrypted) {
+    alert('Decrypt the note before clipping into it.')
+    return
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    // The Rust command hides the window, captures the screen, restores it,
+    // and returns a full-screen PNG.
+    const data = await invoke<ArrayBuffer>('capture_screen')
+    const blob = new Blob([new Uint8Array(data)], { type: 'image/png' })
+    snipSrc.value = URL.createObjectURL(blob)
+    snipping.value = true
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    alert(`Screen capture failed: ${msg}\nOn Wayland, approve the portal request or run under X11.`)
+  }
+}
+
+function endSnip() {
+  snipping.value = false
+  if (snipSrc.value) {
+    URL.revokeObjectURL(snipSrc.value)
+    snipSrc.value = ''
+  }
+}
+
+async function onSnipCropped(file: File) {
+  endSnip()
+  textarea.value?.focus()
+  const media = await embedFile(file)
+  if (media) await runOcr(media.id)
+}
+
+async function runOcr(mediaId: number) {
+  ocrBusy.value = true
+  try {
+    const { text } = await notesApi.ocrNoteMedia(props.note.id, mediaId)
+    if (text.trim()) {
+      applyText(`\n\n<details><summary>📷 OCR</summary>\n\n${text.trim()}\n\n</details>\n`)
+    }
+  } catch (e: unknown) {
+    alert(`OCR failed: ${e instanceof Error ? e.message : e}`)
+  } finally {
+    ocrBusy.value = false
+  }
+}
+
+// ── Web-page clip — extracts the page text server-side and inserts it as
+//    markdown. (A page→image capture would need a headless browser, which is
+//    too heavy; screen-snip already covers "embed as picture".) ──────────────
+const showWebClip = ref(false)
+
+async function startWebClip(url: string) {
+  showWebClip.value = false
+  if (isMain.value && props.note.is_encrypted) {
+    alert('Decrypt the note before clipping into it.')
+    return
+  }
+  try {
+    const { markdown } = await notesApi.webClip(url)
+    textarea.value?.focus()
+    if (markdown.trim()) applyText(`\n${markdown.trim()}\n`)
+  } catch (e: unknown) {
+    alert(`Web clip failed: ${e instanceof Error ? e.message : e}`)
+  }
 }
 
 // ── Paste-to-table helpers (table button itself comes from the shared toolbar) ─
@@ -598,6 +684,14 @@ function onToolbarAction(name: string) {
   if (name === 'embedImage') return triggerInsert('image')
   if (name === 'embedAudio') return triggerInsert('audio')
   if (name === 'embedVideo') return triggerInsert('video')
+  if (name === 'clipSnip') {
+    void startSnip()
+    return
+  }
+  if (name === 'clipWeb') {
+    showWebClip.value = true
+    return
+  }
   const fn = (core.actions as any)[name]
   if (fn) fn()
 }
@@ -665,6 +759,7 @@ onUnmounted(() => {
           :show-find="core.showFind.value"
           :sel-font="selFont"
           :sel-size="selSize"
+          :is-desktop="isTauri"
           @action="onToolbarAction"
           @toggle-emoji="showEmoji = !showEmoji"
           @toggle-find="core.showFind.value = !core.showFind.value"
@@ -888,6 +983,22 @@ onUnmounted(() => {
         />
       </div>
     </div>
+
+    <!-- Screen-snip crop overlay (desktop) -->
+    <SnipOverlay
+      v-if="snipping && snipSrc"
+      :src="snipSrc"
+      @cropped="onSnipCropped"
+      @cancel="endSnip"
+    />
+
+    <!-- OCR running toast -->
+    <div v-if="ocrBusy" class="ocr-toast">
+      <Loader :size="13" class="animate-spin" /> Running OCR…
+    </div>
+
+    <!-- Web-page clip URL prompt -->
+    <WebClipModal v-if="showWebClip" @clip="startWebClip" @cancel="showWebClip = false" />
   </div>
 </template>
 
@@ -1152,5 +1263,24 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* ── OCR toast ── */
+.ocr-toast {
+  position: absolute;
+  bottom: 3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 </style>

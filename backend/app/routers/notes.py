@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -28,8 +30,10 @@ from app.schemas.note_media import NoteMediaFromPath, NoteMediaResponse
 from app.schemas.tag import TagBrief
 from app.services.note_media_service import NoteMediaService
 from app.services.note_service import NoteService
+from app.services.ocr_service import ocr_image_bytes
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
+logger = logging.getLogger(__name__)
 
 
 def _to_response(note: Note) -> NoteResponse:
@@ -52,6 +56,10 @@ def _to_response(note: Note) -> NoteResponse:
 
 class _PinBody(BaseModel):
     is_pinned: bool
+
+
+class _WebClipBody(BaseModel):
+    url: HttpUrl
 
 
 @router.post("", response_model=NoteResponse, status_code=201)
@@ -92,6 +100,19 @@ async def search_notes(
     return NoteListResponse(
         items=[_to_response(n) for n in notes], total=total, offset=offset, limit=limit
     )
+
+
+@router.post("/web-clip")
+async def web_clip(data: _WebClipBody) -> dict[str, str]:
+    """Clip a web page to markdown.
+
+    Fallback for the desktop web-page image capture: the Tauri shell captures
+    the page as a picture (then OCRs it); this text path is used when capture
+    is unavailable (web build) or fails. SSRF-hardened (see web_clip_service).
+    """
+    from app.services.web_clip_service import extract_markdown_from_url
+
+    return {"markdown": await extract_markdown_from_url(str(data.url))}
 
 
 # ── Sub-pages (EPIM-style page tabs) ────────────────────────────────────────
@@ -257,6 +278,36 @@ async def delete_note_media(
     """Delete a note media attachment and its file."""
     svc = NoteMediaService(db)
     await svc.delete(media_id, note_id)
+
+
+@router.post("/{note_id}/media/{media_id}/ocr")
+async def ocr_note_media(
+    note_id: int, media_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
+    """Extract text from a note image attachment via OCR (tesseract/pytesseract).
+
+    Returns only the recognized text. The frontend inserts it into the note
+    body; the autosave PATCH then makes it searchable (the ``notes_fts``
+    AFTER-UPDATE trigger reindexes ``notes.body``).
+    """
+    svc = NoteMediaService(db)
+    path, content_type, _filename = await svc.get_file_path(media_id, note_id)
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="OCR is only available for images.")
+
+    try:
+        text = await asyncio.to_thread(ocr_image_bytes, path.read_bytes())
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=f"OCR unavailable: {exc}") from exc
+    except Exception as exc:
+        # Most common cause: the `tesseract` system binary isn't installed.
+        logger.error("Note OCR failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="OCR failed — is the `tesseract` binary installed? "
+            "Run System Setup (Settings → Features) or: sudo apt install tesseract-ocr",
+        ) from exc
+    return {"text": text.strip()}
 
 
 @router.get("/{note_id}", response_model=NoteResponse)
