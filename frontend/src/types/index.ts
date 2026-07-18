@@ -263,16 +263,6 @@ export interface GrammarSuggestion {
   message: string;
 }
 
-export interface GrammarCheckResponse {
-  corrected_text: string;
-  suggestions: GrammarSuggestion[];
-}
-
-export interface SpellCheckResponse {
-  corrected_text: string;
-  misspellings: GrammarSuggestion[];
-}
-
 export interface RewriteResponse {
   rewritten_text: string;
   style: string;
@@ -292,44 +282,10 @@ export interface TagSuggestionResponse {
   tags: string[];
 }
 
-// ── AI Writer's Block ───────────────────────────────────────────────
-
-export interface ContinueWritingResponse {
-  continuation: string;
-}
-
 // ── AI Smart Tools ──────────────────────────────────────────────────
 
 export interface ExpandResponse {
   expanded_text: string;
-}
-
-export interface ChangeToneResponse {
-  changed_text: string;
-  tone: string;
-}
-
-// ── AI Analyze Text ──────────────────────────────────────────────────
-
-export interface AnalyzeTextResponse {
-  emotions: string[];
-  themes: string[];
-  summary: string;
-}
-
-// ── AI Define Text ───────────────────────────────────────────────────
-
-export interface DefineTextResponse {
-  definition: string;
-}
-
-export interface VoiceChangeResponse {
-  changed_text: string;
-  voice: string;
-}
-
-export interface RewriteForClarityResponse {
-  rewritten_text: string;
 }
 
 // ── AI Themes ───────────────────────────────────────────────────────
@@ -351,17 +307,6 @@ export interface EncryptionStatusResponse {
   entry_id: number;
   is_encrypted: boolean;
   encrypted_at: string | null;
-}
-
-// ── Video Notes ──────────────────────────────────────────────────────
-
-export interface VideoNoteResponse {
-  id: number;
-  entry_id: number;
-  filename: string;
-  duration_seconds: number | null;
-  thumbnail_path: string | null;
-  created_at: string;
 }
 
 // ── Search (FTS5) ────────────────────────────────────────────────────
@@ -712,16 +657,6 @@ export interface ReminderUpdate {
 
 // ── Sync ─────────────────────────────────────────────────────────────
 
-export interface SyncQueueItem {
-  id: number;
-  operation: string;
-  entity_type: string;
-  entity_id: number;
-  is_synced: boolean;
-  created_at: string;
-  synced_at: string | null;
-}
-
 export interface SyncStatusResponse {
   provider: string;
   last_sync_at: string | null;
@@ -905,11 +840,6 @@ export interface SpamRuleCreate {
 }
 
 /** Result of blocking a message's sender (applies to existing + future mail). */
-export interface BlockSenderResult {
-  rule: SpamRuleResponse;
-  action: 'junk' | 'delete';
-  affected: number;
-}
 
 export interface EmailCompose {
   account_id: number;
