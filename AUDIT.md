@@ -80,6 +80,42 @@ FTS5 excludes encrypted entries (`database.py:260-277`) · enrichment/themes/on-
 - **EncryptionBadge.vue vs NoteEncryptionBadge.vue** ~85% duplication — intentionally not merged (med risk, marginal gain).
 - **Frontend has no formatter** (backend has `ruff`) — adding prettier/eslint deferred pending owner decision (Phase 3 D1).
 
-## Missed by pipeline, caught by blind review
+## Missed by pipeline, caught by blind review (Phase 5 reconciliation)
 
-*(Populated by Phase 5 reconciliation — see `.pipeline/blind-review.md`.)*
+A context-blind reviewer caught a large set of real issues the six-dimension audit above
+missed — concentrated in **concurrency/race conditions, FS/DB atomicity ordering, input
+bounds/caps, and a few injection paths** the structured audit under-weighted. Full verbatim
+review: `.pipeline/blind-review.md`. The main thread independently re-verified the
+load-bearing new findings (✅ = re-confirmed against source here).
+
+**Honest limit:** this subagent runs on the same model. The sanitized prompt removed
+self-grading/framing bias (proven — it found ~32 things the structured audit missed), but
+the reviewer **did find and read this `AUDIT.md`** at the repo root before reviewing, so its
+*agreement* with B1/B2/H1/H8 is **not independent corroboration** (treat those as
+single-source). Its **new findings** are the independent signal. For a fully independent
+read, paste the source into a fresh session with no `AUDIT.md` present, ideally a different
+reviewer.
+
+### New HIGH (verified) — promote into the fix queue alongside B1/B2
+- ✅ **N1** — `backend/app/routers/email.py:280-282` — inbound-mail attachment `filename` flows unsanitized into `FileResponse(filename=…)` → `Content-Disposition` **header injection / response-splitting**. One-line `_sanitize(att.filename)`.
+- **N2** — `backend/app/routers/sync.py:84-146` — `on_refresh` flushes a refreshed token, but `db.commit()` only runs after `push()`/`pull()` returns; a raised push **rolls back the new refresh token** → OAuth silently and permanently broken.
+- **N3** — `backend/app/services/google_sync_service.py:52-56` — mid-sync `on_refresh` commits the **shared session** while Calendar/Tasks syncs are in flight on it → breaks their per-service atomicity whenever the Google token refreshes mid-sync.
+- ✅ **N4** — only `memorial.py` + `tts.py` use `asyncio.Lock`. `/sync/all` (`sync.py:151`), `/email/sync`, `/import`, `/storage-path` have **no concurrency guard** → overlap with scheduler-fired syncs (`database is locked`) and interleaved engine swaps on `/import`+`/storage-path`. One `asyncio.Lock` per path.
+
+### New MEDIUM (verified)
+- ✅ **N5** — `frontend/src/components/email/EmailView.vue:493-500` — `printEmail()` does `window.open` + `document.write(emailDocument(true))` into an **unsandboxed** window inheriting `tauri://localhost`; breaks the otherwise-consistent `sandbox=""` iframe discipline. Real XSS path (the only one — other `v-html` sites use DOMPurify).
+- **N6** — `backend/app/core/restore.py:194-197` — pre-restore DB backup uses non-atomic `shutil.copy2`; a crash mid-copy truncates the **rollback target itself**. Use the existing `_atomic_write` (`:124`).
+- ✅ **N7** — `backend/app/services/recording_service.py:43,113-122` — `threading.Lock` held across `await asyncio.to_thread(...)` **blocks the event loop**; should be `asyncio.Lock`.
+- **N8** — `desktop/src-tauri/capabilities/default.json:10-11` — `fs:allow-read-file`/`allow-write-file` granted with **no scope**; combined with an XSS (N5) → arbitrary file R/W. Scope to `$HOME/*`. (Related: unused `shell:allow-execute`/`spawn` perms `:4-6`.)
+- **N9** — `desktop/.../main.rs:152-160` + `build-web-deb.sh:268-269` — desktop/server logs **grow unbounded** (no rotation) → multi-GB over months.
+- **N10** — `backend/app/services/tasks_sync_service.py:139-141` — pagination rebuilds `params` from scratch, dropping `updatedMin`/`showDeleted`/`showCompleted` on pages 2+ → re-processes already-applied updates, can revive soft-deleted rows.
+- **N11** — `backend/app/services/email_service.py:96,1182-1214` — temp attachments leak on **abandoned compose** (sweep only runs inside `store_temp_attachment` / success paths).
+- ✅ **N12** — `backend/app/services/media_service.py:202-205` (+ `note_media_service`, `video_service`, `entry_service`) — **`unlink()` before `db.commit()`**; a failed commit leaves the file gone but the row present. Unlink in `finally` after commit.
+
+### New LOW (blind-verified; leads to confirm before acting)
+N13 agenda no max-span (unbounded RRULE expansion) · N14/N21 no length cap on `ids`/`tag_ids` lists (`SQLITE_MAX_VARIABLE_NUMBER` → 500; malformed `tag_ids=1,abc` → `ValueError` → 500) · N15 TTS `text` no `max_length` (fan-out DoS) · N16 TTS `_locks` dict unbounded · N17 fire-and-forget `create_task` with no strong ref (GC mid-run) · N18 `video_notes` no `Range` support (breaks seek) · N19 `export_contacts(ids="")` silently exports all · N20 batch upload no rollback · N22 spam match on JSON column via `LIKE` (use `JSON_EACH`) · N23 `block_sender` unescaped `LIKE` · N24 Ollama tags GET no `follow_redirects=False` · N25 google `disconnect` commit-fail leaves stale job · N26 web-clip truncates after buffering full body · N27 ollama JSON-extract heuristic fragile · N28 `check_deps` "all_installed" copy-paste bug · N29 `reclaim_port` `pkill` too broad · N30 deb `prerm` no-op · N31 `/export/markdown` same-date entries overwrite · N32 `upload_temp_attachment` reads before size check.
+
+### Agreement / disagreement
+- **Agree (higher confidence, but single-source due to the AUDIT.md read):** B1, B2, H1, H8, the OAuth-router duplication (Phase 2 B3), the `encrypt` vs `reencrypt` drift (Phase 2 R1 / M12).
+- **Blind review was STRICTER than the structured audit** on three whole classes the six dimensions under-covered: **concurrency/locking** (N4, N7), **FS/DB operation ordering / atomicity** (N6, N11, N12, N20, N31, N32), and **input bounds / DoS caps** (N13–N15, N21). These are genuine pipeline misses, logged here rather than folded quietly into the earlier sections.
+- **No material disagreements** on what was reported; the blind review simply found more.

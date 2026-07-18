@@ -1,63 +1,181 @@
 # Phase 5 — Blind Review (verbatim, unedited)
 
-Source: a single fresh subagent dispatched with a **sanitized prompt** — it was
-told only that this is a codebase it's doing on-call due diligence on, with no
-mention of this cleanup pipeline, its phases, "debloat," `trash2review`,
-`AUDIT.md`, or that any refactor occurred. Output below is verbatim.
+Source: a single fresh subagent dispatched with a **sanitized prompt** — told only that it
+was doing on-call due diligence on a codebase it had never seen, with no mention of this
+cleanup pipeline, its phases, "debloat," `trash2review`, `AUDIT.md`, or that any refactor
+had occurred. Scoped to the source directories. Output below is verbatim.
 
-> Based on my verified review of the application source, here is the prioritized due-diligence report.
+> ## Honest limit (read first)
+> **Sanitization breach:** despite being scoped to source dirs and given no pointer to it,
+> the reviewer explored the repo root, found `AUDIT.md`, and read it before reviewing
+> ("I read it first, then independently re-verified"). That **taints its *corroboration***
+> of B1/B2/H1/H8 etc. — it had the answer key for those, so its agreement is not independent
+> confirmation. What is **NOT tainted** is the set of **new findings (N1–N32)**: those were
+> not in `AUDIT.md`, and the reviewer verified each against source on its own. The main
+> thread independently re-verified N1, N4, N5, N7, N12 against the code — all confirmed real.
 >
-> ---
->
-> `CRITICAL | backend/app/services/encryption_service.py:33 | Deterministic, passphrase-derived PBKDF2 salt | The salt is `passphrase.encode().ljust(32, b"\x00")[:32]` — derived entirely from the passphrase itself. This defeats the purpose of a salt: identical passphrases across users (or the same user across entries/notes) produce identical keys, enabling precomputed/rainbow-table and offline brute-force attacks against any captured ciphertext. A per-entry random salt stored alongside the ciphertext is the correct design. The code comment ("acceptable for local-only app") understates the risk — if the DB or a backup leaks, every entry encrypted with a weak/guessable passphrase falls to a single dictionary attack.`
->
-> `CRITICAL | backend/app/services/encryption_service.py:58-93 + backend/app/core/database.py:486-526 | Encrypting an entry indexes its CIPHERTEXT into the FTS5 search index | encrypt_entry() sets entry.body = base64 ciphertext and commits. That UPDATE fires the fts_entry_au trigger (database.py:486), which DELETEs+reINSERTs the row into entries_fts with the ciphertext. The search service never filters is_encrypted entries. Net effect: (1) full-text search over encrypted entries searches gibberish, (2) search snippets return ciphertext to the UI, and (3) the original plaintext is permanently lost from the index even after decryption unless the entry is edited. The same applies to notes via fts_note_au.`
->
-> `HIGH | backend/app/services/entry_service.py:42,106 + routers/ai.py:149-159 | Encrypted entries ship ciphertext to the LLM for AI enrichment / "on this day" | EntryService.create/update unconditionally call EnrichmentService.schedule(entry.id, entry.title, entry.body) with no is_encrypted guard, so editing an already-encrypted entry sends its base64 ciphertext to Ollama for embeddings, sentiment, and summary. Separately, the /on-this-day endpoint (ai.py:149,159) does e.body[:500] and first.body[:150] without checking is_encrypted — encrypted entries contribute ciphertext to the reflection prompt and to the snippet returned to the frontend.`
->
-> `HIGH | backend/app/routers/settings.py:210-243 + core/config.py:127 | OLLAMA_BASE_URL is user-settable and SECRET_KEY production guard is bypassable | The unauthenticated PUT /api/v1/settings lets any caller point OLLAMA_BASE_URL at an arbitrary host (settings.py:216,228). Because all AI features proxy journal content there and create new httpx clients against that URL, this is an SSRF + data-exfiltration primitive. Separately, validate_production() (config.py:230) only fires when APP_ENV=="production" AND not is_desktop_sidecar; the default SECRET_KEY "change-me-before-production" is used verbatim to derive the AES-GCM key for ALL cloud-credential encryption (security.py:20-25) whenever the guard doesn't trip, so a misconfigured server silently encrypts OAuth refresh tokens under a public known key.`
->
-> `HIGH | backend/app/services/scheduler_service.py:598-606 | Email-sync interval job lacks max_instances=1, so runs can stack | The recurring email_sync job sets coalesce=True and misfire_grace_time=600 but no max_instances. If one sync takes longer than the interval (default 10 min, and IMAP FETCH of many messages + attachment writes easily can), APScheduler launches a concurrent run. Each opens its own async_session and IMAP connections against the same mailbox; overlapping UID fetches and last_uid updates can duplicate messages or corrupt the per-folder high-water mark. The backup job (line 191) has the same omission.`
->
-> `HIGH | backend/app/routers/google_drive.py:124-126,156-157,163-166 (and box.py:111-116,143; onedrive/dropbox mirror) | OAuth callback error pages reflect exception text into HTML without escaping | _render_error_page does _ERROR_HTML_TEMPLATE.replace("{{DETAIL}}", detail) and detail is built from f"Failed to exchange code: {e}" / f"Database error: {str(e)}". httpx exception messages embed the remote HTTP response body, and provider token endpoints return attacker-influenced error_description in the body. That string is injected raw into HTML served to the browser (word-break:break-all, no html.escape). On loopback this is low-impact, but it is a genuine reflected-XSS sink and any future 0.0.0.0 binding makes it exploitable.`
->
-> `MEDIUM | backend/app/services/email_service.py:107-200 | All IMAP side-effects (flag push, trash/junk move) swallow every exception at debug level | push_flags_background, move_to_trash_background, move_to_junk_background each wrap the whole body in `except Exception: logger.debug(...)`. Failures to propagate read/starred/trash state to the IMAP server are invisible — there is no retry, no surfacing to the user, and no persistent "sync conflict" marker. Over time the local DB and the mailbox silently drift apart with no operational signal.`
->
-> `MEDIUM | backend/app/services/email_service.py:60 + routers/email.py:340 | _TEMP_ATTACHMENTS is an unbounded in-process dict with no GC | Compose attachments are staged in a module-global dict keyed by temp_id and never expired. A client that uploads attachments without sending (or that crashes) leaves file bytes referenced in memory forever; on process restart they're silently lost. There is no size cap, no TTL sweep, and the on-disk temp files (written under MEDIA_DIR) are orphaned the same way.`
->
-> `MEDIUM | backend/app/services/email_service.py:807 (and the comment there) + media deletion paths | "disk files orphaned — GC later" but no GC exists | Deleting an EmailMessage cascades the DB rows but the comment admits raw .eml and attachment files on disk are orphaned. The same pattern appears in media deletion only when it goes through the service; restore/rollback paths (restore.py, storage_service.py) also leave .bak/.tmp directories if interrupted. For a long-lived service this is unbounded disk growth with no reclaim job.`
->
-> `MEDIUM | backend/app/services/email_service.py:620-624 | Synced attachments are written to disk with no size cap | During sync, every attachment payload is written via write_bytes(att.payload) with no check against EMAIL_MAX_ATTACHMENT_SIZE_BYTES. A mailbox with large attachments (or a malicious message) is written to MEDIA_DIR in full during the background sync loop; the 25 MB limit configured in settings is only enforced on the upload-media path, not on inbound mail.`
->
-> `MEDIUM | backend/app/routers/ai.py:202-203,184-185 (and ollama_service.py broadly) | Broad `except Exception` returning fake-success in AI endpoints | /on-this-day wraps its entire body in `except Exception: return OnThisDayResponse(... reflection="Could not load...")` and many Ollama wrappers return empty/None on JSON parse failure (ollama_service.py:467-468). Combined with the memory note that thinking models hang on CPU, there's a real class of "AI silently does nothing" failures that look like successful HTTP 200s to monitoring.`
->
-> `MEDIUM | backend/app/core/database.py:57-68 | get_db() serializes session acquisition on a global lock for no reason | `async with _engine_lock` wraps every single request's session creation, then immediately releases it — the lock is never held for the the session's lifetime. With SQLite's pool_size=1 this turns the entire API into a serial bottleneck at the lock-acquire step for no benefit (the pool itself enforces the single connection). Under any concurrent load this is an avoidable throughput ceiling and a confusing one to diagnose.`
->
-> `MEDIUM | backend/app/services/cloud_sync_service.py:114-138 | LocalFileProvider has a path-traversal sink (upload/download take raw user-influenced paths) | upload(path) does self._base / path with no normalization; path is built from entity_type/entity_id/operation in CloudSyncService.push (line 960) which are partially user-influenced. It's currently only wired for testing/dev, but it's exported in the same module as production providers and one refactor that passes user input through would expose arbitrary file writes under the base dir.`
->
-> `LOW | backend/app/routers/ai.py:333-340 | pull-model regex allows ':' and '/' — relies on create_subprocess_exec for safety | The allowlist `^[a-zA-Z0-9._:/-]+$` is intentionally permissive for model tags like "llama3.2:3b". This is safe ONLY because asyncio.create_subprocess_exec (not shell=True) is used, so the model string is a single argv element. This is correct today but fragile — a future switch to shell invocation or to ollama's HTTP API with string concatenation would create argument injection. Worth a comment pinning the safety to the exec() choice.`
->
-> `LOW | backend/app/services/ollama_service.py:69-85 | Shared httpx client has no connection limits and is only closed via explicit lifespan hook | The module-global _shared_client is created with httpx.AsyncClient() (no max_connections / max_keepalive). If close_shared_client() is skipped (e.g., hard crash, or lifespan not triggered in a test), connections linger. More importantly there are no per-request timeouts on several call sites — combined with the known CPU-thinking-model hang, a wedged Ollama request holds a connection indefinitely.`
->
-> `LOW (process hygiene) | backend/app/services/email_service.py:898 + spam_service.py:233 | Domain-block LIKE patterns are bypassable and over-broad | `from_address.like(f"%@{domain}")` matches user@sub.domain (over-broad) but NOT user@domain (no, it does match) — however it fails on user@Domain (case) since the column isn't lowercased consistently, and a block on "spam.com" also nukes "notspam.com". The contact allowlist LIKE (`Contact.emails_extra.like(f"%{addr}%")`) is a substring match, so a blocked sender whose address is a substring of a contact's extras gets through.`
->
-> ---
->
-> A few claims I checked and rejected as non-issues so the on-call owner doesn't chase them: the email attachment `_sanitize` (email_service.py:77-79) *does* neutralize `../` (it becomes `.._.._`), and the storage_path is server-assembled (`email/{account_id}/attachments/{uuid}_{sanitized}`), so there is no path traversal there; the contact/email/spam `ilike(f"%{x}%")` calls are parameterized via the SQLAlchemy ORM and are not SQL injection; and the "no auth" concern is mitigated for the shipping configurations — both the Tauri sidecar and the web `.deb` launcher (`scripts/build-web-deb.sh:268`) bind uvicorn to `127.0.0.1`, not `0.0.0.0`. The lack of auth is still worth a hardcoded note: if anyone ever runs `uvicorn app.main:app --host 0.0.0.0` directly (or sets it in a container without the launcher), every endpoint — including decrypt-all, settings, and email — is open, and there is no framework-level guard against that misconfiguration.
->
-> **Overall impression:** The codebase is more mature and careful than its "local-first hobby app" framing suggests — the atomic restore/relocate logic, the OAuth state store, the FTS5 drift self-healing, and the migration system are genuinely well-engineered and well-commented. The two areas that would scare me as an on-call owner are (1) the encryption design, which has a real cryptographic weakness (deterministic salt) *and* a correctness bug that indexes ciphertext into search and ships ciphertext to the LLM — these are silent data-quality and privacy failures, not crashes, so they won't page anyone but will erode user trust; and (2) the pervasive "log and continue" pattern in the email/sync/enrichment layers, which means the service can quietly stop syncing mail or stop enriching entries with no health signal beyond DEBUG logs that nobody reads. I'd treat the encryption/FTS interaction as the first thing to fix, and add a monitoring pass over the swallowed-exception sites as the second.
+> This subagent runs on the same underlying model as the pipeline. A sanitized, context-blind
+> pass removes *self-grading bias* and *framing bias* (real, and the new-findings set proves
+> it caught things the structured audit missed) — but it does not remove model blind spots,
+> and in this case it did not fully remove *answer-key contamination* because `AUDIT.md` lives
+> at the repo root. For a genuinely independent signal, the strongest move is pasting the
+> source into a **brand-new session with no `AUDIT.md` present, ideally a different reviewer**.
+> Treat the new-findings list below as high-value leads to verify, not as gospel.
 
 ---
 
-## Honest limit (stated plainly, not buried)
+# Technical Due Diligence — LifeLogr (`/home/em/code/wip/diary`)
 
-This blind-review subagent still runs on the same underlying model as the rest
-of this session. A sanitized, context-blind pass removes **self-grading bias**
-and **framing bias** — both real, and the reason it caught the encryption↔FTS
-ciphertext bug and the Ollama-SSRF that the context-aware Phase-4 audit missed.
-It does **not** remove blind spots the model has regardless of context. The
-strongest independent signal available is to paste a sample of the finished
-code into a **brand-new session with no relation to this one** (fresh terminal,
-fresh conversation, ideally a different reviewer) and ask the same cold-review
-question. Treat this `.pipeline/blind-review.md` as a useful second opinion,
-not a substitute for that.
+**Scope:** FastAPI + async-SQLAlchemy/SQLite backend (~11k LOC services), Vue 3 + TS frontend, Tauri (Rust) shell. Processes untrusted email, web clips, OAuth, and local AI. Single-user loopback app — loopback trust boundary is treated as accepted risk.
+
+A prior `AUDIT.md` exists at the repo root and is genuinely thorough (B1/B2 blockers, H1–H8, M1–M13, L1–L10). I read it first, then independently re-verified the headline items and ran four parallel reviews to find what it missed. Below is my independent verdict. **All NEW findings were verified against source by me, not just relayed.**
+
+---
+
+## Overall verdict
+
+**Would I be comfortable being paged about this at 3am? For the web-deb distribution: yes, with caveats. For the Tauri desktop distribution: no, not until B1 is fixed.**
+
+The codebase is meaningfully above average for a single-maintainer local-first app:
+- SQLite pragmas are correct (WAL, `synchronous=NORMAL`, `busy_timeout=5s`, `foreign_keys=ON`).
+- FTS5 triggers handle encrypt/decrypt transitions idempotently and correctly exclude ciphertext from the index.
+- Crypto is done right where it matters: AES-256-GCM, HKDF-SHA256 key derivation, per-entry random salts, v1→v2 migration path, single-use OAuth state with TTL.
+- Web-clip SSRF hardening is genuinely careful — per-hop re-validation including DNS-rebinding, and it's actually tested (6 tests in `test_notes.py`).
+- Migration idioms are idempotent (`PRAGMA table_info` guards + `IF NOT EXISTS`).
+- CI gates ruff + strict-mypy + pytest + frontend build + e2e on every PR and release tag — stronger than typical.
+
+What would actually page me:
+1. **B1 (Tauri SECRET_KEY)** — every Tauri install encrypts OAuth/IMAP/SMTP/cloud creds with the public string `"change-me-before-production"`. Anyone with the DB file decrypts them all. This is the only true blocker.
+2. **Backup non-atomicity (B2)** + the related restore/orphan/partial-file family (H5, plus new finding N4 below) — on a crash mid-backup the user can end up with a corrupt tarball that looks valid, and on restore day there is no warning.
+3. **Untested inbound critical paths** (H1: IMAP fetch+store loop, cloud `push()`, SMTP send). These are the paths most likely to silently drop mail or lose data to the cloud, and they have zero tests.
+
+The rest is real but manageable: a handful of input-bounds gaps, some non-atomic FS/DB orderings, an XSS hole in `printEmail`, unbounded log growth, and templated-duplicated OAuth code across the 4 cloud routers.
+
+---
+
+## Blockers (must fix before on-call handoff)
+
+### B1 — Tauri sidecar runs with the default public `SECRET_KEY`
+`desktop/src-tauri/src/main.rs:262-272` (verified)
+The launcher exports `DATA_DIR` and `APP_ENV=production` but never `SECRET_KEY`. `config.py:127`'s default `"change-me-before-production"` is used, and `database.py:157-159` deliberately skips `validate_production()` when `DATA_DIR` is set. Result: `security.py:29` derives the AES key from a publicly-known string on every Tauri install. The web-deb launcher (`scripts/build-web-deb.sh:179-204`) does generate one — so `/opt/lifelogr` is fine; only the Tauri build is exposed. **Fix:** mirror the deb script — `secrets.token_hex(32)` → persist to `data_dir/.secret_key` (umask 0600) → export in the `.env()` call.
+
+---
+
+## NEW findings (not in `AUDIT.md`) — verified
+
+### High
+
+**N1 — HTTP response-splitting via inbound email attachment filename.**
+`backend/app/routers/email.py:280-282`. `att.filename` is the unsanitized MIME part filename from inbound mail (stored raw at `email_service.py:671`; only the on-disk path is `_sanitize()`'d at `:666`). It flows directly into `FileResponse(filename=...)` → `Content-Disposition` header. A `Content-Disposition: filename="x\r\nSet-Cookie: ..."` in inbound mail gives the attacker header injection on the loopback API the Tauri shell trusts. One-line fix: `FileResponse(path, filename=_sanitize(att.filename), ...)`.
+
+**N2 — OAuth refresh-token rollback: failed `push()`/`pull()` invalidates the refreshed token.**
+`backend/app/routers/sync.py:84-146`. The `on_refresh` closures (`:89-95, :107-113, :117-123`) mutate `config.credentials_encrypted` and `db.flush()` when the provider refreshes; `db.commit()` only runs at `:135, :146` *after* `push()`/`pull()` returns. If push raises after a refresh, the whole transaction rolls back including the new refresh token. Next attempt uses the now-invalid old token → OAuth flow permanently broken, silent. **Fix:** commit refreshed creds before the push, or catch+commit in a `finally`.
+
+**N3 — `google_sync_service.py:52-56` mid-sync `on_refresh` commits the shared session.**
+`on_refresh` calls `await self.db.commit()` while `CalendarSyncService(self.db,…).sync()` (`:62`) and `TasksSyncService(self.db,…).sync()` (`:68`) are mid-flight on the same session. The commit auto-flushes whatever the in-progress sync has staged. If the sync fails a few rows later, partial writes are already committed — the per-service atomicity the calendar/tasks syncs rely on is silently broken whenever the Google access token refreshes mid-sync. Worse than N2 because CalendarSyncService actively depends on per-service atomicity.
+
+**N4 — No concurrency guard on `/sync/all`, `/email/sync`, `/import`, `/storage-path`.**
+`backend/app/routers/sync.py:150-170`, `backend/app/routers/email.py:140-145`, `backend/app/routers/backup.py:188-265`, `backend/app/routers/settings.py:308-326`. Only the TTS and memorial routers use `asyncio.Lock` (verified by grep). The two sync HTTP entry points can overlap with APScheduler-fired syncs against the same SQLite DB → `database is locked` mid-sync, partial folder/message upserts, duplicate writes. The two engine-mutating endpoints (`/import`, `/storage-path`) call `reinit_engine()`/`init_db()` with no lock — concurrent calls interleave the engine swap and WAL/SHM state → corrupted DB or engine pointing at a stale path. **Fix:** one module-level `asyncio.Lock` around each of these four paths.
+
+### Medium
+
+**N5 — `printEmail()` writes raw email HTML into an unsandboxed window (real XSS path).**
+`frontend/src/components/email/EmailView.vue:493-500`. `window.open('', '_blank')` + `w.document.write(emailDocument(true))`. The new window inherits the opener's origin (`tauri://localhost`) and is NOT sandboxed; any `<script>` in the email body executes with that origin. This breaks the otherwise-consistent `sandbox=""` iframe discipline used at `EmailView.vue:992` and `:1211`. The misleadingly-named `sanitizedHtml` computed (`:449-459`) only resolves `cid:` images, it does not sanitize. **Fix:** DOMPurify the body, or open the iframe's `srcdoc` in the print window instead of `document.write`.
+
+**N6 — Pre-restore DB backup is non-atomic; rollback target can truncate on crash.**
+`backend/app/core/restore.py:194-197`. `shutil.copy2` of a WAL-mode DB captures only the main `.db` (the `_checkpoint_live` at `:190-192` is best-effort). Worse, the copy itself isn't crash-safe — a crash mid-copy leaves a truncated `.pre-restore.bak`. Since this file IS the rollback target if the restore fails, truncating it during its creation means the rollback itself fails. `_atomic_write` exists at `:124` and does tmp+`os.replace` — use it for the backup too.
+
+**N7 — `threading.Lock` held across an `await` blocks the event loop.**
+`backend/app/services/recording_service.py:43,113-122`. `_active_lock = threading.Lock()` is acquired with `with _active_lock:` while `await asyncio.to_thread(...)` runs inside. A threading lock is NOT released when the coroutine suspends, so a second `start_recording`/`stop_recording` hitting the same lock blocks the **entire event loop** until mic open/close returns (worst case: seconds of frozen UI). **Fix:** `asyncio.Lock()`.
+
+**N8 — `fs:allow-write-file` / `fs:allow-read-file` granted with no scope.**
+`desktop/src-tauri/capabilities/default.json:10-11`. In Tauri 2 this means any IPC call from the webview can read/write any file the running user can. The only call sites go through the native dialog, so it's not directly exploitable through the UI — but if any XSS lands in the webview (N5 is one such path; AI/web-clip output is another), the overbroad fs scope turns it into arbitrary file read/write. **Fix:** scope to `{"path": "$HOME/*"}` (or tighter) and add a downloads scope. (Related: the three bare global `shell:allow-execute`/`spawn`/`stdin-write` perms at `:4-6` are unused attack surface — the frontend never calls `shell.spawn()`.)
+
+**N9 — Desktop and server log files grow unbounded (no rotation).**
+`desktop/src-tauri/src/main.rs:152-160` (`lifelogr-desktop.log`) and `scripts/build-web-deb.sh:268-269` (`server.log`, append mode). Combined with `info!("[backend] {}", …)` on every sidecar stdout line at `main.rs:288`, this reaches multi-GB on an active install over months. Operational: disk fills silently.
+
+**N10 — `tasks_sync_service.py:139-141` pagination drops `updatedMin`/`showDeleted`/`showCompleted`.**
+First page sets them (`:125-127`); subsequent pages do `params = {"pageToken": …}` from scratch, omitting all three. Google Tasks incremental sync requires `updatedMin` on every page; without it later pages return the full task set each cycle → re-applies already-processed updates, potentially revives soft-deleted rows, unbounded re-processing on paginating accounts. **Fix:** mutate `params` in place rather than rebuilding.
+
+**N11 — `_TEMP_ATTACHMENTS` dict + on-disk files leak on abandoned compose.**
+`backend/app/services/email_service.py:96, 1182-1214`. `_sweep_temp_attachments` only runs inside `store_temp_attachment`; `_cleanup_temp_attachments` only on the success paths of `send`/`save_draft` (`:1082, :1091`). An abandoned compose with multiple uploads leaks all of them — no scheduler job or startup sweep for `MEDIA_DIR/email/_temp/`. Slow unbounded disk growth on a long-running desktop process.
+
+**N12 — Non-atomic delete: file unlinked before DB commit.**
+`backend/app/services/media_service.py:202-205`, and the same pattern in `note_media_service.py:~192`, `video_service.py:~82`, `entry_service.py:124-133`. `full_path.unlink()` runs before `await self.db.commit()`. If the commit fails (SQLite "database is locked", disk full on `-wal`), the file is gone but the row remains — `get_file_path` then raises `NotFoundError` permanently for a row the user still sees. **Fix:** unlink in a `finally` after a successful commit.
+
+### Low
+
+- **N13** — `planner.py:126-144` `list_events`/`get_agenda` take `from_`/`to` with **no max span**. `from=1970&to=9999` forces RRULE expansion of every recurring event — unbounded CPU + memory on the loopback server. Cap `to - from_` to e.g. 365 days.
+- **N14** — `email.py:185-195` + `contacts.py:99-103` `bulk_delete`/`bulk_delete_messages(ids: list[int])` have no length cap. SQLite's `SQLITE_MAX_VARIABLE_NUMBER` (999 or 32766) throws `OperationalError: too many SQL variables` → unhandled 500.
+- **N15** — `tts.py:330-348, 369-407` `SpeakRequest.text: str` has no `max_length`. Multi-MB body flows through regex-heavy `_clean_markdown` + `_split_for_tts` → one Edge-TTS request per chunk = CPU + memory + API fan-out DoS.
+- **N16** — `tts.py:60-61` module-global `_locks: dict[str, asyncio.Lock]` keyed by cache hash grows unbounded; LRU file eviction deletes `.mp3`s but never removes the corresponding lock entry. Slow memory leak.
+- **N17** — `tts.py:407` and `ai.py:240-267` `asyncio.create_task(...)` fire-and-forget with no strong reference held. Per Python docs the task can be GC'd mid-execution; prewarm/pull silently never finishes. Fix: module `set` + `add_done_callback(discard)`.
+- **N18** — `video_notes.py:48-58` reads whole video into RAM and serves no `Range` support (breaks `<video>` seeking). `media.py:130-146` and `tts.py` comments explicitly call this pattern wrong; this router didn't get the fix.
+- **N19** — `contacts.py:75-81` `export_contacts(ids="a,b,c")`: parsed `id_list=[]` is falsy → silently exports *all* contacts when caller intended a subset. Treat empty parsed list as 400.
+- **N20** — `media.py:44-59` batch upload has no rollback: if upload N fails, files 1..N-1 are persisted on disk and DB; earlier attachments orphaned.
+- **N21** — `search.py:32` + `notes.py:83` + `entries.py:79` three copies of `parsed_tag_ids = [int(t) for t in tag_ids.split(",")]` with no try/except. Malformed `tag_ids=1,abc` → uncaught `ValueError` → 500; unbounded list exceeds SQLite bind limit.
+- **N22** — `spam_service.py:238` matches `Contact.emails_extra` (a JSON list column) with `LIKE '%addr%'` — false positives (`a@b.com` matches `xa@b.comx`) and false negatives depending on JSON spacing. Use `JSON_EACH`.
+- **N23** — `email_service.py:953-967` `block_sender` domain match `LIKE f"%@{domain}"` with unescaped pattern; `_` over-matches. Use `ESCAPE` clause.
+- **N24** — `settings.py:257-276` `httpx.AsyncClient()` GET to `{OLLAMA_BASE_URL}/api/tags` without `follow_redirects=False`; existing SSRF scheme-check (`:216-224`) only validates the stored URL, not post-redirect target. Low impact (GET only) but inconsistent with the SSRF focus elsewhere.
+- **N25** — `google_sync.py:142-148` `disconnect`: if `db.commit()` throws, the function propagates 500 and `SchedulerService.sync_google()` on `:148` never runs → stale recurring job pointing at a deleted account.
+- **N26** — `web_clip_service.py:112-114` `_MAX_BYTES` truncates `resp.text` after httpx already buffered the entire body — a malicious page can force arbitrary RAM buffering before truncation. Low impact (loopback) but worth a streaming/Content-Length guard.
+- **N27** — `ollama_service.py:446-456` `_parse_json_response` `start=min({)` / `end=max(})` heuristic can grab unrelated `{`…`]` and `}`…`]` boundaries. Today falls through to `return None` (safe) but fragile.
+- **N28** — `main.rs:22-50` `check_deps` returns `"all_installed": ollama` — copy-paste bug; the field reports only the Ollama result, not the AND of all three checks. UI correctness in the Settings panel.
+- **N29** — `main.rs:127-140` `reclaim_port` fallback `pkill -f lifelogr-backend` is broader than the web-deb's very specific match (`/opt/lifelogr/backend/.venv/bin/python -m uvicorn app.main:app`); could kill an editor/build script with `lifelogr-backend` in its args. Low (single-instance limits the scenario).
+- **N30** — `build-web-deb.sh:438-444` `prerm` is a no-op (`true`). On `dpkg --remove` while running, the binary is deleted but uvicorn keeps serving from memory holding deleted file handles; once `/opt/lifelogr/bin/lifelogr --stop` is gone there's no clean stop. Replicate `preinst`'s stop logic.
+- **N31** — `entries.py:162` `/export/markdown` writes `entries/{entry.entry_date}.md` per entry; `entry_date` is not unique → same-day entries silently overwrite each other in the zip (data loss on export).
+- **N32** — `email.py:346` `upload_temp_attachment` does `await file.read()` before the `EMAIL_MAX_ATTACHMENT_SIZE_BYTES` check at `:347`. A streaming client can OOM the process before the cap triggers.
+
+---
+
+## Test coverage — verified gaps
+
+CI gates ruff + strict-mypy + full pytest + frontend build + 3 Playwright specs on every PR and release tag. Solid for the category. **No coverage floor** (`ci.yml:36` runs `pytest tests/ -q` with no `--cov`/`--cov-fail-under`), so the untested paths below stay untested silently.
+
+Specific verifications (4 fail, 4 pass):
+
+| Critical path | Test? | Evidence |
+|---|---|---|
+| IMAP fetch+store loop (`email_service.py:469-678`) | **FAIL** | `grep sync_folder\|_store_message tests/` → 0 hits. `test_email.py:3` explicitly skips ("need a real mailbox"). MIME parse, UIDVALIDITY wipe, attachment persist, `.eml` write all unexercised. (AUDIT H1.) |
+| `cloud_sync_service.push()` (upload half) | **FAIL** | `grep "\.push(" tests/` → 0 hits. `test_cloud_sync_pull.py` covers `pull` only. (AUDIT H1.) |
+| OAuth state store (`oauth_state.py:22-43`) | **FAIL** | `grep OAuthStateStore\|oauth_state tests/` → 0 hits. 44 LOC, 4 live providers depend on it, zero tests. |
+| note_media from-path denylist (`note_media_service.py:147-159`) | **FAIL** | `TestNoteMediaFromPath` has only happy-path + 404; the denylist (and AUDIT M1's missing entries) never directly exercised. A regression loosening it passes green. |
+| SMTP send/save_draft | **FAIL** | `test_email.py:3` explicitly skips. (AUDIT H8.) |
+| `security.py` v1→v2 reencrypt + wrong-key | **PASS** | `test_reencrypt_upgrades_v1_to_v2` + service-layer wrong-passphrase→400 tests. |
+| Entry-level per-entry-salt encryption | **PASS** | `test_new_encryption_uses_random_per_entry_salt` asserts salts differ and are ≥16 bytes. |
+| `web_clip_service` SSRF guards | **PASS** | 6 tests incl. redirect-to-internal and DNS-rebinding mock. Best-covered of the eight. |
+| `atomic_restore` end-to-end rollback (`restore.py:219-227`) | **PARTIAL** | Pieces tested (`test_no_partial_on_failure`, `test_rollback_on_copytree_failure`); the full media-fail→roll-DB-back branch is not. (AUDIT H8.) |
+
+---
+
+## Templated / duplicated patterns
+
+- **The 4 cloud OAuth routers (`box.py`, `dropbox.py`, `onedrive.py`, `google_drive.py`) are one AI-templated `oauth_callback` copy-pasted 4×** — ~400 LOC of structurally identical code (state consume → load creds → httpx post → build creds dict → encrypt → upsert BackupConfig → commit → render HTML). Every bug found in one (`tokens["access_token"]` outside try/except → bare 500, raw `str(exc)` in HTML, state-consumed-before-error) is duplicated 2-4×. Two different HTML-success-page styles exist across the four. A shared `oauth_callback_common()` helper would collapse this and stop per-file drift. This is *why* several of the low findings above are 4× bugs.
+- **`encrypt(...)`+`flush()` in `sync.py:92` vs `reencrypt(...)` in `backup_service.py`** — cloud-provider construction triplicated, two paths persist credentials differently. (AUDIT M12.)
+
+---
+
+## Not a finding (explicitly cleared)
+
+- **Email HTML rendering** is well-defended: `<iframe :srcdoc="…" sandbox="">` (empty `sandbox` = strictest possible) at `EmailView.vue:992, :1211`. A prior review flagged "no DOMPurify" — immaterial given the sandbox. The only hole is the print path (N5).
+- **All other `v-html` sites** (7 of them) route through `DOMPurify.sanitize()`; SearchPalette correctly restricts to `ALLOWED_TAGS: ['mark']`. Clean.
+- **Token storage**: no auth tokens stored client-side at all. CSRF N/A given the no-auth model.
+- **CORE SQLite pragmas, FTS5 triggers, migration idempotency, `oauth_state.py`, `archive.py` tar extraction** (`filter="data"` + path-segment guard + resolve-before-contain) — all correct.
+- **`build.sh`** — clean (`set -euo pipefail`, prereq checks, correct target-triple detection).
+- **`memorial.py`** — subprocess uses `create_subprocess_exec` (no shell), `start_new_session=True`, proper SIGTERM→SIGKILL under lock. Clean.
+
+---
+
+## Recommended fix order for on-call handoff
+
+1. **B1** (Tauri SECRET_KEY) — one-time fix, unblocks safe Tauri ship.
+2. **N1** (email header injection) — one-line `_sanitize(att.filename)`.
+3. **N2 + N3** (OAuth refresh rollback) — commit refreshed creds before push/sync.
+4. **N4** (sync/import/storage-path concurrency lock) — one `asyncio.Lock` per path.
+5. **N5** (printEmail XSS) — DOMPurify or srcdoc-in-print-window.
+6. **B2 + N6 + N11 + N12** (atomicity family: backup, restore-backup, temp attachments, media delete) — these are the data-loss-at-3am class.
+7. **Tests for IMAP loop, cloud `push()`, OAuth state store, note_media denylist** (H1 + the 4 FAIL rows above) — the untested paths most likely to silently drop data.
+
+Everything else is real but won't page you at 3am.
+
+**File references** (all absolute): the load-bearing ones are `/home/em/code/wip/diary/desktop/src-tauri/src/main.rs:262-272` (B1), `/home/em/code/wip/diary/backend/app/routers/email.py:280-282` (N1), `/home/em/code/wip/diary/backend/app/routers/sync.py:84-146` (N2), `/home/em/code/wip/diary/backend/app/services/google_sync_service.py:52-56` (N3), `/home/em/code/wip/diary/frontend/src/components/email/EmailView.vue:493-500` (N5), `/home/em/code/wip/diary/backend/app/core/restore.py:194-197` (N6), and `/home/em/code/wip/diary/backend/app/services/recording_service.py:43,113-122` (N7).
