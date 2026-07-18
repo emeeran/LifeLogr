@@ -1,47 +1,67 @@
 # Phase 1 — Redundant File Purge (DRY-RUN PLAN)
 
-Generated for branch `debloat`. **Nothing has been moved yet.** This plan is for
-human review. On `--apply`, each HIGH/MEDIUM row is acted on; LOW rows are
-explicitly left alone and only documented here.
+Generated for branch `cleanup/pipeline-2026-07-18` (off `feature/perf-and-debloat`),
+2026-07-18. **Nothing has been moved yet.** This plan is for human review. On `--apply`,
+each row is acted on via `git mv` to `trash2review/` (nothing is `rm`'d).
 
-Scan method: content-hash dupes over all tracked files; name-pattern sweep
-(`_old|_v[0-9]_copy~|.bak|.orig| copy.|_legacy|_deprecated`); committed
-build/cache artifacts; reference cross-check via grep + Phase-0 inventory.
+Scan method: content-hash (MD5) dupes over all tracked files; name-pattern sweep
+(`_old|_v[0-9]|.bak|.orig| copy |_legacy|_deprecated|~`); committed build/cache artifacts;
+reference cross-check via `git grep` + Phase-0 inventory ref-count heuristic, then
+manual resolution of every zero-ref candidate (tests excluded — they're run, not imported).
 
 ## Headline
 
-The repo is **mostly clean of dead files** — no `*_old.py`, no `*.bak`, no
-`v1`/`v2` siblings, no committed `__pycache__`/`node_modules`. Only one true
-unreferenced duplicate and one set of regenerable build artifacts turned up.
-That is reported as-is, not padded.
+The repo is **mostly clean of dead files** — no `*_old.py`, no `*.bak`, no `v1`/`v2`
+siblings, no committed `__pycache__`/`node_modules`/`.pyc`. The 2026-07-12 run already
+swept the backend; the backend is still clean. This pass surfaces **1 orphan audio
+duplicate** and **4 unreferenced frontend components** that the prior run's heuristic
+missed. Reported as-is, not padded.
 
-## Actionable
+## Actionable (move to `trash2review/` on `--apply`)
 
 | # | path | reason | confidence | inbound-refs | action on --apply |
 |---|------|--------|-----------|-------------|-------------------|
-| 1 | `frontend/src/assets/tariq-memorial.jpg` | exact content duplicate of `tariq-memorial-tribute.jpg`; the **`-tribute` variant is the one imported** (DedicationTab.vue:9, SplashScreen.vue:11). This file is referenced by nothing. | HIGH | 0 | `git mv` → `trash2review/` (sentimental asset — confirm) |
-| 2 | `desktop/src-tauri/gen/schemas/desktop-schema.json` | Tauri-generated build artifact, regenerable, not source | MEDIUM | 0 (consumed at Tauri build time) | `git rm --cached` + add to `.gitignore` |
-| 3 | `desktop/src-tauri/gen/schemas/linux-schema.json` | identical to desktop-schema.json; Tauri-generated | MEDIUM | 0 | `git rm --cached` + `.gitignore` |
-| 4 | `desktop/src-tauri/gen/schemas/acl-manifests.json` | Tauri-generated capability manifest | MEDIUM | 0 | `git rm --cached` + `.gitignore` (**verify desktop build still works** — project ships web-deb, so low blast radius) |
+| 1 | `media/Garden.mp3` | exact content dup of `frontend/public/Garden.mp3` (the one actually referenced: `memorial.py:36`, `App.vue:74`). `media/` root dir contains only this file; referenced nowhere. | HIGH | 0 | `git mv` → `trash2review/media/Garden.mp3` (memorial audio — confirm) |
+| 2 | `frontend/src/components/common/BaseModal.vue` | 0 occurrences anywhere in `frontend/src`; no global registration (`main.ts` registers only Pinia + router), no auto-import plugin. Looks like a reusable-kit component never wired up. | HIGH (confirm intent) | 0 | `git mv` → `trash2review/` |
+| 3 | `frontend/src/components/common/EditorButton.vue` | 0 occurrences anywhere. Same as above. | HIGH (confirm intent) | 0 | `git mv` → `trash2review/` |
+| 4 | `frontend/src/components/common/StateView.vue` | only self-references (its own doc-comment examples); never actually used. | HIGH (confirm intent) | 0 | `git mv` → `trash2review/` |
+| 5 | `frontend/src/components/notes/NoteListItem.vue` | 0 occurrences anywhere. | HIGH (confirm intent) | 0 | `git mv` → `trash2review/` |
 
-**Caveat on #2–4:** the pipeline allows untracking regenerable build artifacts
-instead of `trash2review`. Tauri *can* regenerate these on `tauri build`/`tauri
-icon`. If you actively build the desktop app on a machine without regenerating,
-untracking is mildly disruptive — hence MEDIUM, not HIGH. Recommend confirming
-a desktop build still green-lights before applying.
+> Note on #2–5: these read as a half-wired "common components" kit. They are genuinely
+> unreferenced today, so the pipeline defaults to staging them — but if they're meant as
+> an intentional library for upcoming work, keep them. `--apply` only acts once you confirm.
+
+## LOW (flagged, not moved)
+
+| path | note |
+|------|------|
+| `desktop/src-tauri/gen/schemas/capabilities.json` | Tauri-generated; its siblings (`desktop-schema.json`, `linux-schema.json`, `acl-manifests.json`) were already untracked + `.gitignore`'d by the 2026-07-12 run. This one remains tracked. Consider `git rm --cached` + ignore. Left alone here (may be load-bearing for the Tauri build config) — decision deferred to a desktop-build verification. |
+| root `media/` dir | After #1 is moved, this dir is empty (git drops it). If `media/` is a runtime data dir, add `media/` to `.gitignore` (only `backend/media/` is ignored today). |
+
+## Already staged by the 2026-07-12 run (pending YOUR keep/delete — not re-moved)
+
+These originals are confirmed absent from the live tree; they await your review, not
+another pipeline action:
+
+```
+trash2review/frontend/src/stores/analytics.ts
+trash2review/frontend/src/assets/tariq-memorial.jpg          (dup of live .../tariq-memorial-tribute.jpg)
+trash2review/frontend/src/composables/useAsyncAction.ts
+trash2review/frontend/src/components/search/SearchView.vue
+trash2review/frontend/src/components/analytics/AnalyticsView.vue
+```
 
 ## Considered and explicitly KEPT (do not move)
 
-| path | why kept |
-|------|----------|
-| `frontend/public/logo.png` vs `assets/lifelogr-logo.png` | exact dupes by hash, **but both referenced** — `/logo.png` in AboutTab/Sidebar; `assets/lifelogr-logo.png` served by backend main.py:347 + packaged by build-web-deb.sh. Different roles. |
-| `desktop/src-tauri/icons/ios/AppIcon-*@*-1.png` | exact dupes of the non-`-1` siblings, but iOS asset catalogs reference them via `Contents.json`; removing risks the iOS icon set. Secondary platform (web-deb is primary). |
-| `backend/app/**/__init__.py` (empty) | Python package markers, not redundancy. |
-| `backend/scripts/export_conv.py` | no importer (grep), but it's a standalone CLI script — entry points aren't expected to be imported. Flag for human: still wanted? |
-| `backend/app/routers/ai.py`, `schemas/ai.py` | flagged as zero-ref by the heuristic only because the token `ai` is <3 chars; actually registered in main.py:248 (`include_router(ai_router)`). Live. |
-| all `tests/**` & `docs/**` | zero inbound refs expected — tests are run not imported; docs are standalone. Not orphans. |
+| path(s) | why kept |
+|---------|----------|
+| 8× empty `__init__.py` (+ empty `.pipeline/baseline-frontend-typecheck.txt`) | Python package markers (the `.txt` is a pipeline artifact — empty means typecheck passed). Not redundancy. |
+| `assets/lifelogr-logo.png` vs `frontend/public/logo.png` | exact dupes by hash, **both referenced in distinct roles**: `assets/lifelogr-logo.png` by `backend/app/main.py` + `scripts/build-web-deb.sh`; `public/logo.png` by `Sidebar.vue` + `AboutTab.vue`. |
+| `desktop/src-tauri/icons/*` (incl. iOS `AppIcon-*-1.png`) | Tauri/iOS icon sets; asset catalogs reference each variant. Regenerable, platform-required. |
+| `frontend/public/Garden.mp3` | the **referenced** copy (the orphan `media/Garden.mp3` is the one moved). |
 
 ## After --apply
 
-Re-run `uv run pytest tests/ -q` + `npm run build`. If anything breaks, the
-moved file is restored immediately and logged here as a false positive.
+Re-run `uv run pytest tests/ -q` (backend) + `npm run build` (frontend, catches dead
+component imports). If anything breaks, the moved file is restored immediately and logged
+here as a false positive.
