@@ -1085,15 +1085,13 @@ class EmailComposeService:
     async def save_draft(self, data: EmailCompose) -> SendResult:
         account = await EmailAccountService(self.db).get(data.account_id)
         await self._load_reply_original(data.in_reply_to_message_id)
-        msg = self._build_message(account, data, as_draft=True)
+        msg = self._build_message(account, data)
         raw = msg.as_bytes()
         await self._append_to_special(account, "drafts", "\\Draft", raw)
         self._cleanup_temp_attachments(data.attachment_ids)
         return {"success": True, "sent_message_id": None, "error": None}
 
-    def _build_message(
-        self, account: EmailAccount, data: EmailCompose, as_draft: bool = False
-    ) -> MIMEMessage:
+    def _build_message(self, account: EmailAccount, data: EmailCompose) -> MIMEMessage:
         from email.message import EmailMessage as MimeMessage
         from email.utils import formatdate, make_msgid
 
