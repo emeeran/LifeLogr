@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -443,8 +443,10 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
 
     Entries are considered duplicates if they share the same entry_date and
     normalized body (whitespace-collapsed, case-insensitive). For each group,
-    the oldest entry is kept and the rest are soft-deleted.
+    the oldest entry is kept and the rest are soft-deleted in a single UPDATE.
     """
+    from datetime import datetime, timezone
+
     from sqlalchemy import text
 
     # Find duplicate groups: same date + same normalized body, more than 1 entry
@@ -464,22 +466,21 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
     if not rows:
         return {"groups_found": 0, "duplicates_removed": 0}
 
-    total_removed = 0
+    # Keep the oldest (lowest id) in each group; soft-delete the rest in ONE
+    # update rather than one UPDATE per duplicate id. The fts_entry_soft_del
+    # trigger still fires per affected row, keeping the FTS index consistent.
+    ids_to_delete: list[int] = []
     for row in rows:
         id_list = [int(x) for x in row[2].split(",")]
-        # Keep the first (oldest) id, delete the rest
-        ids_to_delete = id_list[1:]
-        for eid in ids_to_delete:
-            from datetime import datetime, timezone
+        ids_to_delete.extend(id_list[1:])
 
-            await db.execute(
-                text("UPDATE entries SET is_deleted = 1, deleted_at = :now WHERE id = :id"),
-                {"now": datetime.now(timezone.utc), "id": eid},
-            )
-            total_removed += 1
-
+    await db.execute(
+        update(Entry)
+        .where(Entry.id.in_(ids_to_delete))
+        .values(is_deleted=True, deleted_at=datetime.now(timezone.utc))
+    )
     await db.commit()
-    return {"groups_found": len(rows), "duplicates_removed": total_removed}
+    return {"groups_found": len(rows), "duplicates_removed": len(ids_to_delete)}
 
 
 @router.get("/{entry_id}", response_model=EntryResponse)

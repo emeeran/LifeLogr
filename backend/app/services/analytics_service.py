@@ -36,51 +36,48 @@ class AnalyticsService:
         self.db = db
 
     async def overview(self) -> OverviewResponse:
-        """High-level journal statistics."""
-        base = select(Entry).where(Entry.is_deleted == False)  # noqa: E712
+        """High-level journal statistics.
 
-        total = (
-            await self.db.execute(select(func.count()).select_from(base.subquery()))
-        ).scalar_one()
-
-        words_result = (
+        All scalar aggregates run as subqueries of a single SELECT (one query
+        instead of five), then one more query fetches the per-day dates needed
+        for the streak calculation.
+        """
+        live = Entry.is_deleted == False  # noqa: E712
+        agg = (
             await self.db.execute(
-                select(func.sum(_word_count_expr())).where(Entry.is_deleted == False)  # noqa: E712
-            )
-        ).scalar()
-        total_words = int(words_result or 0)
-
-        total_media = (await self.db.execute(select(func.count()).select_from(Media))).scalar_one()
-
-        total_recordings = (
-            await self.db.execute(select(func.count()).select_from(VoiceRecording))
-        ).scalar_one()
-
-        date_range = (
-            await self.db.execute(
-                select(func.min(Entry.entry_date), func.max(Entry.entry_date)).where(
-                    Entry.is_deleted.is_(False)
+                select(
+                    select(func.count())
+                    .select_from(Entry)
+                    .where(live)
+                    .scalar_subquery()
+                    .label("total_entries"),
+                    select(func.coalesce(func.sum(_word_count_expr()), 0))
+                    .where(live)
+                    .scalar_subquery()
+                    .label("total_words"),
+                    select(func.min(Entry.entry_date)).where(live).scalar_subquery().label("start"),
+                    select(func.max(Entry.entry_date)).where(live).scalar_subquery().label("end"),
+                    select(func.count()).select_from(Media).scalar_subquery().label("total_media"),
+                    select(func.count())
+                    .select_from(VoiceRecording)
+                    .scalar_subquery()
+                    .label("total_recordings"),
                 )
             )
         ).one()
-        start, end = date_range
 
-        # Calculate streaks
         dates_result = await self.db.execute(
-            select(Entry.entry_date)
-            .where(Entry.is_deleted == False)  # noqa: E712
-            .order_by(Entry.entry_date)
+            select(Entry.entry_date).where(live).order_by(Entry.entry_date)
         )
-        all_dates = [row[0] for row in dates_result]
-        longest, current = self._calc_streaks(all_dates)
+        longest, current = self._calc_streaks([row[0] for row in dates_result])
 
         return OverviewResponse(
-            total_entries=total,
-            total_words=total_words,
-            total_media=total_media,
-            total_recordings=total_recordings,
-            date_range_start=start,
-            date_range_end=end,
+            total_entries=int(agg.total_entries or 0),
+            total_words=int(agg.total_words or 0),
+            total_media=int(agg.total_media or 0),
+            total_recordings=int(agg.total_recordings or 0),
+            date_range_start=agg.start,
+            date_range_end=agg.end,
             longest_streak=longest,
             current_streak=current,
         )
@@ -184,32 +181,32 @@ class AnalyticsService:
         return HeatmapResponse(year=year, days=days)
 
     async def media_stats(self) -> MediaStatsResponse:
-        """Media usage statistics."""
-        images = (
+        """Media usage statistics — four counts in a single query."""
+        row = (
             await self.db.execute(
-                select(func.count()).select_from(Media).where(Media.media_type == "image")
+                select(
+                    select(func.count())
+                    .select_from(Media)
+                    .where(Media.media_type == "image")
+                    .scalar_subquery()
+                    .label("images"),
+                    select(func.count())
+                    .select_from(Media)
+                    .where(Media.media_type == "video")
+                    .scalar_subquery()
+                    .label("videos"),
+                    select(func.count()).select_from(VoiceRecording).scalar_subquery().label("recordings"),
+                    select(func.coalesce(func.sum(Media.file_size), 0))
+                    .scalar_subquery()
+                    .label("total_size"),
+                )
             )
-        ).scalar_one()
-
-        videos = (
-            await self.db.execute(
-                select(func.count()).select_from(Media).where(Media.media_type == "video")
-            )
-        ).scalar_one()
-
-        recordings = (
-            await self.db.execute(select(func.count()).select_from(VoiceRecording))
-        ).scalar_one()
-
-        total_size = (
-            await self.db.execute(select(func.coalesce(func.sum(Media.file_size), 0)))
-        ).scalar_one()
-
+        ).one()
         return MediaStatsResponse(
-            total_images=images,
-            total_videos=videos,
-            total_recordings=recordings,
-            total_size_bytes=total_size,
+            total_images=int(row.images or 0),
+            total_videos=int(row.videos or 0),
+            total_recordings=int(row.recordings or 0),
+            total_size_bytes=int(row.total_size or 0),
         )
 
     async def sentiment_timeline(self, year: int, month: int) -> list[dict[str, object]]:

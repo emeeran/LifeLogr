@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -560,6 +560,22 @@ class ContactService:
         contact = await self._get(contact_id)
         contact.is_deleted = True
         contact.deleted_at = datetime.now(timezone.utc)
+        await self.db.commit()
+
+    async def delete_many(self, contact_ids: list[int]) -> None:
+        """Soft-delete many contacts in a single UPDATE.
+
+        Unlike calling ``delete`` per id (N queries + N commits, and a partial
+        commit if any id is missing), this is one statement + one commit and
+        is idempotent: missing or already-deleted ids are silent no-ops.
+        """
+        if not contact_ids:
+            return
+        await self.db.execute(
+            update(Contact)
+            .where(Contact.id.in_(contact_ids), Contact.is_deleted == False)  # noqa: E712
+            .values(is_deleted=True, deleted_at=datetime.now(timezone.utc))
+        )
         await self.db.commit()
 
     async def restore(self, contact_id: int) -> Contact:

@@ -3,12 +3,16 @@ import { useUiStore } from '../../stores/ui'
 import { mediaApi } from '../../api/media'
 import Sidebar from './Sidebar.vue'
 import PanelSplitter from './PanelSplitter.vue'
-import EntryDetail from '../entry/EntryDetail.vue'
-import EntryEditor from '../entry/EntryEditor.vue'
+// On-demand panels are async so they (and their deps — marked, dompurify, the
+// 1100-line editor) stay out of the initial bundle. In Tauri these load from
+// local disk, so the deferred fetch is near-instant; the win is skipping their
+// parse/compile on a cold Dashboard start where they're never rendered.
+const EntryDetail = defineAsyncComponent(() => import('../entry/EntryDetail.vue'))
+const EntryEditor = defineAsyncComponent(() => import('../entry/EntryEditor.vue'))
 const AiDrawerPanel = defineAsyncComponent(() => import('../entry/AiDrawerPanel.vue'))
 const AttachmentsPanel = defineAsyncComponent(() => import('../entry/AttachmentsPanel.vue'))
-import SearchPalette from '../search/SearchPalette.vue'
-import ScribblePad from '../scribble/ScribblePad.vue'
+const SearchPalette = defineAsyncComponent(() => import('../search/SearchPalette.vue'))
+const ScribblePad = defineAsyncComponent(() => import('../scribble/ScribblePad.vue'))
 const WhatsNewDialog = defineAsyncComponent(() => import('../settings/dialogs/WhatsNewDialog.vue'))
 import { useEntriesStore } from '../../stores/entries'
 import { useUpdateChecker } from '../../composables/useUpdateChecker'

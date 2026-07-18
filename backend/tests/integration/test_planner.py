@@ -133,3 +133,44 @@ class TestPlannerSchedule:
             params={"from": "2026-08-01T00:00:00", "to": "2026-08-01T23:59:59"},
         )
         assert not any(i["title"] == "Lunch" for i in resp.json()["items"])
+
+
+class TestPlannerAgendaFiltering:
+    """Guards the two-query agenda split in PlannerService.get_agenda."""
+
+    async def test_out_of_window_one_off_excluded(self, client):
+        # A one-off event far outside the queried window must not be loaded.
+        await client.post(
+            "/api/v1/planner/events",
+            json={
+                "title": "Ancient one-off",
+                "start_at": "2020-01-01T10:00:00",
+                "end_at": "2020-01-01T11:00:00",
+            },
+        )
+        resp = await client.get(
+            "/api/v1/planner/agenda",
+            params={"from": "2026-07-01T00:00:00", "to": "2026-07-31T23:59:59"},
+        )
+        assert not any(i["title"] == "Ancient one-off" for i in resp.json()["items"])
+
+    async def test_recurring_with_old_start_expands_into_window(self, client):
+        # A weekly event started years ago must still produce an occurrence in
+        # a future window — guards that recurring events are loaded regardless
+        # of their own start_at (not DB-filtered out with the one-offs).
+        await client.post(
+            "/api/v1/planner/events",
+            json={
+                "title": "Legacy weekly",
+                "start_at": "2020-07-13T09:00:00",
+                "end_at": "2020-07-13T09:30:00",
+                "rrule": "FREQ=WEEKLY;BYDAY=MO",
+            },
+        )
+        resp = await client.get(
+            "/api/v1/planner/agenda",
+            params={"from": "2026-07-13T00:00:00", "to": "2026-07-19T23:59:59"},
+        )
+        items = [i for i in resp.json()["items"] if i["title"] == "Legacy weekly"]
+        assert len(items) == 1  # exactly one Monday in that week
+        assert items[0]["is_recurring"] is True

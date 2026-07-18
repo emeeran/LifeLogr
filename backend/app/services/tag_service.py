@@ -41,6 +41,34 @@ class TagService:
         )
         return list(result.scalars().all())
 
+    async def list_all_ordered(self) -> list[Tag]:
+        """All tags ordered by name (single query).
+
+        The tag-list endpoints build the hierarchy in memory from this one
+        list rather than issuing one children-query per tag.
+        """
+        result = await self.db.execute(select(Tag).order_by(Tag.name))
+        return list(result.scalars().all())
+
+    async def bulk_entry_counts(self) -> dict[int, int]:
+        """Map every tag_id → count of non-deleted entries (one grouped query).
+
+        Replaces the per-tag ``get_entry_count`` loop in the tag-list
+        endpoints, collapsing ``1 + 2N`` queries to ``2`` regardless of how
+        many tags exist.
+        """
+        from app.models.entry import Entry
+
+        rows = (
+            await self.db.execute(
+                select(EntryTag.tag_id, func.count())
+                .join(Entry, Entry.id == EntryTag.entry_id)
+                .where(Entry.is_deleted == False)  # noqa: E712
+                .group_by(EntryTag.tag_id)
+            )
+        ).all()
+        return {tag_id: cnt for tag_id, cnt in rows}
+
     async def rename(self, tag_id: int, data: TagUpdate) -> Tag:
         """Rename a tag; reject duplicate names."""
         tag = await self.get(tag_id)

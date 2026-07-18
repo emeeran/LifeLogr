@@ -10,6 +10,29 @@ async def _create_entry(client: AsyncClient, date="2026-05-08", body="Hello worl
     return r.json()
 
 
+class TestEntryDeduplicate:
+    async def test_dedup_keeps_oldest_soft_deletes_rest(self, client: AsyncClient):
+        await _create_entry(client, date="2026-05-08", body="dup")
+        await _create_entry(client, date="2026-05-08", body="dup")
+        await _create_entry(client, date="2026-05-09", body="unique")
+
+        resp = await client.post("/api/v1/entries/deduplicate")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["groups_found"] == 1
+        assert data["duplicates_removed"] == 1
+
+        # One of the duplicates + the unique entry remain (FTS stays consistent).
+        listing = (await client.get("/api/v1/entries")).json()
+        assert listing["total"] == 2
+
+    async def test_dedup_no_duplicates_is_noop(self, client: AsyncClient):
+        await _create_entry(client, date="2026-05-08", body="a")
+        await _create_entry(client, date="2026-05-09", body="b")
+        resp = await client.post("/api/v1/entries/deduplicate")
+        assert resp.json() == {"groups_found": 0, "duplicates_removed": 0}
+
+
 class TestEntryCreate:
     async def test_create_success(self, client: AsyncClient):
         entry = await _create_entry(client)
