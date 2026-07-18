@@ -1,142 +1,79 @@
 # Phase 2 — Debloat & Refactor (DRY-RUN PLAN)
 
-Generated for branch `debloat`. **No code has been changed.** This is the
-human-review plan; `--apply` executes a chosen tier unit-by-unit, re-running
-tests after each.
+Generated for branch `cleanup/pipeline-2026-07-18`, 2026-07-18. **No code changed yet.**
+Each row has a before/after rationale; safe items act on `--apply`, behavior-risk items
+are flagged for `AUDIT.md` (not refactored blindly). All findings were verified by the main
+thread (`git grep`) before inclusion — false positives from the scanning agents are listed
+under "Rejected."
 
-Source: 4 parallel read-only subagent scans (backend services/models, backend
-routers/core/schemas, frontend stores/api/composables, frontend components),
-~80 raw findings, de-duplicated and with subagent false-positives removed
-(e.g. `SyncProvider` is *not* single-impl — 6 providers; entry/note
-`_apply_filters` are *not* duplicates — different fields/strategies; the
-recordings.py empty-FormData is a load-bearing WebKit2GTK workaround).
+Scan method: 3 parallel read-only subagents (backend services+routers; backend
+core/schemas/models/tests; frontend src), each told the bar is HIGH (repo already debloated
+2026-07-12 and 2026-07-18) and to mark behavior-change risk explicitly. Main thread verified
+every load-bearing claim.
 
-Guiding constraint applied throughout: **boring over clever; remove code
-rather than add abstraction.** Anything that changes observable behavior is
-kicked to Tier C (deferred to the Phase 4 audit), not applied here.
+## Headline
+
+The backend **core / schemas / models / tests are clean** — the scanning agent's 20 "model
+inheritance" hits were fabricated and its remaining flags were verified as intentional
+boundary handling (FTS5/init degrade-gracefully blocks, test teardown). Nothing actionable
+there. Real bloat is concentrated in two places: **frontend dead response-types + the
+`errMsg` one-liner duplicated 18×**, and **a few backend deduplication wins**. Plus one
+**latent backend inconsistency** (cloud-provider construction drift) that is a bug
+masquerading as duplication → audit, not blind merge.
 
 ---
 
-## TIER A — Dead-code removal (pure deletions, behavior-change-risk: no)
-
-Recommended for `--apply`. Each is a deletion of something verified unreferenced.
-
-### Backend
-- `backend/app/schemas/ai.py` — delete unused classes: `SentimentData`,
-  `EntryAnalysisResponse`, `SimilarEntry`, `SimilarEntriesResponse`,
-  `DigestResponse` (router imports none).
-- `backend/app/schemas/search.py:41` — delete `SearchFilter` (search router
-  uses individual `Query` params).
-- `backend/app/schemas/media.py:8` — delete `MediaCreate` (upload uses `Form`).
-- `backend/app/schemas/encryption.py:40` — delete `EntryDecryptedResponse`.
-- `backend/app/routers/entries.py:811` — drop redundant inner `import re`
-  (already imported at module top).
-- `backend/app/routers/ai.py` — remove the unused `db: AsyncSession =
-  Depends(get_db)` param from the 12 stateless AI endpoints (grammar_check,
-  spell_check, rewrite, status, continue_writing, expand, change_tone,
-  analyze, define, change_voice, rewrite_for_clarity, run_generic_tool).
-  These never touch the session — currently opens/closes a DB connection per
-  AI call for nothing.
+## SAFE to refactor on `--apply` (behavior-change risk: none / low)
 
 ### Frontend
-- `frontend/src/composables/useAsyncAction.ts` — delete (zero callers).
-  *(Stores hand-roll try/catch; see Tier B-note on why we do NOT adopt it.)*
-- `frontend/src/stores/entries.ts` — drop `clearError` (no caller).
-- `frontend/src/stores/notes.ts` — drop `clearError` and `restoreNote` (no
-  caller, no restore UI).
-- `frontend/src/stores/email.ts` — drop `resetSelection` (no caller; only
-  `clearSelection` is used) and the unread `loadingFolders` ref (never read).
-- `frontend/src/stores/tags.ts:36` — drop the `fetchAll` alias (all callers
-  use `fetchTree`).
-- `frontend/src/components/settings/SettingsView.vue:307` — delete the stale
-  `"Sync queue"` search-index entry (panel removed in fe958e4; search now
-  highlights nothing).
-- Trivial single-expression wrappers to inline (low value, optional):
-  `ContactsView.photoFor` (wraps a template literal), `AppShell.showEditor`
-  (one-field passthrough). Leave named event-handler wrappers (selectNote,
-  onCreated, onClickMessage) — they aid template readability.
+
+| # | location | what | rationale | risk |
+|---|----------|------|-----------|------|
+| F1 | `frontend/src/types/index.ts` (~11 types) | delete dead response types | `GrammarCheckResponse`, `SpellCheckResponse`, `ContinueWritingResponse`, `ChangeToneResponse`, `AnalyzeTextResponse`, `DefineTextResponse`, `VoiceChangeResponse`, `RewriteForClarityResponse`, `VideoNoteResponse`, `SyncQueueItem`, `BlockSenderResult` — all 0 external refs (5 spot-verified). Likely remnants of AI features that ship other response shapes. | none |
+| F2 | `frontend/src/**` (16 files, 18 occurrences) | extract `errMsg(e: unknown): string` → `frontend/src/utils/error.ts`; import everywhere | `e instanceof Error ? e.message : String(e)` re-derived 18× (EmailView, EntryEditor, NoteEditor, 6 settings panels/tabs, 3 composables, tts store). The classic AI-tell. | none |
+| F3 | `frontend/src/composables/useEditorHistory.ts:58-60` | drop dead `const el = textarea.value` + `void el` | `el` is assigned, never read; `void el` is an eslint-appeasement no-op. | none |
+| F4 | `frontend/src/composables/useAiTools.ts:7` | remove `export { AI_TONE_OPTIONS } from './aiToolRegistry'` | re-export has no external consumer (only used inside `aiToolRegistry.ts`). | none |
+| F5 | `frontend/src/components/settings/tabs/FeaturesTab.vue:54` | `import { isTauri } from '../../../api/client'` instead of re-deriving | `const isTauri = !!(window as any).__TAURI_INTERNALS__` duplicates `api/client.ts:3` (used correctly by 4 other files). | none |
+| F6 | 4 files: `DashboardView.vue:215`, `EncryptionBadge.vue:48`, `AppShell.vue:110`, `BackupTab.vue:380` | `catch (e: any)` → `catch (e: unknown)` + `e instanceof Error` | rest of codebase standardised on `unknown`; these are stragglers. | none |
+| F7 | `frontend/src/components/settings/tabs/BackupTab.vue:408` | static import of `request` instead of `await import("../../../api/client")` | unnecessary dynamic import; module already in bundle via siblings. | none |
+| F8 | `frontend/src/components/common/EmojiPicker.vue:224-228` | implement emoji-name search OR remove the non-functional search input + `filterEmojis` | the search box is decorative — `filterEmojis()` returns `emojis` unchanged when there's a query (comment admits it). Dead branch. | low |
+
+> `frontend/src/components/common/EditorButton.vue` and `StateView.vue` are dead **files** —
+> handled by Phase 1 purge (move to `trash2review`), not here.
+
+### Backend
+
+| # | location | what | rationale | risk |
+|---|----------|------|-----------|------|
+| B1 | `calendar_sync_service.py:39-101` + `tasks_sync_service.py:35-72` | extract `_mark_synced`, `_local_tz`, `_gdt_to_local`/`_local_to_gdt` → `app/services/google_sync_utils.py` | bodies are byte-identical; the tasks docstring even says "See CalendarSyncService._mark_synced for rationale." | none |
+| B2 | `ollama_service.py` (`_parse_grammar_response` ~:461 + `_parse_json_response`) | extract `_extract_json(raw) -> str`; call from both | "strip to outer braces" slicing re-derived in the sibling parser. | none |
+| B3 | `routers/dropbox.py`, `onedrive.py`, `google_drive.py`, `box.py` | one `app/routers/_oauth_result_page(title, message, success)` helper for the OAuth success/failure HTML | each router hardcodes its own inline-CSS HTML page (~70 lines in google_drive alone), differing only in copy/branding. | low (verify each page's exact copy preserved) |
 
 ---
 
-## TIER B — Safe dedup extractions (behavior-change-risk: no)
+## BEHAVIOR-RISK → flag in `AUDIT.md`, do NOT blindly refactor
 
-### Recommended (local, high-value, low-churn)
-- `backend/app/services/spam_service.py` — extract
-  `_blocklist_conditions(addr, domain)`; the 5-line addr/domain OR-list is
-  rebuilt identically in `is_blocked`, `block_action`, `remove_rules_for`.
-- `backend/app/services/analytics_service.py` — extract `_word_count(body)`
-  for the `func.length - func.length(replace(...))` fragment used at
-  lines 43/117/120/123/126.
-- `backend/app/routers/settings.py` — promote the AI field↔attr mapping
-  (9 keys) to one module constant used by `_persist_settings`,
-  `load_persisted_settings`, `update_app_settings` (currently written 3×).
-- `backend/app/services/export_service.py:198` — replace the hand-rolled
-  HTML entity decode with stdlib `html.unescape`.
-- ~~`frontend/src/utils/error.ts` (new, ~3 lines) — `errMsg(e)` used 11× across
-  composables/components; adopt it.~~ **Deferred:** `errMsg` is a *one-line*
-  helper (`e instanceof Error ? e.message : String(e)`) duplicated 11×.
-  Consolidating means adding an import to 11 files for a trivial function;
-  churn/typo risk exceeds the benefit. Left local; flagged here for a future
-  pass if the duplication count grows.
-
-### Optional (larger / cross-cutting — propose separately, human pick)
-- `useToast` composable — the toast ref+timer+show pattern is copy-pasted
-  across ≥6 components. Real consolidation, but adds a composable.
-- `frontend/src/utils/format.ts` — date/avatar helpers (formatTime,
-  formatFullDate, initialsOf, dateBucket) reimplemented per-component in
-  EmailView/Dashboard/Contacts. Variants differ slightly; needs care.
-- `downloadBlob` util — verbatim 8-line blob-download in contacts.ts + email.ts.
-- `backend routers/sync.py` — three near-identical `on_refresh` closures →
-  one helper.
-- OAuth routers — `_result_page` (onedrive/dropbox) and `_render_error_page`
-  (google_drive/box) duplicated. **Auth-adjacent → require review before
-  touch** (flagged in AUDIT, not auto-applied).
-- entry/note tag-diff + FTS-search blocks duplicated across entry_service and
-  note_service — cohesive but crosses services; a shared mixin is a real
-  refactor. Defer unless explicitly approved.
-- `encryption_service._get_entry/_get_note` → generic `_get(model, id)`.
-
-### Explicitly NOT doing (boring > clever)
-- Not adopting `useAsyncAction` across the 9 stores. Each store's
-  loading/try/catch/error block is short, local, and carries a per-store error
-  message; a generic wrapper would obscure that. The duplication is accepted.
-- Not merging `MediaSizeError` into `ValidationError` — both map to 400 but
-  they carry distinct domain meaning; keep.
+| # | location | what | why it's risky |
+|---|----------|------|----------------|
+| R1 | `backup_service.py` (`run_backup` :137-252, `_cloud_provider_for` :278-328) vs `routers/sync.py:86-123` (`_get_provider`) | cloud-provider + token-refresh callback constructed in 3 places; `_cloud_provider_for` was *meant* to centralize it (docstring :282) but `run_backup` and `sync._get_provider` don't use it | **`routers/sync.py:92` diverged**: it calls `encrypt(...)` + `await db.flush()` and omits the `reencrypt(...)` wrapper `backup_service` uses — the two paths persist credentials differently. Unifying is correct but must deliberately pick which behavior wins. **Latent bug masquerading as duplication.** |
+| R2 | `frontend/src/components/entry/EntryEditor.vue:343-347` | `onUnmounted` calls `window.removeEventListener("click", () => {...})` with a **fresh** arrow — can never match the listener registered at :320 | real listener (AI-dismiss + decrypt-on-click) is never removed → leaks across unmount/remount. Fix = hoist handler to a named const; changes listener lifecycle, needs a remount smoke-test. |
 
 ---
 
-## TIER C — Over-broad error handling (behavior-change-risk: yes → AUDIT, not applied here)
+## Rejected (verified false positives)
 
-Narrowing these changes which errors propagate (observable behavior), so per
-the pipeline rule they are **flagged for the Phase 4 audit, not refactored in
-Phase 2.** Listed for record; AUDIT will prioritize.
-
-Backend bare `except Exception` (highest bug-hiding risk):
-- `email_service.py:791` (bulk_delete masks data loss), `:959` (send catches
-  auth/network/SMTP together), `:1043` (_append_to_special hides append+sync
-  failures), `:404` (sync_folder per-folder silent), `:303` (test_connection)
-- `backup_service.py:112` (WAL checkpoint), `:260` (whole backup run)
-- `cloud_sync_service.py:448` (list_files), `:727` (tarball create)
-- `importers/dayone.py:23` (JSON parse), `media_service.py:157` (image
-  compression), `storage_service.py:210` (engine rollback), `search_service.py:117`
-  (FTS fallback), `routers/ai.py:202` (on_this_day), `routers/settings.py:272`
-  (list_ollama_models), `main.py` lifespan blocks.
-
-Frontend `catch {}` silent swallows:
-- `api/client.ts:19` (waitForBackend), `stores/email.ts:161/173`
-  (refreshCounts/refreshSpamCount), `composables/useAutoSave.ts:88`,
-  `useRecordings.ts:74/199/209`, `useUpdateChecker.ts:131`,
-  `NoteEditor.vue:100/113/611` (doSave/createTag), `:490` (onPasteTauri),
-  `NotesView.vue:82` (loadTags blanks list), `EmailView.vue:370` (bulk spam).
+| claim | reality |
+|-------|---------|
+| `backend/app/routers/ai.py:78` `embed_available` dead | **returned** at `ai.py:87` (`embed_model_available=embed_available`). Live. |
+| `backend/app/services/tag_service.py:115` `get_entry_count` superseded/dead | **called** at `routers/tags.py:26`. Live. *(Whether that call site is an N+1 is a Phase-4 audit question, not debloat.)* |
+| 20× "model missing inheritance" in `app/models/*` | fabricated — every model correctly inherits `Base`. |
+| `_exc_message`, `SyncService`, `_checkpoint_wal_robust`, `_to_response` helpers | verified legitimate WHY-code / multi-use, not bloat. |
+| `EncryptionBadge.vue` vs `NoteEncryptionBadge.vue` merge | ~85% similar but med-risk for marginal gain; not recommended unless encryption UX is touched anyway. |
 
 ---
 
-## Recommended `--apply` scope
+## After --apply
 
-**Tier A (all dead-code removals) + Tier B "Recommended" (5 local extractions +
-errMsg).** That's ~15 files, all behavior-change-risk: no, ~120-160 net lines
-removed. Tier B "Optional" and Tier C are left for a separate decision / AUDIT.
-
-## After `--apply`
-Tests re-run after each unit (backend pytest + frontend build). Any unit that
-breaks is reverted and logged here as a false positive.
+Per the command, apply unit-by-unit with a test re-run after each: `uv run pytest tests/ -q`
+(backend) after B1–B3, `npm run build` (frontend, catches dead imports/types) after F1–F8.
+R1/R2 are NOT in the apply set — they land in `AUDIT.md` for a deliberate decision.
