@@ -26,14 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task import Task, TaskList
 from app.services.google_oauth import GoogleAPIClient
+from app.services.google_sync_utils import local_tz, mark_synced
 
 logger = logging.getLogger(__name__)
 
 _TASKS_BASE = "https://tasks.googleapis.com/tasks/v1"
-
-
-def _local_tz() -> Any:
-    return datetime.now().astimezone().tzinfo
 
 
 def _gdt_to_local(value: str | None) -> datetime | None:
@@ -49,7 +46,7 @@ def _gdt_to_local(value: str | None) -> datetime | None:
 
 def _local_to_gdt(dt: datetime) -> str:
     """Naive-local datetime → Google RFC3339 timestamp."""
-    return dt.replace(tzinfo=_local_tz()).isoformat()
+    return dt.replace(tzinfo=local_tz()).isoformat()
 
 
 class TasksSyncService:
@@ -59,17 +56,6 @@ class TasksSyncService:
         self.db = db
         self.account = account
         self.api = api
-
-    async def _mark_synced(self, obj: Task | TaskList) -> None:
-        """Persist + reload server-generated ``updated_at``, then mirror it.
-
-        See ``CalendarSyncService._mark_synced`` for rationale (refresh avoids the
-        async lazy-load greenlet error; ``synced_at == updated_at`` marks a row as
-        not-locally-changed).
-        """
-        await self.db.flush()  # pending → persistent so refresh can reload it
-        await self.db.refresh(obj)
-        obj.synced_at = obj.updated_at
 
     async def sync(self) -> dict[str, Any]:
         if not self.account.tasks_enabled:
@@ -118,7 +104,7 @@ class TasksSyncService:
         else:
             for k, v in fields.items():
                 setattr(existing, k, v)
-        await self._mark_synced(existing)
+        await mark_synced(self.db,existing)
         return existing
 
     async def _sync_list(self, glist_id: str, local_list: TaskList, stats: dict[str, int]) -> None:
@@ -154,7 +140,7 @@ class TasksSyncService:
             if existing is not None and not existing.is_deleted:
                 existing.is_deleted = True
                 existing.deleted_at = datetime.now()
-                await self._mark_synced(existing)
+                await mark_synced(self.db,existing)
             return
 
         # Resolve parent subtask link (if the parent task is already local).
@@ -185,7 +171,7 @@ class TasksSyncService:
         else:
             for k, v in fields.items():
                 setattr(existing, k, v)
-        await self._mark_synced(existing)
+        await mark_synced(self.db,existing)
 
     # ── Push (local → Google) ────────────────────────────────────────────
 
@@ -245,7 +231,7 @@ class TasksSyncService:
                 await self.api.request(
                     "PATCH", f"{_TASKS_BASE}/lists/{glist_id}/tasks/{t.external_id}", json_body=body
                 )
-                await self._mark_synced(t)
+                await mark_synced(self.db,t)
                 stats["updated"] += 1
             except httpx.HTTPStatusError:
                 logger.warning("Failed to push Google task %s", t.external_id, exc_info=True)

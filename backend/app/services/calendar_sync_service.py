@@ -28,17 +28,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schedule_event import ScheduleEvent
 from app.services.google_oauth import GoogleAPIClient
+from app.services.google_sync_utils import local_tz, mark_synced
 
 logger = logging.getLogger(__name__)
 
 _CAL_BASE = "https://www.googleapis.com/calendar/v3"
 # Only sync calendars we can write to (skips subscribed holiday/birthday lists).
 _WRITABLE_ROLES = {"owner", "writer"}
-
-
-def _local_tz() -> Any:
-    """The process's local timezone (for naive<->aware conversion)."""
-    return datetime.now().astimezone().tzinfo
 
 
 def _google_to_local(value: dict[str, str] | None) -> tuple[datetime | None, bool]:
@@ -63,7 +59,7 @@ def _local_to_google_dt(dt: datetime, all_day: bool) -> dict[str, str]:
     """Convert a naive-local dt to a Google start/end block."""
     if all_day:
         return {"date": dt.date().isoformat()}
-    return {"dateTime": dt.replace(tzinfo=_local_tz()).isoformat()}
+    return {"dateTime": dt.replace(tzinfo=local_tz()).isoformat()}
 
 
 def _rrule_from_google(recurrence: list[str] | None) -> str | None:
@@ -87,18 +83,6 @@ class CalendarSyncService:
         self.db = db
         self.account = account
         self.api = api
-
-    async def _mark_synced(self, ev: ScheduleEvent) -> None:
-        """Persist + reload the server-generated ``updated_at``, then mirror it.
-
-        ``synced_at == updated_at`` guarantees a just-pulled row isn't seen as
-        locally changed (push picks up ``updated_at > synced_at``). Using
-        ``refresh`` (awaited) rather than a plain attribute read avoids the async
-        lazy-load ``MissingGreenlet`` error on server-generated columns.
-        """
-        await self.db.flush()  # pending → persistent so refresh can reload it
-        await self.db.refresh(ev)
-        ev.synced_at = ev.updated_at
 
     async def sync(self) -> dict[str, Any]:
         if not self.account.calendar_enabled:
@@ -178,7 +162,7 @@ class CalendarSyncService:
             if existing is not None and not existing.is_deleted:
                 existing.is_deleted = True
                 existing.deleted_at = datetime.now()
-                await self._mark_synced(existing)
+                await mark_synced(self.db,existing)
             return
 
         start, all_day = _google_to_local(ev.get("start"))
@@ -205,7 +189,7 @@ class CalendarSyncService:
         else:
             for key, value in fields.items():
                 setattr(existing, key, value)
-        await self._mark_synced(existing)
+        await mark_synced(self.db,existing)
 
     # ── Push (local → Google) ────────────────────────────────────────────
 
@@ -266,7 +250,7 @@ class CalendarSyncService:
                     if_match=ev.etag,
                 )
                 ev.etag = resp.json().get("etag")
-                await self._mark_synced(ev)
+                await mark_synced(self.db,ev)
                 stats["updated"] += 1
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 412:
@@ -297,4 +281,4 @@ class CalendarSyncService:
             ev.start_at, ev.end_at, ev.all_day = start, end, all_day
             ev.rrule = _rrule_from_google(remote.get("recurrence"))
             ev.etag = remote.get("etag")
-            await self._mark_synced(ev)
+            await mark_synced(self.db,ev)
