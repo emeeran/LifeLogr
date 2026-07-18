@@ -1,337 +1,307 @@
-path,bytes,last_commit,inbound_refs_estimate
-.claude/settings.local.json,171,2026-05-21T23:54:54+05:30,0
-.github/workflows/build.yml,5916,2026-06-28T20:14:58+05:30,41
-.github/workflows/ci.yml,2560,2026-06-27T12:40:35+05:30,
-AGENTS.md,5013,2026-07-09T10:16:35+05:30,2
-CHANGELOG.md,3591,2026-06-25T10:51:11+05:30,2
-README.md,3285,2026-06-24T23:35:20+05:30,1
-backend/app/__init__.py,0,2026-05-08T02:59:34+05:30,31
-backend/app/core/__init__.py,0,2026-05-08T02:59:34+05:30,31
-backend/app/core/config.py,9100,2026-07-11T10:47:52+05:30,95
-backend/app/core/database.py,27508,2026-07-12T01:05:45+05:30,86
-backend/app/core/exceptions.py,438,2026-07-11T10:47:52+05:30,24
-backend/app/core/oauth_state.py,1648,2026-07-08T23:37:16+05:30,4
-backend/app/core/restore.py,8885,2026-07-08T04:43:51+05:30,39
-backend/app/core/security.py,2411,2026-06-24T22:17:26+05:30,26
-backend/app/main.py,14790,2026-07-11T10:47:52+05:30,61
-backend/app/models/backup.py,2165,2026-07-10T00:54:27+05:30,53
-backend/app/models/contact.py,3841,2026-07-11T12:11:03+05:30,20
-backend/app/models/contact_group.py,1618,2026-07-11T12:11:03+05:30,2
-backend/app/models/email_account.py,2158,2026-07-11T10:47:52+05:30,11
-backend/app/models/email_attachment.py,1288,2026-07-11T10:47:52+05:30,2
-backend/app/models/email_folder.py,2096,2026-07-11T10:47:52+05:30,5
-backend/app/models/email_message.py,3873,2026-07-11T16:08:25+05:30,8
-backend/app/models/embedding.py,799,2026-05-26T17:41:54+05:30,21
-backend/app/models/entry.py,2712,2026-06-28T22:15:09+05:30,136
-backend/app/models/media.py,1476,2026-05-26T17:41:54+05:30,103
-backend/app/models/note.py,5882,2026-07-12T00:12:07+05:30,68
-backend/app/models/note_media.py,1423,2026-07-03T17:11:00+05:30,4
-backend/app/models/prompt.py,446,2026-05-26T17:41:54+05:30,38
-backend/app/models/recording.py,1772,2026-06-26T22:11:23+05:30,44
-backend/app/models/reflection_prompt.py,654,2026-05-26T17:41:54+05:30,8
-backend/app/models/reminder.py,1121,2026-05-26T17:41:54+05:30,27
-backend/app/models/schedule_event.py,2251,2026-07-11T10:47:52+05:30,1
-backend/app/models/sentiment.py,935,2026-05-26T17:41:54+05:30,16
-backend/app/models/spam_blocklist.py,1501,2026-07-12T01:05:45+05:30,2
-backend/app/models/sync.py,1834,2026-05-26T17:41:54+05:30,183
-backend/app/models/tag.py,1601,2026-07-03T17:11:00+05:30,110
-backend/app/models/task.py,2935,2026-07-11T10:47:52+05:30,30
-backend/app/models/template.py,768,2026-05-26T17:41:54+05:30,106
-backend/app/models/video_note.py,1102,2026-06-26T15:23:10+05:30,5
-backend/app/routers/__init__.py,0,2026-05-08T02:59:34+05:30,31
-backend/app/routers/ai.py,13791,2026-06-23T21:03:29+05:30,
-backend/app/routers/analytics.py,2657,2026-06-27T12:07:10+05:30,17
-backend/app/routers/backup.py,12555,2026-07-10T00:54:27+05:30,53
-backend/app/routers/box.py,6743,2026-07-08T23:37:16+05:30,45
-backend/app/routers/contacts.py,7558,2026-07-11T16:08:25+05:30,18
-backend/app/routers/dropbox.py,5191,2026-07-08T23:37:16+05:30,10
-backend/app/routers/email.py,14023,2026-07-12T01:05:45+05:30,35
-backend/app/routers/encryption.py,4859,2026-07-03T17:11:00+05:30,25
-backend/app/routers/entries.py,31872,2026-07-09T23:50:56+05:30,108
-backend/app/routers/export.py,1855,2026-06-24T18:27:51+05:30,84
-backend/app/routers/google_drive.py,9629,2026-07-09T23:34:52+05:30,13
-backend/app/routers/media.py,5732,2026-06-26T16:37:06+05:30,103
-backend/app/routers/notes.py,9996,2026-07-12T00:12:07+05:30,57
-backend/app/routers/onedrive.py,5266,2026-07-08T23:37:16+05:30,8
-backend/app/routers/planner.py,6166,2026-07-11T10:47:52+05:30,12
-backend/app/routers/prompts.py,887,2026-05-26T23:25:49+05:30,26
-backend/app/routers/recordings.py,3277,2026-06-26T15:23:10+05:30,29
-backend/app/routers/reminders.py,2009,2026-05-26T17:41:54+05:30,26
-backend/app/routers/search.py,1394,2026-05-26T17:41:54+05:30,67
-backend/app/routers/settings.py,11778,2026-07-11T10:47:52+05:30,66
-backend/app/routers/sync.py,5502,2026-06-26T16:37:06+05:30,183
-backend/app/routers/tags.py,2492,2026-05-26T17:41:54+05:30,84
-backend/app/routers/templates.py,1313,2026-05-26T17:41:54+05:30,20
-backend/app/routers/tts.py,4489,2026-06-25T18:01:53+05:30,16
-backend/app/routers/video_notes.py,2161,2026-06-26T15:23:10+05:30,4
-backend/app/schemas/__init__.py,0,2026-05-08T02:59:34+05:30,31
-backend/app/schemas/ai.py,8983,2026-06-23T21:03:29+05:30,
-backend/app/schemas/analytics.py,1423,2026-05-26T17:41:54+05:30,17
-backend/app/schemas/backup.py,1622,2026-07-10T00:54:27+05:30,53
-backend/app/schemas/contact.py,5932,2026-07-11T12:11:03+05:30,20
-backend/app/schemas/email.py,6035,2026-07-12T01:05:45+05:30,35
-backend/app/schemas/encryption.py,1592,2026-07-03T17:11:00+05:30,25
-backend/app/schemas/entry.py,2987,2026-06-28T22:15:09+05:30,136
-backend/app/schemas/geotagging.py,965,2026-05-26T17:41:54+05:30,4
-backend/app/schemas/media.py,845,2026-05-29T18:05:58+05:30,103
-backend/app/schemas/note.py,3818,2026-07-12T00:12:07+05:30,68
-backend/app/schemas/note_media.py,632,2026-07-03T17:11:00+05:30,5
-backend/app/schemas/planner.py,4620,2026-07-11T10:47:52+05:30,13
-backend/app/schemas/prompt.py,256,2026-05-26T17:41:54+05:30,38
-backend/app/schemas/recording.py,339,2026-06-26T15:23:10+05:30,44
-backend/app/schemas/reminder.py,1498,2026-05-26T17:41:54+05:30,27
-backend/app/schemas/revision.py,923,2026-05-26T17:41:54+05:30,5
-backend/app/schemas/search.py,1318,2026-07-03T17:11:00+05:30,67
-backend/app/schemas/sync.py,1268,2026-05-26T17:41:54+05:30,183
-backend/app/schemas/tag.py,889,2026-05-26T17:41:54+05:30,110
-backend/app/schemas/template.py,883,2026-05-26T17:41:54+05:30,106
-backend/app/schemas/video_note.py,483,2026-06-26T15:23:10+05:30,6
-backend/app/services/__init__.py,0,2026-05-08T02:59:34+05:30,31
-backend/app/services/ai_tool_registry.py,6601,2026-06-23T21:03:29+05:30,2
-backend/app/services/analytics_service.py,9754,2026-05-29T13:55:19+05:30,3
-backend/app/services/backup_service.py,24368,2026-07-10T00:54:27+05:30,9
-backend/app/services/cloud_sync_service.py,38556,2026-07-10T00:30:40+05:30,5
-backend/app/services/contact_service.py,33743,2026-07-11T16:08:25+05:30,3
-backend/app/services/email_protocol.py,12327,2026-07-11T10:47:52+05:30,2
-backend/app/services/email_service.py,42612,2026-07-12T01:05:45+05:30,2
-backend/app/services/encryption_service.py,5885,2026-07-03T17:11:00+05:30,5
-backend/app/services/enrichment_service.py,5696,2026-07-08T23:37:16+05:30,3
-backend/app/services/entry_service.py,12206,2026-06-28T22:15:09+05:30,8
-backend/app/services/export_service.py,12706,2026-06-26T16:37:06+05:30,2
-backend/app/services/importers/__init__.py,447,2026-07-09T23:50:56+05:30,31
-backend/app/services/importers/csv.py,2408,2026-07-09T23:50:56+05:30,8
-backend/app/services/importers/dayone.py,2015,2026-07-09T23:50:56+05:30,3
-backend/app/services/media_service.py,11480,2026-06-25T18:01:53+05:30,8
-backend/app/services/note_media_service.py,6100,2026-07-03T17:11:00+05:30,1
-backend/app/services/note_service.py,13291,2026-07-12T00:12:07+05:30,1
-backend/app/services/ollama_service.py,23429,2026-07-10T19:28:54+05:30,13
-backend/app/services/planner_service.py,13245,2026-07-11T10:47:52+05:30,1
-backend/app/services/recording_service.py,7385,2026-06-26T15:23:10+05:30,5
-backend/app/services/reminder_service.py,3728,2026-06-24T22:17:26+05:30,4
-backend/app/services/scheduler_service.py,30979,2026-07-11T10:47:52+05:30,10
-backend/app/services/search_service.py,14423,2026-07-03T17:11:00+05:30,5
-backend/app/services/spam_service.py,10212,2026-07-12T01:05:45+05:30,3
-backend/app/services/storage_service.py,7599,2026-07-09T23:43:49+05:30,3
-backend/app/services/tag_service.py,3584,2026-06-24T18:27:51+05:30,3
-backend/app/services/template_service.py,1790,2026-05-26T17:41:54+05:30,3
-backend/app/services/video_service.py,2713,2026-06-26T15:23:10+05:30,4
-backend/pyproject.toml,1688,2026-07-11T10:47:52+05:30,6
-backend/scripts/export_conv.py,2532,2026-06-24T18:27:51+05:30,0
-backend/tests/__init__.py,0,2026-05-21T23:54:54+05:30,31
-backend/tests/conftest.py,1875,2026-07-03T17:11:00+05:30,2
-backend/tests/integration/test_ai_endpoints.py,1112,2026-06-23T21:05:29+05:30,0
-backend/tests/integration/test_contacts.py,14820,2026-07-11T16:08:25+05:30,0
-backend/tests/integration/test_email.py,7242,2026-07-11T10:47:52+05:30,1
-backend/tests/integration/test_google_drive.py,14645,2026-07-10T00:32:20+05:30,1
-backend/tests/integration/test_notes.py,4775,2026-07-12T00:12:07+05:30,1
-backend/tests/integration/test_planner.py,5069,2026-07-11T10:47:52+05:30,0
-backend/tests/integration/test_spam.py,9699,2026-07-12T01:05:45+05:30,0
-backend/tests/unit/__init__.py,0,2026-05-21T23:54:54+05:30,31
-backend/tests/unit/test_ai_tool_registry.py,1971,2026-06-23T21:05:29+05:30,0
-backend/tests/unit/test_analytics_service.py,1497,2026-05-26T17:41:54+05:30,2
-backend/tests/unit/test_backup_full.py,34474,2026-07-09T23:34:52+05:30,1
-backend/tests/unit/test_backup_label.py,3879,2026-07-10T00:54:27+05:30,0
-backend/tests/unit/test_backup_service.py,2883,2026-07-08T21:28:21+05:30,2
-backend/tests/unit/test_encryption_service.py,1969,2026-05-26T17:41:54+05:30,2
-backend/tests/unit/test_entry_service.py,5959,2026-06-25T18:01:53+05:30,1
-backend/tests/unit/test_entry_template_filter.py,6902,2026-06-28T22:15:09+05:30,0
-backend/tests/unit/test_export_service.py,1526,2026-05-29T18:05:58+05:30,1
-backend/tests/unit/test_health_and_brand.py,1454,2026-06-25T10:51:11+05:30,0
-backend/tests/unit/test_importers.py,4812,2026-07-09T23:50:56+05:30,0
-backend/tests/unit/test_media_service.py,3005,2026-06-25T18:01:53+05:30,1
-backend/tests/unit/test_notes.py,10024,2026-07-03T17:11:00+05:30,0
-backend/tests/unit/test_ollama_service.py,5714,2026-07-10T19:28:54+05:30,2
-backend/tests/unit/test_prompt_service.py,265,2026-05-26T17:41:54+05:30,0
-backend/tests/unit/test_recording_service.py,4302,2026-06-26T15:23:10+05:30,1
-backend/tests/unit/test_reminder_scheduling.py,5073,2026-06-24T22:17:26+05:30,0
-backend/tests/unit/test_reminder_service.py,1620,2026-05-26T17:41:54+05:30,1
-backend/tests/unit/test_scheduler_service.py,15096,2026-07-09T23:34:52+05:30,0
-backend/tests/unit/test_search_service.py,2697,2026-05-29T10:36:16+05:30,1
-backend/tests/unit/test_security.py,1740,2026-06-24T22:17:26+05:30,0
-backend/tests/unit/test_settings.py,626,2026-05-28T22:14:27+05:30,1
-backend/tests/unit/test_storage_service.py,6724,2026-07-09T23:43:49+05:30,0
-backend/tests/unit/test_sync_service.py,1576,2026-05-26T17:41:54+05:30,1
-backend/tests/unit/test_tag_service.py,2340,2026-05-26T17:41:54+05:30,0
-backend/tests/unit/test_video_service.py,893,2026-05-26T17:41:54+05:30,1
-desktop/scripts/setup-linux.sh,5191,2026-07-09T10:39:47+05:30,1
-desktop/src-tauri/Cargo.toml,704,2026-07-11T10:47:52+05:30,4
-desktop/src-tauri/capabilities/default.json,590,2026-07-03T17:11:00+05:30,108
-desktop/src-tauri/gen/schemas/acl-manifests.json,145153,2026-07-03T17:11:00+05:30,0
-desktop/src-tauri/gen/schemas/capabilities.json,490,2026-07-03T17:11:00+05:30,6
-desktop/src-tauri/gen/schemas/desktop-schema.json,418206,2026-07-03T17:11:00+05:30,0
-desktop/src-tauri/gen/schemas/linux-schema.json,418206,2026-07-03T17:11:00+05:30,0
-desktop/src-tauri/tauri.conf.json,1822,2026-07-11T10:47:52+05:30,5
-dev.sh,2544,2026-05-21T23:54:54+05:30,47
-docker-compose.yml,252,2026-05-21T23:54:54+05:30,1
-docs/00-domain/CONTEXT_MAP.md,2876,2026-06-24T18:27:51+05:30,1
-docs/00-domain/DOMAIN.md,6626,2026-06-24T18:27:51+05:30,4
-docs/01-requirements/REQUIREMENTS.md,9568,2026-06-24T18:27:51+05:30,5
-docs/02-spec/SPEC.md,22794,2026-06-24T18:27:51+05:30,6
-docs/03-review/REVIEW.md,5520,2026-06-24T18:27:51+05:30,3
-docs/04-design/ADR/001-sqlite-as-primary-database.md,2203,2026-05-24T00:33:33+05:30,0
-docs/04-design/ADR/002-no-auth-local-endpoints.md,1770,2026-05-21T23:54:54+05:30,0
-docs/04-design/ADR/003-offset-pagination.md,1709,2026-05-21T23:54:54+05:30,0
-docs/04-design/ADR/004-filesystem-media-storage.md,1770,2026-05-21T23:54:54+05:30,0
-docs/04-design/ADR/005-background-tasks-for-backup.md,1680,2026-05-21T23:54:54+05:30,0
-docs/04-design/ADR/006-whisper-local-transcription.md,1610,2026-05-21T23:54:54+05:30,1
-docs/04-design/DESIGN.md,13929,2026-06-28T21:11:56+05:30,2
-docs/BUILD_GUIDE.md,16194,2026-06-24T18:27:51+05:30,1
-docs/blog_lifelogr_vs_diarium.md,6260,2026-06-28T21:04:52+05:30,0
-docs/manual/API_REFERENCE.md,25351,2026-06-24T18:27:51+05:30,0
-docs/manual/DEPLOYMENT.md,16129,2026-06-24T18:27:51+05:30,0
-docs/manual/USER_MANUAL.md,39402,2026-06-24T18:27:51+05:30,0
-docs/planning/conductor/gemi_review.md,4331,2026-07-09T10:16:35+05:30,0
-docs/planning/conductor/lifelogr-enhancement-plan.md,40547,2026-07-09T10:16:35+05:30,0
-docs/planning/conductor/tracks.md,282,2026-07-09T10:16:35+05:30,1
-docs/planning/conductor/tracks/fix-blank-screen/entry-editor-enhancements.md,3098,2026-07-09T10:16:35+05:30,0
-docs/planning/conductor/tracks/fix-blank-screen/plan.md,2041,2026-07-09T10:16:35+05:30,21
-docs/planning/conductor/tracks/web-app-enhancements.md,2424,2026-07-09T10:16:35+05:30,0
-docs/reviews/agy_review_280526.md,26644,2026-06-24T22:17:26+05:30,0
-docs/reviews/agy_sug_299526.md,9604,2026-06-24T22:17:26+05:30,0
-docs/reviews/data_management_improvement_blueprint.md,8121,2026-06-24T22:17:26+05:30,0
-frontend/.vscode/extensions.json,39,2026-05-21T23:54:54+05:30,4
-frontend/README.md,442,2026-05-21T23:54:54+05:30,1
-frontend/package-lock.json,70297,2026-07-03T17:11:00+05:30,1
-frontend/package.json,989,2026-07-03T17:11:00+05:30,21
-frontend/playwright.config.ts,369,2026-06-24T18:27:51+05:30,0
-frontend/src/App.vue,816,2026-06-27T11:43:37+05:30,47
-frontend/src/api/ai.ts,2206,2026-07-08T23:37:16+05:30,
-frontend/src/api/analytics.ts,709,2026-05-21T23:54:54+05:30,17
-frontend/src/api/backup.ts,3222,2026-07-10T00:54:27+05:30,53
-frontend/src/api/client.ts,1760,2026-05-29T10:36:16+05:30,84
-frontend/src/api/contacts.ts,3481,2026-07-11T12:11:03+05:30,18
-frontend/src/api/email.ts,5468,2026-07-12T01:05:45+05:30,35
-frontend/src/api/encryption.ts,1051,2026-05-23T07:17:05+05:30,25
-frontend/src/api/entries.ts,3346,2026-07-10T00:01:13+05:30,108
-frontend/src/api/export.ts,1583,2026-07-08T23:37:16+05:30,84
-frontend/src/api/media.ts,1433,2026-06-26T16:37:06+05:30,103
-frontend/src/api/notes.ts,4736,2026-07-12T00:12:07+05:30,57
-frontend/src/api/planner.ts,3624,2026-07-11T10:47:52+05:30,12
-frontend/src/api/recordings.ts,1485,2026-06-26T22:11:23+05:30,29
-frontend/src/api/reminders.ts,752,2026-05-21T23:54:54+05:30,26
-frontend/src/api/search.ts,798,2026-05-21T23:54:54+05:30,67
-frontend/src/api/settings.ts,1789,2026-07-10T00:01:13+05:30,66
-frontend/src/api/sync.ts,752,2026-07-08T23:37:16+05:30,183
-frontend/src/api/tags.ts,654,2026-05-21T23:54:54+05:30,84
-frontend/src/api/templates.ts,642,2026-05-21T23:54:54+05:30,20
-frontend/src/api/tts.ts,1063,2026-07-03T17:11:00+05:30,16
-frontend/src/components/analytics/AnalyticsView.vue,6253,2026-05-21T23:54:54+05:30,1
-frontend/src/components/calendar/CalendarCell.vue,2441,2026-07-07T21:58:58+05:30,1
-frontend/src/components/calendar/CalendarGrid.vue,5061,2026-05-25T21:38:43+05:30,2
-frontend/src/components/calendar/CalendarHeader.vue,1390,2026-05-25T21:38:43+05:30,1
-frontend/src/components/calendar/EntryPicker.vue,3281,2026-06-26T22:11:23+05:30,2
-frontend/src/components/common/BaseModal.vue,1949,2026-05-27T00:39:49+05:30,0
-frontend/src/components/common/ConfirmDialog.vue,1256,2026-05-21T23:54:54+05:30,2
-frontend/src/components/common/EditorButton.vue,573,2026-05-27T00:39:49+05:30,0
-frontend/src/components/common/EmojiPicker.vue,4886,2026-07-10T13:17:53+05:30,1
-frontend/src/components/common/GoToDateModal.vue,4206,2026-05-25T21:38:43+05:30,2
-frontend/src/components/common/StateView.vue,1623,2026-06-26T15:23:10+05:30,0
-frontend/src/components/contacts/ContactForm.vue,22025,2026-07-11T12:11:03+05:30,2
-frontend/src/components/contacts/ContactPanel.vue,13419,2026-07-11T12:11:03+05:30,1
-frontend/src/components/contacts/ContactsView.vue,14386,2026-07-11T12:11:03+05:30,1
-frontend/src/components/dashboard/DashboardView.vue,30390,2026-07-12T00:12:07+05:30,1
-frontend/src/components/email/EmailView.vue,49705,2026-07-12T01:05:45+05:30,2
-frontend/src/components/entry/AiDrawerPanel.vue,7323,2026-06-23T21:15:47+05:30,3
-frontend/src/components/entry/AttachmentsPanel.vue,2432,2026-06-26T16:37:06+05:30,1
-frontend/src/components/entry/EditorContextMenu.vue,10626,2026-06-23T21:15:47+05:30,1
-frontend/src/components/entry/EditorStatusBar.vue,1503,2026-06-26T15:23:10+05:30,1
-frontend/src/components/entry/EditorToolbar.vue,12335,2026-07-10T13:17:53+05:30,1
-frontend/src/components/entry/EncryptionBadge.vue,2934,2026-05-21T23:54:54+05:30,2
-frontend/src/components/entry/EntryDetail.vue,5897,2026-06-26T15:23:10+05:30,2
-frontend/src/components/entry/EntryEditor.vue,45670,2026-07-10T13:17:53+05:30,4
-frontend/src/components/entry/EntryHeader.vue,1074,2026-05-21T23:54:54+05:30,1
-frontend/src/components/layout/AppShell.vue,8868,2026-07-12T01:05:45+05:30,3
-frontend/src/components/layout/PanelSplitter.vue,1132,2026-05-21T23:54:54+05:30,1
-frontend/src/components/layout/Sidebar.vue,8202,2026-07-12T00:12:07+05:30,5
-frontend/src/components/layout/SplashScreen.vue,3411,2026-06-27T11:43:37+05:30,1
-frontend/src/components/media/MediaGrid.vue,4525,2026-06-26T15:23:10+05:30,3
-frontend/src/components/media/MediaTimelineView.vue,12177,2026-06-27T23:02:56+05:30,1
-frontend/src/components/media/MediaViewer.vue,8734,2026-06-25T18:01:53+05:30,5
-frontend/src/components/notes/NoteEditor.vue,48369,2026-07-12T00:12:07+05:30,2
-frontend/src/components/notes/NoteEncryptionBadge.vue,3017,2026-07-03T17:11:00+05:30,1
-frontend/src/components/notes/NoteListItem.vue,2696,2026-07-03T17:11:00+05:30,0
-frontend/src/components/notes/NotesView.vue,16500,2026-07-12T00:12:07+05:30,1
-frontend/src/components/onthisday/OnThisDayView.vue,6504,2026-05-25T21:38:43+05:30,1
-frontend/src/components/planner/PlannerView.vue,1950,2026-07-11T10:47:52+05:30,1
-frontend/src/components/planner/RecurrencePicker.vue,3157,2026-07-11T10:47:52+05:30,1
-frontend/src/components/planner/SchedulePanel.vue,9861,2026-07-11T10:47:52+05:30,1
-frontend/src/components/planner/TaskPanel.vue,10668,2026-07-11T10:47:52+05:30,1
-frontend/src/components/recordings/EntryRecordings.vue,2062,2026-06-26T22:11:23+05:30,1
-frontend/src/components/recordings/FloatingPlayback.vue,2457,2026-06-26T22:11:23+05:30,1
-frontend/src/components/recordings/FloatingRecorder.vue,2533,2026-06-26T22:11:23+05:30,1
-frontend/src/components/reminders/DayPicker.vue,2242,2026-06-25T18:01:53+05:30,1
-frontend/src/components/reminders/RemindersView.vue,15437,2026-06-25T18:01:53+05:30,1
-frontend/src/components/scribble/ScribblePad.vue,3137,2026-06-25T23:07:08+05:30,1
-frontend/src/components/search/SearchFilters.vue,1345,2026-05-25T21:38:43+05:30,1
-frontend/src/components/search/SearchPalette.vue,9050,2026-07-03T17:11:00+05:30,3
-frontend/src/components/search/SearchView.vue,551,2026-05-21T23:54:54+05:30,1
-frontend/src/components/settings/MemorialTribute.vue,17994,2026-06-27T11:43:37+05:30,1
-frontend/src/components/settings/SettingsView.vue,14126,2026-07-12T00:12:07+05:30,1
-frontend/src/components/settings/dialogs/WhatsNewDialog.vue,2993,2026-06-25T23:07:08+05:30,1
-frontend/src/components/settings/panels/ImportExportPanel.vue,10969,2026-07-10T00:01:13+05:30,1
-frontend/src/components/settings/panels/MaintenancePanel.vue,3982,2026-07-10T00:01:13+05:30,1
-frontend/src/components/settings/panels/StoragePanel.vue,5936,2026-07-10T00:01:13+05:30,1
-frontend/src/components/settings/shared/AccordionItem.vue,1378,2026-06-25T23:07:08+05:30,4
-frontend/src/components/settings/shared/SButton.vue,1080,2026-06-25T23:07:08+05:30,10
-frontend/src/components/settings/shared/SettingGroup.vue,749,2026-07-10T01:13:02+05:30,3
-frontend/src/components/settings/shared/SettingRow.vue,1150,2026-07-10T01:13:02+05:30,8
-frontend/src/components/settings/shared/SettingsSection.vue,1964,2026-07-10T01:13:02+05:30,11
-frontend/src/components/settings/shared/SkeletonCard.vue,300,2026-05-26T16:29:15+05:30,2
-frontend/src/components/settings/shared/ToggleSwitch.vue,840,2026-05-26T16:29:15+05:30,4
-frontend/src/components/settings/shared/UpdateStatus.vue,3532,2026-06-25T23:07:08+05:30,3
-frontend/src/components/settings/tabs/AITab.vue,16325,2026-07-10T19:28:54+05:30,1
-frontend/src/components/settings/tabs/AboutTab.vue,8555,2026-07-09T10:39:47+05:30,1
-frontend/src/components/settings/tabs/BackupTab.vue,25378,2026-07-10T01:13:02+05:30,2
-frontend/src/components/settings/tabs/DataBackupTab.vue,2040,2026-07-10T00:01:13+05:30,1
-frontend/src/components/settings/tabs/DedicationTab.vue,490,2026-06-27T09:52:07+05:30,1
-frontend/src/components/settings/tabs/EmailTab.vue,15709,2026-07-11T16:08:25+05:30,1
-frontend/src/components/settings/tabs/FeaturesTab.vue,16078,2026-06-27T11:43:37+05:30,1
-frontend/src/components/settings/tabs/GeneralTab.vue,8042,2026-06-25T23:07:08+05:30,1
-frontend/src/components/settings/tabs/NotesTab.vue,2542,2026-07-12T00:12:07+05:30,1
-frontend/src/components/tags/TagList.vue,2259,2026-05-21T23:54:54+05:30,1
-frontend/src/components/templates/TemplateModal.vue,3029,2026-05-21T23:54:54+05:30,1
-frontend/src/components/templates/TemplatePicker.vue,4191,2026-05-21T23:54:54+05:30,1
-frontend/src/components/timeline/TimelineView.vue,12026,2026-06-28T22:15:09+05:30,3
-frontend/src/composables/aiToolRegistry.ts,4605,2026-06-23T21:19:57+05:30,7
-frontend/src/composables/useAiTools.ts,3733,2026-06-23T21:15:47+05:30,4
-frontend/src/composables/useAsyncAction.ts,481,2026-05-27T00:39:49+05:30,0
-frontend/src/composables/useAttachments.ts,1292,2026-05-29T13:55:19+05:30,1
-frontend/src/composables/useAutoSave.ts,2891,2026-06-28T22:15:09+05:30,2
-frontend/src/composables/useCalendar.ts,2476,2026-05-21T23:54:54+05:30,2
-frontend/src/composables/useDragDrop.ts,1696,2026-05-25T21:38:43+05:30,3
-frontend/src/composables/useEditorHistory.ts,1664,2026-05-27T00:39:49+05:30,1
-frontend/src/composables/useFindReplace.ts,1847,2026-05-27T00:39:49+05:30,1
-frontend/src/composables/useFormat.ts,521,2026-05-21T23:54:54+05:30,6
-frontend/src/composables/useMarkdownPreview.ts,1877,2026-06-26T15:23:10+05:30,3
-frontend/src/composables/usePagination.ts,778,2026-05-21T23:54:54+05:30,2
-frontend/src/composables/useRecordings.ts,7817,2026-06-26T22:11:23+05:30,4
-frontend/src/composables/useUpdateChecker.ts,5173,2026-06-25T10:51:11+05:30,5
-frontend/src/main.ts,438,2026-06-25T23:07:08+05:30,61
-frontend/src/router.ts,1702,2026-07-12T00:12:07+05:30,47
-frontend/src/stores/analytics.ts,1883,2026-05-27T00:39:49+05:30,17
-frontend/src/stores/backup.ts,1612,2026-05-27T00:39:49+05:30,53
-frontend/src/stores/contacts.ts,2804,2026-07-11T12:11:03+05:30,18
-frontend/src/stores/email.ts,10124,2026-07-12T01:05:45+05:30,35
-frontend/src/stores/entries.ts,2572,2026-06-28T22:15:09+05:30,108
-frontend/src/stores/notes.ts,6384,2026-07-12T00:12:07+05:30,57
-frontend/src/stores/planner.ts,2737,2026-07-11T10:47:52+05:30,12
-frontend/src/stores/reminders.ts,1093,2026-05-21T23:54:54+05:30,26
-frontend/src/stores/search.ts,2175,2026-06-25T23:07:08+05:30,67
-frontend/src/stores/sync.ts,1027,2026-05-21T23:54:54+05:30,183
-frontend/src/stores/tags.ts,922,2026-05-21T23:54:54+05:30,84
-frontend/src/stores/templates.ts,1026,2026-05-21T23:54:54+05:30,20
-frontend/src/stores/ui.ts,4874,2026-07-12T00:12:07+05:30,
-frontend/src/styles/main.css,9845,2026-06-25T23:07:08+05:30,62
-frontend/src/types/index.ts,22386,2026-07-12T01:05:45+05:30,45
-frontend/src/utils/fileDialog.ts,2958,2026-05-28T22:14:27+05:30,3
-frontend/src/utils/settings.ts,1591,2026-06-26T16:37:06+05:30,67
-frontend/src/version.ts,769,2026-06-24T23:24:45+05:30,43
-frontend/tests/recordings.spec.ts,1840,2026-06-26T22:11:23+05:30,0
-frontend/tests/settings.spec.ts,8544,2026-06-27T12:30:16+05:30,3
-frontend/tsconfig.app.json,420,2026-05-21T23:54:54+05:30,1
-frontend/tsconfig.json,119,2026-05-21T23:54:54+05:30,4
-frontend/tsconfig.node.json,591,2026-05-21T23:54:54+05:30,1
-frontend/vite.config.ts,991,2026-05-27T09:10:15+05:30,1
-mobile/capacitor.config.ts,403,2026-06-24T18:27:51+05:30,1
-scripts/build-web-deb.sh,19166,2026-07-09T23:43:49+05:30,2
-scripts/build.sh,3370,2026-06-24T18:27:51+05:30,41
+path,bytes,mtime_iso,git_last_commit_iso,ref_count_heuristic
+backend/app/__init__.py,0,2026-05-08 02:59:34,2026-07-17,40
+backend/app/core/__init__.py,0,2026-05-08 02:59:34,2026-07-17,41
+backend/app/core/archive.py,3062,2026-07-12 23:16:04,2026-07-17,19
+backend/app/core/config.py,10114,2026-07-18 00:35:37,2026-07-17,108
+backend/app/core/database.py,33445,2026-07-18 00:35:37,2026-07-17,96
+backend/app/core/exceptions.py,438,2026-07-12 01:06:09,2026-07-17,26
+backend/app/core/oauth_state.py,1648,2026-07-10 09:19:15,2026-07-17,5
+backend/app/core/paths.py,3094,2026-07-12 23:16:04,2026-07-17,30
+backend/app/core/restore.py,8797,2026-07-13 01:33:59,2026-07-17,51
+backend/app/core/security.py,3879,2026-07-18 14:53:28,2026-07-18,34
+backend/app/core/startup_checks.py,5479,2026-07-17 22:43:11,2026-07-17,2
+backend/app/main.py,17366,2026-07-17 22:43:11,2026-07-17,109
+backend/app/models/backup.py,3738,2026-07-17 22:43:11,2026-07-17,65
+backend/app/models/contact.py,3942,2026-07-18 00:35:37,2026-07-17,26
+backend/app/models/contact_group.py,1618,2026-07-12 01:06:09,2026-07-17,2
+backend/app/models/email_account.py,2158,2026-07-12 01:06:09,2026-07-17,11
+backend/app/models/email_attachment.py,1288,2026-07-12 01:06:09,2026-07-17,2
+backend/app/models/email_folder.py,2096,2026-07-12 01:06:09,2026-07-17,5
+backend/app/models/email_message.py,3942,2026-07-15 15:54:48,2026-07-17,8
+backend/app/models/embedding.py,799,2026-05-26 17:42:24,2026-07-17,27
+backend/app/models/entry.py,2952,2026-07-13 01:33:59,2026-07-17,141
+backend/app/models/google_sync.py,2016,2026-07-18 00:35:37,2026-07-17,6
+backend/app/models/media.py,1476,2026-05-26 17:42:24,2026-07-17,126
+backend/app/models/note.py,6113,2026-07-13 01:33:59,2026-07-17,86
+backend/app/models/note_media.py,1409,2026-07-13 01:33:59,2026-07-17,5
+backend/app/models/prompt.py,446,2026-05-26 17:42:24,2026-07-17,43
+backend/app/models/recording.py,1772,2026-06-26 22:11:59,2026-07-17,49
+backend/app/models/reflection_prompt.py,654,2026-05-26 17:42:24,2026-07-17,7
+backend/app/models/reminder.py,1121,2026-05-26 17:42:24,2026-07-17,28
+backend/app/models/schedule_event.py,2828,2026-07-17 22:43:11,2026-07-17,4
+backend/app/models/sentiment.py,935,2026-05-26 17:42:24,2026-07-17,19
+backend/app/models/spam_blocklist.py,1501,2026-07-12 01:06:09,2026-07-17,2
+backend/app/models/sync.py,1834,2026-05-26 17:42:24,2026-07-17,223
+backend/app/models/tag.py,1601,2026-07-03 17:30:55,2026-07-17,126
+backend/app/models/task.py,3866,2026-07-17 22:43:11,2026-07-17,45
+backend/app/models/template.py,768,2026-05-26 17:42:24,2026-07-17,108
+backend/app/models/video_note.py,1102,2026-06-26 22:11:59,2026-07-17,6
+backend/app/routers/__init__.py,0,2026-05-08 02:59:34,2026-07-17,41
+backend/app/routers/ai.py,9688,2026-07-13 01:33:59,2026-07-17,-
+backend/app/routers/analytics.py,2657,2026-06-27 12:03:58,2026-07-17,16
+backend/app/routers/backup.py,13262,2026-07-17 22:43:11,2026-07-17,66
+backend/app/routers/box.py,6317,2026-07-18 14:53:28,2026-07-18,57
+backend/app/routers/contacts.py,7545,2026-07-18 14:53:28,2026-07-18,23
+backend/app/routers/dropbox.py,4850,2026-07-18 14:53:28,2026-07-18,15
+backend/app/routers/email.py,13945,2026-07-13 01:33:59,2026-07-17,53
+backend/app/routers/encryption.py,4967,2026-07-13 01:33:59,2026-07-17,33
+backend/app/routers/entries.py,31977,2026-07-18 14:53:28,2026-07-18,114
+backend/app/routers/export.py,1855,2026-06-24 23:25:10,2026-07-17,92
+backend/app/routers/google_drive.py,9205,2026-07-18 14:53:28,2026-07-18,17
+backend/app/routers/google_sync.py,6610,2026-07-18 00:35:37,2026-07-17,7
+backend/app/routers/media.py,5618,2026-07-17 22:43:11,2026-07-17,127
+backend/app/routers/memorial.py,6620,2026-07-14 19:43:26,2026-07-17,11
+backend/app/routers/notes.py,12067,2026-07-17 22:43:11,2026-07-17,71
+backend/app/routers/onedrive.py,4903,2026-07-18 14:53:28,2026-07-18,13
+backend/app/routers/planner.py,6166,2026-07-13 01:33:59,2026-07-17,17
+backend/app/routers/prompts.py,887,2026-05-27 00:42:24,2026-07-17,27
+backend/app/routers/recordings.py,3277,2026-06-26 22:11:59,2026-07-17,32
+backend/app/routers/reminders.py,2009,2026-05-26 17:42:24,2026-07-17,27
+backend/app/routers/search.py,1394,2026-05-26 17:42:24,2026-07-17,74
+backend/app/routers/settings.py,11337,2026-07-13 01:33:59,2026-07-17,79
+backend/app/routers/sync.py,6425,2026-07-17 22:43:11,2026-07-17,223
+backend/app/routers/tags.py,4200,2026-07-18 14:53:28,2026-07-18,90
+backend/app/routers/templates.py,1313,2026-05-26 17:42:24,2026-07-17,21
+backend/app/routers/tts.py,14543,2026-07-14 01:20:46,2026-07-17,22
+backend/app/routers/video_notes.py,2161,2026-06-26 22:11:59,2026-07-17,5
+backend/app/schemas/__init__.py,0,2026-05-08 02:59:34,2026-07-17,41
+backend/app/schemas/ai.py,7063,2026-07-13 01:33:59,2026-07-17,-
+backend/app/schemas/analytics.py,1423,2026-05-26 17:42:24,2026-07-17,17
+backend/app/schemas/backup.py,1622,2026-07-10 09:19:15,2026-07-17,66
+backend/app/schemas/contact.py,6017,2026-07-13 01:33:59,2026-07-17,27
+backend/app/schemas/email.py,6104,2026-07-15 15:54:48,2026-07-17,53
+backend/app/schemas/encryption.py,1359,2026-07-13 01:33:59,2026-07-17,34
+backend/app/schemas/entry.py,3050,2026-07-13 01:33:59,2026-07-17,142
+backend/app/schemas/geotagging.py,965,2026-05-26 17:42:24,2026-07-17,3
+backend/app/schemas/media.py,526,2026-07-13 01:33:59,2026-07-17,127
+backend/app/schemas/note.py,3981,2026-07-13 01:33:59,2026-07-17,87
+backend/app/schemas/note_media.py,632,2026-07-03 17:30:55,2026-07-17,7
+backend/app/schemas/planner.py,4586,2026-07-15 15:54:48,2026-07-17,19
+backend/app/schemas/prompt.py,256,2026-05-26 17:42:24,2026-07-17,44
+backend/app/schemas/recording.py,339,2026-06-26 22:11:59,2026-07-17,50
+backend/app/schemas/reminder.py,1498,2026-05-26 17:42:24,2026-07-17,29
+backend/app/schemas/revision.py,923,2026-05-26 17:42:24,2026-07-17,5
+backend/app/schemas/search.py,917,2026-07-13 01:33:59,2026-07-17,75
+backend/app/schemas/sync.py,1268,2026-05-26 17:42:24,2026-07-17,223
+backend/app/schemas/tag.py,889,2026-05-26 17:42:24,2026-07-17,127
+backend/app/schemas/template.py,883,2026-05-26 17:42:24,2026-07-17,109
+backend/app/schemas/video_note.py,483,2026-06-26 22:11:59,2026-07-17,8
+backend/app/services/__init__.py,0,2026-05-08 02:59:34,2026-07-17,41
+backend/app/services/ai_tool_registry.py,6601,2026-06-23 21:37:13,2026-07-17,2
+backend/app/services/analytics_service.py,9983,2026-07-18 14:53:28,2026-07-18,4
+backend/app/services/backup_service.py,24121,2026-07-15 15:54:48,2026-07-17,11
+backend/app/services/calendar_sync_service.py,12481,2026-07-17 22:43:11,2026-07-17,2
+backend/app/services/cloud_sync_service.py,50690,2026-07-15 15:54:48,2026-07-17,10
+backend/app/services/contact_service.py,35069,2026-07-18 14:53:28,2026-07-18,4
+backend/app/services/email_protocol.py,13196,2026-07-15 15:54:48,2026-07-17,4
+backend/app/services/email_service.py,46157,2026-07-18 14:53:28,2026-07-18,6
+backend/app/services/encryption_service.py,6941,2026-07-13 01:33:59,2026-07-17,10
+backend/app/services/enrichment_service.py,6005,2026-07-18 14:53:28,2026-07-18,3
+backend/app/services/entry_service.py,12979,2026-07-18 14:53:28,2026-07-18,11
+backend/app/services/export_service.py,12616,2026-07-13 01:33:59,2026-07-17,3
+backend/app/services/google_oauth.py,6649,2026-07-18 00:35:37,2026-07-17,4
+backend/app/services/google_sync_service.py,3119,2026-07-18 00:35:37,2026-07-17,4
+backend/app/services/importers/__init__.py,447,2026-07-10 09:19:15,2026-07-17,41
+backend/app/services/importers/csv.py,2483,2026-07-15 15:54:48,2026-07-17,10
+backend/app/services/importers/dayone.py,2122,2026-07-15 15:54:48,2026-07-17,4
+backend/app/services/media_service.py,11528,2026-07-13 01:33:59,2026-07-17,12
+backend/app/services/note_media_service.py,7359,2026-07-13 01:33:59,2026-07-17,2
+backend/app/services/note_service.py,13408,2026-07-13 01:33:59,2026-07-17,3
+backend/app/services/ocr_service.py,982,2026-07-17 22:43:11,2026-07-17,7
+backend/app/services/ollama_service.py,22606,2026-07-13 01:33:59,2026-07-17,15
+backend/app/services/planner_service.py,14688,2026-07-18 14:53:28,2026-07-18,2
+backend/app/services/recording_service.py,7363,2026-07-13 01:33:59,2026-07-17,6
+backend/app/services/reminder_service.py,3728,2026-06-24 23:25:10,2026-07-17,4
+backend/app/services/scheduler_service.py,39548,2026-07-18 14:53:28,2026-07-18,17
+backend/app/services/search_service.py,15061,2026-07-13 01:33:59,2026-07-17,6
+backend/app/services/semantic_cache.py,7458,2026-07-15 15:54:48,2026-07-17,5
+backend/app/services/spam_service.py,10287,2026-07-15 15:54:48,2026-07-17,5
+backend/app/services/storage_service.py,7844,2026-07-15 15:54:48,2026-07-17,6
+backend/app/services/tag_service.py,4722,2026-07-18 14:53:28,2026-07-18,3
+backend/app/services/tasks_sync_service.py,9975,2026-07-17 22:43:11,2026-07-17,2
+backend/app/services/template_service.py,1790,2026-05-26 17:42:24,2026-07-17,3
+backend/app/services/video_service.py,3419,2026-07-13 01:33:59,2026-07-17,5
+backend/app/services/web_clip_service.py,4356,2026-07-17 22:43:11,2026-07-17,2
+backend/tests/__init__.py,0,2026-05-08 11:35:06,2026-07-17,41
+backend/tests/conftest.py,3995,2026-07-17 22:43:11,2026-07-17,3
+backend/tests/integration/test_ai_endpoints.py,1112,2026-06-23 21:37:13,2026-07-17,0
+backend/tests/integration/test_contacts.py,16740,2026-07-18 14:53:28,2026-07-18,1
+backend/tests/integration/test_email.py,7198,2026-07-13 01:33:59,2026-07-17,2
+backend/tests/integration/test_google_drive.py,14645,2026-07-10 09:19:15,2026-07-17,1
+backend/tests/integration/test_notes.py,4847,2026-07-13 01:33:59,2026-07-17,2
+backend/tests/integration/test_planner.py,6916,2026-07-18 14:53:28,2026-07-18,0
+backend/tests/integration/test_spam.py,10066,2026-07-13 01:33:59,2026-07-17,1
+backend/tests/integration/test_tts.py,8078,2026-07-14 01:20:46,2026-07-17,0
+backend/tests/unit/__init__.py,0,2026-05-08 11:35:06,2026-07-17,41
+backend/tests/unit/test_ai_tool_registry.py,1971,2026-06-23 21:37:13,2026-07-17,0
+backend/tests/unit/test_analytics_service.py,3261,2026-07-18 14:53:28,2026-07-18,2
+backend/tests/unit/test_backup_full.py,37938,2026-07-12 23:16:04,2026-07-17,1
+backend/tests/unit/test_backup_label.py,3879,2026-07-10 09:19:15,2026-07-17,0
+backend/tests/unit/test_backup_service.py,3226,2026-07-12 23:42:25,2026-07-17,2
+backend/tests/unit/test_cloud_sync_pull.py,5006,2026-07-12 23:16:04,2026-07-17,0
+backend/tests/unit/test_database_pragmas.py,755,2026-07-12 23:16:04,2026-07-17,0
+backend/tests/unit/test_encryption_service.py,4725,2026-07-13 01:33:59,2026-07-17,3
+backend/tests/unit/test_entry_service.py,7037,2026-07-18 14:53:28,2026-07-18,1
+backend/tests/unit/test_entry_template_filter.py,7054,2026-07-13 01:33:59,2026-07-17,0
+backend/tests/unit/test_export_service.py,1579,2026-07-13 01:33:59,2026-07-17,1
+backend/tests/unit/test_google_sync.py,9490,2026-07-17 22:43:11,2026-07-17,0
+backend/tests/unit/test_health_and_brand.py,1454,2026-06-25 00:16:33,2026-07-17,0
+backend/tests/unit/test_importers.py,4812,2026-07-10 09:19:15,2026-07-17,0
+backend/tests/unit/test_media_service.py,3043,2026-07-13 01:33:59,2026-07-17,1
+backend/tests/unit/test_notes.py,18200,2026-07-17 22:43:11,2026-07-17,2
+backend/tests/unit/test_ocr_service.py,742,2026-07-17 22:43:11,2026-07-17,3
+backend/tests/unit/test_ollama_service.py,5714,2026-07-10 19:29:11,2026-07-17,2
+backend/tests/unit/test_prompt_service.py,265,2026-05-26 17:42:24,2026-07-17,0
+backend/tests/unit/test_recording_service.py,4280,2026-07-13 01:33:59,2026-07-17,1
+backend/tests/unit/test_reminder_scheduling.py,5055,2026-07-13 01:33:59,2026-07-17,0
+backend/tests/unit/test_reminder_service.py,1620,2026-05-26 17:42:24,2026-07-17,1
+backend/tests/unit/test_scheduler_service.py,18211,2026-07-17 22:43:11,2026-07-17,1
+backend/tests/unit/test_search_service.py,2701,2026-07-13 01:33:59,2026-07-17,1
+backend/tests/unit/test_security.py,4086,2026-07-18 14:53:28,2026-07-18,0
+backend/tests/unit/test_semantic_cache.py,4497,2026-07-12 23:16:04,2026-07-17,0
+backend/tests/unit/test_settings.py,626,2026-05-28 19:20:50,2026-07-17,1
+backend/tests/unit/test_startup_checks.py,5580,2026-07-17 22:43:11,2026-07-17,0
+backend/tests/unit/test_storage_service.py,6724,2026-07-10 09:19:15,2026-07-17,0
+backend/tests/unit/test_sync_service.py,1576,2026-05-26 17:42:24,2026-07-17,1
+backend/tests/unit/test_tag_service.py,5121,2026-07-18 14:53:28,2026-07-18,0
+backend/tests/unit/test_video_service.py,893,2026-05-26 17:42:24,2026-07-17,1
+desktop/src-tauri/src/main.rs,13910,2026-07-17 22:43:11,2026-07-17,110
+frontend/src/App.vue,3335,2026-07-13 19:44:25,2026-07-17,54
+frontend/src/api/ai.ts,2102,2026-07-13 01:33:59,2026-07-17,-
+frontend/src/api/analytics.ts,709,2026-05-17 00:07:54,2026-07-17,17
+frontend/src/api/backup.ts,3222,2026-07-10 09:19:15,2026-07-17,66
+frontend/src/api/client.ts,1760,2026-05-29 10:27:20,2026-07-17,106
+frontend/src/api/contacts.ts,3481,2026-07-12 01:06:09,2026-07-17,24
+frontend/src/api/email.ts,5468,2026-07-12 01:06:09,2026-07-17,53
+frontend/src/api/encryption.ts,1051,2026-05-23 00:33:02,2026-07-17,34
+frontend/src/api/entries.ts,3346,2026-07-10 09:19:15,2026-07-17,115
+frontend/src/api/export.ts,1583,2026-07-10 09:19:15,2026-07-17,93
+frontend/src/api/googleSync.ts,1576,2026-07-18 00:35:37,2026-07-17,1
+frontend/src/api/media.ts,1433,2026-06-26 22:11:59,2026-07-17,127
+frontend/src/api/notes.ts,5218,2026-07-17 22:43:11,2026-07-17,72
+frontend/src/api/planner.ts,3624,2026-07-12 01:06:09,2026-07-17,18
+frontend/src/api/recordings.ts,1485,2026-06-26 22:11:59,2026-07-17,33
+frontend/src/api/reminders.ts,752,2026-05-11 11:27:52,2026-07-17,28
+frontend/src/api/search.ts,798,2026-05-21 17:44:46,2026-07-17,75
+frontend/src/api/settings.ts,1789,2026-07-10 09:19:15,2026-07-17,80
+frontend/src/api/sync.ts,752,2026-07-10 09:19:15,2026-07-17,223
+frontend/src/api/tags.ts,654,2026-05-13 05:31:35,2026-07-17,91
+frontend/src/api/templates.ts,642,2026-05-19 01:03:20,2026-07-17,22
+frontend/src/api/tts.ts,2878,2026-07-14 01:20:46,2026-07-17,23
+frontend/src/assets/tariq-memorial-tribute.jpg,131777,2026-06-27 11:44:44,2026-07-17,4
+frontend/src/components/calendar/CalendarCell.vue,2441,2026-07-10 09:19:15,2026-07-17,1
+frontend/src/components/calendar/CalendarGrid.vue,5061,2026-05-25 12:56:51,2026-07-17,3
+frontend/src/components/calendar/CalendarHeader.vue,1390,2026-05-25 12:55:00,2026-07-17,1
+frontend/src/components/calendar/EntryPicker.vue,3281,2026-06-26 22:11:59,2026-07-17,2
+frontend/src/components/common/BaseModal.vue,1949,2026-05-27 00:42:24,2026-07-17,0
+frontend/src/components/common/ConfirmDialog.vue,1256,2026-05-19 18:37:03,2026-07-17,2
+frontend/src/components/common/EditorButton.vue,573,2026-05-27 00:42:24,2026-07-17,0
+frontend/src/components/common/EmojiPicker.vue,4886,2026-07-10 13:12:17,2026-07-17,1
+frontend/src/components/common/GoToDateModal.vue,4206,2026-05-25 12:54:25,2026-07-17,3
+frontend/src/components/common/StateView.vue,1623,2026-06-26 22:11:59,2026-07-17,0
+frontend/src/components/contacts/ContactForm.vue,22025,2026-07-12 01:06:09,2026-07-17,2
+frontend/src/components/contacts/ContactPanel.vue,13419,2026-07-12 01:06:09,2026-07-17,1
+frontend/src/components/contacts/ContactsView.vue,14955,2026-07-18 14:53:28,2026-07-18,3
+frontend/src/components/dashboard/DashboardView.vue,30300,2026-07-13 01:33:59,2026-07-17,2
+frontend/src/components/editor/EditorContextMenu.vue,10808,2026-07-13 01:33:59,2026-07-17,2
+frontend/src/components/editor/EditorToolbar.vue,15272,2026-07-17 22:43:11,2026-07-17,2
+frontend/src/components/email/EmailView.vue,62385,2026-07-14 01:20:46,2026-07-17,4
+frontend/src/components/entry/AiDrawerPanel.vue,7323,2026-06-23 21:37:13,2026-07-17,4
+frontend/src/components/entry/AttachmentsPanel.vue,2464,2026-07-18 14:53:28,2026-07-18,2
+frontend/src/components/entry/EditorStatusBar.vue,1503,2026-06-26 22:11:59,2026-07-17,1
+frontend/src/components/entry/EncryptionBadge.vue,2934,2026-05-21 23:25:43,2026-07-17,2
+frontend/src/components/entry/EntryDetail.vue,5663,2026-07-14 01:20:46,2026-07-17,2
+frontend/src/components/entry/EntryEditor.vue,34286,2026-07-14 01:20:46,2026-07-17,5
+frontend/src/components/entry/EntryHeader.vue,1074,2026-05-17 23:11:20,2026-07-17,1
+frontend/src/components/layout/AppShell.vue,10201,2026-07-18 14:53:28,2026-07-18,4
+frontend/src/components/layout/PanelSplitter.vue,1641,2026-07-13 01:33:59,2026-07-17,4
+frontend/src/components/layout/Sidebar.vue,9132,2026-07-13 01:33:59,2026-07-17,7
+frontend/src/components/layout/SplashScreen.vue,3411,2026-06-27 11:44:44,2026-07-17,3
+frontend/src/components/media/MediaGrid.vue,4525,2026-06-26 22:11:59,2026-07-17,3
+frontend/src/components/media/MediaTimelineView.vue,12275,2026-07-13 01:33:59,2026-07-17,2
+frontend/src/components/media/MediaViewer.vue,8734,2026-06-25 20:26:26,2026-07-17,5
+frontend/src/components/notes/NoteEditor.vue,44578,2026-07-18 00:35:37,2026-07-17,3
+frontend/src/components/notes/NoteEncryptionBadge.vue,3017,2026-07-03 17:30:55,2026-07-17,1
+frontend/src/components/notes/NoteListItem.vue,2696,2026-07-03 17:30:55,2026-07-17,0
+frontend/src/components/notes/NotesView.vue,17147,2026-07-17 22:43:11,2026-07-17,4
+frontend/src/components/notes/SnipOverlay.vue,4184,2026-07-17 22:43:11,2026-07-17,1
+frontend/src/components/notes/WebClipModal.vue,2808,2026-07-17 22:43:11,2026-07-17,1
+frontend/src/components/planner/PlannerView.vue,1950,2026-07-12 01:06:09,2026-07-17,2
+frontend/src/components/planner/RecurrencePicker.vue,3157,2026-07-12 01:06:09,2026-07-17,1
+frontend/src/components/planner/SchedulePanel.vue,9861,2026-07-12 01:06:09,2026-07-17,1
+frontend/src/components/planner/TaskPanel.vue,11009,2026-07-13 01:33:59,2026-07-17,1
+frontend/src/components/recordings/EntryRecordings.vue,2062,2026-06-26 22:11:59,2026-07-17,1
+frontend/src/components/recordings/FloatingPlayback.vue,2457,2026-06-26 22:11:59,2026-07-17,1
+frontend/src/components/recordings/FloatingRecorder.vue,5521,2026-07-12 23:16:04,2026-07-17,1
+frontend/src/components/reminders/DayPicker.vue,2242,2026-06-25 20:26:26,2026-07-17,1
+frontend/src/components/reminders/RemindersView.vue,15437,2026-06-25 20:26:26,2026-07-17,2
+frontend/src/components/scribble/ScribblePad.vue,3137,2026-06-26 22:11:59,2026-07-17,1
+frontend/src/components/search/SearchFilters.vue,1345,2026-05-25 13:08:03,2026-07-17,1
+frontend/src/components/search/SearchPalette.vue,9423,2026-07-13 01:33:59,2026-07-17,4
+frontend/src/components/settings/MemorialTribute.vue,17994,2026-06-27 11:44:44,2026-07-17,1
+frontend/src/components/settings/SettingsView.vue,14209,2026-07-17 22:43:11,2026-07-17,4
+frontend/src/components/settings/dialogs/WhatsNewDialog.vue,2993,2026-06-26 22:11:59,2026-07-17,2
+frontend/src/components/settings/panels/ImportExportPanel.vue,10969,2026-07-10 09:19:15,2026-07-17,1
+frontend/src/components/settings/panels/MaintenancePanel.vue,3982,2026-07-10 09:19:15,2026-07-17,1
+frontend/src/components/settings/panels/StoragePanel.vue,5936,2026-07-10 09:19:15,2026-07-17,1
+frontend/src/components/settings/shared/AccordionItem.vue,1378,2026-06-26 22:11:59,2026-07-17,4
+frontend/src/components/settings/shared/SButton.vue,1080,2026-06-26 22:11:59,2026-07-17,9
+frontend/src/components/settings/shared/SettingGroup.vue,749,2026-07-10 09:19:15,2026-07-17,3
+frontend/src/components/settings/shared/SettingRow.vue,1150,2026-07-10 09:19:15,2026-07-17,7
+frontend/src/components/settings/shared/SettingsSection.vue,1964,2026-07-10 09:19:15,2026-07-17,11
+frontend/src/components/settings/shared/SkeletonCard.vue,300,2026-05-26 16:29:31,2026-07-17,2
+frontend/src/components/settings/shared/ToggleSwitch.vue,840,2026-05-26 16:29:31,2026-07-17,4
+frontend/src/components/settings/shared/UpdateStatus.vue,3532,2026-06-26 22:11:59,2026-07-17,3
+frontend/src/components/settings/tabs/AITab.vue,16325,2026-07-10 19:29:11,2026-07-17,1
+frontend/src/components/settings/tabs/AboutTab.vue,8555,2026-07-10 09:19:15,2026-07-17,2
+frontend/src/components/settings/tabs/BackupTab.vue,25378,2026-07-10 09:19:15,2026-07-17,2
+frontend/src/components/settings/tabs/DataBackupTab.vue,2040,2026-07-10 09:19:15,2026-07-17,1
+frontend/src/components/settings/tabs/DedicationTab.vue,490,2026-06-27 11:44:44,2026-07-17,2
+frontend/src/components/settings/tabs/EmailTab.vue,15709,2026-07-12 01:06:09,2026-07-17,1
+frontend/src/components/settings/tabs/FeaturesTab.vue,16492,2026-07-14 01:20:46,2026-07-17,1
+frontend/src/components/settings/tabs/GeneralTab.vue,8042,2026-06-26 22:11:59,2026-07-17,1
+frontend/src/components/settings/tabs/GoogleSyncTab.vue,5090,2026-07-18 00:35:37,2026-07-17,1
+frontend/src/components/settings/tabs/NotesTab.vue,1018,2026-07-13 01:33:59,2026-07-17,1
+frontend/src/components/tags/TagList.vue,2259,2026-05-13 12:48:59,2026-07-17,2
+frontend/src/components/templates/TemplateModal.vue,3029,2026-05-19 01:03:20,2026-07-17,1
+frontend/src/components/templates/TemplatePicker.vue,4191,2026-05-19 18:37:03,2026-07-17,1
+frontend/src/components/timeline/TimelineView.vue,12124,2026-07-13 01:33:59,2026-07-17,5
+frontend/src/composables/aiToolRegistry.ts,4605,2026-06-23 21:37:13,2026-07-17,6
+frontend/src/composables/useAiTools.ts,3733,2026-06-23 21:37:13,2026-07-17,5
+frontend/src/composables/useAttachments.ts,1292,2026-06-03 11:23:55,2026-07-17,1
+frontend/src/composables/useAutoSave.ts,2891,2026-07-03 17:30:37,2026-07-17,3
+frontend/src/composables/useCalendar.ts,2476,2026-05-09 12:34:11,2026-07-17,2
+frontend/src/composables/useDragDrop.ts,1696,2026-05-25 12:59:09,2026-07-17,3
+frontend/src/composables/useEditorHistory.ts,2076,2026-07-13 01:33:59,2026-07-17,2
+frontend/src/composables/useFindReplace.ts,1847,2026-05-27 00:42:24,2026-07-17,2
+frontend/src/composables/useFormat.ts,521,2026-05-17 23:11:20,2026-07-17,7
+frontend/src/composables/useMarkdownPreview.ts,1877,2026-06-26 22:11:59,2026-07-17,3
+frontend/src/composables/usePagination.ts,778,2026-05-09 12:34:11,2026-07-17,3
+frontend/src/composables/useRecordings.ts,7817,2026-06-26 22:11:59,2026-07-17,5
+frontend/src/composables/useRichTextEditor.ts,14611,2026-07-13 01:33:59,2026-07-17,2
+frontend/src/composables/useUpdateChecker.ts,5173,2026-06-24 23:51:23,2026-07-17,6
+frontend/src/main.ts,438,2026-06-26 22:11:59,2026-07-17,110
+frontend/src/router.ts,1362,2026-07-13 01:33:59,2026-07-17,62
+frontend/src/stores/backup.ts,1612,2026-05-27 00:42:24,2026-07-17,66
+frontend/src/stores/contacts.ts,2804,2026-07-12 01:06:09,2026-07-17,24
+frontend/src/stores/email.ts,10115,2026-07-13 01:33:59,2026-07-17,53
+frontend/src/stores/entries.ts,2512,2026-07-13 01:33:59,2026-07-17,115
+frontend/src/stores/notes.ts,6051,2026-07-13 01:33:59,2026-07-17,72
+frontend/src/stores/planner.ts,2737,2026-07-12 01:06:09,2026-07-17,18
+frontend/src/stores/reminders.ts,1093,2026-05-11 11:29:43,2026-07-17,28
+frontend/src/stores/search.ts,2175,2026-06-26 22:11:59,2026-07-17,75
+frontend/src/stores/sync.ts,1027,2026-05-11 11:29:43,2026-07-17,223
+frontend/src/stores/tags.ts,922,2026-05-19 18:37:03,2026-07-17,91
+frontend/src/stores/templates.ts,1026,2026-05-19 01:03:20,2026-07-17,22
+frontend/src/stores/tts.ts,6229,2026-07-14 01:20:46,2026-07-17,23
+frontend/src/stores/ui.ts,5143,2026-07-13 01:33:59,2026-07-17,-
+frontend/src/styles/main.css,10706,2026-07-13 01:33:59,2026-07-17,111
+frontend/src/types/index.ts,21921,2026-07-13 01:33:59,2026-07-17,52
+frontend/src/utils/fileDialog.ts,2958,2026-05-28 16:16:02,2026-07-17,3
+frontend/src/utils/settings.ts,1591,2026-06-26 22:11:59,2026-07-17,81
+frontend/src/version.ts,769,2026-06-24 23:25:10,2026-07-17,51
+frontend/tests/entries.spec.ts,1766,2026-07-14 19:43:26,2026-07-17,1
+frontend/tests/recordings.spec.ts,2556,2026-07-15 17:02:29,2026-07-17,1
+frontend/tests/settings.spec.ts,8450,2026-07-15 17:02:29,2026-07-17,3
+scripts/build-web-deb.sh,19166,2026-07-10 09:19:15,2026-07-17,5
+scripts/build.sh,3370,2026-06-24 23:25:10,2026-07-17,68

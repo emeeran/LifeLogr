@@ -1,6 +1,15 @@
-........................................................................ [ 24%]
-........................................................................ [ 48%]
-........................................................................ [ 73%]
-........................................................................ [ 97%]
-......                                                                   [100%]
-294 passed in 256.17s (0:04:16)
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 55%]
+........................................................................ [ 74%]
+........................................................................ [ 92%]
+.............................                                            [100%]
+=============================== warnings summary ===============================
+tests/unit/test_scheduler_service.py::TestRestoreBackupSchedule::test_restores_cloud_job_when_config_exists
+  /home/em/code/wip/diary/backend/.venv/lib/python3.11/site-packages/sqlalchemy/orm/loading.py:184: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    unique_filters = [
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+389 passed, 1 warning in 335.62s (0:05:35)
