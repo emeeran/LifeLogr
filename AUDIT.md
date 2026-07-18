@@ -1,166 +1,85 @@
-# Production Readiness Audit — 2026-07-12
+# Production Readiness Audit — 2026-07-18
 
-Branch: `debloat`. Source: 4 parallel read-only subagent audits
-(correctness/error-handling, security, config+ops, observability+testing/CI),
-each verifying findings against the actual code and self-correcting false
-positives. Line numbers reflect post-Phase-3 state.
+Branch: `cleanup/pipeline-2026-07-18` (off `feature/perf-and-debloat`). Source: 6 parallel
+read-only subagent audits (correctness/error-handling, security, config/environment,
+observability, testing/CI, operational-readiness), each verifying findings against the
+actual code and self-correcting false positives. Headline blockers re-verified by the main
+thread (`desktop/src-tauri/src/main.rs:271-272`, `backend/app/core/database.py:157-159`,
+`backend/app/services/scheduler_service.py:946-972`, `backend/app/routers/entries.py:453-483`).
 
 ## Summary
 
-**Verdict: ready for its intended use (local-first single-user app), with
-fixes recommended before any broader/hosted deployment.** There are **zero
-blockers** per the four-dimension audit. There are several **HIGH** issues;
-most fall into two clusters: (a) input-validation gaps on two upload endpoints
-(arbitrary local file read, unvalidated video upload) and (b)
-resource/idempotency gaps in the new email subsystem (disk leaks, sync
-double-fire). The crypto findings (deterministic salt, SECRET_KEY default) are
-real but their blast radius is bounded by the local single-user model. None of
-the HIGHs prevent the app from running; they are correctness/robustness/
-hardening debts.
+**Verdict: the web-deb distribution is production-ready for its intended use (local-first
+single-user desktop app); the Tauri desktop distribution has one serious security blocker
+(B1) and should not be shipped until fixed.** All 2026-07-12 prior fixes **held** under
+re-verification (no regressions). The 2026-07-18 perf+debloat code is **correct and clean**
+— no new security/correctness bugs were introduced by it. The findings below are either
+(a) one new Tauri-specific vulnerability, (b) pre-existing robustness gaps in backup/restore
+crash-recovery, or (c) pre-existing test-coverage gaps on two inbound critical paths.
 
-> **Important — see Reconciliation below:** the Phase 5 blind review
-> independently surfaced a **CRITICAL** this audit missed — encrypting an
-> entry indexes its **ciphertext into the FTS5 search index** and ships
-> ciphertext to the LLM for enrichment — which elevates the encryption cluster
-> above what the HIGHs below convey. Treat that as the single highest-priority
-> item to fix.
-
-## Resolution status (2026-07-12 — commits `5b82e22`..`b44e1b1`)
-
-All CRITICAL/HIGH correctness, security, and crypto findings have been fixed;
-297 backend tests pass, frontend build green. Remaining items are additive
-test-coverage and lower-severity hardening.
-
-**Resolved**
-- CRITICAL ciphertext-in-FTS + HIGH ciphertext-to-LLM (`5b82e22`) — FTS triggers
-  exclude encrypted entries (encrypt/decrypt toggle triggers); enrichment +
-  on-this-day/themes skip encrypted entries.
-- HIGH deterministic PBKDF2 salt → per-entry random salt w/ legacy read-compat (`e758438`).
-- HIGH decrypt wrong-passphrase 500 → 400 (entry + note) (`5b82e22`).
-- HIGH `notes/from-path` arbitrary file read → sandboxed to `$HOME`+temp, sensitive dirs denied (`ebdd711`).
-- HIGH video upload zero validation → size + MIME + magic-byte checks (`ebdd711`).
-- HIGH contact-photo magic bytes (`ebdd711`).
-- HIGH email-sync double-fire → cross-job `asyncio.Lock` + `max_instances=1` (`6b0e8a8`).
-- HIGH deleted-email disk leak (unlink on delete) + temp-attachment TTL GC + inbound attachment size cap (`3bf70d4`).
-- HIGH (blind) `OLLAMA_BASE_URL` SSRF → scheme validated (`25ebe0e`).
-- HIGH (blind) OAuth reflected-XSS → `html.escape` on error detail (`25ebe0e`).
-- HIGH (blind) `get_db()` global lock removed (`8d5f52c`).
-- MEDIUM (blind) `LocalFileProvider` path traversal → containment (`25ebe0e`).
-- MEDIUM `_append_to_special` logs at WARNING; `RATE_LIMIT` wired to config; STARTTLS failure warns (`8d5f52c`).
-- HIGH `.env.example` documents OAuth/email vars; SECRET_KEY default warns at startup (`b44e1b1`).
-
-**Remaining (not in this pass)**
-- HIGH **additive test coverage**: `email_protocol` MIME parsing, planner
-  `_expand_recurrence`, contact vCard parse/serialize still lack unit tests.
-  These are new tests, not bug fixes — recommended next.
-- MEDIUM backup cloud-path RAM buffering (stream the gzip); lifespan draining of
-  background email tasks (task registry); `/health` liveness/readiness split;
-  `decrypt-text` bare-except narrowing; cloud `httpx` timeouts; AI-endpoint
-  fake-success narrowing.
-- LOW items (SPA containment guard, soft-delete guard on media parent, FTS-fallback
-  surfacing) — defence-in-depth, low severity.
-
-`SECRET_KEY`: auto-rotation was **intentionally not** done (it would break
-already-encrypted credentials); the launcher already generates strong keys, and
-the new startup warning surfaces any non-launcher run still on the default.
-
-## Reconciliation with the Phase 5 blind review
-
-A context-blind reviewer (no knowledge that a cleanup ran) caught real issues
-the four-dimension audit missed, and vice-versa. Per the pipeline these are
-logged here rather than silently folded into the earlier sections.
-
-### Missed by pipeline, caught by blind review (genuine audit misses)
-- **CRITICAL — `encryption_service.py:58` + `core/database.py:486` — encrypting an entry indexes its CIPHERTEXT into the FTS5 search index.** `encrypt_entry()` sets `entry.body` to base64 ciphertext and commits → the `fts_entry_au` trigger re-indexes that ciphertext. The search service doesn't filter `is_encrypted`. Result: search over encrypted entries matches/snippets ciphertext, and the plaintext is lost from the index even after decryption unless the entry is re-edited. (Notes too, via `fts_note_au`.) The pipeline audit read both files but never connected them. **Highest-priority fix.**
-- **HIGH — `entry_service.py:42,106` + `routers/ai.py:149` — encrypted entries ship ciphertext to the LLM.** `create`/`update` call `EnrichmentService.schedule(title, body)` with no `is_encrypted` guard; `/on-this-day` slices `e.body[:500]` without the guard. Editing an encrypted entry sends its ciphertext to Ollama for embeddings/sentiment/summary.
-- **HIGH — `routers/settings.py:210` — `OLLAMA_BASE_URL` is user-settable via the unauthenticated `PUT /settings`** → any caller redirects all AI features (which proxy journal content) at an arbitrary host: SSRF + data-exfiltration primitive. The pipeline's security pass checked OAuth URLs were hardcoded but missed this user-controlled one.
-- **HIGH — OAuth callback error pages reflect exception text into HTML unescaped** (`google_drive.py:124`, mirrored in `box/onedrive/dropbox`): `_render_error_page` does `.replace("{{DETAIL}}", f"Failed to exchange code: {e}")` — `httpx` error text embeds the remote response body, an attacker-influenced reflected-XSS sink (low impact on loopback, exploitable if ever bound to `0.0.0.0`).
-- **MEDIUM — `core/database.py:57` — `get_db()` wraps every request's session creation in a global `async with _engine_lock` and releases it immediately**, serializing all requests at lock-acquire for no benefit (SQLite's pool_size=1 already serializes). Avoidable throughput ceiling.
-- **MEDIUM — `email_service.py:620` — synced inbound attachments are written to disk with no size cap** (the 25 MB limit is only enforced on the upload path, not on inbound mail).
-- **MEDIUM — `cloud_sync_service.py:114` — `LocalFileProvider.upload(path)` joins a raw, partially user-influenced path with no normalization** — a latent path-traversal sink, currently dev-only but exported alongside the production providers.
-- **MEDIUM — AI endpoints return fake-success (HTTP 200 with empty/canned content) on any exception** (`ai.py:202`, `ollama_service.py` parse failures) — silent AI failures look healthy to monitoring.
-
-### Both agree (higher confidence)
-- Deterministic PBKDF2 salt (`encryption_service.py:33`) — CRITICAL/ HIGH in both.
-- `SECRET_KEY` default encrypts real credentials when the prod guard is bypassed (`config.py:127`) — both.
-- Email-sync job overlap / missing `max_instances` (`scheduler_service.py`) — both.
-- `_TEMP_ATTACHMENTS` unbounded leak; deleted-email disk-file leak; IMAP side-effects swallowed at DEBUG — all flagged by both.
-
-### Caught by pipeline, not emphasized by blind review (still valid)
-- The two upload-validation HIGHs (`notes/from-path` arbitrary file read; `video_notes` zero validation) — the blind reviewer didn't reach those services.
-- Contact-photo magic-byte gap; `.env.example` missing OAuth/email vars; backup-in-RAM; lifespan not draining background tasks; the test-coverage HIGHs (`email_protocol`, planner recurrence, contact vCard) and the `test_encryption_service` `try/except:pass` hiding a 500.
-
-### Honest limit
-The blind reviewer runs on the same model as this session; the sanitized pass
-removed self-grading/framing bias (which is why it caught the misses above) but
-not model-level blind spots. The strongest independent check is a fresh
-session / different reviewer. See `.pipeline/blind-review.md`.
+> The single most urgent item is **B1**: the Tauri launcher never generates a `SECRET_KEY`,
+> so Tauri installs encrypt every stored OAuth/IMAP/SMTP/cloud credential with the
+> publicly-known string `"change-me-before-production"`. Anyone with the DB file decrypts
+> them all. (The web-deb launcher does generate one — `build-web-deb.sh:179-204` — so the
+> installed `/opt/lifelogr` app is fine.)
 
 ## Blockers (must fix before prod)
-- _(none)_ — consensus across all four audit dimensions.
+
+- [ ] **B1** — `desktop/src-tauri/src/main.rs:262-272` — **Tauri sidecar runs with the default `SECRET_KEY`.** The Rust launcher sets `DATA_DIR` + `APP_ENV=production` but never generates/exports `SECRET_KEY`. `config.py:127`'s default `"change-me-before-production"` is used, and `database.py:157-159` deliberately skips `validate_production()` when `DATA_DIR` is set. `config.py` does not read `.secret_key` (only the deb script does). Result: AES-256-GCM credential encryption (`security.py:29` derives the key from `SECRET_KEY`) uses a public key on every Tauri install. **Fix:** mirror `build-web-deb.sh` — `secrets.token_hex(32)` once → persist to `data_dir/.secret_key` (umask 0600) → export as `SECRET_KEY` in the sidecar `.env()` call.
+- [ ] **B2** — `backend/app/services/scheduler_service.py:946-972` — **Local backup is not atomic on `SIGKILL`/power loss → truncated archive survives retention.** The tarball is written directly to its final path; the cleanup at `:968-969` only runs on a Python exception, and the retention sweep keys on filename/size so a half-written file looks valid. On restore day the user gets a corrupt tarball with no warning. **Fix:** write to `*.tar.gz.part`, `os.replace(...)` after the `tarfile` context closes; sweep `*.part` on startup.
 
 ## High priority
 
-**Input validation (trust boundaries):**
-- [ ] `backend/app/services/note_media_service.py:125` + `routers/notes.py:218` — `POST /notes/{id}/media/from-path` reads **any absolute path** the client sends (`Path(path).expanduser().read_bytes()`) and serves it back via the media endpoint. Arbitrary local-file disclosure (e.g. `~/.ssh/id_rsa`, the app's `.secret_key`). Intended for Tauri drag-drop but unauthenticated + unsandboxed.
-- [ ] `backend/app/services/video_service.py:31` + `routers/video_notes.py:18` — video upload has **no MIME check, no magic-byte check, no size limit** (unlike `MediaService`/`NoteMediaService`, which enforce all three). Disk exhaustion + arbitrary-content storage served back as `video/mp4`.
-
-**Crypto / key material:**
-- [ ] `backend/app/services/encryption_service.py:32` — entry-encryption PBKDF2 uses a **deterministic salt** derived from the passphrase, not a random per-entry salt. Defeats the purpose of salting (no precomputation/rainbow-table protection). Store a random 16-byte salt per entry alongside the ciphertext.
-- [ ] `backend/app/core/config.py:127` — `SECRET_KEY` defaults to `"change-me-before-production"` and the production guard is bypassed for the desktop sidecar / dev, so real IMAP/SMTP/cloud-OAuth credentials get encrypted (via HKDF from SECRET_KEY) under a publicly-known string. Generate a random per-install key on first run and persist it locally (the `.deb` launcher already does this; other run paths do not).
-
-**Email subsystem (new on this branch):**
-- [ ] `backend/app/services/scheduler_service.py:241,598` — `email_sync_boot` (one-off) and `email_sync` (interval) are **different APScheduler job IDs**, so `max_instances=1` does not prevent them overlapping → concurrent IMAP logins + interleaved flushes against single-writer SQLite → "database is locked" risk. Add a cross-job lock or shared job ID.
-- [ ] `backend/app/services/email_service.py:60` — `_TEMP_ATTACHMENTS` (in-memory dict) + on-disk `_temp/` files have **no expiry/GC**; an abandoned compose leaks memory + disk forever.
-- [ ] `backend/app/services/email_service.py:807` — deleted email messages orphan `.eml` + attachment files on disk (comment says "GC later" but **no GC exists**). Disk grows with every deletion.
-
-**Testing gaps on untrusted-input / complex logic:**
-- [ ] `backend/app/services/email_protocol.py` — **zero unit tests** for MIME parsing (`parse_message`), address decoding, snippet extraction, `ImapClient`. This is untrusted RFC822 input from arbitrary mail servers.
-- [ ] `backend/app/services/planner_service.py:250` — **zero unit tests** for `_expand_recurrence` (dateutil rrule; DST/EXDATE/timezone edge cases). A malformed RRULE silently yields no occurrences.
-- [ ] `backend/app/services/contact_service.py` — hand-rolled vCard parse/serialize (`parse_vcard:84`, `serialize_vcard:214`) has **no unit tests**; a malformed import could lose contacts silently.
-- [ ] `backend/tests/unit/test_encryption_service.py:41` — wraps an assertion in `try/except: pass`, accepting either 400 **or an unhandled 500**. This hides a real bug: `routers/encryption.py:88` `decrypt_note` lets `InvalidTag` propagate (no try/except, unlike the entry-level path at :122) → 500 on a wrong passphrase.
-
-**Config:**
-- [ ] `backend/.env.example` — missing all OAuth + email-sync env vars (`GOOGLE_CLIENT_ID/SECRET`, `ONEDRIVE_*`, `DROPBOX_*`, `BOX_*`, `EMAIL_SYNC_*`). An operator deploying the `.deb` has no map of what's configurable.
+- [ ] **H1** — `backend/app/services/cloud_sync_service.py:1137` (`CloudSyncService.push`) + `backend/app/services/email_service.py:469` (`sync_account`/`sync_folder`/`_store_message`) — **the two inbound/write critical paths for sync have zero tests.** `pull()` is well-tested; `push()` (the upload half of two-way sync — encrypts, uploads, flushes) is not. The IMAP fetch-and-persist loop (MIME parse, UID dedup, contact extraction) is not. A bug here silently loses data to the cloud or silently drops inbound mail. (The 07-18 new code — tags, contacts.delete_many, security.load_stored_credentials — IS adequately tested.)
+- [ ] **H2** — `backend/app/routers/entries.py:453-483` — **dedup `GROUP_CONCAT(id)` order is unspecified.** No `ORDER BY` inside the aggregate; SQLite documents the order as undefined. Today it happens to be ascending (PK scan) so "keep `id_list[0]`, delete rest" keeps the oldest — but a plan change or future SQLite can flip it and delete the original. **Fix:** `GROUP_CONCAT(id ORDER BY id)` (SQLite ≥ 3.44) or a min-id-per-group subquery. (Related: dedup keys only on `(date, body)`, so same-day entries differing only in title/mood/tags are collapsed — confirm or add `title` to the key.)
+- [ ] **H3** — `backend/app/routers/{box,dropbox,onedrive,google_drive}.py` — **OAuth redirect-host inconsistency.** Box uses `http://localhost:18765`; the other four use `http://127.0.0.1:18765`. Providers treat these as distinct registered URIs; a mismatch 400s the flow or lands on an origin the SPA isn't served from. Pick one host for all five.
+- [ ] **H4** — `scripts/build-web-deb.sh:243-264` + `frontend/src/api/client.ts:4` — **web-deb port-fallback breaks OAuth silently.** All five redirect URIs are hardcoded `:18765`, but the web launcher falls back to `8000-8019`/OS-assigned if 18765 is taken. On such a machine the web app starts but every "Sign in with…" backup button is dead with no user-visible error. (Tauri is unaffected — it pins 18765 and reclaims it.)
+- [ ] **H5** — `backend/app/services/backup_service.py:209-250` — **cloud uploads leave orphaned partial objects on crash** (no abort-on-error, no startup reconcile against `backup_snapshots`). Over months, provider quota silently fills with half-backups.
+- [ ] **H6** — `desktop/src-tauri/src/main.rs:274` — **Tauri sidecar kill may skip lifespan shutdown.** `kill -9`/OOM/uvicorn's 5s shutdown cap can terminate an in-flight backup mid-transaction (compounds B2). Pragmatic mitigation: make backups atomic (B2) + a `SIGTERM` handler in `main.py` calling shutdown logic with a hard timeout.
+- [ ] **H7** — `backend/app/core/database.py` / `scheduler_service.py` — **no periodic WAL checkpoint.** `_checkpoint_wal_robust` only runs from the backup path; with backups disabled or infrequent, the `-wal` file grows unbounded → slow reads + slow boot `init_db`. Add a low-frequency (e.g. 6h) checkpoint job; log WAL size in `/health`.
+- [ ] **H8** — testing: `email_service.send/save_draft` (SMTP) untested; `restore.atomic_restore` rollback branches (`restore.py:207-227`) tested only in pieces, not end-to-end; `ocr_service` test silently skipped in CI (`test_ocr_service.py:12` — tesseract not installed, `ocr` extra not in `--group dev`); `_calc_streaks` happy-path only.
 
 ## Medium / Low
 
 **Medium**
-- `email_service.py:1101` — after a successful SMTP send, the APPEND to the Sent folder is swallowed at DEBUG; the sent mail is not retained server-side yet `send()` returns `success: True`. (flagged by 3 agents)
-- `email_service.py:794` / `:836` — IMAP flag-push and bulk-delete failures swallowed at DEBUG → local DB and IMAP server silently desync; the user's action can revert on next sync.
-- `contact_service.py:642` + `routers/contacts.py:183` — contact photo upload checks size + extension but **not magic bytes** (cf. `MediaService` which blocks MZ/ELF/`<script`/`<?php`).
-- `email_service.py` (sync) — inbound email attachments stored with **no type/magic/size filtering** (unlike the media-upload path).
-- `backup_service.py:90` — cloud-backup path buffers the entire DB+media into RAM as one gzip (local path streams). OOM risk on low-RAM machines with large media libraries.
-- `main.py:52` — lifespan shutdown does not drain the fire-and-forget background email tasks (`push_flags_background`, `move_to_trash_background`, …); a SIGTERM mid-IMAP-round-trip can leave server + local DB inconsistent.
-- `main.py:279` — single `/health` conflates liveness + readiness and opens a DB connection per hit; no cheap `/healthz` split.
-- Background email side-effects + `_reschedule_jobs` failures logged only at DEBUG, never surfaced to user or `/health` → a dead sync schedule looks healthy.
-- `routers/encryption.py:126` — `decrypt-text` catches bare `Exception` → wrong-passphrase and server bugs return the same message with no logging.
-- `core/config.py:181` — `RATE_LIMIT` env var is parsed but **never used** (hardcoded in `main.py:160`); misleading operator-facing config.
-- `email_protocol.py:331` — opportunistic STARTTLS swallows all failures then logs in (possibly in plaintext) with no warning.
-- `core/security.py:16` — HKDF for v2 credential key uses a static salt/info; fine only if SECRET_KEY is random per-install (see HIGH above).
-- `storage_service.py:159` — DATA_DIR relocate `copytree` of MEDIA_DIR is non-atomic; a crash mid-copy can leave the target partial (DB validated, media not).
-- CI: `.github/workflows/ci.yml:60` e2e job doesn't depend on the backend test suite; `.github/workflows/build.yml` builds installers with **no test gate** (a tag push bypasses CI).
-- `pyproject.toml:7` — backend deps floor-pinned (`>=`); reproducibility relies on `uv.lock`/`--frozen`.
+- [ ] **M1** — `backend/app/services/note_media_service.py:152-159` — **`from-path` sensitive-dir denylist incomplete.** Sandboxed to `$HOME`+temp and denies DATA_DIR/`.ssh`/`.gnupg`/`.config`, but `~/.aws/credentials`, `~/.kube/config`, `~/.netrc`, `~/.mozilla`/`~/.thunderbird`, `~/.local/share/keyrings`, `~/.password-store`, browser-cookie dirs are importable and then downloadable as note media. **Fix:** invert to a media-extension allowlist, or extend the denylist.
+- [ ] **M2** — `backend/app/core/config.py:127` + `.env.example:6` — **weak default `SECRET_KEY` ships in source.** A bare `uv run uvicorn` (no launcher) silently encrypts with the public key; `.env.example` repeats the placeholder. Make `SECRET_KEY` required (no default) so bare runs fail fast.
+- [ ] **M3** — `desktop/src-tauri/src/main.rs:13-19` + `docs/BUILD_GUIDE.md` + `docs/manual/DEPLOYMENT.md` — **stale config naming.** Tauri reads `DIARI_PORT` (old app name); docs reference `DIARI_DATA_DIR` but `config.py:200` honors `LIFELOGR_DATA_DIR`. Users following docs to relocate data silently get nothing. Rename/read-both + update docs.
+- [ ] **M4** — `backend/.env.example` — **incomplete.** 6 Settings fields undocumented incl. security-relevant `BACKUP_ALLOWED_ROOTS` and `MAX_IMPORT_SIZE_BYTES`; `ANTHROPIC_API_KEY` is documented but never read (dead config — remove).
+- [ ] **M5** — `backend/app/core/config.py:127` + `main.py:142,202` — **packaged web build runs `APP_ENV=development`** (so rate-limiting is off, intentionally) which also keeps `/docs` (Swagger) enabled on loopback. Introduce an `APP_ENV=desktop` mode that disables rate-limiting like dev but also disables `/docs`.
+- [ ] **M6** — `backend/app/main.py:316-400` — **`/health` has no liveness/readiness split and makes a 2s Ollama call per probe.** Under any probe frequency it's a continuous load on SQLite+Ollama. Split `/health/live` (cheap) / `/health/ready` (full); cache Ollama reachability ~10s.
+- [ ] **M7** — `backend/app/services/scheduler_service.py` — **APScheduler misfires/internal errors are not surfaced** (no `EVENT_JOB_MISSED`/`EVENT_JOB_ERROR` listener). "Why didn't my 9am backup run?" is unanswerable from the log. Add one listener logging misfires at WARNING.
+- [ ] **M8** — `backend/app/services/backup_service.py:264-266` — **`run_backup` swallows the exception without `logger.error`** (persists to DB only). On-demand/HTTP-path failures leave zero log evidence.
+- [ ] **M9** — `backend/app/services/cloud_sync_service.py` + `google_oauth.py:171` — **most cloud/Google API calls have no explicit read timeout** (only Nextcloud upload + token-refresh do). A stalled server hangs the sync job indefinitely, holding the sync lock. Set `httpx.Timeout(connect=30, read=300)` on shared clients.
+- [ ] **M10** — `_run_email_sync`/`_run_google_sync` failures are logged but **not surfaced** (no `last_sync_error` written, no `/health` degradation). A week of failed syncs looks fine.
+- [ ] **M11** — frontend: **zero unit tests** (no Vitest); `EntryEditor.vue` (1131 LOC, recently changed save flow) fully untested at unit level. e2e is narrow (settings/entries/recordings only) — Notes/Email/Planner/Backup/Encryption UIs undefended. (Accepted risk if Playwright-only is intentional.)
+- [ ] **M12** — Phase-2 **R1**: `routers/sync.py:92` calls `encrypt(...)`+`flush()` while `backup_service.py` uses `reencrypt(...)` — cloud-provider construction triplicated and the two paths persist credentials differently. Unify deliberately (don't blindly merge).
+- [ ] **M13** — `backend/app/services/planner_service.py:232-294` — naive/aware datetime mixing: a tz-aware `from`/`to` (e.g. `...Z`) 500s the agenda (`rrule.between` TypeError). Frontend strips offset today; coerce at the router boundary. Also: malformed `rrule` → broad `except` returns `[]` silently (no test).
 
 **Low**
-- `main.py:365` — SPA catch-all joins `full_path` without an explicit `.resolve().is_relative_to(_FRONTEND_DIST)` containment guard (StaticFiles normalises `..`, so low risk; defence-in-depth).
-- `media_service.py:77` / `recording_service.py:88` — parent `Entry` fetched without `is_deleted` guard → media can attach to a soft-deleted (invisible) entry.
-- `entry_service.py:245` / `note_service.py:240` — FTS→ILIKE fallback masks a persistently broken search index (only a warning).
-- `cloud_sync_service.py:150` — provider `httpx.AsyncClient()` has no timeout → spurious failures on large encrypted backups.
-- Frontend has no unit/component test runner (only one Playwright e2e spec); ~0 store/component coverage.
-- `core/config.py:126` — `APP_ENV` defaults to `development` on the `.deb` → `/docs` (Swagger) is reachable by anyone on the port.
+- [ ] **L1** — `backend/app/services/web_clip_service.py:74→:112` — small DNS-rebinding TOCTOU window between the per-hop `event_hooks` check and httpx's connect (already narrowed by per-hop re-validation; realistic only with attacker-controlled DNS + timing on a loopback app).
+- [ ] **L2** — `backend/app/core/security.py:57-66` — `decrypt()` doesn't catch `InvalidTag`/`b64decode` itself; current callers wrap it, but a future direct caller leaks a stack trace. Wrap-or-document.
+- [ ] **L3** — OAuth routers (`box.py:108`, `dropbox.py:111`, `onedrive.py:114`, `google_drive.py:115`) — raw upstream exception string rendered into the (escaped) HTML error page; may surface verbose provider errors. Truncate.
+- [ ] **L4** — Phase-2 **R2**: `frontend/src/components/entry/EntryEditor.vue:343-347` — `onUnmounted` removes a **fresh** arrow listener that can never match the one registered at `:320` → the real listener leaks across unmount/remount. Hoist to a named const.
+- [ ] **L5** — `backend/app/routers/tts.py:191-203` — TTS `.part` files leak when killed mid-synthesis (GC sweep globs `*.mp3`, not `*.mp3.part`).
+- [ ] **L6** — `backend/app/services/contact_service.py:665-670` — `related_emails` LIKE pattern unescaped (`_` over-matches). Escape with an `escape` clause.
+- [ ] **L7** — `backend/app/routers/encryption.py:129-132` — `decrypt-text` swallows errors with no log (correct for security, but no audit trail for repeated failures). One INFO line, no payload.
+- [ ] **L8** — `backend/app/services/scheduler_service.py:404-410` — `shutdown()` doesn't pass `wait=True`/timeout explicitly; boot catch-up jobs (`backup_catchup`, `reminder_catchup`) missing `max_instances=1` (inconsistent with the pattern).
+- [ ] **L9** — `desktop/src-tauri/src/main.rs:154` — `init_logging` `.expect()`s on log-file creation; a read-only/full data dir panics the launcher with no UI. Fall back to stderr.
+- [ ] **L10** — `entry_service.py:231` / `note_service.py` search — FTS5 token-quoting doesn't double inner `"` (bound parameter → no SQL injection, only surprising self-query results).
+
+## Verification of prior (2026-07-12) fixes — all held, no regressions
+
+FTS5 excludes encrypted entries (`database.py:260-277`) · enrichment/themes/on-this-day skip encrypted entries (`entry_service.py:44,111`) · per-entry random salt + v1 legacy read-compat (`security.py`) · decrypt wrong-passphrase → 400 · `notes/from-path` sandboxed (`note_media_service.py:147-159`, *denylist incomplete — see M1*) · video/photo upload size+MIME+magic-bytes (`media_service.py:58-74`) · `OLLAMA_BASE_URL` scheme validated at the mutation path (`settings.py:216-224`) · OAuth error pages `html.escape`'d (all 4 routers + `google_sync.py:156`) · `LocalFileProvider` path-traversal containment (`cloud_sync_service.py:117-124`) · `get_db()` global-lock removal intact (`database.py:66-95`) · email-double-fire `asyncio.Lock` + `max_instances=1` intact (`scheduler_service.py:829-851`).
 
 ## Explicitly out of scope / accepted risk
 
-- **No auth on endpoints** — by design for the local single-user model (see `docs/04-design/ADR/002-no-auth-local-endpoints.md`). Not flagged.
-- **OAuth success/fail page emoji** (`📦🎉❌✅` in `routers/{onedrive,box,google_drive,dropbox}.py`) — intentional product UX, not code voice.
-- **AES-GCM + nonce handling, OAuth state tokens, backup tar traversal hardening, SQL/ORM parameterisation, shell-arg subprocess calls** — all verified sound; not flagged.
-- **`SECRET_KEY` launcher path** — the `.deb` launcher generates a strong key with `secrets.token_hex(32)`, persists it `umask 077`, reuses across restarts. The HIGH above concerns *non-launcher* run paths.
+- **Loopback trust boundary:** by design, any local process can reach the sidecar. This is inherent to the single-user desktop model; the trust boundary is correctly "anything already on the box can read the journal." Not treated as a finding.
+- **`SECRET_KEY` auto-rotation intentionally not done** (would break already-encrypted credentials); the v1→v2 scheme anticipates a future rotation path. B1 is about the Tauri launcher not generating *any* key, not about rotation.
+- **Dependency pinning** is solid for packaged builds (`uv.lock` + `uv export --frozen`). Note: `--no-hashes` in the export drops hash verification (consider keeping hashes).
+- **EncryptionBadge.vue vs NoteEncryptionBadge.vue** ~85% duplication — intentionally not merged (med risk, marginal gain).
+- **Frontend has no formatter** (backend has `ruff`) — adding prettier/eslint deferred pending owner decision (Phase 3 D1).
 
-## What's done well (for balance)
-- `/health` degrades gracefully per-subsystem and returns 503 when the DB is down.
-- Backup jobs are genuinely idempotent (`coalesce`, misfire grace, DB-level "in progress" guard + stale-run reclamation) and WAL checkpointing is robust.
-- Encryption uses AES-256-GCM with HKDF-SHA256 + a versioned ciphertext format.
-- Email sync is idempotent on `(folder, uid)`; cloud providers all close clients in `finally`.
-- Tests are hermetic (mocked Ollama/httpx, fail-fast IMAP host, tmp-path schedule store).
-- Request/response logging middleware with `req_id`; global exception handler logs stack traces; `.env` gitignored, no secrets in tracked source.
+## Missed by pipeline, caught by blind review
+
+*(Populated by Phase 5 reconciliation — see `.pipeline/blind-review.md`.)*
