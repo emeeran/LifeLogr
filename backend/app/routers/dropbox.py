@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import json
 import time
 from urllib.parse import urlencode
@@ -10,6 +9,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from app.routers._oauth_result import result_page
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,25 +26,6 @@ AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize"
 TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 
 _state = OAuthStateStore()
-
-
-def _result_page(ok: bool, detail: str = "") -> HTMLResponse:
-    title = "Dropbox Connected" if ok else "Connection Failed"
-    emoji = "✅" if ok else "❌"
-    body = (
-        "LifeLogr connected to your Dropbox account. You can close this tab."
-        if ok
-        else html.escape(detail)
-    )
-    return HTMLResponse(
-        content=(
-            "<!DOCTYPE html><html><body style='font-family:sans-serif;background:#0f172a;color:#f8fafc;"
-            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center'>"
-            f"<div><div style='font-size:3rem'>{emoji}</div><h2>{title}</h2>"
-            f"<p style='color:#94a3b8'>{body}</p></div></body></html>"
-        ),
-        status_code=200 if ok else 400,
-    )
 
 
 @router.get("/auth-url")
@@ -79,7 +60,7 @@ async def oauth_callback(
 ) -> HTMLResponse:
     """Exchange the Dropbox auth code for tokens and save the config."""
     if not _state.consume(state):
-        return _result_page(False, "Invalid or expired OAuth state. Please retry.")
+        return result_page("Dropbox", False, "Invalid or expired OAuth state. Please retry.")
 
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "dropbox"))
     config = result.scalar_one_or_none()
@@ -91,7 +72,7 @@ async def oauth_callback(
         provider="dropbox",
     )
     if not client_id or not client_secret:
-        return _result_page(False, "Dropbox client_id/client_secret are not configured")
+        return result_page("Dropbox", False, "Dropbox client_id/client_secret are not configured")
 
     async with httpx.AsyncClient() as client:
         try:
@@ -109,12 +90,12 @@ async def oauth_callback(
             resp.raise_for_status()
             token_data = resp.json()
         except Exception as e:
-            return _result_page(False, f"Failed to exchange code: {e}")
+            return result_page("Dropbox", False, f"Failed to exchange code: {e}")
 
     refresh_token = token_data.get("refresh_token") or stored.get("refresh_token")
     if not refresh_token:
-        return _result_page(
-            False, "No refresh token returned. Ensure the app uses long-lived access."
+        return result_page(
+            "Dropbox", False, "No refresh token returned. Ensure the app uses long-lived access."
         )
     new_creds = {
         "client_id": client_id,
@@ -129,4 +110,4 @@ async def oauth_callback(
     else:
         db.add(BackupConfig(provider="dropbox", credentials_encrypted=encrypted))
     await db.commit()
-    return _result_page(True)
+    return result_page("Dropbox", True)
