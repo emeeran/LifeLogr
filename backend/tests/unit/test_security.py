@@ -50,3 +50,68 @@ class TestTokenVersionAndReencrypt:
         upgraded = security.reencrypt(v1_token)
         assert security.token_version(upgraded) == 2
         assert security.decrypt(upgraded) == plaintext  # content preserved
+
+
+class TestLoadStoredCredentials:
+    """Shared credential loading for the Box/Dropbox/OneDrive/Google routers."""
+
+    def test_no_stored_returns_fallbacks(self):
+        from app.core.security import load_stored_credentials
+
+        cid, secret, stored = load_stored_credentials(
+            None, "default-id", "default-secret", provider="dropbox"
+        )
+        assert cid == "default-id"
+        assert secret == "default-secret"
+        assert stored == {}
+
+    def test_stored_overrides_fallbacks(self):
+        import json
+
+        from app.core.security import encrypt, load_stored_credentials
+
+        blob = encrypt(
+            json.dumps(
+                {"client_id": "stored-id", "client_secret": "stored-secret", "refresh_token": "rt"}
+            )
+        )
+        cid, secret, stored = load_stored_credentials(
+            blob, "default-id", "default-secret", provider="dropbox"
+        )
+        assert cid == "stored-id"
+        assert secret == "stored-secret"
+        assert stored["refresh_token"] == "rt"
+
+    def test_partial_stored_keeps_fallback(self):
+        import json
+
+        from app.core.security import encrypt, load_stored_credentials
+
+        blob = encrypt(json.dumps({"client_id": "stored-id"}))  # no client_secret
+        cid, secret, _ = load_stored_credentials(
+            blob, "default-id", "default-secret", provider="box"
+        )
+        assert cid == "stored-id"
+        assert secret == "default-secret"  # fallback retained
+
+    def test_corrupt_blob_returns_fallbacks(self):
+        from app.core.security import load_stored_credentials
+
+        cid, secret, stored = load_stored_credentials(
+            "not-a-valid-encrypted-blob", "default-id", "default-secret", provider="onedrive"
+        )
+        assert cid == "default-id"
+        assert secret == "default-secret"
+        assert stored == {}
+
+    def test_empty_stored_value_falls_back(self):
+        import json
+
+        from app.core.security import encrypt, load_stored_credentials
+
+        blob = encrypt(json.dumps({"client_id": "", "client_secret": ""}))
+        cid, secret, _ = load_stored_credentials(
+            blob, "default-id", "default-secret", provider="google"
+        )
+        assert cid == "default-id"  # empty stored value → fallback (truthiness semantics)
+        assert secret == "default-secret"

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import html
 import json
-import logging
 import time
 from urllib.parse import urlencode
 
@@ -23,10 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oauth_state import OAuthStateStore
-from app.core.security import decrypt, encrypt
+from app.core.security import encrypt, load_stored_credentials
 from app.models.backup import BackupConfig
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup/box", tags=["backup-box"])
 
@@ -42,14 +39,12 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "box"))
     config = result.scalar_one_or_none()
 
-    client_id = settings.BOX_CLIENT_ID
-    if config:
-        try:
-            creds = json.loads(decrypt(config.credentials_encrypted))
-            if creds.get("client_id"):
-                client_id = creds["client_id"]
-        except Exception:
-            logger.warning("Failed to decrypt stored Box credentials", exc_info=True)
+    client_id, _, _ = load_stored_credentials(
+        config.credentials_encrypted if config else None,
+        settings.BOX_CLIENT_ID,
+        None,
+        provider="box",
+    )
 
     if not client_id:
         raise HTTPException(status_code=400, detail="Box OAuth client_id is not configured")
@@ -85,16 +80,12 @@ async def oauth_callback(
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "box"))
     config = result.scalar_one_or_none()
 
-    client_id = settings.BOX_CLIENT_ID
-    client_secret = settings.BOX_CLIENT_SECRET
-    stored: dict[str, str] = {}
-    if config:
-        try:
-            stored = json.loads(decrypt(config.credentials_encrypted))
-            client_id = stored.get("client_id") or client_id
-            client_secret = stored.get("client_secret") or client_secret
-        except Exception:
-            logger.warning("Failed to decrypt Box credentials for token exchange", exc_info=True)
+    client_id, client_secret, _ = load_stored_credentials(
+        config.credentials_encrypted if config else None,
+        settings.BOX_CLIENT_ID,
+        settings.BOX_CLIENT_SECRET,
+        provider="box",
+    )
 
     if not client_id or not client_secret:
         return _render_error_page("Box OAuth client_id/client_secret are not configured")
