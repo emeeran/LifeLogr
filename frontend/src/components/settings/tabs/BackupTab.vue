@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { errMsg } from '../../../utils/error'
 import { useBackupStore } from "../../../stores/backup";
 import { backupApi } from "../../../api/backup";
 import { useEntriesStore } from "../../../stores/entries";
@@ -31,10 +32,6 @@ import SettingGroup from "../shared/SettingGroup.vue";
 const emit = defineEmits<{
   toast: [type: "success" | "error" | "info", message: string];
 }>();
-
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 const backup = useBackupStore();
 const entriesStore = useEntriesStore();

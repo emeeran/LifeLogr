@@ -1,4 +1,5 @@
 import { ref, computed, watch, onUnmounted, inject, provide, type InjectionKey, type ComputedRef, type Ref } from 'vue'
+import { errMsg } from '../utils/error'
 import { recordingsApi } from '../api/recordings'
 import { API_ORIGIN } from '../api/client'
 import type { VoiceRecordingResponse } from '../types'
@@ -95,7 +96,7 @@ export function useRecordings(
     } catch (e: unknown) {
       clearTimer()
       recording.value = false
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = errMsg(e)
       alert(`Could not start recording: ${msg}\n\nCheck that a microphone is connected.`)
     }
   }
@@ -110,7 +111,7 @@ export function useRecordings(
       const rec = await recordingsApi.stop()
       recordings.value.push(rec)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = errMsg(e)
       alert(`Recording failed: ${msg}`)
     } finally {
       uploading.value = false
@@ -167,7 +168,7 @@ export function useRecordings(
       isPlaying.value = false
       const name = e instanceof Error ? e.name : ''
       if (name && name !== 'AbortError') {
-        const msg = e instanceof Error ? e.message : String(e)
+        const msg = errMsg(e)
         alert(`Couldn't start playback: ${msg}`)
       }
     })
@@ -184,7 +185,7 @@ export function useRecordings(
       await recordingsApi.delete(rec.id)
       recordings.value = recordings.value.filter((r) => r.id !== rec.id)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = errMsg(e)
       alert(`Delete failed: ${msg}`)
     }
   }

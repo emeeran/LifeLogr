@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { errMsg } from '../utils/error'
 import { callAiTool } from '../api/ai'
 import { AI_TOOL_BY_ID } from './aiToolRegistry'
 
@@ -25,10 +26,6 @@ export function useAiTools(
   const aiOriginalEnd = ref(0)
   /** Current parameter value for the active tool (tone / voice / language…). */
   const aiParamValue = ref<string>('formal')
-
-  function errMsg(e: unknown) {
-    return e instanceof Error ? e.message : String(e)
-  }
 
   async function runAiTool(mode: string, paramOverride?: string) {
     const def = AI_TOOL_BY_ID[mode]

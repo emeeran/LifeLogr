@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { errMsg } from '../../utils/error'
 import { useEntriesStore } from "../../stores/entries";
 import { useTagsStore } from "../../stores/tags";
 import { useUiStore } from "../../stores/ui";
@@ -183,10 +184,6 @@ const { triggerAutosave, saveState: saveActive } = useAutoSave({
     ui.editingEntryId = id;
   },
 });
-
-function errMsg(e: unknown) {
-  return e instanceof Error ? e.message : String(e);
-}
 
 // ── Dirty tracking ──
 const dirty = ref(false);

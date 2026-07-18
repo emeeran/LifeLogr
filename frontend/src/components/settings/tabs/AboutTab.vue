@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { errMsg } from '../../../utils/error'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { entriesApi } from '../../../api/entries'
@@ -20,7 +21,6 @@ import SButton from '../shared/SButton.vue'
 import changelogRaw from '../../../../../CHANGELOG.md?raw'
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
-function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 const entriesStore = useEntriesStore()
 const appSettings = ref<AppSettings | null>(null)

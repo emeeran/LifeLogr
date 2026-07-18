@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { errMsg } from '../../../utils/error'
 import {
   getSettings,
   getStoragePath,
@@ -18,9 +19,6 @@ import ConfirmDialog from "../../common/ConfirmDialog.vue";
 const emit = defineEmits<{
   toast: [type: "success" | "error" | "info", message: string];
 }>();
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 const appSettings = ref<AppSettings | null>(null);
 const storagePath = ref<StoragePathInfo | null>(null);

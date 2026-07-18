@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
+import { errMsg } from '../../../utils/error'
 import { useLocalStorage } from '@vueuse/core'
 import { useRemindersStore } from '../../../stores/reminders'
 import { API_ORIGIN } from '../../../api/client'
@@ -43,7 +44,6 @@ function voicesByLocale(voices: TTSVoice[]): Map<string, TTSVoice[]> {
 }
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
-function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 const remindersStore = useRemindersStore()
 

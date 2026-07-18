@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { errMsg } from '../../utils/error'
 import {
   Eye, Pencil, Sparkles, Pin, Trash2, Loader, Volume2, Plus, X,
   ChevronUp, ChevronDown,
@@ -463,7 +464,7 @@ async function startSnip() {
     snipSrc.value = URL.createObjectURL(blob)
     snipping.value = true
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
+    const msg = errMsg(e)
     alert(`Screen capture failed: ${msg}\nOn Wayland, approve the portal request or run under X11.`)
   }
 }

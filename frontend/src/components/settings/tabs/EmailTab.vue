@@ -9,6 +9,7 @@
  * stored config is still the concrete host/port values.
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { errMsg } from '../../../utils/error'
 import { useEmailStore } from '../../../stores/email'
 import * as emailApi from '../../../api/email'
 import type { EmailAccountResponse, EmailAccountCreate, EmailAccountUpdate } from '../../../types'
@@ -22,7 +23,6 @@ import AccordionItem from '../shared/AccordionItem.vue'
 import SButton from '../shared/SButton.vue'
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
-function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 const store = useEmailStore()
 

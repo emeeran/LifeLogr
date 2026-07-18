@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { errMsg } from '../../../utils/error'
 import { entriesApi } from "../../../api/entries";
 import {
   exportHtml,
@@ -26,9 +27,6 @@ import SButton from "../shared/SButton.vue";
 const emit = defineEmits<{
   toast: [type: "success" | "error" | "info", message: string];
 }>();
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 const entriesStore = useEntriesStore();
 

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { errMsg } from '../utils/error'
 import { mediaApi } from '../api/media'
 import type { MediaResponse } from '../types'
 
@@ -8,8 +9,6 @@ export function useAttachments(
   refreshAll: () => void
 ) {
   const attachments = ref<MediaResponse[]>([])
-
-  function errMsg(e: unknown) { return e instanceof Error ? e.message : String(e) }
 
   async function loadAttachments() {
     if (!hasEntry()) { attachments.value = []; return }

@@ -15,6 +15,7 @@
  * future mail). HTML bodies render in a sandboxed iframe; config is in Settings.
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { errMsg } from '../../utils/error'
 import { useRouter } from 'vue-router'
 import { useLocalStorage } from '@vueuse/core'
 import { useEmailStore } from '../../stores/email'
@@ -525,8 +526,6 @@ async function addToTask() {
 const summarizing = ref(false)
 const summary = ref('')
 const summaryOpen = ref(false)
-
-function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 function messagePlainText(): string {
   const m = store.selectedMessage

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { errMsg } from '../../../utils/error'
 import { entriesApi } from "../../../api/entries";
 import { vacuumDatabase, checkIntegrity } from "../../../api/settings";
 import { Database, Copy, Wrench, Shield, Loader } from "lucide-vue-next";
@@ -10,9 +11,6 @@ import SButton from "../shared/SButton.vue";
 const emit = defineEmits<{
   toast: [type: "success" | "error" | "info", message: string];
 }>();
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";

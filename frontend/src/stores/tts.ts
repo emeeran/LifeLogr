@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { errMsg } from '../utils/error'
 import { ref } from 'vue'
 import { ttsApi } from '../api/tts'
 
@@ -92,7 +93,7 @@ export const useTtsStore = defineStore('tts', () => {
       isPlaying.value = false
       isLoading.value = false
       current.value = null
-      lastError.value = e instanceof Error ? e.message : String(e)
+      lastError.value = errMsg(e)
       throw e
     } finally {
       isLoading.value = false
