@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import json
-import logging
 import time
 from urllib.parse import urlencode
 
@@ -17,10 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oauth_state import OAuthStateStore
-from app.core.security import decrypt, encrypt
+from app.core.security import encrypt, load_stored_credentials
 from app.models.backup import BackupConfig
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup/dropbox", tags=["backup-dropbox"])
 
@@ -55,14 +52,12 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     """Generate the Dropbox OAuth consent URL (offline access for refresh token)."""
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "dropbox"))
     config = result.scalar_one_or_none()
-    client_id = settings.DROPBOX_CLIENT_ID
-    if config:
-        try:
-            client_id = json.loads(decrypt(config.credentials_encrypted)).get(
-                "client_id", client_id
-            )
-        except Exception:
-            logger.warning("Failed to decrypt stored Dropbox credentials", exc_info=True)
+    client_id, _, _ = load_stored_credentials(
+        config.credentials_encrypted if config else None,
+        settings.DROPBOX_CLIENT_ID,
+        None,
+        provider="dropbox",
+    )
     if not client_id:
         raise HTTPException(status_code=400, detail="Dropbox OAuth client_id is not configured")
 
@@ -89,18 +84,12 @@ async def oauth_callback(
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "dropbox"))
     config = result.scalar_one_or_none()
 
-    client_id = settings.DROPBOX_CLIENT_ID
-    client_secret = settings.DROPBOX_CLIENT_SECRET
-    stored: dict[str, str] = {}
-    if config:
-        try:
-            stored = json.loads(decrypt(config.credentials_encrypted))
-            client_id = stored.get("client_id", client_id)
-            client_secret = stored.get("client_secret", client_secret)
-        except Exception:
-            logger.warning(
-                "Failed to decrypt Dropbox credentials for token exchange", exc_info=True
-            )
+    client_id, client_secret, stored = load_stored_credentials(
+        config.credentials_encrypted if config else None,
+        settings.DROPBOX_CLIENT_ID,
+        settings.DROPBOX_CLIENT_SECRET,
+        provider="dropbox",
+    )
     if not client_id or not client_secret:
         return _result_page(False, "Dropbox client_id/client_secret are not configured")
 

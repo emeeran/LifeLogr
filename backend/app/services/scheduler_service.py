@@ -710,11 +710,10 @@ class SchedulerService:
         try:
             async with async_session() as session:
                 reminders = (await session.execute(select(Reminder))).scalars().all()
-            now = datetime.now(timezone.utc)
             for r in reminders:
                 if not r.is_active:
                     continue
-                due = _reminder_due_for_catchup(r, now)
+                due = _reminder_due_for_catchup(r)
                 if due:
                     await _fire_reminder(r.id, mark_fired=True)
         except Exception:
@@ -1021,7 +1020,7 @@ async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:
         logger.error("Failed to fire reminder %d", reminder_id, exc_info=True)
 
 
-def _reminder_due_for_catchup(reminder: Any, now_utc: datetime) -> bool:
+def _reminder_due_for_catchup(reminder: Any) -> bool:
     """True if a reminder should be fired by the offline catch-up sweep.
 
     A reminder is due when its scheduled time-of-day has passed for the

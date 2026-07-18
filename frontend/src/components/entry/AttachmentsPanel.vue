@@ -39,7 +39,7 @@ function mediaIcon(type: string) {
         class="flex items-center gap-2 px-2 py-1.5 rounded bg-surface-hover cursor-pointer hover:bg-surface-hover/80"
         @click="emit('view', idx)"
       >
-        <img v-if="m.media_type === 'image' || m.media_type.startsWith('image/')" :src="mediaApi.fileUrl(m.id)" class="w-8 h-8 rounded object-cover shrink-0" />
+        <img v-if="m.media_type === 'image' || m.media_type.startsWith('image/')" :src="mediaApi.fileUrl(m.id)" class="w-8 h-8 rounded object-cover shrink-0" loading="lazy" decoding="async" />
         <component v-else :is="mediaIcon(m.media_type)" :size="16" class="text-accent shrink-0" />
         <span class="text-xs text-text-primary truncate flex-1">{{ m.filename }}</span>
         <span class="text-[10px] text-text-muted shrink-0">{{ formatFileSize(m.file_size) }}</span>

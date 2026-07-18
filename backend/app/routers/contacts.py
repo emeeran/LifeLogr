@@ -98,10 +98,9 @@ async def import_contacts(file: UploadFile, db: AsyncSession = Depends(get_db)) 
 
 @router.post("/bulk-delete", status_code=204)
 async def bulk_delete(ids: list[int], db: AsyncSession = Depends(get_db)) -> None:
-    """Soft-delete multiple contacts."""
+    """Soft-delete multiple contacts in a single update (idempotent)."""
     svc = ContactService(db)
-    for contact_id in ids:
-        await svc.delete(contact_id)
+    await svc.delete_many(ids)
 
 
 # ── Groups — MUST come before /{contact_id} ─────────────────────────────────

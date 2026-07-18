@@ -241,7 +241,7 @@ async function doExport() {
                 :class="selectedId === c.id ? 'bg-accent/15' : 'hover:bg-surface-hover'">
                 <div class="shrink-0 w-8 h-8 rounded-full overflow-hidden bg-accent/15"
                   :class="!photoFor(c) ? 'text-accent flex items-center justify-center text-[10px] font-bold' : ''">
-                  <img v-if="photoFor(c)" :src="photoFor(c)!" :alt="c.name || ''" class="w-full h-full object-cover" />
+                  <img v-if="photoFor(c)" :src="photoFor(c)!" :alt="c.name || ''" class="w-full h-full object-cover" loading="lazy" decoding="async" />
                   <span v-else>{{ initials(c) }}</span>
                 </div>
                 <div class="min-w-0 flex-1">

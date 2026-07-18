@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 
 from dateutil.rrule import rrulestr
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -230,18 +230,53 @@ class PlannerService:
         return event
 
     async def get_agenda(self, frm: datetime, to: datetime) -> list[AgendaItem]:
-        """Expand recurring events into concrete occurrences within [frm, to]."""
-        events = await self.list_events(frm=None, to=None)
+        """Expand recurring events into concrete occurrences within [frm, to].
+
+        Two targeted queries instead of loading every event: recurring events
+        (truthy ``rrule``) must all be loaded — an RRULE can produce an
+        occurrence in the window regardless of its own ``start_at`` — but
+        non-recurring events are DB-filtered to the window, so years of past
+        one-off events aren't loaded just to render next week's agenda.
+        """
+        not_deleted = ScheduleEvent.is_deleted == False  # noqa: E712
+        has_rrule = or_(ScheduleEvent.rrule.is_not(None), ScheduleEvent.rrule != "")
+        no_rrule = or_(ScheduleEvent.rrule.is_(None), ScheduleEvent.rrule == "")
+
+        recurring = list(
+            (
+                await self.db.execute(
+                    select(ScheduleEvent)
+                    .where(not_deleted, has_rrule)
+                    .order_by(ScheduleEvent.start_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        oneoff = list(
+            (
+                await self.db.execute(
+                    select(ScheduleEvent)
+                    .where(
+                        not_deleted,
+                        no_rrule,
+                        ScheduleEvent.start_at >= frm,
+                        ScheduleEvent.start_at <= to,
+                    )
+                    .order_by(ScheduleEvent.start_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
         items: list[AgendaItem] = []
-        for ev in events:
-            if not ev.rrule:
-                if frm <= ev.start_at <= to:
-                    items.append(self._agenda_item(ev, ev.start_at, ev.end_at, False))
-                continue
-            occurrences = self._expand_recurrence(ev, frm, to)
-            for start in occurrences:
+        for ev in recurring:
+            for start in self._expand_recurrence(ev, frm, to):
                 end = start + (ev.end_at - ev.start_at)
                 items.append(self._agenda_item(ev, start, end, True))
+        for ev in oneoff:
+            items.append(self._agenda_item(ev, ev.start_at, ev.end_at, False))
         items.sort(key=lambda i: i.start_at)
         return items
 

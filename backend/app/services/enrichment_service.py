@@ -17,15 +17,11 @@ logger = logging.getLogger(__name__)
 _pending_tasks: set[asyncio.Task[None]] = set()
 
 
-class EnrichmentService:
-    """Orchestrates background AI tasks after an entry is saved."""
-
-    @staticmethod
-    def schedule(entry_id: int, title: str | None, body: str) -> None:
-        """Fire-and-forget enrichment. Does not block the save response."""
-        task = asyncio.create_task(_run_enrichment(entry_id, title, body))
-        _pending_tasks.add(task)
-        task.add_done_callback(_pending_tasks.discard)
+def schedule_enrichment(entry_id: int, title: str | None, body: str) -> None:
+    """Fire-and-forget AI enrichment after an entry is saved (non-blocking)."""
+    task = asyncio.create_task(_run_enrichment(entry_id, title, body))
+    _pending_tasks.add(task)
+    task.add_done_callback(_pending_tasks.discard)
 
 
 async def cancel_pending_tasks() -> None:

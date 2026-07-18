@@ -6,6 +6,39 @@ from app.models.email_message import EmailMessage
 from app.services.contact_service import parse_vcard, serialize_vcard
 
 
+class TestContactsBulkDelete:
+    async def test_bulk_delete_soft_deletes_and_is_idempotent(self, client):
+        a = (await client.post("/api/v1/contacts", json={"email": "a@x.com"})).json()
+        b = (await client.post("/api/v1/contacts", json={"email": "b@x.com"})).json()
+        c = (await client.post("/api/v1/contacts", json={"email": "c@x.com"})).json()
+
+        # a + b + a non-existent id → idempotent (no 404), single update.
+        resp = await client.post("/api/v1/contacts/bulk-delete", json=[a["id"], b["id"], 999999])
+        assert resp.status_code == 204
+
+        ids = {item["id"] for item in (await client.get("/api/v1/contacts")).json()["items"]}
+        assert a["id"] not in ids
+        assert b["id"] not in ids
+        assert c["id"] in ids  # untouched
+
+        # Re-post with an already-deleted id — still 204, no partial-commit error.
+        resp2 = await client.post("/api/v1/contacts/bulk-delete", json=[b["id"], c["id"]])
+        assert resp2.status_code == 204
+        ids2 = {item["id"] for item in (await client.get("/api/v1/contacts")).json()["items"]}
+        assert c["id"] not in ids2
+
+    async def test_bulk_delete_empty_list(self, client):
+        resp = await client.post("/api/v1/contacts/bulk-delete", json=[])
+        assert resp.status_code == 204
+
+    async def test_bulk_deleted_contacts_restorable(self, client):
+        a = (await client.post("/api/v1/contacts", json={"email": "r@x.com"})).json()
+        await client.post("/api/v1/contacts/bulk-delete", json=[a["id"]])
+        restored = await client.post(f"/api/v1/contacts/{a['id']}/restore")
+        assert restored.status_code == 200
+        assert restored.json()["is_deleted"] is False
+
+
 class TestContactsCrud:
     async def test_create_get_list(self, client):
         resp = await client.post(

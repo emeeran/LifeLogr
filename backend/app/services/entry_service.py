@@ -14,7 +14,7 @@ from app.models.entry import Entry
 from app.models.tag import EntryTag, Tag
 from app.schemas.entry import CalendarEntryResponse, EntryCreate, EntryUpdate
 from app.schemas.tag import TagBrief
-from app.services.enrichment_service import EnrichmentService
+from app.services.enrichment_service import schedule_enrichment
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class EntryService:
         # Never enrich encrypted entries — their body column holds ciphertext,
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
-            EnrichmentService.schedule(entry.id, entry.title, entry.body)
+            schedule_enrichment(entry.id, entry.title, entry.body)
         return entry
 
     async def get(self, entry_id: int) -> Entry:
@@ -109,7 +109,7 @@ class EntryService:
         # Never enrich encrypted entries — their body column holds ciphertext,
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
-            EnrichmentService.schedule(entry.id, entry.title, entry.body)
+            schedule_enrichment(entry.id, entry.title, entry.body)
         return entry
 
     async def soft_delete(self, entry_id: int) -> None:
