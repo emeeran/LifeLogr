@@ -55,9 +55,7 @@ export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaEl
     undoStack.value = []
     redoStack.value = []
     lastPushTime = 0
-    const el = textarea.value
     pushHistory()
-    void el
   }
 
   return { undoStack, redoStack, pushHistory, doUndo, doRedo, resetHistory }

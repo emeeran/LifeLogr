@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { errMsg } from '../../utils/error'
 import { encryptEntry, decryptEntry, encryptionStatus } from '../../api/encryption'
 import { Lock, Unlock, Loader } from 'lucide-vue-next'
 
@@ -45,8 +46,8 @@ async function submit() {
       emit('change', false)
     }
     showPrompt.value = false
-  } catch (e: any) {
-    alert(e.message)
+  } catch (e: unknown) {
+    alert(errMsg(e))
   } finally {
     loading.value = false
   }

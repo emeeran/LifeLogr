@@ -5,7 +5,6 @@ import { AI_TOOL_BY_ID } from './aiToolRegistry'
 
 // Re-exported so existing imports from this module keep resolving.
 export type { AiToolMode, AiToneStyle } from './aiToolRegistry'
-export { AI_TONE_OPTIONS } from './aiToolRegistry'
 
 export function useAiTools(
   body: Ref<string>,

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, reactive } from 'vue'
 import { errMsg } from '../../../utils/error'
 import { useLocalStorage } from '@vueuse/core'
 import { useRemindersStore } from '../../../stores/reminders'
-import { API_ORIGIN } from '../../../api/client'
+import { API_ORIGIN, isTauri } from '../../../api/client'
 import { ttsApi } from '../../../api/tts'
 import type { ReminderResponse } from '../../../types'
 import {
@@ -51,7 +51,6 @@ const remindersStore = useRemindersStore()
 const memorialTitle = useLocalStorage<boolean>('lifelogr-memorial-title', true)
 
 // ── System Setup (Tauri desktop only) ──
-const isTauri = !!(window as any).__TAURI_INTERNALS__
 const depsStatus = ref<{ ollama: boolean; gst_plugins_bad: boolean; all_installed: boolean } | null>(null)
 const setupRunning = ref(false)
 const setupOutput = ref('')

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useUiStore } from '../../stores/ui'
+import { errMsg } from '../../utils/error'
 import { mediaApi } from '../../api/media'
 import Sidebar from './Sidebar.vue'
 import PanelSplitter from './PanelSplitter.vue'
@@ -107,8 +108,8 @@ async function onExtractText(id: number) {
     } else {
       alert('No text was detected in this image.')
     }
-  } catch (e: any) {
-    alert(`OCR failed: ${e?.message || e}`)
+  } catch (e: unknown) {
+    alert(`OCR failed: ${errMsg(e)}`)
   }
 }
 </script>

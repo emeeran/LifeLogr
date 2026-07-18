@@ -15,6 +15,7 @@
  * no backend changes.
  */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { errMsg } from '../../utils/error'
 import { useLocalStorage } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import {
@@ -212,8 +213,8 @@ async function loadEmailSummaries(accs: EmailAccountResponse[]) {
           account_id: account.id, unread_only: true, exclude_spam: true, limit: 4,
         })
         return { account, unreadTotal: res.total, recent: res.items }
-      } catch (e: any) {
-        return { account, unreadTotal: 0, recent: [], error: e?.message || 'unavailable' }
+      } catch (e: unknown) {
+        return { account, unreadTotal: 0, recent: [], error: errMsg(e) || 'unavailable' }
       }
     }),
   )

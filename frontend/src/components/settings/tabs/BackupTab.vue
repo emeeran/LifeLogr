@@ -4,7 +4,7 @@ import { errMsg } from '../../../utils/error'
 import { useBackupStore } from "../../../stores/backup";
 import { backupApi } from "../../../api/backup";
 import { useEntriesStore } from "../../../stores/entries";
-import { isTauri } from "../../../api/client";
+import { isTauri, request } from "../../../api/client";
 import { saveFile, pickFile, pickFolder } from "../../../utils/fileDialog";
 import { useLocalStorage } from "@vueuse/core";
 import { providerLabel } from "../../../utils/settings";
@@ -374,7 +374,7 @@ async function saveAutoBackup() {
     await loadAutoBackupStatus();
     autoBackupEnabled.value = true;
     emit("toast", "success", "Backup schedule saved");
-  } catch (e: any) {
+  } catch (e: unknown) {
     emit("toast", "error", `Failed to save schedule: ${errMsg(e)}`);
   } finally {
     autoBackupSaving.value = false;
@@ -402,7 +402,6 @@ async function runBackupNow() {
     }
     // Local mode: back up to the configured folder now (no saved schedule
     // needed — /run-now accepts the path directly).
-    const { request } = await import("../../../api/client");
     const r = await request<{
       mode: string;
       path?: string;
