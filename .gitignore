@@ -71,3 +71,6 @@ node_modules/
 
 # Pre-downloaded Whisper model (build artifact, ~148MB — never commit)
 backend/models/
+
+# Local purge-safety git bundles (large; never belong in the repo)
+.git-backup/
