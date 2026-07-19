@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_data_dir() -> Path:
-    """Platform-standard data directory when DIARI_DATA_DIR is not set."""
+    """Platform-standard data directory when LIFELOGR_DATA_DIR is not set."""
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     elif sys.platform == "darwin":

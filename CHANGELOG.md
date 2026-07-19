@@ -9,6 +9,93 @@ offline at any time.
 
 ---
 
+## [Unreleased]
+
+Staged on the `feature/perf-and-debloat` and `cleanup/pipeline-*` branches; will
+land in the next release.
+
+### Changed
+- **Performance pass.** Backend query consolidation: the tags tree went from
+  `1+2N` queries to 2; the analytics overview/media-stats endpoints collapsed to
+  scalar subqueries; the planner agenda now filters non-recurring events in the
+  database instead of loading the table. On the frontend, code-splitting the
+  on-demand editor panels shrank the entry route's initial chunk from ~211 kB to
+  ~35 kB (near-free in the Tauri shell, where assets load from local disk).
+- **Codebase cleanup.** Removed dead response types, orphan files, and duplicated
+  helpers; unified the `errMsg()` helper, the Google Calendar/Tasks sync helpers
+  (`google_sync_utils`), and the cloud-provider OAuth result page. No
+  user-visible behaviour change — 389 backend tests still pass.
+
+### Added
+- **Production-readiness audit.** A six-dimension audit and an independent blind
+  review now document exactly what is and isn't shippable, with `file:line`
+  references — see [`AUDIT.md`](AUDIT.md) and `.pipeline/blind-review.md`.
+
+### Fixed
+- Web-clip SSRF hardening extended to every redirect hop, blocking DNS-rebinding
+  attempts to internal hosts.
+
+---
+
+## [0.7.0] — 2026-07-17
+
+This release consolidates everything new since the last documented **[0.2.1]**
+(the intermediate 0.3–0.6 versions were not separately tagged in git).
+
+### Added
+- **Notes mode** — a full standalone-notes workspace alongside the date-bound
+  journal: notebooks, tabbed pages, markdown, tags, and per-note encryption.
+  Notes have their own FTS5 search and appear in the global search palette.
+- **Clipping & OCR.** Snip a screen region (`Ctrl+Shift+S`, desktop) or clip a
+  web page, embed it as a picture, and **OCR the text** (Tesseract) straight into
+  the note body — instantly searchable.
+- **Email (IMAP/SMTP).** A built-in mail client: multiple accounts, auto-detected
+  folders, threaded reading, compose & send with attachments, and spam blocking.
+- **Google two-way sync.** Calendar and Tasks sync (plus Contacts via the People
+  API) with provenance tracking; `POST /sync/all`. Mail stays on IMAP.
+- **Planner (Tasks)** — task lists with subtasks, completion, and reordering;
+  optionally syncs with Google Tasks.
+- **Contacts address book** — names, emails, phones, photos, groups, favorites;
+  vCard (`.vcf`) import/export; linkable to email messages.
+- **Read aloud (TTS)** — Microsoft Edge TTS with voice / rate / volume / pitch
+  controls and a disk cache; seekable streaming playback.
+- **Analytics dashboard** — streaks, word counts, mood distribution, writing
+  habits, a GitHub-style heatmap, sentiment timeline, tag stats, and media stats.
+- **Hybrid search** — full-text (FTS5, BM25) **plus** semantic vector search
+  (`nomic-embed-text`), fused via Reciprocal Rank Fusion across entries, notes,
+  and tasks.
+- **Two ways to run** — a native **desktop app** (Tauri) and a lighter **web app**
+  (browser-served `.deb`). Only the desktop build supports screen-snipping.
+- **Scheduled, DB-backed local backup** with boot catch-up, plus cloud backup via
+  **Google Drive / OneDrive / Dropbox / Box** (OAuth, loopback callback on
+  `127.0.0.1:18765`); credentials stored encrypted.
+
+### Changed
+- **Encryption hardened** — per-entry random salts (legacy single-salt entries
+  still decrypt); encrypted entries' ciphertext is excluded from the FTS5 search
+  index and is never sent to the LLM for enrichment.
+- Rate limiting is now scoped to production deployments only — the desktop app no
+  longer self-throttles its own background enrichment.
+- Cloud-provider OAuth client IDs/secrets can be stored per-config (encrypted)
+  and override the built-in defaults.
+
+### Fixed
+- Backup-restore symlink/hardlink traversal — tar extraction now uses
+  `filter="data"` (PEP 706), neutralising escapes on both restore and import.
+- Full-text search works in the packaged desktop app — FTS5 setup is no longer
+  skipped under PyInstaller.
+- Production `SECRET_KEY` validation fires for server deployments even when
+  `DATA_DIR` is unset.
+- FTS triggers made restore-safe (guarded delete+insert; a restore trigger
+  re-indexes entries on undelete).
+
+### Removed
+- **Speech-to-text transcription (Whisper).** Recordings are now stored as audio
+  attachments only; the `faster-whisper` dependency and `WHISPER_*` settings were
+  dropped.
+
+---
+
 ## [0.2.1] — 2026-06-24
 
 ### Added

@@ -58,9 +58,9 @@ make build     # Builds frontend + backend + native package
 ```
 
 The output goes to `desktop/src-tauri/target/release/bundle/`:
-- **Linux**: `appimage/LifeLogr_0.2.0_amd64.AppImage` + `deb/LifeLogr_0.2.0_amd64.deb`
-- **Windows**: `msi/LifeLogr_0.2.0_x64_en-US.msi`
-- **macOS**: `dmg/LifeLogr_0.2.0_aarch64.dmg`
+- **Linux**: `appimage/LifeLogr_0.7.0_amd64.AppImage` + `deb/LifeLogr_0.7.0_amd64.deb`
+- **Windows**: `msi/LifeLogr_0.7.0_x64_en-US.msi`
+- **macOS**: `dmg/LifeLogr_0.7.0_aarch64.dmg`
 
 > **Versioning:** the package version is sourced from `backend/pyproject.toml`, `desktop/src-tauri/Cargo.toml`, and `desktop/src-tauri/tauri.conf.json` — bump all three together. The version shown in the app's **About** tab comes from `APP_VERSION` in `backend/app/core/config.py` (served via the `/api/v1/settings` endpoint), so update that too or the UI will lag behind the package version. The artifact filenames above reflect whatever version you set.
 >
@@ -174,13 +174,13 @@ cd desktop && make clean && make build
 
 ```bash
 # 1. Download or copy the AppImage
-cp desktop/src-tauri/target/release/bundle/appimage/LifeLogr_0.2.0_amd64.AppImage ~/Applications/
+cp desktop/src-tauri/target/release/bundle/appimage/LifeLogr_0.7.0_amd64.AppImage ~/Applications/
 
 # 2. Make it executable
-chmod +x ~/Applications/LifeLogr_0.2.0_amd64.AppImage
+chmod +x ~/Applications/LifeLogr_0.7.0_amd64.AppImage
 
 # 3. Run it
-~/Applications/LifeLogr_0.2.0_amd64.AppImage
+~/Applications/LifeLogr_0.7.0_amd64.AppImage
 ```
 
 To add to your application launcher:
@@ -189,7 +189,7 @@ To add to your application launcher:
 cat > ~/.local/share/applications/lifelogr.desktop << 'EOF'
 [Desktop Entry]
 Name=LifeLogr
-Exec=/home/YOUR_USER/Applications/LifeLogr_0.2.0_amd64.AppImage
+Exec=/home/YOUR_USER/Applications/LifeLogr_0.7.0_amd64.AppImage
 Icon=lifelogr
 Type=Application
 Categories=Office;Utility;
@@ -200,7 +200,7 @@ EOF
 ### Option B: .deb package (Debian/Ubuntu)
 
 ```bash
-sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/LifeLogr_0.2.0_amd64.deb
+sudo dpkg -i desktop/src-tauri/target/release/bundle/deb/LifeLogr_0.7.0_amd64.deb
 
 # Then launch from your application menu, or:
 lifelogr
@@ -223,7 +223,7 @@ Open http://localhost:5173 in your browser.
 |------|------|
 | Database | `~/.local/share/com.lifelogr.desktop/lifelogr.db` |
 | Media files | `~/.local/share/com.lifelogr.desktop/media/` |
-| Config | Set via `DIARI_DATA_DIR` env var |
+| Config | Set via `LIFELOGR_DATA_DIR` env var |
 
 ---
 
@@ -231,7 +231,7 @@ Open http://localhost:5173 in your browser.
 
 ### From MSI installer
 
-1. Double-click `LifeLogr_0.2.0_x64_en-US.msi`
+1. Double-click `LifeLogr_0.7.0_x64_en-US.msi`
 2. Follow the installer wizard
 3. If prompted about WebView2, allow the installer to download it
 4. Launch from **Start Menu → LifeLogr**
@@ -257,7 +257,7 @@ Open http://localhost:5173 in your browser.
 |------|------|
 | Database | `%APPDATA%\lifelogr\lifelogr.db` |
 | Media files | `%APPDATA%\lifelogr\media\` |
-| Config | Set via `DIARI_DATA_DIR` env var |
+| Config | Set via `LIFELOGR_DATA_DIR` env var |
 
 ### Building on Windows
 
@@ -265,7 +265,7 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri\target\release\bundle\msi\LifeLogr_0.2.0_x64_en-US.msi
+# Output: src-tauri\target\release\bundle\msi\LifeLogr_0.7.0_x64_en-US.msi
 ```
 
 ---
@@ -274,7 +274,7 @@ make build
 
 ### From DMG
 
-1. Double-click `LifeLogr_0.2.0_aarch64.dmg`
+1. Double-click `LifeLogr_0.7.0_aarch64.dmg`
 2. Drag **LifeLogr** to the **Applications** folder
 3. Launch from Applications or Spotlight
 
@@ -299,7 +299,7 @@ Open http://localhost:5173 in your browser.
 |------|------|
 | Database | `~/Library/Application Support/lifelogr/lifelogr.db` |
 | Media files | `~/Library/Application Support/lifelogr/media/` |
-| Config | Set via `DIARI_DATA_DIR` env var |
+| Config | Set via `LIFELOGR_DATA_DIR` env var |
 
 ### Building on macOS
 
@@ -307,7 +307,7 @@ Open http://localhost:5173 in your browser.
 cd desktop
 make install
 make build
-# Output: src-tauri/target/release/bundle/dmg/LifeLogr_0.2.0_aarch64.dmg
+# Output: src-tauri/target/release/bundle/dmg/LifeLogr_0.7.0_aarch64.dmg
 ```
 
 > **Note:** The macOS build targets Apple Silicon (M1/M2/M3/M4) by default. Intel Mac users can run it via Rosetta 2 (transparent). To build for Intel specifically, change the sidecar filename to `lifelogr-backend-x86_64-apple-darwin`.
@@ -400,7 +400,6 @@ ollama pull nomic-embed-text
 | On This Day reflection | Ollama + llama3.2 model | On-demand from sidebar |
 | Recurring theme detection | Ollama + llama3.2 model | On-demand from analytics |
 | PDF export | pango, cairo, gdk-pixbuf | Setup script or manual |
-| Voice transcription | faster-whisper (~1GB) | Optional Python dep |
 
 ---
 
@@ -410,7 +409,7 @@ ollama pull nomic-embed-text
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DIARI_DATA_DIR` | Platform-specific (see above) | Data directory (DB, media) |
+| `LIFELOGR_DATA_DIR` | Platform-specific (see above) | Data directory (DB, media) |
 | `APP_ENV` | `development` | Set to `production` in packaged apps |
 | `SECRET_KEY` | `change-me-before-production` | **Must be changed in production** |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API URL |
@@ -423,8 +422,6 @@ ollama pull nomic-embed-text
 | `AI_ENABLE_SUMMARIZATION` | `true` | Enable auto-summaries |
 | `AI_ENABLE_REFLECTION_PROMPTS` | `true` | Enable AI reflection prompts |
 | `AI_ENABLE_WRITER_BLOCK_HELPER` | `true` | Enable writer's block continuation |
-| `WHISPER_MODEL` | `base` | Whisper STT model size |
-| `WHISPER_DEVICE` | `cpu` | Set to `cuda` for GPU acceleration |
 
 > **Note:** SQLite connection pool is automatically set to `pool_size=1` with no overflow. `DB_POOL_SIZE` and `DB_MAX_OVERFLOW` settings only apply to PostgreSQL.
 
@@ -432,10 +429,10 @@ ollama pull nomic-embed-text
 
 ```bash
 # Linux/macOS
-DIARI_DATA_DIR=/path/to/data ./LifeLogr_0.2.0_amd64.AppImage
+LIFELOGR_DATA_DIR=/path/to/data ./LifeLogr_0.7.0_amd64.AppImage
 
 # Or set permanently
-export DIARI_DATA_DIR=/path/to/data
+export LIFELOGR_DATA_DIR=/path/to/data
 ```
 
 ### Backend port
@@ -450,13 +447,13 @@ The Tauri app hardcodes the backend to port **18765**. For development mode, the
 
 ```bash
 # Make sure it's executable
-chmod +x LifeLogr_0.2.0_amd64.AppImage
+chmod +x LifeLogr_0.7.0_amd64.AppImage
 
 # If FUSE is missing (some distros)
 sudo apt install libfuse2
 
 # Run with debug output
-./LifeLogr_0.2.0_amd64.AppImage --verbose
+./LifeLogr_0.7.0_amd64.AppImage --verbose
 ```
 
 ### "Backend failed to start" error

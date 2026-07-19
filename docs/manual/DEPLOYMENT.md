@@ -308,7 +308,7 @@ Requires macOS build environment.
 
 ### Data Directory
 
-The Tauri shell passes `DIARI_DATA_DIR` to the backend sidecar:
+The Tauri shell sets `DATA_DIR` for the backend sidecar (you can override the location with `LIFELOGR_DATA_DIR`):
 
 | Platform | Path |
 |----------|------|
@@ -521,7 +521,7 @@ git push origin main --tags
 
 | Variable | Description |
 |----------|-------------|
-| `DIARI_DATA_DIR` | Set by Tauri shell — data directory for the app |
+| `DATA_DIR` | Set by the Tauri shell — data directory for the sidecar (override with `LIFELOGR_DATA_DIR`) |
 
 ### Mobile Build
 
