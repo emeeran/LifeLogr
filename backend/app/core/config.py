@@ -97,7 +97,7 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
 
     for candidate in candidates:
         if candidate.exists() and candidate.stat().st_size > 0:
-            _logger.info("Migrating existing database from %s → %s", candidate, target_db)
+            _logger.info("Migrating existing database from %s -> %s", candidate, target_db)
             # Atomic write: copy to .tmp then rename
             tmp = target_db.with_suffix(target_db.suffix + ".tmp")
             try:
@@ -111,7 +111,7 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
             legacy_media = candidate.parent / "media"
             target_media = target_data_dir / "media"
             if legacy_media.is_dir() and not target_media.exists():
-                _logger.info("Migrating media files from %s → %s", legacy_media, target_media)
+                _logger.info("Migrating media files from %s -> %s", legacy_media, target_media)
                 shutil.copytree(str(legacy_media), str(target_media))
             return  # migrated successfully
 
