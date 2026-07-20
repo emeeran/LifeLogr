@@ -1,16 +1,19 @@
 import { isTauri } from '../api/client'
 
-const EXTERNAL_SCHEMES = ['http:', 'https:', 'mailto:', 'tel:']
-
-/** True if a URL should be handed to the OS (web/mail/tel) rather than the app. */
+/**
+ * True only for an ABSOLUTE http(s)/mailto/tel URL — i.e. one to hand to the OS
+ * rather than the app. Relative paths ("/settings"), anchors ("#"), and
+ * query-only links are in-app and must be left to the router.
+ *
+ * Do NOT resolve via `new URL(href, window.location.href)`: that turns every
+ * router-link ("/email" → "http://host/email") into an "external" http URL,
+ * and the capture-phase interceptor then `preventDefault()`s the click — which
+ * makes vue-router's RouterLink bail (it skips when `event.defaultPrevented`),
+ * breaking all in-app nav. (In Tauri the origin is `tauri://`, so the bug was
+ * latent there; in the web/dev origin it breaks navigation outright.)
+ */
 export function isExternalHref(href: string): boolean {
-  if (!href) return false
-  try {
-    const u = new URL(href, window.location.href)
-    return EXTERNAL_SCHEMES.includes(u.protocol)
-  } catch {
-    return false
-  }
+  return /^(https?:|mailto:|tel:)/i.test(href ?? '')
 }
 
 /**
