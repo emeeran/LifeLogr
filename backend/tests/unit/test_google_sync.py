@@ -259,3 +259,27 @@ async def test_tasks_apply_creates_task(db_session):
     assert row.is_completed is True
     assert row.completed_at is not None
     assert row.list_id == tl.id
+
+
+@pytest.mark.asyncio
+async def test_upsert_list_does_not_pass_deleted_at(db_session):
+    """Regression: TaskList has no ``deleted_at`` column (only Task does).
+    _upsert_list previously constructed ``TaskList(..., deleted_at=None)`` which
+    raised ``'deleted_at' is an invalid keyword argument for TaskList`` and
+    aborted the whole Google sync's tasks leg. It must create + update cleanly.
+    """
+    api = FakeAPI()
+    acct = GoogleSyncAccount(credentials_encrypted="x", tasks_enabled=True)
+    svc = TasksSyncService(db_session, acct, api)
+
+    created = await svc._upsert_list({"id": "list-1", "title": "My List"})
+    await db_session.commit()
+    assert created.id is not None
+    assert created.name == "My List"
+    assert created.source == "google"
+    assert created.external_id == "list-1"
+
+    # Second call updates the same list in place (no duplicate, still no error).
+    updated = await svc._upsert_list({"id": "list-1", "title": "Renamed"})
+    assert updated.id == created.id
+    assert updated.name == "Renamed"

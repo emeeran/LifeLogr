@@ -181,11 +181,22 @@ def parse_message(raw: bytes) -> ParsedMessage:
             except ValueError:
                 reply_to_addr = a
 
+    # Tolerate malformed From headers (e.g. "Microsoft Exchange Server" with no
+    # @-sign) instead of letting normalize_email abort the whole folder sync —
+    # fall back to the raw value so the message is still stored. Mirrors the
+    # reply_to handling above and decode_addresses' skip-on-invalid approach.
+    from_address: str | None = None
+    if from_addr:
+        try:
+            from_address = normalize_email(from_addr)
+        except ValueError:
+            from_address = from_addr
+
     return ParsedMessage(
         message_id=msg_id,
         subject=subject,
         from_name=from_name or None,
-        from_address=normalize_email(from_addr) if from_addr else None,
+        from_address=from_address,
         to_addresses=to_addrs,
         cc_addresses=cc_addrs,
         bcc_addresses=bcc_addrs,
