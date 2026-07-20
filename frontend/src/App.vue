@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { request } from './api/client'
+import { installExternalLinkInterceptor } from './utils/externalLink'
 import AppShell from './components/layout/AppShell.vue'
 import SplashScreen from './components/layout/SplashScreen.vue'
 
@@ -60,13 +61,21 @@ function playMemorialAudioInBrowser() {
   }
 }
 
+// Open external hyperlinks (http/https/mailto/tel) in the system default
+// browser/handler instead of navigating the Tauri webview.
+let detachExternalLinks: (() => void) | null = null
+
 onMounted(() => {
   showSplash.value = memorialTitle.value
   if (showSplash.value) nextTick(playMemorialAudio)
+  detachExternalLinks = installExternalLinkInterceptor()
 })
 // Stop the audio as soon as the splash is dismissed.
 watch(showSplash, (v) => { if (!v) stopMemorialAudio() })
-onUnmounted(stopMemorialAudio)
+onUnmounted(() => {
+  stopMemorialAudio()
+  detachExternalLinks?.()
+})
 </script>
 
 <template>

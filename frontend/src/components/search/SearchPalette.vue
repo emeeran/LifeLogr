@@ -3,16 +3,13 @@ import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSearchStore } from '../../stores/search'
 import { useUiStore } from '../../stores/ui'
-import { useTagsStore } from '../../stores/tags'
 import { useNotesStore } from '../../stores/notes'
-import { Search as SearchIcon, Calendar, Hash, ArrowRight, Clock, NotebookPen, ListTodo } from 'lucide-vue-next'
+import { Search as SearchIcon, Calendar, ArrowRight, Clock, NotebookPen, ListTodo, Bell } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
 import type { SearchResultEntry } from '../../types'
-import SearchFilters from './SearchFilters.vue'
 
 const searchStore = useSearchStore()
 const ui = useUiStore()
-const tagsStore = useTagsStore()
 const router = useRouter()
 const notesStore = useNotesStore()
 
@@ -32,7 +29,6 @@ watch(query, (q) => {
 
 onMounted(() => {
   nextTick(() => inputRef.value?.focus())
-  if (!tagsStore.tags.length) tagsStore.fetchAll()
 })
 onUnmounted(() => { if (debounceTimer) clearTimeout(debounceTimer) })
 
@@ -52,6 +48,11 @@ function openResult(item: SearchResultEntry) {
   }
   if (item.type === 'task') {
     router.push('/planner')
+    ui.closeSearchPalette()
+    return
+  }
+  if (item.type === 'reminder') {
+    router.push('/reminders')
     ui.closeSearchPalette()
     return
   }
@@ -100,7 +101,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           ref="inputRef"
           v-model="query"
           class="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-          placeholder="Search journals, notes & tasks... (Ctrl+K)"
+          placeholder="Search journals, notes, tasks & reminders… (Ctrl+K)"
           @keydown="onKeydown"
         />
         <!-- Search mode toggle -->
@@ -113,24 +114,6 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           >{{ m === 'keyword' ? 'Aa' : m === 'semantic' ? 'AI' : 'Mix' }}</button>
         </div>
         <kbd class="hidden sm:inline text-[10px] text-text-muted bg-surface-hover border border-border rounded px-1.5 py-0.5">Esc</kbd>
-      </div>
-
-      <!-- Date range filters -->
-      <SearchFilters v-model:date-from="searchStore.dateFrom" v-model:date-to="searchStore.dateTo" />
-
-      <!-- Tag filters (clickable pills) -->
-      <div v-if="tagsStore.tags.length" class="flex gap-1 px-4 py-2 border-b border-border overflow-x-auto">
-        <button
-          v-for="tag in tagsStore.tags.slice(0, 10)"
-          :key="tag.id"
-          class="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border cursor-pointer transition-colors"
-          :class="searchStore.activeTagIds.includes(tag.id)
-            ? 'bg-accent/20 text-accent border-accent/30'
-            : 'bg-surface-hover text-text-secondary border-border hover:text-text-primary'"
-          @click="searchStore.toggleTag(tag.id); searchStore.search(query)"
-        >
-          <Hash :size="8" />{{ tag.name }}
-        </button>
       </div>
 
       <!-- Results -->
@@ -160,7 +143,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
         </div>
 
         <div v-else-if="!query && !showHistory" class="px-4 py-6 text-center text-text-muted text-xs">
-          Type to search across journals, notes and tasks
+          Type to search across journals, notes, tasks & reminders
         </div>
 
         <div
@@ -171,7 +154,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           @click="openResult(item)"
           @mouseenter="selectedIndex = i"
         >
-          <component :is="item.type === 'note' ? NotebookPen : item.type === 'task' ? ListTodo : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
+          <component :is="item.type === 'note' ? NotebookPen : item.type === 'task' ? ListTodo : item.type === 'reminder' ? Bell : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-xs font-medium text-text-primary">
@@ -179,9 +162,11 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
                   ? (item.title || 'Untitled note')
                   : item.type === 'task'
                   ? (item.title || 'Untitled task')
+                  : item.type === 'reminder'
+                  ? (item.title || 'Reminder')
                   : (item.entry_date ? formatDate(item.entry_date) : '') }}
               </span>
-              <span v-if="item.type === 'note' && item.updated_at" class="text-[10px] text-text-muted truncate">{{ formatDateTime(item.updated_at) }}</span>
+              <span v-if="(item.type === 'note' || item.type === 'reminder') && item.updated_at" class="text-[10px] text-text-muted truncate">{{ formatDateTime(item.updated_at) }}</span>
               <span v-else-if="item.type === 'entry' && item.title" class="text-xs text-text-secondary truncate">{{ item.title }}</span>
             </div>
             <p class="text-[11px] text-text-muted leading-relaxed mt-0.5 line-clamp-2" v-html="sanitize(item.snippet)" />

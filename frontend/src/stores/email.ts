@@ -202,8 +202,16 @@ export const useEmailStore = defineStore('email', () => {
 
   async function removeMessage(id: number) {
     await emailApi.deleteMessage(id)
+    // Keep the reader populated: open the message that slides into this slot,
+    // or the previous one if we just deleted the last in the list.
+    const idx = messages.value.findIndex((m) => m.id === id)
+    const candidate =
+      idx !== -1 ? messages.value[idx + 1] ?? messages.value[idx - 1] ?? null : null
     messages.value = messages.value.filter((m) => m.id !== id)
-    if (selectedMessage.value?.id === id) resetSelection()
+    if (selectedMessage.value?.id === id) {
+      if (candidate) await openMessage(candidate.id)
+      else resetSelection()
+    }
   }
 
   async function bulkDelete(ids: number[]) {

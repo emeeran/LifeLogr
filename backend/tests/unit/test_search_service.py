@@ -1,7 +1,7 @@
 """Integration tests for search — uses LIKE-based search via entries API and direct SearchService filtering."""
 
 import json
-from datetime import date
+from datetime import date, time
 from unittest.mock import patch, AsyncMock
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.search_service import SearchService
 from app.models.entry import Entry
 from app.models.embedding import EntryEmbedding
+from app.models.reminder import Reminder
 
 
 class TestSearch:
@@ -61,3 +62,19 @@ class TestSearch:
         results, total = await svc.search(query="Python", mood="calm", mode="semantic")
         assert total == 1
         assert results[0].id == e2.id
+
+    async def test_reminder_search(self, db_session: AsyncSession):
+        """Reminders (the 'schedule') are included in global search results."""
+        r1 = Reminder(
+            title="Standup meeting", message="Daily sync notes", reminder_time=time(9, 0)
+        )
+        r2 = Reminder(title="Gym session", message="Workout", reminder_time=time(18, 0))
+        db_session.add_all([r1, r2])
+        await db_session.commit()
+
+        svc = SearchService(db_session)
+        results, total = await svc.search(query="standup", mode="keyword")
+        assert total >= 1
+        assert any(item.type == "reminder" and item.id == r1.id for item in results)
+        # The non-matching reminder must not appear.
+        assert not any(item.id == r2.id for item in results)

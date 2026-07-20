@@ -7,6 +7,7 @@
     "shell:allow-execute",
     "shell:allow-spawn",
     "shell:allow-stdin-write",
+    "shell:allow-open",
     {
       "identifier": "shell:allow-spawn",
       "allow": [

@@ -35,6 +35,8 @@ import { createTask } from '../../api/planner'
 import { API_ORIGIN, request } from '../../api/client'
 import { useTtsStore } from '../../stores/tts'
 import PanelSplitter from '../layout/PanelSplitter.vue'
+import DOMPurify from 'dompurify'
+import { openExternal } from '../../utils/externalLink'
 
 const store = useEmailStore()
 const tts = useTtsStore()
@@ -325,6 +327,12 @@ function onSearchInput() {
   searchTimer = setTimeout(() => store.fetchMessages(), 300)
 }
 
+/** Toolbar Spam toggle: turn the spam filter on, or back off to "all mail". */
+function toggleSpam() {
+  if (store.spamOnly) store.selectFolder(null)
+  else store.selectSpam()
+}
+
 async function onClickMessage(msg: EmailMessageListResponse) {
   await store.openMessage(msg.id)
   // Pre-warm read-aloud so the Listen button is instant.
@@ -445,7 +453,27 @@ function attUrl(messageId: number, attId: number): string {
   return `${API_ORIGIN}/api/v1/email/messages/${messageId}/attachments/${attId}`
 }
 
-/** The message's HTML body with inline `cid:` images resolved to attachment URLs. */
+/**
+ * Inline script appended to the email srcdoc so link clicks in the sandboxed
+ * iframe bubble up to the parent (which opens them in the system browser).
+ * The script tags are built by concatenation so the SFC compiler does not see
+ * a real closing script token here (which would end this block early). The
+ * iframe runs `sandbox="allow-scripts"` with NO `allow-same-origin`, so
+ * although this executes, email markup cannot reach the app — and DOMPurify
+ * (in sanitizedHtml) strips any script/handler the email itself supplied,
+ * leaving only this trusted handler.
+ */
+const OPEN_LINK_SCRIPT =
+  '<' + 'script>(function(){' +
+  'document.addEventListener("click",function(e){' +
+  'var t=e.target&&e.target.closest?e.target.closest("a[href]"):null;' +
+  'if(!t)return;var h=t.getAttribute("href")||"";' +
+  'if(!/^(https?:|mailto:|tel:)/i.test(h))return;' +
+  'e.preventDefault();parent.postMessage({__lifelogrOpenExternal:t.href},"*");' +
+  '},true);})();</' + 'script>'
+
+/** The message's HTML body with inline `cid:` images resolved, sanitized, and
+ *  with our link interceptor appended. Used by both reader iframes. */
 const sanitizedHtml = computed<string | null>(() => {
   const m = store.selectedMessage
   if (!m?.html_body) return null
@@ -455,7 +483,7 @@ const sanitizedHtml = computed<string | null>(() => {
       html = html.split(`cid:${att.content_id}`).join(attUrl(m.id, att.id))
     }
   }
-  return html
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } }) + OPEN_LINK_SCRIPT
 })
 
 function escapeHtml(s: string): string {
@@ -603,14 +631,24 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 function onVisibility() {
   if (!document.hidden) store.refreshCounts()
 }
+// Email body iframes post link clicks here (see OPEN_LINK_SCRIPT); open them
+// in the system browser rather than navigating the webview.
+function onIframeMessage(e: MessageEvent) {
+  const data = e.data as { __lifelogrOpenExternal?: unknown } | null
+  if (data && typeof data.__lifelogrOpenExternal === 'string') {
+    void openExternal(data.__lifelogrOpenExternal)
+  }
+}
 onMounted(() => {
   store.init()
   pollTimer = setInterval(() => { if (!document.hidden) store.refreshCounts() }, 60000)
   document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('message', onIframeMessage)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   document.removeEventListener('visibilitychange', onVisibility)
+  window.removeEventListener('message', onIframeMessage)
   // Stop read-aloud only if an email is what's currently playing (single global stream).
   if (ttsPlaying.value || ttsLoading.value) tts.stop()
 })
@@ -698,6 +736,25 @@ onUnmounted(() => {
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover hover:text-rose-500 disabled:opacity-40"
           :disabled="!store.selectedMessage" title="Delete" @click="store.selectedMessage && onDelete(store.selectedMessage)">
           <Trash2 :size="14" />
+        </button>
+
+        <div class="mx-1 h-5 w-px bg-border" />
+        <!-- List filters (mirror the sidebar virtual folders) -->
+        <button
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors"
+          :class="store.unreadOnly ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'"
+          :title="store.unreadOnly ? 'Showing unread — click to show all' : 'Show unread only'"
+          @click="store.toggleUnread()">
+          <Mail :size="14" /> Unread
+          <span v-if="totalUnread" class="rounded-full bg-accent/20 px-1 text-[10px] font-semibold text-accent">{{ totalUnread }}</span>
+        </button>
+        <button
+          class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors"
+          :class="store.spamOnly ? 'bg-orange-500/15 text-orange-500' : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'"
+          :title="store.spamOnly ? 'Showing spam — click to show all' : 'Show spam only'"
+          @click="toggleSpam()">
+          <ShieldAlert :size="14" /> Spam
+          <span v-if="store.spamCount" class="rounded-full bg-orange-500/20 px-1 text-[10px] font-semibold text-orange-500">{{ store.spamCount }}</span>
         </button>
 
         <!-- Right side: account + search -->
@@ -989,7 +1046,7 @@ onUnmounted(() => {
                 <pre v-if="renderText || !sanitizedHtml"
                   class="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-text-primary/90">{{ store.selectedMessage.text_body }}</pre>
                 <iframe v-else
-                  :srcdoc="sanitizedHtml" sandbox=""
+                  :srcdoc="sanitizedHtml" sandbox="allow-scripts"
                   class="h-[60vh] w-full rounded-md border border-border bg-white" />
 
                 <!-- Attachments -->
@@ -1208,7 +1265,7 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-          <iframe v-if="sanitizedHtml && !renderText" :srcdoc="emailDocument(false)" sandbox=""
+          <iframe v-if="sanitizedHtml && !renderText" :srcdoc="emailDocument(false)" sandbox="allow-scripts"
             class="min-h-0 w-full flex-1 bg-white" />
           <pre v-else class="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-text-primary/90">{{ store.selectedMessage?.text_body }}</pre>
         </div>
