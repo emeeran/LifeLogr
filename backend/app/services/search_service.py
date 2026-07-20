@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.embedding import EntryEmbedding
 from app.models.entry import Entry
 from app.models.note import Note, NoteTag
+from app.models.reminder import Reminder
 from app.models.task import Task
 from app.schemas.search import SearchResultEntry, SearchMode
 
@@ -67,7 +68,20 @@ class SearchService:
         task_items, task_total = await self._tasks_keyword_search(
             query, task_offset, task_limit
         )
-        return entry_items + note_items + task_items, entry_total + note_total + task_total
+
+        # Reminders (the "schedule") occupy stream positions after entries +
+        # notes + tasks. Recurring reminders have no single date, so they are
+        # keyword-only and date-less (callers read ``updated_at``).
+        on_page = entries_on_page + len(note_items) + len(task_items)
+        reminder_offset = max(0, offset - entry_total - note_total - task_total)
+        reminder_limit = max(0, limit - on_page)
+        reminder_items, reminder_total = await self._reminders_keyword_search(
+            query, reminder_offset, reminder_limit
+        )
+        return (
+            entry_items + note_items + task_items + reminder_items,
+            entry_total + note_total + task_total + reminder_total,
+        )
 
     async def _notes_keyword_search(
         self,
@@ -192,6 +206,50 @@ class SearchService:
                     if r.notes and len(r.notes) > 200
                     else (r.notes or ("Completed" if r.is_completed else "Task"))
                 ),
+                rank=0.0,
+            )
+            for r in rows
+        ]
+        return items, total
+
+    async def _reminders_keyword_search(
+        self,
+        query: str,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[SearchResultEntry], int]:
+        """Keyword search over scheduled reminders (ILIKE on title + message).
+
+        Only active reminders are considered. Reminders are recurring and have
+        no single date, so ``entry_date`` is left null (callers read
+        ``updated_at``).
+        """
+        pattern = f"%{query}%"
+        base = (
+            select(Reminder.id, Reminder.title, Reminder.message, Reminder.updated_at)
+            .where(
+                Reminder.is_active == True,  # noqa: E712
+                (Reminder.title.ilike(pattern)) | (Reminder.message.ilike(pattern)),
+            )
+        )
+        total = (
+            await self.db.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        if total == 0 or limit <= 0:
+            return [], total
+        rows = (
+            await self.db.execute(
+                base.order_by(Reminder.updated_at.desc()).offset(offset).limit(limit)
+            )
+        ).all()
+        items = [
+            SearchResultEntry(
+                type="reminder",
+                id=r.id,
+                entry_date=None,
+                updated_at=r.updated_at,
+                title=r.title,
+                snippet=(r.message.strip() if r.message else "Scheduled reminder"),
                 rank=0.0,
             )
             for r in rows

@@ -12,12 +12,13 @@ SearchMode = Literal["keyword", "semantic", "hybrid"]
 class SearchResultEntry(BaseModel):
     """A single search result.
 
-    ``type`` discriminates entries from notes. Notes have no ``entry_date``
-    (they are not date-bound); callers should read ``updated_at`` instead.
+    ``type`` discriminates entries from notes/tasks/reminders. Notes and
+    reminders have no ``entry_date`` (they are not date-bound); callers should
+    read ``updated_at`` instead.
     """
 
     id: int
-    type: Literal["entry", "note", "task"] = "entry"
+    type: Literal["entry", "note", "task", "reminder"] = "entry"
     entry_date: date | None = None
     folder_id: int | None = None
     updated_at: datetime | None = None
