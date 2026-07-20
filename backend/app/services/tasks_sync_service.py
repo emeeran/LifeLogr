@@ -111,7 +111,10 @@ class TasksSyncService:
                 TaskList.source == "google", TaskList.external_id == ext_id
             )
         )
-        fields = {"name": glist.get("title") or "Google", "is_deleted": False, "deleted_at": None}
+        # TaskList only has is_deleted (no deleted_at — that's on Task). Setting
+        # it here raised "'deleted_at' is an invalid keyword argument for
+        # TaskList" and broke the whole Google sync's tasks leg.
+        fields = {"name": glist.get("title") or "Google", "is_deleted": False}
         if existing is None:
             existing = TaskList(source="google", external_id=ext_id, **fields)
             self.db.add(existing)
