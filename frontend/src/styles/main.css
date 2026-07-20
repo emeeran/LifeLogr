@@ -17,16 +17,16 @@ mark {
   --color-sidebar-text-secondary: #B2DFDB;
   --color-sidebar-text-muted: #80CBC4;
   --color-sidebar-hover: rgba(255, 255, 255, 0.12);
-  --color-surface: #FAFAFA;
+  --color-surface: #F4F4F5;
   --color-editor: #FFFFFF;
-  --color-surface-hover: #F4F4F5;
+  --color-surface-hover: #EBEBEF;
   --color-accent: #6366F1;
   --color-accent-hover: #4F46E5;
   --color-danger: #EF4444;
   --color-text-primary: #09090B;
   --color-text-secondary: #27272A;
-  --color-text-muted: #71717A;
-  --color-border: #E4E4E7;
+  --color-text-muted: #52525B;
+  --color-border: #D4D4D8;
   --color-tag-chip: #6366F1;
 }
 
