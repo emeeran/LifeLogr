@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task import Task, TaskList
@@ -61,15 +61,20 @@ class TasksSyncService:
         self.api = api
 
     async def _mark_synced(self, obj: Task | TaskList) -> None:
-        """Persist + reload server-generated ``updated_at``, then mirror it.
+        """Mirror the row's server-generated ``updated_at`` into ``synced_at``.
 
-        See ``CalendarSyncService._mark_synced`` for rationale (refresh avoids the
-        async lazy-load greenlet error; ``synced_at == updated_at`` marks a row as
-        not-locally-changed).
+        Raw SQL ``SET synced_at = updated_at`` — neither an ORM attribute set nor
+        a Core ``update()`` works, because both fire ``updated_at``'s
+        ``onupdate=func.now()`` and bump it past ``synced_at`` (push-loop). See
+        ``CalendarSyncService._mark_synced`` for the full rationale.
         """
-        await self.db.flush()  # pending → persistent so refresh can reload it
+        tbl_name = type(obj).__tablename__
+        await self.db.flush()  # pending → persistent so updated_at is generated
+        await self.db.execute(
+            text(f"UPDATE {tbl_name} SET synced_at = updated_at WHERE id = :id"),
+            {"id": obj.id},
+        )
         await self.db.refresh(obj)
-        obj.synced_at = obj.updated_at
 
     async def sync(self) -> dict[str, Any]:
         if not self.account.tasks_enabled:
@@ -111,7 +116,9 @@ class TasksSyncService:
                 TaskList.source == "google", TaskList.external_id == ext_id
             )
         )
-        fields = {"name": glist.get("title") or "Google", "is_deleted": False, "deleted_at": None}
+        # NB: TaskList has no ``deleted_at`` column (only ``is_deleted``), unlike
+        # Task — don't set it here or the ORM rejects the row.
+        fields = {"name": glist.get("title") or "Google", "is_deleted": False}
         if existing is None:
             existing = TaskList(source="google", external_id=ext_id, **fields)
             self.db.add(existing)

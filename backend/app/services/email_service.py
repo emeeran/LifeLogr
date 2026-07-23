@@ -384,6 +384,11 @@ class EmailAccountService:
             .all()
         }
         for name, flags in remote:
+            # ``\Noselect`` entries are non-selectable namespace placeholders
+            # (e.g. Gmail's ``[Gmail]`` parent) — selecting them always fails, so
+            # don't persist them as sync targets.
+            if "\\Noselect" in flags.split():
+                continue
             special = _special_use(name, flags)
             if name in existing:
                 if special and not existing[name].special_use:

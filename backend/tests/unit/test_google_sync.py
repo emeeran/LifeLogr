@@ -259,3 +259,63 @@ async def test_tasks_apply_creates_task(db_session):
     assert row.is_completed is True
     assert row.completed_at is not None
     assert row.list_id == tl.id
+
+
+@pytest.mark.asyncio
+async def test_upsert_list_does_not_reference_deleted_at(db_session):
+    """TaskList has no ``deleted_at`` column (only ``is_deleted``); _upsert_list
+    must not set it or the ORM rejects the row ('invalid keyword argument')."""
+    from app.models.task import TaskList
+
+    api = FakeAPI()
+    acct = GoogleSyncAccount(credentials_encrypted="x", tasks_enabled=True)
+    svc = TasksSyncService(db_session, acct, api)
+    tl = await svc._upsert_list({"id": "L9", "title": "Errands"})
+    await db_session.commit()
+    assert tl.name == "Errands"
+    assert tl.source == "google"
+    assert tl.external_id == "L9"
+    # Re-upsert updates in place without crashing.
+    await svc._upsert_list({"id": "L9", "title": "Errands 2"})
+    await db_session.commit()
+    rows = (await db_session.execute(select(TaskList))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].name == "Errands 2"
+
+
+@pytest.mark.asyncio
+async def test_mark_synced_is_byte_identical_no_push_loop(db_session):
+    """``synced_at`` must be byte-identical to ``updated_at`` in the DB after sync.
+
+    A Python ``synced_at = updated_at`` copy is insufficient: SQLite stores
+    ``func.now()`` timestamps without fractional seconds but Python datetimes
+    with them, and ORM-setting ``synced_at`` also fires ``updated_at``'s
+    ``onupdate``. Both leave the columns unequal as TEXT, so ``_push``'s
+    ``updated_at > synced_at`` clause re-pushes the same rows every sync
+    (observed: 4 events + 1 task pushed on every no-op sync). The raw-SQL copy
+    keeps them identical, which this checks at the SQL level (not just as
+    datetimes, which compare equal same-second and hide the bug).
+    """
+    from sqlalchemy import text
+
+    api = FakeAPI()
+    acct = GoogleSyncAccount(
+        credentials_encrypted="x", calendar_enabled=True, calendar_sync_token="t"
+    )
+    svc = CalendarSyncService(db_session, acct, api)
+    await svc._apply_event(_all_day_event("gloop", "Stable"), "primary")
+    await db_session.commit()
+
+    eq = (
+        await db_session.execute(
+            text(
+                "SELECT (synced_at = updated_at) AS eq FROM schedule_events "
+                "WHERE external_id = 'gloop'"
+            )
+        )
+    ).scalar()
+    assert eq == 1  # byte-identical at the SQL level
+
+    # And a push round must not PATCH this just-synced row.
+    await svc._push()
+    assert not [c for c in api.calls if c["method"] == "PATCH"]
