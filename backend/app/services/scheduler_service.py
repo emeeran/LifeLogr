@@ -378,6 +378,8 @@ class SchedulerService:
         await SchedulerService.sync_email_accounts()
         # Restore the recurring Google Calendar+Tasks sync job (if connected).
         await SchedulerService.sync_google()
+        # Daily DB maintenance (incremental vacuum) keeps the SQLite file compact.
+        await SchedulerService.register_db_maintenance()
         # Run a missed backup shortly after boot, mirroring reminder catch-up.
         if sched.running:
             from apscheduler.triggers.date import DateTrigger
@@ -827,6 +829,28 @@ class SchedulerService:
         )
         return 1
 
+    @staticmethod
+    async def register_db_maintenance() -> int:
+        """Register the daily incremental-vacuum job (keeps the SQLite file compact).
+
+        Runs at 03:00 local, coalesced + single-instance so a missed fire catches
+        up once without overlap. No-op (returns 0) when the scheduler isn't
+        running. Idempotent via ``replace_existing``.
+        """
+        sched = SchedulerService.get_scheduler()
+        if not sched.running:
+            return 0
+        sched.add_job(
+            _run_incremental_vacuum,
+            trigger=SchedulerService._cron_trigger("0 3 * * *"),
+            id="db_vacuum",
+            replace_existing=True,
+            coalesce=True,
+            misfire_grace_time=3600,
+            max_instances=1,
+        )
+        return 1
+
 
 # Guards the email sync so the one-off boot job and the recurring interval job
 # (different APScheduler IDs, so per-job max_instances doesn't prevent overlap)
@@ -878,6 +902,28 @@ async def _run_google_sync() -> None:
                 await GoogleSyncService(session).sync_all()
         except Exception:
             logger.error("Scheduled Google sync failed", exc_info=True)
+
+
+async def _run_incremental_vacuum() -> None:
+    """Reclaim up to 100 free DB pages via incremental vacuum (daily, off-peak).
+
+    No-op unless ``auto_vacuum=INCREMENTAL`` (==2). Never raises — a maintenance
+    task must never wedge the scheduler. Opens its own session (APScheduler runs
+    outside FastAPI DI).
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_session
+
+    try:
+        async with async_session() as session:
+            mode = (await session.execute(text("PRAGMA auto_vacuum"))).scalar()
+            if mode != 2:
+                return  # not INCREMENTAL — incremental_vacuum would be a no-op anyway
+            await session.execute(text("PRAGMA incremental_vacuum(100)"))
+            await session.commit()
+    except Exception:
+        logger.warning("Incremental vacuum failed", exc_info=True)
 
 
 async def _run_cloud_backup(config_id: int) -> None:
