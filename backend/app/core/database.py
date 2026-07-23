@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from sqlalchemy import event, func, text
+from sqlalchemy import create_engine, event, func, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -45,6 +45,9 @@ def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
     The cache/temp pragmas keep hot pages and temp tables in RAM.
     """
     cursor = dbapi_conn.cursor()
+    # auto_vacuum must be set BEFORE journal_mode=WAL, which creates the DB file
+    # and would otherwise lock auto_vacuum to its default (NONE).
+    cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")  # enable free-page reclamation (see _ensure_incremental_vacuum)
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
@@ -146,6 +149,34 @@ async def validate_db_health() -> None:
     logger.info("Database health check passed")
 
 
+def _vacuum_sync(sync_url: str) -> bool:
+    """Convert a ``NONE``/``FULL`` database to ``auto_vacuum = INCREMENTAL``.
+
+    Uses a short-lived dedicated sync engine: ``VACUUM`` can't run in a
+    transaction, and mixing sync connections into the async engine's aiosqlite
+    pool leaks them. ``auto_vacuum`` only takes effect when the DB is (re)built,
+    so a legacy DB needs a one-time ``VACUUM``. Returns True iff a reformat ran.
+    Idempotent: once auto_vacuum is INCREMENTAL (==2) this is a no-op.
+    """
+    sync_eng = create_engine(sync_url)
+    try:
+        with sync_eng.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            mode = conn.execute(text("PRAGMA auto_vacuum")).scalar()
+            if mode == 2:
+                return False
+            logger.info("Converting database to incremental auto_vacuum (one-time VACUUM)...")
+            conn.execute(text("PRAGMA auto_vacuum = INCREMENTAL"))
+            conn.execute(text("VACUUM"))
+            return True
+    finally:
+        sync_eng.dispose()
+
+
+async def _ensure_incremental_vacuum() -> None:
+    """Enable incremental vacuum on an existing DB (one-time reformat), off the event loop."""
+    await asyncio.to_thread(_vacuum_sync, f"sqlite:///{settings.db_path}")
+
+
 async def init_db() -> None:
     """Create all tables (for dev/bootstrap; desktop uses inline migrations)."""
     # Enforce the SECRET_KEY guard for any *server* (non-desktop) deployment.
@@ -164,6 +195,12 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_schema(conn)
+
+    # One-time: convert a legacy DB to incremental auto_vacuum so the scheduled
+    # maintenance job can reclaim free pages. Desktop sidecar only — avoid a
+    # surprise startup VACUUM on server deployments.
+    if is_desktop_sidecar:
+        await _ensure_incremental_vacuum()
 
     # Ensure FTS5 virtual table and sync triggers exist.
     # The bundled stdlib sqlite3 in some PyInstaller builds mishandles
