@@ -42,8 +42,22 @@ export default defineConfig(() => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/vue/') || id.includes('node_modules/@vue/') || id.includes('node_modules/vue-router/')) return 'vendor-vue'
-          if (id.includes('node_modules/leaflet/')) return 'vendor-leaflet'
+          // Stable vendor libs split into named chunks. In Tauri these load from
+          // local disk (near-free), so splitting aids cacheability and keeps the
+          // entry chunk small without a network penalty.
+          if (
+            id.includes('node_modules/vue/') ||
+            id.includes('node_modules/@vue/') ||
+            id.includes('node_modules/vue-router/') ||
+            id.includes('node_modules/pinia/')
+          ) {
+            return 'vendor-vue'
+          }
+          if (id.includes('node_modules/@tauri-apps/')) return 'vendor-tauri'
+          if (id.includes('node_modules/marked/') || id.includes('node_modules/dompurify/')) {
+            return 'vendor-markdown'
+          }
+          if (id.includes('node_modules/lucide-vue-next/')) return 'vendor-icons'
         },
       },
     },
