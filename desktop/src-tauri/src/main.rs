@@ -149,6 +149,52 @@ fn reclaim_port(port: u16) {
     warn!("Port {port} still in use after reclaim attempt");
 }
 
+/// Max time (ms) to wait for the backend to exit on SIGTERM before SIGKILL.
+const SIDECAR_GRACE_MS: u64 = 5_000;
+
+/// Gracefully stop the backend sidecar on app exit.
+///
+/// Complement to [`reclaim_port`]: that runs at *startup* to clear a sidecar
+/// left by a previous crashed/killed instance; this runs at *shutdown* so a
+/// normal window close actually terminates the backend instead of orphaning it
+/// (reparented to systemd --user) holding port 18765 and ~90 MB of RAM. We send
+/// SIGTERM first so the backend's FastAPI lifespan teardown runs (stop
+/// scheduler, dispose engine), then fall back to SIGKILL if it hasn't exited
+/// within the grace window. The listening socket only closes once teardown
+/// finishes, so [`port_is_listening`] returning false is the proof that graceful
+/// shutdown genuinely completed. Best-effort — `reclaim_port` on the next launch
+/// reaps anything still lingering (e.g. if SIGTERM isn't forwarded).
+fn shutdown_sidecar(port: u16) {
+    if !port_is_listening(port) {
+        return; // backend already gone
+    }
+    info!("Stopping backend sidecar on port {port} (SIGTERM)");
+    let _ = std::process::Command::new("pkill")
+        .args(["-TERM", "-f", "lifelogr-backend"])
+        .status();
+    for _ in 0..(SIDECAR_GRACE_MS / 100) {
+        if !port_is_listening(port) {
+            info!("Backend sidecar stopped gracefully");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    warn!(
+        "Backend sidecar did not exit within {SIDECAR_GRACE_MS} ms — sending SIGKILL"
+    );
+    let _ = std::process::Command::new("pkill")
+        .args(["-KILL", "-f", "lifelogr-backend"])
+        .status();
+    for _ in 0..20 {
+        if !port_is_listening(port) {
+            info!("Backend sidecar killed");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    warn!("Backend sidecar still on port {port} after SIGKILL (next launch will reclaim it)");
+}
+
 fn init_logging(data_dir: &std::path::Path) {
     let log_path = data_dir.join("lifelogr-desktop.log");
     let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
@@ -333,14 +379,9 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
-            match event {
-                RunEvent::ExitRequested { .. } => {
-                    info!("Exit requested — shutting down");
-                }
-                RunEvent::Exit => {
-                    info!("Application exiting — sidecar will be killed automatically");
-                }
-                _ => {}
+            if let RunEvent::ExitRequested { .. } = event {
+                info!("Exit requested — shutting down backend sidecar");
+                shutdown_sidecar(backend_port());
             }
         });
 }

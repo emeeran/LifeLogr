@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
 from dateutil.rrule import rrulestr
@@ -249,8 +250,18 @@ class PlannerService:
 
     def _expand_recurrence(self, ev: ScheduleEvent, frm: datetime, to: datetime) -> list[datetime]:
         """Return occurrence start datetimes in [frm, to], honoring exclusions."""
+        if ev.rrule is None:
+            return []  # callers gate on rrule, but the column is nullable
         try:
-            rule = rrulestr(ev.rrule, dtstart=ev.start_at)
+            # dateutil rejects mismatched DTSTART/UNTIL timezone awareness: our
+            # model stores naive local datetimes, but Google-synced RRULEs carry
+            # ``UNTIL=...Z`` (UTC) verbatim (see calendar_sync_service). Coerce
+            # dtstart to naive and drop the UTC suffix on UNTIL so both are naive.
+            dtstart = ev.start_at
+            if dtstart.tzinfo is not None:
+                dtstart = dtstart.replace(tzinfo=None)
+            rule_str = re.sub(r"(UNTIL=\d{8}T\d{6})Z", r"\1", ev.rrule, flags=re.IGNORECASE)
+            rule = rrulestr(rule_str, dtstart=dtstart)
             occurrences = list(rule.between(frm, to, inc=True))
         except Exception:
             logger.warning("Failed to expand RRULE %r: ", ev.rrule, exc_info=True)

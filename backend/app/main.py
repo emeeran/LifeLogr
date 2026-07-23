@@ -91,6 +91,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=30)),
                 id="reminder_catchup",
                 replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=120,
             )
     except Exception:
         logger.warning("Failed to start backup scheduler", exc_info=True)
