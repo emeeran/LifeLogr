@@ -49,8 +49,9 @@ def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA busy_timeout=5000")
-    cursor.execute("PRAGMA cache_size=-20000")  # ~20 MiB page cache (default ~2 MiB)
+    cursor.execute("PRAGMA cache_size=-4000")  # ~4 MiB page cache (tuned for single-user desktop reads)
     cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.execute("PRAGMA wal_autocheckpoint=1000")  # flush WAL every ~4 MiB so -wal stays bounded
     cursor.close()
 
 
