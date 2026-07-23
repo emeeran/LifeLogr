@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.core import security
 from app.core.config import settings
@@ -746,7 +747,10 @@ class EmailMessageService:
                 )
             )
 
-        base = select(EmailMessage)
+        # The list schema serializes only light columns (snippet — not the full
+        # text_body/html_body), so defer the heavy bodies. They're never accessed
+        # on this path; the search ``ilike`` is server-side, so it still works.
+        base = select(EmailMessage).options(defer(EmailMessage.text_body), defer(EmailMessage.html_body))
         count_stmt = select(func.count()).select_from(EmailMessage)
         for cond in conditions:
             base = base.where(cond)
