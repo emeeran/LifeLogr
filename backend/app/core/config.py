@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
-    APP_VERSION: str = "0.7.0"  # in-app version; keep in sync with pyproject.toml
+    APP_VERSION: str = "0.7.1"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     SECRET_KEY: str = "change-me-before-production"
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty

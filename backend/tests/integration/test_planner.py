@@ -94,6 +94,31 @@ class TestPlannerSchedule:
         assert all(item["is_recurring"] for item in body["items"])
         assert all(item["title"] == "Standup" for item in body["items"])
 
+    async def test_recurring_event_with_utc_until_expands(self, client):
+        # Google-synced RRULEs carry UNTIL in UTC (trailing 'Z'). With a naive
+        # local start_at (our model's design) dateutil rejects the awareness
+        # mismatch and the event silently fails to expand. Regression test for
+        # the normalizer in PlannerService._expand_recurrence.
+        await client.post(
+            "/api/v1/planner/events",
+            json={
+                "title": "Weekend standup",
+                "start_at": "2025-10-11T10:00:00",  # a Saturday, naive local
+                "end_at": "2025-10-11T10:30:00",
+                "rrule": "FREQ=WEEKLY;WKST=SU;UNTIL=20251013T133000Z;INTERVAL=1;BYDAY=SA,SU,MO",
+            },
+        )
+        resp = await client.get(
+            "/api/v1/planner/agenda",
+            params={"from": "2025-10-11T00:00:00", "to": "2025-10-13T23:59:59"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # Sat (11), Sun (12), Mon (13) → 3 occurrences before UNTIL.
+        assert body["total"] == 3
+        assert all(item["is_recurring"] for item in body["items"])
+        assert all(item["title"] == "Weekend standup" for item in body["items"])
+
     async def test_one_off_event_appears_once(self, client):
         day = datetime(2026, 7, 14, 18, 0)
         await client.post(

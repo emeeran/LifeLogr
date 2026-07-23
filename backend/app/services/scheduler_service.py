@@ -387,6 +387,9 @@ class SchedulerService:
                 trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=45)),
                 id="backup_catchup",
                 replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=120,
             )
             # Optional first email sync shortly after boot.
             from app.core.config import settings
@@ -399,6 +402,7 @@ class SchedulerService:
                     replace_existing=True,
                     coalesce=True,
                     max_instances=1,
+                    misfire_grace_time=120,
                 )
 
     @staticmethod
