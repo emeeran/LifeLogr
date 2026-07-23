@@ -5,7 +5,6 @@ from __future__ import annotations
 import html
 from datetime import date
 
-from fpdf import FPDF
 from markdown_it import MarkdownIt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,27 +72,6 @@ def _pdf_text(text: str) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
-class _DiaryPDF(FPDF):
-    """Custom PDF with Georgia-like font and branded styling."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_auto_page_break(auto=True, margin=25)
-
-    def header(self) -> None:
-        if self.page_no() > 1:
-            self.set_font("Helvetica", "I", 8)
-            self.set_text_color(150, 150, 150)
-            self.cell(0, 10, "LifeLogr Export", align="C")
-            self.ln(5)
-
-    def footer(self) -> None:
-        self.set_y(-15)
-        self.set_font("Helvetica", "I", 8)
-        self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f"Page {self.page_no()}/{{nb}}", align="C")
-
-
 class ExportService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -150,7 +128,34 @@ class ExportService:
     async def export_pdf(
         self, start_date: date | None = None, end_date: date | None = None
     ) -> bytes:
-        """Export entries as a PDF document using fpdf2 (pure Python, no system deps)."""
+        """Export entries as a PDF document using fpdf2 (pure Python, no system deps).
+
+        fpdf2 (and its transitive numpy/PIL via ``image_parsing``) is imported lazily
+        here so it doesn't inflate app startup — PDF export is a rarely-used feature.
+        Matches the lazy-import pattern in the ocr/tts/recording services.
+        """
+        from fpdf import FPDF
+
+        class _DiaryPDF(FPDF):
+            """Custom PDF with Georgia-like font and branded styling."""
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.set_auto_page_break(auto=True, margin=25)
+
+            def header(self) -> None:
+                if self.page_no() > 1:
+                    self.set_font("Helvetica", "I", 8)
+                    self.set_text_color(150, 150, 150)
+                    self.cell(0, 10, "LifeLogr Export", align="C")
+                    self.ln(5)
+
+            def footer(self) -> None:
+                self.set_y(-15)
+                self.set_font("Helvetica", "I", 8)
+                self.set_text_color(150, 150, 150)
+                self.cell(0, 10, f"Page {self.page_no()}/{{nb}}", align="C")
+
         entries = await self._get_entries(start_date, end_date)
 
         pdf = _DiaryPDF()
