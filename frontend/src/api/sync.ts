@@ -12,3 +12,11 @@ export const cloudPush = (provider: string, passphrase?: string) =>
 
 export const cloudPull = (provider: string, passphrase?: string) =>
   request<CloudSyncResponse>('/sync/cloud/pull', { method: 'POST', body: JSON.stringify({ provider, passphrase }) })
+
+/** Whether the background email + Google sync pollers are paused. */
+export const getPollersPaused = () => request<{ paused: boolean }>('/sync/pollers')
+
+/** Pause/resume the background email + Google sync pollers (used when the
+ *  window is hidden/minimized to drop idle CPU). */
+export const setPollersPaused = (paused: boolean) =>
+  request<Record<string, string>>(`/sync/pollers?paused=${paused}`, { method: 'POST' })

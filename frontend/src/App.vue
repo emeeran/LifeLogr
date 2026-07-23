@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { request } from './api/client'
+import { setPollersPaused } from './api/sync'
 import { installExternalLinkInterceptor } from './utils/externalLink'
 import AppShell from './components/layout/AppShell.vue'
 import SplashScreen from './components/layout/SplashScreen.vue'
@@ -65,16 +66,29 @@ function playMemorialAudioInBrowser() {
 // browser/handler instead of navigating the Tauri webview.
 let detachExternalLinks: (() => void) | null = null
 
+// When the window is hidden (minimized / tab switched), pause the background
+// email + Google sync pollers to drop idle CPU and network chatter; resume on
+// focus. The webview's visibilitychange fires on minimize in WebKit2GTK.
+let lastPollerPaused: boolean | null = null
+function onVisibilityChange() {
+  const hidden = document.hidden
+  if (hidden === lastPollerPaused) return
+  lastPollerPaused = hidden
+  setPollersPaused(hidden).catch(() => {})
+}
+
 onMounted(() => {
   showSplash.value = memorialTitle.value
   if (showSplash.value) nextTick(playMemorialAudio)
   detachExternalLinks = installExternalLinkInterceptor()
+  window.addEventListener('visibilitychange', onVisibilityChange)
 })
 // Stop the audio as soon as the splash is dismissed.
 watch(showSplash, (v) => { if (!v) stopMemorialAudio() })
 onUnmounted(() => {
   stopMemorialAudio()
   detachExternalLinks?.()
+  window.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
