@@ -58,3 +58,45 @@ def test_wal_autocheckpoint_is_explicitly_set() -> None:
     conn = _RecordingConn()
     _set_sqlite_pragma(conn, None)
     assert "PRAGMA wal_autocheckpoint=1000" in conn.executed
+
+
+def test_pragma_enables_incremental_vacuum_on_new_db(tmp_path) -> None:
+    """A fresh DB created under the connect listener gets auto_vacuum=INCREMENTAL."""
+    from app.core.database import _set_sqlite_pragma
+
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        _set_sqlite_pragma(conn, None)  # sets auto_vacuum before any table exists
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        assert conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 2  # INCREMENTAL
+    finally:
+        conn.close()
+
+
+def test_vacuum_sync_converts_legacy_db(tmp_path) -> None:
+    """A legacy DB (auto_vacuum=NONE) is converted in place, data is preserved,
+    and a second run is a no-op."""
+    from app.core.database import _vacuum_sync
+
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE t (x INTEGER)")
+        conn.execute("INSERT INTO t VALUES (1), (2), (3)")
+        conn.commit()
+        assert conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 0  # NONE
+    finally:
+        conn.close()
+
+    url = f"sqlite:///{db}"
+    assert _vacuum_sync(url) is True  # one-time reformat
+
+    conn = sqlite3.connect(str(db))
+    try:
+        assert conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 2  # INCREMENTAL
+        assert conn.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 3  # data preserved
+    finally:
+        conn.close()
+
+    assert _vacuum_sync(url) is False  # idempotent — no second VACUUM
