@@ -181,11 +181,23 @@ def parse_message(raw: bytes) -> ParsedMessage:
             except ValueError:
                 reply_to_addr = a
 
+    # ``From`` may be a bare local-part with no '@' (e.g. "Mailer-Daemon",
+    # "Postmaster"); normalize_email rejects those. Fall back to the raw value
+    # rather than letting the exception abort the whole message parse — which
+    # would raise out of _store_message and wedge the folder sync on that UID
+    # (every later sync retries from last_uid+1 and crashes on the same msg).
+    from_address: str | None = None
+    if from_addr:
+        try:
+            from_address = normalize_email(from_addr)
+        except ValueError:
+            from_address = from_addr
+
     return ParsedMessage(
         message_id=msg_id,
         subject=subject,
         from_name=from_name or None,
-        from_address=normalize_email(from_addr) if from_addr else None,
+        from_address=from_address,
         to_addresses=to_addrs,
         cc_addresses=cc_addrs,
         bcc_addresses=bcc_addrs,
@@ -201,6 +213,24 @@ def parse_message(raw: bytes) -> ParsedMessage:
 
 
 # ── IMAP client (imaplib in a thread) ──────────────────────────────────────
+
+
+# imaplib.IMAP4._command (Python 3.11) does NOT quote its arguments — it just
+# space-joins them. So a mailbox name with a space or other non-atom character
+# must be quoted *here* before being handed to imaplib, or the server rejects
+# the command with ``BAD [Could not parse command]``. This was breaking every
+# Gmail folder whose name contains a space (``[Gmail]/All Mail``,
+# ``[Gmail]/Sent Mail``, ``Sync Issues``...). RFC 9051 astring: a quoted string
+# is always valid, so we quote unless the name is a bare atom.
+_ATOM_SAFE = re.compile(r"^[A-Za-z0-9!#$&'*+\-./:;<=>@^_`|~]+$")
+
+
+def _quote_mailbox(name: str) -> str:
+    """Quote a mailbox name for an IMAP command if it isn't a bare atom."""
+    if name and _ATOM_SAFE.match(name):
+        return name
+    escaped = name.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 class ImapClient:
@@ -255,7 +285,7 @@ class ImapClient:
 
     async def select(self, folder: str) -> tuple[int, int | None]:
         """Select a folder, returning (message_count, uidvalidity)."""
-        typ, data = await asyncio.to_thread(self.imap.select, folder)
+        typ, data = await asyncio.to_thread(self.imap.select, _quote_mailbox(folder))
         if typ != "OK":
             raise RuntimeError(f"IMAP SELECT {folder!r} failed: {data}")
         count = 0
@@ -314,12 +344,14 @@ class ImapClient:
         await asyncio.to_thread(self.imap.uid, "STORE", str(uid), op, f"({flag})")
 
     async def append(self, folder: str, flags: str, raw: bytes) -> None:
-        await asyncio.to_thread(self.imap.append, folder, flags, None, raw)
+        await asyncio.to_thread(self.imap.append, _quote_mailbox(folder), flags, None, raw)
 
     async def uid_move(self, uid: int, dest_folder: str) -> bool:
         """Move a message; returns False if the server lacks MOVE."""
         try:
-            typ, _ = await asyncio.to_thread(self.imap.uid, "MOVE", str(uid), dest_folder)
+            typ, _ = await asyncio.to_thread(
+                self.imap.uid, "MOVE", str(uid), _quote_mailbox(dest_folder)
+            )
             return typ == "OK"
         except imaplib.IMAP4.error:
             return False

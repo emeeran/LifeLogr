@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schedule_event import ScheduleEvent
@@ -89,16 +89,22 @@ class CalendarSyncService:
         self.api = api
 
     async def _mark_synced(self, ev: ScheduleEvent) -> None:
-        """Persist + reload the server-generated ``updated_at``, then mirror it.
+        """Mirror the row's server-generated ``updated_at`` into ``synced_at``.
 
-        ``synced_at == updated_at`` guarantees a just-pulled row isn't seen as
-        locally changed (push picks up ``updated_at > synced_at``). Using
-        ``refresh`` (awaited) rather than a plain attribute read avoids the async
-        lazy-load ``MissingGreenlet`` error on server-generated columns.
+        ``synced_at == updated_at`` marks a just-synced row as not-locally-changed
+        (push picks up ``updated_at > synced_at``). This must be raw SQL
+        ``SET synced_at = updated_at`` — neither an ORM attribute set nor a Core
+        ``update()`` works, because both route through SQLAlchemy's column-default
+        machinery and fire ``updated_at``'s ``onupdate=func.now()``, bumping it
+        past ``synced_at`` (perpetual push-loop). A ``text()`` statement is sent
+        verbatim, so no default fires and the two columns end up byte-identical.
         """
-        await self.db.flush()  # pending → persistent so refresh can reload it
+        await self.db.flush()  # pending → persistent so updated_at is generated
+        await self.db.execute(
+            text("UPDATE schedule_events SET synced_at = updated_at WHERE id = :id"),
+            {"id": ev.id},
+        )
         await self.db.refresh(ev)
-        ev.synced_at = ev.updated_at
 
     async def sync(self) -> dict[str, Any]:
         if not self.account.calendar_enabled:
