@@ -168,3 +168,23 @@ async def sync_all(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         result["google"] = {"ok": False, "error": str(exc)}
     return result
+
+
+@router.get("/pollers")
+async def get_pollers() -> dict[str, Any]:
+    """Whether the background email/Google sync pollers are currently paused."""
+    from app.services.scheduler_service import SchedulerService
+
+    return {"paused": SchedulerService.background_syncs_paused()}
+
+
+@router.post("/pollers")
+async def set_pollers(paused: bool = Query(...)) -> dict[str, Any]:
+    """Pause/resume the background email + Google sync pollers.
+
+    Called by the desktop shell when the window is minimized to drop idle CPU;
+    reminders, backups, and DB maintenance keep running.
+    """
+    from app.services.scheduler_service import SchedulerService
+
+    return SchedulerService.set_background_syncs_paused(paused)

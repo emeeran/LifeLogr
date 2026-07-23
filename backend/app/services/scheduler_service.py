@@ -851,6 +851,41 @@ class SchedulerService:
         )
         return 1
 
+    # Job IDs of the recurring background sync pollers — paused when the desktop
+    # app is minimized to drop idle CPU. Reminders/backup/db_vacuum keep running.
+    _BACKGROUND_SYNC_JOBS = ("email_sync", "google_sync")
+
+    @staticmethod
+    def set_background_syncs_paused(paused: bool, sched: Any = None) -> dict[str, str]:
+        """Pause or resume the background email + Google sync pollers.
+
+        ``sched`` defaults to the global scheduler; tests pass a fresh one.
+        Returns per-job state; a job that isn't registered (e.g. Google sync not
+        connected) reports ``"absent"`` rather than erroring.
+        """
+        sched = sched or SchedulerService.get_scheduler()
+        state: dict[str, str] = {}
+        for job_id in SchedulerService._BACKGROUND_SYNC_JOBS:
+            if sched.get_job(job_id) is None:
+                state[job_id] = "absent"
+                continue
+            if paused:
+                sched.pause_job(job_id)
+            else:
+                sched.resume_job(job_id)
+            state[job_id] = "paused" if paused else "active"
+        return state
+
+    @staticmethod
+    def background_syncs_paused(sched: Any = None) -> bool:
+        """True iff every registered background sync poller is paused."""
+        sched = sched or SchedulerService.get_scheduler()
+        jobs = [sched.get_job(jid) for jid in SchedulerService._BACKGROUND_SYNC_JOBS]
+        existing = [j for j in jobs if j is not None]
+        if not existing:
+            return False
+        return all(getattr(j, "next_run_time", None) is None for j in existing)
+
 
 # Guards the email sync so the one-off boot job and the recurring interval job
 # (different APScheduler IDs, so per-job max_instances doesn't prevent overlap)
