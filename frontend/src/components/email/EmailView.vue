@@ -17,6 +17,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLocalStorage } from '@vueuse/core'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useEmailStore } from '../../stores/email'
 import * as emailApi from '../../api/email'
 import type {
@@ -310,6 +311,31 @@ const groupedMessages = computed(() => {
   }
   return groups
 })
+
+// Flatten the date groups into one virtualizable array (bucket header + rows)
+// so only the visible slice renders — keeps the DOM (and WebView RAM) flat even
+// with thousands of messages.
+interface FlatMsg { kind: 'header' | 'row'; bucket: string; message: EmailMessageListResponse | null }
+const flatMessages = computed<FlatMsg[]>(() => {
+  const out: FlatMsg[] = []
+  for (const g of groupedMessages.value) {
+    out.push({ kind: 'header', bucket: g.bucket, message: null })
+    for (const m of g.items) out.push({ kind: 'row', bucket: g.bucket, message: m })
+  }
+  return out
+})
+const msgScrollEl = ref<HTMLElement | null>(null)
+const msgVirtualizer = useVirtualizer(
+  computed(() => ({
+    count: flatMessages.value.length,
+    getScrollElement: () => msgScrollEl.value,
+    estimateSize: (i: number) => (flatMessages.value[i].kind === 'header' ? 24 : 68),
+    overscan: 8,
+  })),
+)
+function msgAt(i: number): EmailMessageListResponse {
+  return flatMessages.value[i].message!
+}
 
 async function onSync() {
   if (!activeAccount.value) return
@@ -899,53 +925,57 @@ onUnmounted(() => {
               <RefreshCw :size="12" /> Rescan
             </button>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto">
+          <div ref="msgScrollEl" class="min-h-0 flex-1 overflow-y-auto">
             <div v-if="store.loadingMessages" class="p-6 text-center text-xs text-text-muted">Loading…</div>
             <div v-else-if="!store.messages.length" class="flex h-full flex-col items-center justify-center gap-2 text-xs text-text-muted">
               <Mail :size="26" class="opacity-40" /> {{ store.spamOnly ? 'No spam flagged' : 'No messages' }}
             </div>
             <template v-else>
-              <div v-for="group in groupedMessages" :key="group.bucket">
-                <div class="sticky top-0 z-10 bg-surface/95 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-text-muted backdrop-blur">
-                  {{ group.bucket }}
-                </div>
-                <div v-for="m in group.items" :key="m.id"
-                  class="flex w-full items-start gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-surface-hover"
-                  :class="store.selectedMessage?.id === m.id ? 'bg-accent/5' : ''">
-                  <button class="mt-0.5 shrink-0 text-text-muted hover:text-text-primary cursor-pointer"
-                    :title="store.selectedIds.has(m.id) ? 'Deselect' : 'Select'" @click.stop="store.toggleSelected(m.id)">
-                    <CheckSquare v-if="store.selectedIds.has(m.id)" :size="14" class="text-accent" />
-                    <Square v-else :size="14" />
-                  </button>
-                  <button class="flex min-w-0 flex-1 items-start gap-2.5" @click="onClickMessage(m)">
-                    <!-- Avatar + unread dot -->
-                    <div class="relative mt-0.5 shrink-0">
-                      <div class="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                        :class="avatarColor(sender(m))">
-                        {{ initialsOf(sender(m)) }}
+              <div :style="{ height: `${msgVirtualizer.getTotalSize()}px`, position: 'relative' }">
+                <div v-for="vr in msgVirtualizer.getVirtualItems()" :key="String(vr.key)"
+                  :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vr.start}px)` }">
+                  <div v-if="flatMessages[vr.index].kind === 'header'"
+                    class="bg-surface/95 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-text-muted backdrop-blur">
+                    {{ flatMessages[vr.index].bucket }}
+                  </div>
+                  <div v-else
+                    class="flex w-full items-start gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-surface-hover"
+                    :class="store.selectedMessage?.id === msgAt(vr.index).id ? 'bg-accent/5' : ''">
+                    <button class="mt-0.5 shrink-0 text-text-muted hover:text-text-primary cursor-pointer"
+                      :title="store.selectedIds.has(msgAt(vr.index).id) ? 'Deselect' : 'Select'" @click.stop="store.toggleSelected(msgAt(vr.index).id)">
+                      <CheckSquare v-if="store.selectedIds.has(msgAt(vr.index).id)" :size="14" class="text-accent" />
+                      <Square v-else :size="14" />
+                    </button>
+                    <button class="flex min-w-0 flex-1 items-start gap-2.5" @click="onClickMessage(msgAt(vr.index))">
+                      <!-- Avatar + unread dot -->
+                      <div class="relative mt-0.5 shrink-0">
+                        <div class="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                          :class="avatarColor(sender(msgAt(vr.index)))">
+                          {{ initialsOf(sender(msgAt(vr.index))) }}
+                        </div>
+                        <span v-if="!msgAt(vr.index).is_read" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-surface" />
                       </div>
-                      <span v-if="!m.is_read" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-surface" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="truncate text-xs" :class="m.is_read ? 'font-medium text-text-muted' : 'font-semibold text-text-primary'">
-                          {{ sender(m) }}
-                        </span>
-                        <span class="shrink-0 text-[10px] text-text-muted">{{ formatTime(m.sent_at) }}</span>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="truncate text-xs" :class="msgAt(vr.index).is_read ? 'font-medium text-text-muted' : 'font-semibold text-text-primary'">
+                            {{ sender(msgAt(vr.index)) }}
+                          </span>
+                          <span class="shrink-0 text-[10px] text-text-muted">{{ formatTime(msgAt(vr.index).sent_at) }}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                          <Star v-if="msgAt(vr.index).is_starred" :size="11" class="shrink-0 fill-amber-400 text-amber-400" />
+                          <ShieldAlert v-if="msgAt(vr.index).is_spam" :size="11" class="shrink-0 text-orange-500" />
+                          <span class="truncate text-xs" :class="msgAt(vr.index).is_read ? 'text-text-muted/80' : 'text-text-primary/90'">
+                            {{ msgAt(vr.index).subject || '(no subject)' }}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                          <Paperclip v-if="msgAt(vr.index).has_attachments" :size="10" class="shrink-0 text-text-muted" />
+                          <span class="truncate text-[11px] text-text-muted">{{ msgAt(vr.index).snippet }}</span>
+                        </div>
                       </div>
-                      <div class="flex items-center gap-1.5">
-                        <Star v-if="m.is_starred" :size="11" class="shrink-0 fill-amber-400 text-amber-400" />
-                        <ShieldAlert v-if="m.is_spam" :size="11" class="shrink-0 text-orange-500" />
-                        <span class="truncate text-xs" :class="m.is_read ? 'text-text-muted/80' : 'text-text-primary/90'">
-                          {{ m.subject || '(no subject)' }}
-                        </span>
-                      </div>
-                      <div class="flex items-center gap-1.5">
-                        <Paperclip v-if="m.has_attachments" :size="10" class="shrink-0 text-text-muted" />
-                        <span class="truncate text-[11px] text-text-muted">{{ m.snippet }}</span>
-                      </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 </div>
               </div>
               <!-- Load more -->
