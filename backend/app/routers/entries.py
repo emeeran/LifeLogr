@@ -22,6 +22,7 @@ from app.models.tag import EntryTag
 from app.schemas.entry import (
     CalendarEntryResponse,
     EntryCreate,
+    EntryListItem,
     EntryListResponse,
     EntryResponse,
     EntryUpdate,
@@ -41,6 +42,32 @@ def _to_response(entry: Entry) -> EntryResponse:
         entry_date=entry.entry_date,
         title=entry.title,
         body=entry.body,
+        mood=entry.mood,
+        is_deleted=entry.is_deleted,
+        is_encrypted=entry.is_encrypted,
+        tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in entry.tag_associations if a.tag],
+        media_count=len(entry.media),
+        has_recording=len(entry.recordings) > 0,
+        latitude=entry.latitude,
+        longitude=entry.longitude,
+        location_name=entry.location_name,
+        template_id=entry.template_id,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+    )
+
+
+def _to_list_item(entry: Entry, snippet: str) -> EntryListItem:
+    """Convert an Entry (loaded WITHOUT its body) to a lightweight list item.
+
+    ``snippet`` is a server-side truncation of the body (empty for encrypted
+    entries), so the full body never has to be loaded for list/timeline views.
+    """
+    return EntryListItem(
+        id=entry.id,
+        entry_date=entry.entry_date,
+        title=entry.title,
+        body_snippet=snippet,
         mood=entry.mood,
         is_deleted=entry.is_deleted,
         is_encrypted=entry.is_encrypted,
@@ -80,8 +107,12 @@ async def list_entries(
     entries, total = await svc.list_entries(
         offset, limit, parsed_tag_ids, mood, year, month, template_id
     )
+    snippets = await svc.body_snippets([e.id for e in entries])
     return EntryListResponse(
-        items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit
+        items=[_to_list_item(e, snippets.get(e.id, "")) for e in entries],
+        total=total,
+        offset=offset,
+        limit=limit,
     )
 
 
@@ -106,8 +137,12 @@ async def search_entries(
     """Full-text search on entry bodies."""
     svc = EntryService(db)
     entries, total = await svc.search(q, offset, limit)
+    snippets = await svc.body_snippets([e.id for e in entries])
     return EntryListResponse(
-        items=[_to_response(e) for e in entries], total=total, offset=offset, limit=limit
+        items=[_to_list_item(e, snippets.get(e.id, "")) for e in entries],
+        total=total,
+        offset=offset,
+        limit=limit,
     )
 
 

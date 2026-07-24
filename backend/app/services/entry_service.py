@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,33 @@ from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 
 logger = logging.getLogger(__name__)
+
+def _entry_list_options() -> tuple[Any, ...]:
+    """Eager-load relationships + every scalar column EXCEPT the heavy ``body``.
+
+    Built lazily (called per-query, not at module import) so it doesn't trigger
+    SQLAlchemy mapper configuration before all models are registered.
+    """
+    return (
+        load_only(
+            Entry.id,
+            Entry.entry_date,
+            Entry.title,
+            Entry.summary,
+            Entry.mood,
+            Entry.is_deleted,
+            Entry.is_encrypted,
+            Entry.latitude,
+            Entry.longitude,
+            Entry.location_name,
+            Entry.template_id,
+            Entry.created_at,
+            Entry.updated_at,
+        ),
+        selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+        selectinload(Entry.media),
+        selectinload(Entry.recordings),
+    )
 
 
 class EntryService:
@@ -66,7 +94,7 @@ class EntryService:
         template_id: int | None = None,
     ) -> tuple[list[Entry], int]:
         """Return paginated entries matching optional filters and total count."""
-        base_q = select(Entry).where(Entry.is_deleted.is_(False))
+        base_q = select(Entry).options(*_entry_list_options()).where(Entry.is_deleted.is_(False))
         base_q = self._apply_filters(base_q, tag_ids, mood, year, month, template_id)
         count_q = self._apply_filters(
             select(func.count()).select_from(Entry).where(Entry.is_deleted.is_(False)),
@@ -81,6 +109,21 @@ class EntryService:
             base_q.order_by(Entry.entry_date.desc()).offset(offset).limit(limit)
         )
         return list(result.scalars().all()), total
+
+    async def body_snippets(self, entry_ids: list[int]) -> dict[int, str]:
+        """Server-side ~300-char body snippets for the given entries.
+
+        Skips encrypted entries (their body is ciphertext → empty snippet; the UI
+        shows 'Encrypted'). Avoids materializing full bodies into memory.
+        """
+        if not entry_ids:
+            return {}
+        rows = await self.db.execute(
+            select(Entry.id, func.substr(Entry.body, 1, 300)).where(
+                Entry.id.in_(entry_ids), Entry.is_encrypted == False  # noqa: E712
+            )
+        )
+        return {row[0]: (row[1] or "") for row in rows.all()}
 
     async def update(self, entry_id: int, data: EntryUpdate) -> Entry:
         """Update body, mood, and/or tags of an existing entry."""
@@ -250,7 +293,9 @@ class EntryService:
                     "WHERE entries_fts MATCH :q AND e.is_deleted = 0"
                 )
                 total = (await self.db.execute(count_sql, {"q": fts_query})).scalar_one()
-                result = await self.db.execute(select(Entry).where(Entry.id.in_(entry_ids)))
+                result = await self.db.execute(
+                    select(Entry).options(*_entry_list_options()).where(Entry.id.in_(entry_ids))
+                )
                 # Preserve FTS order
                 entry_map = {e.id: e for e in result.scalars().all()}
                 return [entry_map[eid] for eid in entry_ids if eid in entry_map], total
@@ -261,9 +306,13 @@ class EntryService:
 
         # FTS unavailable — ILIKE fallback (rare; e.g. corrupt index)
         pattern = f"%{query}%"
-        base = select(Entry).where(
-            Entry.is_deleted == False,  # noqa: E712
-            (Entry.body.ilike(pattern)) | (Entry.title.ilike(pattern)),
+        base = (
+            select(Entry)
+            .options(*_entry_list_options())
+            .where(
+                Entry.is_deleted == False,  # noqa: E712
+                (Entry.body.ilike(pattern)) | (Entry.title.ilike(pattern)),
+            )
         )
         total = (
             await self.db.execute(select(func.count()).select_from(base.subquery()))
