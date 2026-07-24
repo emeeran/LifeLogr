@@ -13,6 +13,7 @@ import {
   Check, Trash2, X, ChevronRight, Pin, Lock, Inbox,
 } from 'lucide-vue-next'
 import { useLocalStorage } from '@vueuse/core'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useNotesStore } from '../../stores/notes'
 import { useUiStore } from '../../stores/ui'
 import { notesApi } from '../../api/notes'
@@ -77,6 +78,69 @@ function notesIn(folderId: number): NoteListItem[] {
 }
 function leafLabel(n: NoteListItem): string {
   return n.title?.trim() || 'Untitled note'
+}
+
+// Flatten the whole rail (search list OR the expand/collapse tree) into one
+// virtualizable array so only the visible slice renders — keeps the DOM flat
+// even with "All Notes" expanded over thousands of notes.
+interface TreeItem {
+  kind: 'header' | 'tree-row' | 'section' | 'newfolder' | 'empty' | 'empty-folder' | 'leaf'
+  text?: string
+  key?: string
+  label?: string
+  icon?: 'inbox' | 'file' | 'folder' | 'folderopen'
+  count?: number
+  expanded?: boolean
+  folderId?: number
+  folderName?: string
+  note?: NoteListItem | null
+}
+const flatTree = computed<TreeItem[]>(() => {
+  if (searchResults.value) {
+    const out: TreeItem[] = [{ kind: 'header', text: `Results · ${searchResults.value.length}` }]
+    if (!searchResults.value.length) out.push({ kind: 'empty', text: `No notes match “${searchQuery.value}”.` })
+    else for (const n of searchResults.value) out.push({ kind: 'leaf', note: n })
+    return out
+  }
+  const out: TreeItem[] = []
+  out.push({ kind: 'tree-row', key: 'all', label: 'All Notes', icon: 'inbox', count: allNotes.value.length, expanded: isExpanded('all') })
+  if (isExpanded('all')) {
+    if (!allNotes.value.length) out.push({ kind: 'empty', text: 'No notes yet.' })
+    else for (const n of allNotes.value) out.push({ kind: 'leaf', note: n })
+  }
+  out.push({ kind: 'tree-row', key: 'unfiled', label: 'Unfiled', icon: 'file', count: unfiledNotes.value.length, expanded: isExpanded('unfiled') })
+  if (isExpanded('unfiled')) {
+    if (!unfiledNotes.value.length) out.push({ kind: 'empty', text: 'Nothing unfiled.' })
+    else for (const n of unfiledNotes.value) out.push({ kind: 'leaf', note: n })
+  }
+  out.push({ kind: 'section' })
+  if (showNewFolder.value) out.push({ kind: 'newfolder' })
+  if (!store.folders.length && !showNewFolder.value) out.push({ kind: 'empty', text: 'No notebooks — click + to create one.' })
+  for (const f of store.folders) {
+    const k = String(f.id)
+    out.push({ kind: 'tree-row', key: k, label: f.name, icon: isExpanded(k) ? 'folderopen' : 'folder', count: f.note_count, expanded: isExpanded(k), folderId: f.id, folderName: f.name })
+    if (isExpanded(k)) {
+      if (!notesIn(f.id).length) out.push({ kind: 'empty-folder' })
+      else for (const n of notesIn(f.id)) out.push({ kind: 'leaf', note: n })
+    }
+  }
+  return out
+})
+const treeScrollEl = ref<HTMLElement | null>(null)
+const treeVirtualizer = useVirtualizer(
+  computed(() => ({
+    count: flatTree.value.length,
+    getScrollElement: () => treeScrollEl.value,
+    estimateSize: (i: number) =>
+      flatTree.value[i].kind === 'leaf' ? 24 : flatTree.value[i].kind === 'newfolder' ? 34 : 26,
+    overscan: 10,
+  })),
+)
+function iconFor(icon: TreeItem['icon']) {
+  if (icon === 'inbox') return Inbox
+  if (icon === 'folderopen') return FolderOpen
+  if (icon === 'folder') return Folder
+  return FileText
 }
 
 async function loadTags() {
@@ -232,142 +296,80 @@ onMounted(async () => {
       </div>
 
       <!-- Tree body -->
-      <div class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
-        <!-- Search results (flat) -->
-        <template v-if="searchResults">
-          <div class="px-1 pb-1">
-            <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">
-              Results · {{ searchResults.length }}
-            </span>
-          </div>
-          <div v-if="!searchResults.length" class="px-2 py-4 text-center text-[11px] text-text-muted">
-            No notes match “{{ searchQuery }}”.
-          </div>
-          <button
-            v-for="n in searchResults"
-            :key="n.id"
-            class="note-leaf"
-            :class="{ active: store.currentNote?.id === n.id }"
-            @click="selectNote(n.id)"
+      <div ref="treeScrollEl" class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
+        <div :style="{ height: `${treeVirtualizer.getTotalSize()}px`, position: 'relative' }">
+          <div
+            v-for="vr in treeVirtualizer.getVirtualItems()"
+            :key="String(vr.key)"
+            :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vr.start}px)` }"
           >
-            <FileText :size="12" class="shrink-0" :class="n.is_pinned ? 'text-accent' : 'text-text-muted'" />
-            <span class="flex-1 truncate">{{ leafLabel(n) }}</span>
-            <Lock v-if="n.is_encrypted" :size="9" class="shrink-0 text-text-muted" />
-          </button>
-        </template>
-
-        <!-- Tree -->
-        <template v-else>
-          <!-- All Notes (unified view) -->
-          <button class="tree-row" @click="toggleExpand('all')">
-            <ChevronRight :size="13" class="chevron shrink-0" :class="{ open: isExpanded('all') }" />
-            <Inbox :size="12" /> <span class="flex-1 text-left">All Notes</span>
-            <span class="count">{{ allNotes.length }}</span>
-          </button>
-          <div v-if="isExpanded('all')" class="ml-1.5 border-l border-border pl-1">
-            <div v-if="!allNotes.length" class="px-2 py-1.5 text-[10px] italic text-text-muted">No notes yet.</div>
-            <button
-              v-for="n in allNotes"
-              :key="n.id"
-              class="note-leaf"
-              :class="{ active: store.currentNote?.id === n.id }"
-              @click="selectNote(n.id)"
-            >
-              <FileText :size="12" class="shrink-0" :class="n.is_pinned ? 'text-accent' : 'text-text-muted'" />
-              <span class="flex-1 truncate">{{ leafLabel(n) }}</span>
-              <Pin v-if="n.is_pinned" :size="9" class="shrink-0 text-accent" />
-              <Lock v-if="n.is_encrypted" :size="9" class="shrink-0 text-text-muted" />
-            </button>
-          </div>
-          <!-- Unfiled -->
-          <button class="tree-row" @click="toggleExpand('unfiled')">
-            <ChevronRight :size="13" class="chevron shrink-0" :class="{ open: isExpanded('unfiled') }" />
-            <FileText :size="12" /> <span class="flex-1 text-left">Unfiled</span>
-            <span class="count">{{ unfiledNotes.length }}</span>
-          </button>
-          <div v-if="isExpanded('unfiled')" class="ml-1.5 border-l border-border pl-1">
-            <div v-if="!unfiledNotes.length" class="px-2 py-1.5 text-[10px] italic text-text-muted">Nothing unfiled.</div>
-            <button
-              v-for="n in unfiledNotes"
-              :key="n.id"
-              class="note-leaf"
-              :class="{ active: store.currentNote?.id === n.id }"
-              @click="selectNote(n.id)"
-            >
-              <FileText :size="12" class="shrink-0 text-text-muted" />
-              <span class="flex-1 truncate">{{ leafLabel(n) }}</span>
-            </button>
-          </div>
-
-          <!-- Notebooks -->
-          <div class="flex items-center justify-between px-1 pb-1 pt-3">
-            <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">Notebooks</span>
-            <button
-              @click="startNewFolder"
-              class="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-accent"
-              title="New notebook"
-            >
-              <FolderPlus :size="12" />
-            </button>
-          </div>
-
-          <!-- Inline new-notebook input -->
-          <div v-if="showNewFolder" class="flex items-center gap-1 px-1 pb-1">
-            <input
-              ref="folderInputRef"
-              v-model="newFolderName"
-              placeholder="Notebook name…"
-              class="flex-1 rounded border border-border bg-surface-hover px-2 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
-              @keydown.enter="createFolder"
-              @keydown.esc="cancelNewFolder"
-            />
-            <button @click="createFolder" class="rounded bg-accent p-1 text-white transition-colors hover:bg-accent/90" title="Create">
-              <Check :size="11" />
-            </button>
-            <button @click="cancelNewFolder" class="rounded p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary" title="Cancel">
-              <X :size="11" />
-            </button>
-          </div>
-
-          <div v-if="!store.folders.length && !showNewFolder" class="px-2 py-1.5 text-[10px] italic text-text-muted">
-            No notebooks — click + to create one.
-          </div>
-
-          <div v-for="f in store.folders" :key="f.id">
-            <div class="group flex items-center gap-0.5">
-              <button class="tree-row flex-1" @click="toggleExpand(String(f.id))">
-                <ChevronRight :size="13" class="chevron shrink-0" :class="{ open: isExpanded(String(f.id)) }" />
-                <component :is="isExpanded(String(f.id)) ? FolderOpen : Folder" :size="12" />
-                <span class="flex-1 truncate text-left">{{ f.name }}</span>
-                <span class="count">{{ f.note_count }}</span>
+            <!-- header (search results count) -->
+            <div v-if="flatTree[vr.index].kind === 'header'" class="px-1 pb-1">
+              <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">{{ flatTree[vr.index].text }}</span>
+            </div>
+            <!-- tree-row (expandable group) -->
+            <div v-else-if="flatTree[vr.index].kind === 'tree-row'" class="group flex items-center gap-0.5">
+              <button class="tree-row flex-1" @click="toggleExpand(flatTree[vr.index].key!)">
+                <ChevronRight :size="13" class="chevron shrink-0" :class="{ open: flatTree[vr.index].expanded }" />
+                <component :is="iconFor(flatTree[vr.index].icon!)" :size="12" />
+                <span class="flex-1 truncate text-left">{{ flatTree[vr.index].label }}</span>
+                <span class="count">{{ flatTree[vr.index].count }}</span>
               </button>
               <button
-                @click="removeFolder(f.id, f.name)"
+                v-if="flatTree[vr.index].folderId != null"
+                @click="removeFolder(flatTree[vr.index].folderId!, flatTree[vr.index].folderName!)"
                 class="rounded p-1 text-text-muted opacity-0 transition-all hover:bg-surface-hover hover:text-red-400 group-hover:opacity-100"
                 title="Delete notebook"
               >
                 <Trash2 :size="11" />
               </button>
             </div>
-            <div v-if="isExpanded(String(f.id))" class="ml-1.5 border-l border-border pl-1">
-              <div v-if="!notesIn(f.id).length" class="px-2 py-1.5 text-[10px] italic text-text-muted">
-                Empty — <button class="text-accent hover:underline" @click="newNote">add a note</button>
-              </div>
-              <button
-                v-for="n in notesIn(f.id)"
-                :key="n.id"
-                class="note-leaf"
-                :class="{ active: store.currentNote?.id === n.id }"
-                @click="selectNote(n.id)"
-              >
-                <FileText :size="12" class="shrink-0" :class="n.is_pinned ? 'text-accent' : 'text-text-muted'" />
-                <span class="flex-1 truncate">{{ leafLabel(n) }}</span>
-                <Pin v-if="n.is_pinned" :size="9" class="shrink-0 text-accent" />
-                <Lock v-if="n.is_encrypted" :size="9" class="shrink-0 text-text-muted" />
+            <!-- section (Notebooks label + new-folder button) -->
+            <div v-else-if="flatTree[vr.index].kind === 'section'" class="flex items-center justify-between px-1 pb-1 pt-3">
+              <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">Notebooks</span>
+              <button @click="startNewFolder" class="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-accent" title="New notebook">
+                <FolderPlus :size="12" />
               </button>
             </div>
+            <!-- inline new-notebook input -->
+            <div v-else-if="flatTree[vr.index].kind === 'newfolder'" class="flex items-center gap-1 px-1 pb-1">
+              <input
+                ref="folderInputRef"
+                v-model="newFolderName"
+                placeholder="Notebook name…"
+                class="flex-1 rounded border border-border bg-surface-hover px-2 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+                @keydown.enter="createFolder"
+                @keydown.esc="cancelNewFolder"
+              />
+              <button @click="createFolder" class="rounded bg-accent p-1 text-white transition-colors hover:bg-accent/90" title="Create">
+                <Check :size="11" />
+              </button>
+              <button @click="cancelNewFolder" class="rounded p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary" title="Cancel">
+                <X :size="11" />
+              </button>
+            </div>
+            <!-- empty state -->
+            <div v-else-if="flatTree[vr.index].kind === 'empty'" class="px-2 py-1.5 text-[10px] italic text-text-muted">
+              {{ flatTree[vr.index].text }}
+            </div>
+            <!-- empty folder (with add-note action) -->
+            <div v-else-if="flatTree[vr.index].kind === 'empty-folder'" class="ml-3 px-2 py-1.5 text-[10px] italic text-text-muted">
+              Empty — <button class="text-accent hover:underline" @click="newNote">add a note</button>
+            </div>
+            <!-- note leaf -->
+            <button
+              v-else
+              class="note-leaf ml-3"
+              :class="{ active: store.currentNote?.id === flatTree[vr.index].note!.id }"
+              @click="selectNote(flatTree[vr.index].note!.id)"
+            >
+              <FileText :size="12" class="shrink-0" :class="flatTree[vr.index].note!.is_pinned ? 'text-accent' : 'text-text-muted'" />
+              <span class="flex-1 truncate">{{ leafLabel(flatTree[vr.index].note!) }}</span>
+              <Pin v-if="flatTree[vr.index].note!.is_pinned" :size="9" class="shrink-0 text-accent" />
+              <Lock v-if="flatTree[vr.index].note!.is_encrypted" :size="9" class="shrink-0 text-text-muted" />
+            </button>
           </div>
-        </template>
+        </div>
       </div>
     </aside>
 
