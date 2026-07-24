@@ -46,8 +46,14 @@ export interface CalendarEntryResponse {
   tags: TagBrief[];
 }
 
+/** Lightweight entry for list/timeline views: full ``body`` replaced by a
+ *  server-side snippet so list queries don't load every entry's full body. */
+export interface EntryListItem extends Omit<EntryResponse, 'body'> {
+  body_snippet: string;
+}
+
 export interface EntryListResponse {
-  items: EntryResponse[];
+  items: EntryListItem[];
   total: number;
   offset: number;
   limit: number;

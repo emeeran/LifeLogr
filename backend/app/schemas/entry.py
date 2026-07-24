@@ -82,6 +82,35 @@ class EntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EntryListItem(BaseModel):
+    """Lightweight entry for list/timeline views.
+
+    Same as :class:`EntryResponse` but with the full ``body`` replaced by a
+    server-side ``body_snippet`` (≈300 chars), so list queries don't materialize
+    every entry's full body into memory. The single GET keeps ``EntryResponse``.
+    """
+
+    id: int
+    entry_date: date
+    title: str | None
+    body_snippet: str
+    summary: str | None = None
+    mood: str | None
+    is_deleted: bool
+    is_encrypted: bool = False
+    tags: list[TagBrief]
+    media_count: int
+    has_recording: bool
+    latitude: float | None = None
+    longitude: float | None = None
+    location_name: str | None = None
+    template_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CalendarEntryResponse(BaseModel):
     """Lightweight entry projection for calendar grid rendering.
 
@@ -100,7 +129,7 @@ class CalendarEntryResponse(BaseModel):
 
 
 class EntryListResponse(BaseModel):
-    items: list[EntryResponse]
+    items: list[EntryListItem]
     total: int
     offset: int
     limit: int

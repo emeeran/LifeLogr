@@ -11,14 +11,14 @@ import { formatEntryDate } from '../../composables/useFormat'
 import { ChevronLeft, ChevronRight, Tag, X, Calendar, LayoutTemplate } from 'lucide-vue-next'
 import GoToDateModal from '../common/GoToDateModal.vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
-import type { EntryResponse } from '../../types'
+import type { EntryListItem } from '../../types'
 
 const ui = useUiStore()
 const store = useEntriesStore()
 const tagsStore = useTagsStore()
 const templatesStore = useTemplatesStore()
 const pagination = usePagination(20)
-const entries = ref<EntryResponse[]>([])
+const entries = ref<EntryListItem[]>([])
 const filterTagId = ref<number | null>(null)
 const showTagMenu = ref(false)
 const filterTemplateId = ref<number | null>(null)
@@ -70,7 +70,7 @@ async function loadThumbnail(entryId: number) {
 onMounted(() => { load(); tagsStore.fetchTree(); templatesStore.fetchAll() })
 watch(() => store.lastUpdated, load)
 
-function openEntry(entry: EntryResponse) {
+function openEntry(entry: EntryListItem) {
   // The editor only renders on the Journal view, so jump there to edit.
   ui.setView('calendar')
   ui.requestEdit(entry.id)
@@ -236,7 +236,7 @@ async function onGoToDate(dateStr: string) {
               </div>
               <p v-if="filteredEntries[virtualRow.index].title" class="text-xs font-medium text-text-primary mb-0.5">{{ filteredEntries[virtualRow.index].title }}</p>
               <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">
-                {{ filteredEntries[virtualRow.index].is_encrypted ? 'Encrypted' : bodyPreview(filteredEntries[virtualRow.index].body) }}
+                {{ filteredEntries[virtualRow.index].is_encrypted ? 'Encrypted' : bodyPreview(filteredEntries[virtualRow.index].body_snippet) }}
               </p>
               <div v-if="filteredEntries[virtualRow.index].tags.length" class="flex flex-wrap gap-1 mt-1">
                 <span v-for="tag in filteredEntries[virtualRow.index].tags" :key="tag.id" class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent">#{{ tag.name }}</span>
