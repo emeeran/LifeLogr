@@ -18,6 +18,7 @@ from app.schemas.note import (
     NoteFolderCreate,
     NoteFolderResponse,
     NoteFolderUpdate,
+    NoteListItem,
     NoteListResponse,
     NotePageCreate,
     NotePageReorder,
@@ -54,6 +55,27 @@ def _to_response(note: Note) -> NoteResponse:
     )
 
 
+def _to_list_item(note: Note, snippet: str) -> NoteListItem:
+    """Convert a Note (loaded WITHOUT body/pages) to a lightweight list item.
+
+    ``snippet`` is a server-side body truncation (empty for encrypted notes),
+    so full bodies + nested page bodies never load for list rows.
+    """
+    return NoteListItem(
+        id=note.id,
+        folder_id=note.folder_id,
+        title=note.title,
+        body_snippet=snippet,
+        is_pinned=note.is_pinned,
+        color=note.color,
+        is_encrypted=note.is_encrypted,
+        encrypted_at=note.encrypted_at,
+        tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in note.tag_associations if a.tag],
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
+
+
 class _PinBody(BaseModel):
     is_pinned: bool
 
@@ -82,8 +104,12 @@ async def list_notes(
     svc = NoteService(db)
     parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
     notes, total = await svc.list_notes(offset, limit, folder_id, parsed_tag_ids, is_pinned)
+    snippets = await svc.body_snippets([n.id for n in notes])
     return NoteListResponse(
-        items=[_to_response(n) for n in notes], total=total, offset=offset, limit=limit
+        items=[_to_list_item(n, snippets.get(n.id, "")) for n in notes],
+        total=total,
+        offset=offset,
+        limit=limit,
     )
 
 
@@ -97,8 +123,12 @@ async def search_notes(
     """Full-text search on notes (notes_fts, ILIKE fallback)."""
     svc = NoteService(db)
     notes, total = await svc.search(q, offset, limit)
+    snippets = await svc.body_snippets([n.id for n in notes])
     return NoteListResponse(
-        items=[_to_response(n) for n in notes], total=total, offset=offset, limit=limit
+        items=[_to_list_item(n, snippets.get(n.id, "")) for n in notes],
+        total=total,
+        offset=offset,
+        limit=limit,
     )
 
 

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import type {
   NoteResponse,
+  NoteListItem,
   NoteFolderResponse,
   NoteCreate,
   NoteUpdate,
@@ -13,8 +14,15 @@ import type {
 } from '../types'
 import { notesApi } from '../api/notes'
 
+/** Map a full note (from create/update) to the lightweight list-item shape
+ *  (body -> truncated snippet, pages dropped) for optimistic list updates. */
+function toListItem(note: NoteResponse): NoteListItem {
+  const { body, pages: _pages, ...rest } = note
+  return { ...rest, body_snippet: body.slice(0, 300) }
+}
+
 export const useNotesStore = defineStore('notes', () => {
-  const notes = shallowRef<NoteResponse[]>([])
+  const notes = shallowRef<NoteListItem[]>([])
   const folders = shallowRef<NoteFolderResponse[]>([])
   const currentNote = ref<NoteResponse | null>(null)
   const total = ref(0)
@@ -69,7 +77,7 @@ export const useNotesStore = defineStore('notes', () => {
     error.value = null
     try {
       const note = await notesApi.update(id, data)
-      notes.value = notes.value.map((n) => (n.id === id ? note : n))
+      notes.value = notes.value.map((n) => (n.id === id ? toListItem(note) : n))
       if (currentNote.value?.id === id) currentNote.value = note
       return note
     } catch (e: unknown) {
@@ -94,7 +102,7 @@ export const useNotesStore = defineStore('notes', () => {
     error.value = null
     try {
       const note = await notesApi.setPinned(id, is_pinned)
-      notes.value = notes.value.map((n) => (n.id === id ? note : n))
+      notes.value = notes.value.map((n) => (n.id === id ? toListItem(note) : n))
       if (currentNote.value?.id === id) currentNote.value = note
       return note
     } catch (e: unknown) {
