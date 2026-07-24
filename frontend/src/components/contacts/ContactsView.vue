@@ -12,6 +12,7 @@
  * for creating new contacts.
  */
 import { computed, onMounted, ref } from 'vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useContactsStore } from '../../stores/contacts'
 import * as contactsApi from '../../api/contacts'
 import type { ContactResponse } from '../../types'
@@ -32,7 +33,6 @@ const detailWidth = useLocalStorage<number>('lifelogr-contacts-detail-width', 38
 const selectedId = ref<number | null>(null)
 const showCreateForm = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
-const letterRefs: Record<string, HTMLElement | null> = {}
 
 // ── Toast ──
 const toast = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
@@ -70,6 +70,27 @@ const grouped = computed(() => {
 })
 const presentLetters = computed(() => grouped.value.map((g) => g[0]))
 
+// Flatten the A–Z groups into one virtualizable array (header + rows). Only the
+// visible slice is rendered, so thousands of contacts don't inflate the DOM.
+interface FlatItem { kind: 'header' | 'row'; letter: string; contact: ContactResponse | null }
+const flat = computed<FlatItem[]>(() => {
+  const out: FlatItem[] = []
+  for (const [letter, items] of grouped.value) {
+    out.push({ kind: 'header', letter, contact: null })
+    for (const c of items) out.push({ kind: 'row', letter, contact: c })
+  }
+  return out
+})
+const listScrollEl = ref<HTMLElement | null>(null)
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: flat.value.length,
+    getScrollElement: () => listScrollEl.value,
+    estimateSize: (i: number) => (flat.value[i].kind === 'header' ? 26 : 48),
+    overscan: 8,
+  })),
+)
+
 function initials(c: ContactResponse): string {
   const base = c.name || c.email
   const parts = base.split(/[\s@._]+/).filter(Boolean)
@@ -84,8 +105,8 @@ function selectContact(c: ContactResponse) {
   selectedId.value = c.id
 }
 function scrollToLetter(letter: string) {
-  const el = letterRefs[letter]
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const idx = flat.value.findIndex((it) => it.kind === 'header' && it.letter === letter)
+  if (idx >= 0) virtualizer.value.scrollToIndex(idx, { align: 'start' })
 }
 
 function openCreate() {
@@ -227,33 +248,34 @@ async function doExport() {
         </button>
       </div>
 
-      <!-- Letter bar + grouped list -->
+      <!-- Letter bar + grouped list (virtualized: only visible rows render) -->
       <div v-else class="flex-1 flex overflow-hidden">
-        <div class="flex-1 overflow-y-auto px-4 py-2">
-          <div v-for="[letter, items] in grouped" :key="letter">
-            <div :ref="(el) => { letterRefs[letter] = el as HTMLElement | null }"
-              class="sticky top-0 z-10 bg-surface py-1 text-[11px] font-bold text-text-muted tracking-wide">
-              {{ letter }}
-            </div>
-            <div class="space-y-0.5 pb-1">
-              <button v-for="c in items" :key="c.id" @click="selectContact(c)"
+        <div ref="listScrollEl" class="flex-1 overflow-y-auto px-4 py-2">
+          <div :style="{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }">
+            <div v-for="vr in virtualizer.getVirtualItems()" :key="String(vr.key)"
+              :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vr.start}px)` }">
+              <div v-if="flat[vr.index].kind === 'header'"
+                class="bg-surface py-1 text-[11px] font-bold text-text-muted tracking-wide">
+                {{ flat[vr.index].letter }}
+              </div>
+              <button v-else @click="selectContact(flat[vr.index].contact!)"
                 class="group w-full flex items-center gap-3 px-2.5 py-1.5 rounded-md transition-colors text-left cursor-pointer"
-                :class="selectedId === c.id ? 'bg-accent/15' : 'hover:bg-surface-hover'">
+                :class="selectedId === flat[vr.index].contact!.id ? 'bg-accent/15' : 'hover:bg-surface-hover'">
                 <div class="shrink-0 w-8 h-8 rounded-full overflow-hidden bg-accent/15"
-                  :class="!photoFor(c) ? 'text-accent flex items-center justify-center text-[10px] font-bold' : ''">
-                  <img v-if="photoFor(c)" :src="photoFor(c)!" :alt="c.name || ''" class="w-full h-full object-cover" />
-                  <span v-else>{{ initials(c) }}</span>
+                  :class="!photoFor(flat[vr.index].contact!) ? 'text-accent flex items-center justify-center text-[10px] font-bold' : ''">
+                  <img v-if="photoFor(flat[vr.index].contact!)" :src="photoFor(flat[vr.index].contact!)!" :alt="flat[vr.index].contact!.name || ''" class="w-full h-full object-cover" />
+                  <span v-else>{{ initials(flat[vr.index].contact!) }}</span>
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="text-[13px] font-medium text-text-primary truncate">{{ c.name || c.email }}</p>
+                  <p class="text-[13px] font-medium text-text-primary truncate">{{ flat[vr.index].contact!.name || flat[vr.index].contact!.email }}</p>
                   <p class="text-[11px] text-text-secondary truncate">
-                    {{ c.phones?.[0]?.value || c.email }}
+                    {{ flat[vr.index].contact!.phones?.[0]?.value || flat[vr.index].contact!.email }}
                   </p>
                 </div>
-                <button @click.stop="store.toggleFavorite(c)"
+                <button @click.stop="store.toggleFavorite(flat[vr.index].contact!)"
                   class="p-1 rounded transition-colors shrink-0"
-                  :class="c.is_favorite ? 'text-yellow-500' : 'text-text-muted opacity-0 group-hover:opacity-100 hover:text-yellow-500'">
-                  <Star :size="14" :fill="c.is_favorite ? 'currentColor' : 'none'" />
+                  :class="flat[vr.index].contact!.is_favorite ? 'text-yellow-500' : 'text-text-muted opacity-0 group-hover:opacity-100 hover:text-yellow-500'">
+                  <Star :size="14" :fill="flat[vr.index].contact!.is_favorite ? 'currentColor' : 'none'" />
                 </button>
               </button>
             </div>
