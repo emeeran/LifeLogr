@@ -18,13 +18,13 @@ import { useUiStore } from '../../stores/ui'
 import { notesApi } from '../../api/notes'
 import { tagsApi } from '../../api/tags'
 import NoteEditor from './NoteEditor.vue'
-import type { NoteResponse, TagResponse } from '../../types'
+import type { NoteListItem, TagResponse } from '../../types'
 
 const store = useNotesStore()
 const ui = useUiStore()
 
 const searchQuery = ref('')
-const searchResults = ref<NoteResponse[] | null>(null)
+const searchResults = ref<NoteListItem[] | null>(null)
 const allTags = ref<TagResponse[]>([])
 
 // Inline "new notebook" creator state
@@ -63,7 +63,7 @@ function toggleExpand(key: string) {
 const isExpanded = (key: string) => expanded.value.has(key)
 
 // Pinned-first, then most-recently-updated.
-function sortedNotes(arr: NoteResponse[]): NoteResponse[] {
+function sortedNotes(arr: NoteListItem[]): NoteListItem[] {
   return [...arr].sort((a, b) => {
     if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
@@ -72,10 +72,10 @@ function sortedNotes(arr: NoteResponse[]): NoteResponse[] {
 
 const unfiledNotes = computed(() => sortedNotes(store.notes.filter((n) => n.folder_id == null)))
 const allNotes = computed(() => sortedNotes(store.notes))
-function notesIn(folderId: number): NoteResponse[] {
+function notesIn(folderId: number): NoteListItem[] {
   return sortedNotes(store.notes.filter((n) => n.folder_id === folderId))
 }
-function leafLabel(n: NoteResponse): string {
+function leafLabel(n: NoteListItem): string {
   return n.title?.trim() || 'Untitled note'
 }
 

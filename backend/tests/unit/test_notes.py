@@ -67,7 +67,7 @@ class TestNoteTags:
         r = await client.get(f"/api/v1/notes?tag_ids={t['id']}")
         items = r.json()["items"]
         assert len(items) == 1
-        assert items[0]["body"] == "tagged"
+        assert items[0]["body_snippet"] == "tagged"
 
 
 class TestNotePin:
@@ -106,7 +106,7 @@ class TestNoteSearch:
         r = await client.get("/api/v1/notes/search?q=flour")
         items = r.json()["items"]
         assert len(items) == 1
-        assert "flour" in items[0]["body"]
+        assert "flour" in items[0]["body_snippet"]
 
 
 class TestNoteEncryption:

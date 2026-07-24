@@ -159,8 +159,14 @@ export interface NoteUpdate {
   color?: string | null;
 }
 
+/** Lightweight note for list views: full ``body`` + nested ``pages`` replaced by
+ *  a server-side snippet so list queries don't load bodies. */
+export interface NoteListItem extends Omit<NoteResponse, 'body' | 'pages'> {
+  body_snippet: string;
+}
+
 export interface NoteListResponse {
-  items: NoteResponse[];
+  items: NoteListItem[];
   total: number;
   offset: number;
   limit: number;

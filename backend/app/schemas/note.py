@@ -126,8 +126,27 @@ class NoteResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NoteListItem(BaseModel):
+    """Lightweight note for list views: full ``body`` + nested ``pages`` replaced
+    by a server-side ``body_snippet`` so list queries don't materialize bodies."""
+
+    id: int
+    folder_id: int | None
+    title: str | None
+    body_snippet: str
+    is_pinned: bool
+    color: str | None
+    is_encrypted: bool = False
+    encrypted_at: datetime | None = None
+    tags: list[TagBrief]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class NoteListResponse(BaseModel):
-    items: list[NoteResponse]
+    items: list[NoteListItem]
     total: int
     offset: int
     limit: int

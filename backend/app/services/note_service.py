@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,29 @@ from app.schemas.note import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _note_list_options() -> tuple[Any, ...]:
+    """Eager-load tags + every scalar column EXCEPT ``body``.
+
+    Built lazily (per-query) so it doesn't trigger mapper configuration at
+    import. ``pages`` is intentionally NOT loaded — each page carries its own
+    body and isn't needed for list rows (loaded on demand for the editor).
+    """
+    return (
+        load_only(
+            Note.id,
+            Note.folder_id,
+            Note.title,
+            Note.is_pinned,
+            Note.color,
+            Note.is_encrypted,
+            Note.encrypted_at,
+            Note.created_at,
+            Note.updated_at,
+        ),
+        selectinload(Note.tag_associations).selectinload(NoteTag.tag),
+    )
 
 
 class NoteService:
@@ -66,7 +90,7 @@ class NoteService:
         is_pinned: bool | None = None,
     ) -> tuple[list[Note], int]:
         """Return paginated notes (pinned-first, then recently-updated) and total count."""
-        base_q = select(Note).where(Note.is_deleted.is_(False))
+        base_q = select(Note).options(*_note_list_options()).where(Note.is_deleted.is_(False))
         base_q = self._apply_filters(base_q, folder_id, tag_ids, is_pinned)
         count_q = self._apply_filters(
             select(func.count()).select_from(Note).where(Note.is_deleted.is_(False)),
@@ -81,6 +105,17 @@ class NoteService:
             .limit(limit)
         )
         return list(result.scalars().all()), total
+
+    async def body_snippets(self, note_ids: list[int]) -> dict[int, str]:
+        """Server-side ~300-char body snippets (empty for encrypted notes)."""
+        if not note_ids:
+            return {}
+        rows = await self.db.execute(
+            select(Note.id, func.substr(Note.body, 1, 300)).where(
+                Note.id.in_(note_ids), Note.is_encrypted == False  # noqa: E712
+            )
+        )
+        return {row[0]: (row[1] or "") for row in rows.all()}
 
     async def update(self, note_id: int, data: NoteUpdate) -> Note:
         """Update note fields and/or tags of an existing note."""
@@ -233,7 +268,9 @@ class NoteService:
                     "WHERE notes_fts MATCH :q AND n.is_deleted = 0"
                 )
                 total = (await self.db.execute(count_sql, {"q": fts_query})).scalar_one()
-                result = await self.db.execute(select(Note).where(Note.id.in_(note_ids)))
+                result = await self.db.execute(
+                    select(Note).options(*_note_list_options()).where(Note.id.in_(note_ids))
+                )
                 note_map = {n.id: n for n in result.scalars().all()}
                 return [note_map[nid] for nid in note_ids if nid in note_map], total
             # FTS returned 0 rows — fall through to ILIKE (e.g. triggers missing in test DB).
@@ -241,7 +278,7 @@ class NoteService:
             logger.warning("Note FTS search failed, falling back to ILIKE", exc_info=True)
 
         pattern = f"%{query}%"
-        base = select(Note).where(
+        base = select(Note).options(*_note_list_options()).where(
             Note.is_deleted == False,  # noqa: E712
             (Note.body.ilike(pattern)) | (Note.title.ilike(pattern)),
         )

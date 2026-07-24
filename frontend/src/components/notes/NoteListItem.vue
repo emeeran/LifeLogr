@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Pin, Lock, Folder } from 'lucide-vue-next'
-import type { NoteResponse, NoteFolderResponse } from '../../types'
+import type { NoteListItem, NoteFolderResponse } from '../../types'
 
 const props = defineProps<{
-  note: NoteResponse
+  note: NoteListItem
   active: boolean
   folders: NoteFolderResponse[]
 }>()
@@ -16,7 +16,7 @@ const folderName = computed(() => {
 })
 
 const snippet = computed(() => {
-  const raw = props.note.body || ''
+  const raw = props.note.body_snippet || ''
   // Strip common markdown markers for a cleaner preview line.
   const stripped = raw
     .replace(/^#{1,6}\s+/gm, '')
