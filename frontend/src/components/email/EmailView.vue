@@ -726,34 +726,34 @@ onUnmounted(() => {
     <template v-else-if="store.accounts.length">
       <!-- Toolbar (spans full width above the panes) -->
       <div class="flex items-center gap-1.5 border-b border-border bg-surface-hover/60 px-3 py-2">
-        <button class="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90"
-          @click="openCompose()">
-          <Plus :size="14" /> New
+        <button class="flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-white hover:bg-accent/90"
+          title="New message" @click="openCompose()">
+          <Plus :size="14" />
         </button>
         <div class="mx-1 h-5 w-px bg-border" />
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :disabled="!store.selectedMessage" title="Reply" @click="store.selectedMessage && openCompose(store.selectedMessage, 'reply')">
-          <Reply :size="14" /> Reply
+          <Reply :size="14" />
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :disabled="!store.selectedMessage" title="Reply to all" @click="store.selectedMessage && openCompose(store.selectedMessage, 'replyall')">
-          <ReplyAll :size="14" /> Reply All
+          <ReplyAll :size="14" />
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :disabled="!store.selectedMessage" title="Forward" @click="store.selectedMessage && openCompose(store.selectedMessage, 'forward')">
-          <Forward :size="14" /> Forward
+          <Forward :size="14" />
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :disabled="!store.selectedMessage || summarizing" :title="summarizing ? 'Summarizing…' : 'AI summary'"
           @click="store.selectedMessage && summarizeEmail()">
-          <FileText :size="14" /> {{ summarizing ? '…' : 'Summarize' }}
+          <FileText :size="14" />
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-40"
           :class="ttsPlaying ? 'text-accent' : ''"
           :disabled="!store.selectedMessage || ttsLoading" :title="ttsPlaying ? 'Stop voice' : ttsLoading ? 'Generating audio…' : 'Read aloud'"
           @click="store.selectedMessage && vocalizeEmail()">
           <RefreshCw v-if="ttsLoading" :size="14" class="animate-spin" />
-          <Volume2 v-else :size="14" /> {{ ttsPlaying ? 'Stop' : 'Listen' }}
+          <Volume2 v-else :size="14" />
         </button>
         <button class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-text-muted hover:bg-surface-hover disabled:opacity-50"
           :disabled="store.syncing" @click="onSync" title="Send / Receive">
@@ -771,7 +771,7 @@ onUnmounted(() => {
           :class="store.unreadOnly ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'"
           :title="store.unreadOnly ? 'Showing unread — click to show all' : 'Show unread only'"
           @click="store.toggleUnread()">
-          <Mail :size="14" /> Unread
+          <Mail :size="14" />
           <span v-if="totalUnread" class="rounded-full bg-accent/20 px-1 text-[10px] font-semibold text-accent">{{ totalUnread }}</span>
         </button>
         <button
@@ -779,7 +779,7 @@ onUnmounted(() => {
           :class="store.spamOnly ? 'bg-orange-500/15 text-orange-500' : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'"
           :title="store.spamOnly ? 'Showing spam — click to show all' : 'Show spam only'"
           @click="toggleSpam()">
-          <ShieldAlert :size="14" /> Spam
+          <ShieldAlert :size="14" />
           <span v-if="store.spamCount" class="rounded-full bg-orange-500/20 px-1 text-[10px] font-semibold text-orange-500">{{ store.spamCount }}</span>
         </button>
 
