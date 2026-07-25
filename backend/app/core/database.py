@@ -25,8 +25,12 @@ def _build_engine() -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     eng = create_async_engine(
         settings.DATABASE_URL,
         echo=False,
-        pool_size=1 if is_sqlite else settings.DB_POOL_SIZE,
-        max_overflow=0 if is_sqlite else settings.DB_MAX_OVERFLOW,
+        # SQLite runs in WAL mode with busy_timeout (see _set_sqlite_pragma), so
+        # a normal-sized pool is safe and prevents long background jobs (email
+        # sync, backup) from starving reads. Hardcoding size 1/overflow 0 made
+        # any long DB session freeze the whole app (the "entries missing" bug).
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,
         connect_args={"check_same_thread": False} if is_sqlite else {},
     )

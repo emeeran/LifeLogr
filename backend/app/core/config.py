@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import secrets
 import shutil
 import sys
 from pathlib import Path
@@ -43,6 +44,11 @@ _logger = logging.getLogger(__name__)
 
 _STORAGE_OVERRIDE_FILENAME = "data-location.json"
 
+# Files that must travel with the data directory — reused by storage_service
+# (hot-move) and by _migrate_existing_db so a freshly-migrated DB's encrypted
+# credentials (keyed off .secret_key) stay decryptable.
+_PASSENGER_FILES = (".backup-schedule.json", ".runtime-settings.json", ".secret_key")
+
 
 def _storage_override_path() -> Path:
     """Path to the persisted storage-location override file."""
@@ -79,6 +85,43 @@ def write_storage_override(data_dir: Path) -> None:
     path.write_text(json.dumps({"data_dir": str(Path(data_dir).expanduser())}))
 
 
+def _resolve_secret_key(data_dir: Path, current: str) -> str:
+    """Return a stable SECRET_KEY for the packaged desktop sidecar.
+
+    Only engages when ``DATA_DIR`` is in the environment (the Tauri sidecar),
+    mirroring ``scripts/build-web-deb.sh``: an explicit non-default SECRET_KEY
+    (env / .env) always wins; otherwise load ``DATA_DIR/.secret_key`` if present;
+    otherwise generate ``secrets.token_hex(32)`` and persist it (mode 0600).
+
+    Dev and server deployments are untouched (no ``DATA_DIR`` env) — they keep
+    their env/.env/default SECRET_KEY (servers must set it; ``validate_production``
+    enforces it). Runs during ``Settings()`` instantiation, before
+    ``security.py`` derives the AES key at import.
+    """
+    if current and current != "change-me-before-production":
+        return current
+    if not os.environ.get("DATA_DIR"):
+        return current
+    key_file = data_dir / ".secret_key"
+    if key_file.exists():
+        try:
+            loaded = key_file.read_text().strip()
+            if loaded:
+                return loaded
+        except Exception:
+            _logger.warning("Could not read %s", key_file, exc_info=True)
+    generated = secrets.token_hex(32)
+    try:
+        prev = os.umask(0o077)
+        try:
+            key_file.write_text(generated)
+        finally:
+            os.umask(prev)
+    except Exception:
+        _logger.warning("Could not write %s", key_file, exc_info=True)
+    return generated
+
+
 def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
     """Copy an existing database (and media) into *target_data_dir* on first desktop run.
 
@@ -113,6 +156,17 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
             if legacy_media.is_dir() and not target_media.exists():
                 _logger.info("Migrating media files from %s → %s", legacy_media, target_media)
                 shutil.copytree(str(legacy_media), str(target_media))
+            # Carry passenger files (.secret_key etc.) so encrypted credentials
+            # in the migrated DB remain decryptable with the same key.
+            for name in _PASSENGER_FILES:
+                src_pf = candidate.parent / name
+                dst_pf = target_data_dir / name
+                if src_pf.exists() and not dst_pf.exists():
+                    try:
+                        shutil.copy2(str(src_pf), str(dst_pf))
+                        _logger.info("Migrating %s → %s", src_pf, dst_pf)
+                    except Exception:
+                        _logger.warning("Could not migrate %s", src_pf, exc_info=True)
             return  # migrated successfully
 
 
@@ -212,9 +266,15 @@ class Settings(BaseSettings):
         if not self.DATABASE_URL:
             db_path = self.DATA_DIR / "lifelogr.db"
             self.DATABASE_URL = f"sqlite+aiosqlite:///{db_path}"
-            # On first desktop run, migrate existing database from the
-            # platform-default data dir (e.g. from dev/prior installs).
+            # On first desktop run, migrate existing database (and passenger
+            # files like .secret_key) from the platform-default data dir.
             _migrate_existing_db(db_path, self.DATA_DIR)
+
+        # Resolve SECRET_KEY AFTER migration so a just-copied legacy .secret_key
+        # is used rather than overwritten by a freshly generated one. Engages
+        # only for the packaged desktop sidecar (DATA_DIR env set); an explicit
+        # non-default env/.env SECRET_KEY always wins.
+        self.SECRET_KEY = _resolve_secret_key(self.DATA_DIR, self.SECRET_KEY)
 
         # Derive MEDIA_DIR if not explicitly set
         if not self.MEDIA_DIR or str(self.MEDIA_DIR) == ".":

@@ -19,14 +19,14 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings, write_storage_override
+from app.core.config import _PASSENGER_FILES, settings, write_storage_override
 from app.core.database import init_db, reinit_engine
 from app.core.restore import _checkpoint_live, validate_extracted_db
 
 logger = logging.getLogger(__name__)
 
-# Files that must travel with the data directory.
-_PASSENGER_FILES = (".backup-schedule.json", ".runtime-settings.json", ".secret_key")
+# _PASSENGER_FILES imported from app.core.config (single source of truth,
+# shared with _migrate_existing_db).
 # Require this multiple of the live data size as free space on the target.
 _MIN_HEADROOM_MULT = 1.5
 
