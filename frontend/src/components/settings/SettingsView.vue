@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, provide } from "vue";
+import { ref, computed, nextTick, provide, watch } from "vue";
 import { useLocalStorage } from "@vueuse/core";
+import { useUiStore } from "../../stores/ui";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -15,6 +16,7 @@ import {
   Mail,
   StickyNote,
   CalendarCheck,
+  Activity,
 } from "lucide-vue-next";
 import GeneralTab from "./tabs/GeneralTab.vue";
 import AITab from "./tabs/AITab.vue";
@@ -23,6 +25,7 @@ import GoogleSyncTab from "./tabs/GoogleSyncTab.vue";
 import FeaturesTab from "./tabs/FeaturesTab.vue";
 import DedicationTab from "./tabs/DedicationTab.vue";
 import AboutTab from "./tabs/AboutTab.vue";
+import DiagnosticsTab from "./tabs/DiagnosticsTab.vue";
 import EmailTab from "./tabs/EmailTab.vue";
 import NotesTab from "./tabs/NotesTab.vue";
 
@@ -38,7 +41,24 @@ const tabs = [
   { id: "data-backup", label: "Data & Backup", icon: HardDrive },
   { id: "dedication", label: "Dedication", icon: Heart },
   { id: "about", label: "About", icon: Info },
+  { id: "diagnostics", label: "Diagnostics", icon: Activity },
 ] as const;
+
+// Deep-linking: a component (e.g. the health banner) can request a Settings tab.
+const ui = useUiStore();
+if (ui.requestedSettingsTab) {
+  activeTab.value = ui.requestedSettingsTab;
+  ui.requestedSettingsTab = null;
+}
+watch(
+  () => ui.requestedSettingsTab,
+  (id) => {
+    if (id) {
+      activeTab.value = id;
+      ui.requestedSettingsTab = null;
+    }
+  },
+);
 
 // ── Settings search ──
 // A small index of {tab, keywords} drives two behaviours:
@@ -505,6 +525,7 @@ provide("settings-highlight", highlightKey);
         <DataBackupTab v-if="activeTab === 'data-backup'" @toast="showToast" />
         <DedicationTab v-if="activeTab === 'dedication'" />
         <AboutTab v-if="activeTab === 'about'" @toast="showToast" />
+        <DiagnosticsTab v-if="activeTab === 'diagnostics'" @toast="showToast" />
       </div>
     </div>
 

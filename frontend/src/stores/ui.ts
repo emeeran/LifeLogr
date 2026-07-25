@@ -27,6 +27,9 @@ export const useUiStore = defineStore('ui', () => {
   // Global search palette
   const searchPaletteOpen = ref(false)
 
+  // Lets a component (e.g. the health banner) jump straight to a Settings tab.
+  const requestedSettingsTab = ref<string | null>(null)
+
   // Tool drawer (side panel — only one panel open at a time)
   const activeDrawer = ref<DrawerPanel | null>(null)
 
@@ -51,6 +54,12 @@ export const useUiStore = defineStore('ui', () => {
 
   function setView(view: ViewType) {
     activeView.value = view
+  }
+
+  /** Switch to a specific Settings tab (used by the health banner's "View"). */
+  function requestSettingsTab(id: string) {
+    requestedSettingsTab.value = id
+    activeView.value = 'settings'
   }
 
   /** Check dirty and request edit switch — returns true if switched immediately */
@@ -143,5 +152,6 @@ export const useUiStore = defineStore('ui', () => {
     setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
     openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer, toggleScribble, toggleZenMode,
+    requestedSettingsTab, requestSettingsTab,
   }
 })

@@ -1,11 +1,17 @@
 """Startup self-checks: data integrity + backup functionality."""
 
+from datetime import date
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.core.startup_checks as sc
+from app.core import security
+from app.core.config import settings
+from app.models.email_account import EmailAccount
+from app.models.entry import Entry
 from app.services.scheduler_service import SchedulerService, _mark_backup_run
 
 
@@ -41,6 +47,9 @@ def _reset_state(tmp_path, monkeypatch):
     # Reset stashed results so each test sees a clean baseline.
     sc._integrity_result.update(ran=False, ok=True, fk_violations=0)
     sc._backup_result.update(ran=False, scheduled=None, last_run=None, stale=None)
+    sc._app_integrity_result.update(
+        ran=False, ran_at=None, checks=[], summary={"ok": 0, "warn": 0, "error": 0}
+    )
     yield
 
     try:
@@ -147,3 +156,104 @@ class TestCheckBackupHealth:
         res = sc.get_backup_status()
         assert res["scheduled"] is True
         assert res["stale"] is False
+
+
+def _account(password_encrypted: str) -> EmailAccount:
+    return EmailAccount(
+        label="t",
+        email_address="a@b.c",
+        imap_host="h",
+        imap_port=993,
+        imap_use_ssl=True,
+        smtp_host="h",
+        smtp_port=587,
+        smtp_use_tls=True,
+        username="a@b.c",
+        password_encrypted=password_encrypted,
+    )
+
+
+class TestCheckAppIntegrity:
+    @pytest.mark.asyncio
+    async def test_encryption_key_default_is_error(self, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "SECRET_KEY", "change-me-before-production")
+        res = await sc._check_encryption_key(db_session)
+        assert res["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_encryption_key_valid_credential_ok(self, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")  # bypass the default guard
+        db_session.add(_account(security.encrypt("secret")))
+        await db_session.commit()
+        res = await sc._check_encryption_key(db_session)
+        assert res["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_encryption_key_undecryptable_is_error(self, db_session, monkeypatch):
+        monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")
+        db_session.add(_account("not-a-valid-encrypted-token"))
+        await db_session.commit()
+        res = await sc._check_encryption_key(db_session)
+        assert res["status"] == "error"
+        assert "email_accounts" in res["detail"]
+
+    @pytest.mark.asyncio
+    async def test_schema_tables_ok(self, db_session):
+        assert (await sc._check_schema_tables(db_session))["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_fts_sync_drift_warns(self, db_session):
+        # Direct insert bypasses the app-level FTS triggers the test schema lacks.
+        db_session.add(
+            Entry(
+                entry_date=date(2024, 1, 1),
+                body="hi",
+                title="t",
+                is_deleted=False,
+                is_encrypted=False,
+            )
+        )
+        await db_session.commit()
+        assert (await sc._check_fts_sync(db_session))["status"] == "warn"
+
+    @pytest.mark.asyncio
+    async def test_structure_ok(self, db_session):
+        assert (await sc._check_structure(db_session))["status"] == "ok"
+
+    def test_connection_pool_warns_when_size_one(self, monkeypatch):
+        monkeypatch.setattr(settings, "DB_POOL_SIZE", 1)
+        assert sc._check_connection_pool()["status"] == "warn"
+
+    def test_connection_pool_ok_by_default(self):
+        assert settings.DB_POOL_SIZE > 1
+        assert sc._check_connection_pool()["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_full_battery_returns_report(self, _scheduler_db):
+        report = await sc.check_app_integrity()
+        assert report["ran"] is True
+        assert report["ran_at"]
+        assert len(report["checks"]) >= 8
+        assert set(report["summary"]) == {"ok", "warn", "error"}
+        ids = {c["id"] for c in report["checks"]}
+        assert {"database_structure", "encryption_key", "connection_pool", "data_dir"} <= ids
+        assert all(c["status"] in {"ok", "warn", "error"} for c in report["checks"])
+        assert sc.get_app_integrity()["ran_at"] == report["ran_at"]
+
+
+class TestSystemIntegrityEndpoint:
+    @pytest.mark.asyncio
+    async def test_get_returns_cached_report(self, client):
+        await sc.check_app_integrity()  # populate the cache
+        r = await client.get("/api/v1/system/integrity")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ran"] is True
+        assert isinstance(body["checks"], list)
+
+    @pytest.mark.asyncio
+    async def test_post_reruns_live(self, client):
+        r = await client.post("/api/v1/system/integrity")
+        assert r.status_code == 200
+        assert r.json()["ran"] is True
+

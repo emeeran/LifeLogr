@@ -104,6 +104,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await check_backup_health()
     except Exception:
         logger.warning("Startup backup-health check failed", exc_info=True)
+    # Broad app-integrity battery (DB structure, schema, FTS, encryption-key
+    # canary, pool, data dir). Warn-only; surfaced via /api/v1/system/integrity
+    # and the startup health banner.
+    try:
+        from app.core.startup_checks import check_app_integrity
+
+        await check_app_integrity()
+    except Exception:
+        logger.warning("Startup app-integrity check failed", exc_info=True)
     yield
     logger.info("Shutting down...")
     # Stop backup scheduler
@@ -284,6 +293,7 @@ from app.routers.tts import router as tts_router  # noqa: E402
 from app.routers.video_notes import router as video_router  # noqa: E402
 from app.routers.settings import router as settings_router  # noqa: E402
 from app.routers.memorial import router as memorial_router  # noqa: E402
+from app.routers.system import router as system_router  # noqa: E402
 
 app.include_router(ai_router)
 app.include_router(analytics_router)
@@ -314,6 +324,7 @@ app.include_router(templates_router)
 app.include_router(video_router)
 app.include_router(settings_router)
 app.include_router(memorial_router)
+app.include_router(system_router)
 
 
 @app.get("/health")
@@ -391,6 +402,17 @@ async def health_check() -> Any:
             checks["backup"] = "stale"
         else:
             checks["backup"] = "scheduled"
+
+        from app.core.startup_checks import get_app_integrity
+
+        ai = get_app_integrity()
+        if ai.get("ran"):
+            s = ai.get("summary", {})
+            checks["app_integrity"] = (
+                f"ok:{s.get('ok', 0)} warn:{s.get('warn', 0)} error:{s.get('error', 0)}"
+            )
+        else:
+            checks["app_integrity"] = "not_checked"
     except Exception:
         checks["integrity"] = "unavailable"
         checks["backup"] = "unavailable"

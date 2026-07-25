@@ -6,10 +6,15 @@ import { setPollersPaused } from './api/sync'
 import { installExternalLinkInterceptor } from './utils/externalLink'
 import AppShell from './components/layout/AppShell.vue'
 import SplashScreen from './components/layout/SplashScreen.vue'
+import SystemHealthBanner from './components/common/SystemHealthBanner.vue'
+import { useSystemHealthStore } from './stores/systemHealth'
 
 // The startup dedication splash shows when the memorial-title feature is on.
 const memorialTitle = useLocalStorage<boolean>('lifelogr-memorial-title', true)
 const showSplash = ref(false)
+
+// Startup app-integrity report → drives the dismissible health banner.
+const systemHealth = useSystemHealthStore()
 
 // Memorial audio: plays only while the dedication splash is on screen.
 // Browsers block unmuted autoplay on a cold load, so we ask the local backend
@@ -82,6 +87,8 @@ onMounted(() => {
   if (showSplash.value) nextTick(playMemorialAudio)
   detachExternalLinks = installExternalLinkInterceptor()
   window.addEventListener('visibilitychange', onVisibilityChange)
+  // Fetch the startup integrity report (request() waits for the backend).
+  systemHealth.load()
 })
 // Stop the audio as soon as the splash is dismissed.
 watch(showSplash, (v) => { if (!v) stopMemorialAudio() })
@@ -94,6 +101,7 @@ onUnmounted(() => {
 
 <template>
   <AppShell />
+  <SystemHealthBanner />
   <audio ref="memorialAudio" src="/Garden.mp3" preload="auto" />
   <Transition name="splash-fade">
     <SplashScreen v-if="showSplash" @done="showSplash = false" />
