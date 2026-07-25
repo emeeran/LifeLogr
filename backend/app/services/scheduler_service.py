@@ -940,6 +940,14 @@ async def _run_google_sync() -> None:
 
 
 async def _run_incremental_vacuum() -> None:
+    """Reclaim free DB pages, serialized across SQLite's single writer."""
+    from app.core.database import serializable_write
+
+    async with serializable_write():
+        await _run_incremental_vacuum_inner()
+
+
+async def _run_incremental_vacuum_inner() -> None:
     """Reclaim up to 100 free DB pages via incremental vacuum (daily, off-peak).
 
     No-op unless ``auto_vacuum=INCREMENTAL`` (==2). Never raises — a maintenance
@@ -1016,6 +1024,14 @@ async def _checkpoint_wal_robust(attempts: int = 5, delay: float = 0.5) -> bool:
 
 
 async def _run_backup(backup_path: str, retention: int = 10) -> str:
+    """Execute the backup job, serialized across SQLite's single writer."""
+    from app.core.database import serializable_write
+
+    async with serializable_write():
+        return await _run_backup_inner(backup_path, retention)
+
+
+async def _run_backup_inner(backup_path: str, retention: int = 10) -> str:
     """Execute the backup job — creates a .tar.gz archive of DB + media."""
     from app.core.archive import add_backup_members
     from app.core.config import settings

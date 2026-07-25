@@ -36,6 +36,13 @@ class GoogleSyncService:
         return result.scalars().first()
 
     async def sync_all(self) -> dict[str, Any]:
+        """Sync Calendar + Tasks, serialized across SQLite's single writer."""
+        from app.core.database import serializable_write
+
+        async with serializable_write():
+            return await self._sync_all_inner()
+
+    async def _sync_all_inner(self) -> dict[str, Any]:
         """Sync Calendar + Tasks; return a per-service summary. Never raises."""
         account = await self._get_account()
         if account is None:

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import create_engine, event, func, text
@@ -17,6 +18,19 @@ from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# SQLite has a single writer. Background jobs that hold long write transactions
+# (email/Google sync, backup, vacuum) must not overlap, or they contend and the
+# app sees "database is locked". This lock serializes those jobs against each
+# other; short user writes don't need it (WAL + busy_timeout bridge them).
+_write_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def serializable_write() -> AsyncGenerator[None, None]:
+    """Acquire the global write lock for a write-heavy background operation."""
+    async with _write_lock:
+        yield
 
 
 def _build_engine() -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
