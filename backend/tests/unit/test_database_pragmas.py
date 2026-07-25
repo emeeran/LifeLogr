@@ -9,8 +9,14 @@ class _RecordingCursor:
     def __init__(self, conn: _RecordingConn) -> None:
         self._conn = conn
 
-    def execute(self, sql: str) -> None:
+    def execute(self, sql: str) -> _RecordingCursor:
         self._conn.executed.append(sql)
+        return self  # allow .fetchone() chaining (the auto_vacuum guard read)
+
+    def fetchone(self) -> tuple[int, ...]:
+        # Pretend auto_vacuum is already INCREMENTAL so the SET is skipped in
+        # recording-based tests (real connections return the actual value).
+        return (2,)
 
     def close(self) -> None:
         pass
@@ -72,6 +78,20 @@ def test_pragma_enables_incremental_vacuum_on_new_db(tmp_path) -> None:
         assert conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 2  # INCREMENTAL
     finally:
         conn.close()
+
+
+def test_pragma_skips_auto_vacuum_set_when_already_incremental() -> None:
+    """On a DB already at auto_vacuum=INCREMENTAL the connect listener must NOT
+    re-issue the SET — it acquires the write lock, so under a multi-connection
+    pool every new connection would contend ('database is locked'). Only the
+    cheap read should run.
+    """
+    from app.core.database import _set_sqlite_pragma
+
+    conn = _RecordingConn()  # fetchone() reports (2,) = INCREMENTAL
+    _set_sqlite_pragma(conn, None)
+    assert "PRAGMA auto_vacuum = INCREMENTAL" not in conn.executed  # SET skipped
+    assert "PRAGMA auto_vacuum" in conn.executed  # guard read did run
 
 
 def test_vacuum_sync_converts_legacy_db(tmp_path) -> None:

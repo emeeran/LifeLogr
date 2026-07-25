@@ -49,9 +49,13 @@ def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
     The cache/temp pragmas keep hot pages and temp tables in RAM.
     """
     cursor = dbapi_conn.cursor()
-    # auto_vacuum must be set BEFORE journal_mode=WAL, which creates the DB file
-    # and would otherwise lock auto_vacuum to its default (NONE).
-    cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")  # enable free-page reclamation (see _ensure_incremental_vacuum)
+    # auto_vacuum is a persistent DB-level setting. Only SET it (which acquires
+    # the write lock) when it isn't already INCREMENTAL — otherwise every new
+    # pooled connection contends for the write lock on connect and the app sees
+    # "database is locked" under concurrent load. Must run before journal_mode=WAL,
+    # which creates the DB file and would lock auto_vacuum to its default (NONE).
+    if cursor.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:  # 2 = INCREMENTAL
+        cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
