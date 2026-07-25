@@ -9,9 +9,10 @@ class _RecordingCursor:
     def __init__(self, conn: _RecordingConn) -> None:
         self._conn = conn
 
-    def execute(self, sql: str) -> _RecordingCursor:
+    def execute(self, sql: str) -> None:
+        # Mirror pysqlite3 (the frozen runtime): execute() returns None, NOT the
+        # cursor — so any .execute(...).fetchone() chaining fails here too.
         self._conn.executed.append(sql)
-        return self  # allow .fetchone() chaining (the auto_vacuum guard read)
 
     def fetchone(self) -> tuple[int, ...]:
         # Pretend auto_vacuum is already INCREMENTAL so the SET is skipped in

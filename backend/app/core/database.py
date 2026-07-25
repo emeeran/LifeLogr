@@ -54,7 +54,10 @@ def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
     # pooled connection contends for the write lock on connect and the app sees
     # "database is locked" under concurrent load. Must run before journal_mode=WAL,
     # which creates the DB file and would lock auto_vacuum to its default (NONE).
-    if cursor.execute("PRAGMA auto_vacuum").fetchone()[0] != 2:  # 2 = INCREMENTAL
+    # pysqlite3's cursor.execute() returns None (unlike stdlib sqlite3, which
+    # returns the cursor), so call fetchone() on the cursor directly — don't chain.
+    cursor.execute("PRAGMA auto_vacuum")
+    if cursor.fetchone()[0] != 2:  # 2 = INCREMENTAL
         cursor.execute("PRAGMA auto_vacuum = INCREMENTAL")
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
