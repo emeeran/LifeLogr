@@ -494,7 +494,16 @@ class EmailSyncService:
                         continue
                     try:
                         new_total += await self.sync_folder(imap, account, folder)
+                        # Commit per folder so each write transaction is short —
+                        # SQLite has a single writer, and holding one transaction
+                        # across the whole account (~20s) causes "database is
+                        # locked" contention with other jobs now that the pool
+                        # allows concurrent connections.
+                        await self.db.commit()
                     except Exception:
+                        # Rollback so a failed folder doesn't leave the session
+                        # dirty (which cascades into autoflush errors on the next).
+                        await self.db.rollback()
                         logger.exception("Sync failed for folder %s", folder.folder_name)
             account.last_synced_at = datetime.now(timezone.utc)
             account.last_sync_error = None
@@ -522,7 +531,6 @@ class EmailSyncService:
                     folder.folder_name,
                 )
                 folder.sync_enabled = False
-                await self.db.commit()
                 return 0
             raise
 

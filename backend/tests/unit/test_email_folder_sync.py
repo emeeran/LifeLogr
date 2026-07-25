@@ -44,8 +44,8 @@ async def test_nonexistent_folder_is_auto_disabled(db_session) -> None:
     result = await EmailSyncService(db_session).sync_folder(imap, acct, folder)
 
     assert result == 0  # nothing synced
-    await db_session.refresh(folder)
-    assert folder.sync_enabled is False  # auto-disabled so it isn't retried
+    # Marked disabled (sync_account persists it via its per-folder commit).
+    assert folder.sync_enabled is False
 
 
 @pytest.mark.asyncio

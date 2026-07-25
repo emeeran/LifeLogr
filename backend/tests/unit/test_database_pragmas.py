@@ -40,7 +40,7 @@ def test_set_sqlite_pragma_applies_all(tmp_path) -> None:
         assert str(pragma("journal_mode")).lower() == "wal"
         assert pragma("synchronous") == 1  # NORMAL
         assert pragma("foreign_keys") == 1
-        assert pragma("busy_timeout") == 5000
+        assert pragma("busy_timeout") == 10000
         assert pragma("cache_size") == -4000  # ~4 MiB (tuned down from ~20 MiB)
         assert pragma("temp_store") == 2  # MEMORY
     finally:
