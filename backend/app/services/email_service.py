@@ -509,7 +509,22 @@ class EmailSyncService:
     async def sync_folder(
         self, imap: ImapClient, account: EmailAccount, folder: EmailFolder
     ) -> int:
-        count, uidvalidity = await imap.select(folder.folder_name)
+        try:
+            count, uidvalidity = await imap.select(folder.folder_name)
+        except RuntimeError as e:
+            # Some servers (notably Gmail) advertise parent containers like
+            # "[Gmail]" via LIST that aren't SELECTable (NONEXISTENT). Auto-disable
+            # such folders instead of erroring on every sync attempt.
+            msg = str(e)
+            if "NONEXISTENT" in msg or "Unknown Mailbox" in msg:
+                logger.info(
+                    "Folder %r is not selectable on the server — disabling its sync",
+                    folder.folder_name,
+                )
+                folder.sync_enabled = False
+                await self.db.commit()
+                return 0
+            raise
 
         # UIDVALIDITY change → UIDs invalidated; wipe and re-sync.
         if (
