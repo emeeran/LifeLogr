@@ -62,3 +62,49 @@ export const callAiTool = async (
         : [],
   }
 }
+
+// ── AI providers (OpenAI-compatible cloud + local Ollama) ──
+export interface AIProvider {
+  id: number
+  name: string
+  preset: string
+  base_url: string
+  model: string
+  has_key: boolean
+  is_active: boolean
+  created_at: string
+}
+export interface AIProviderCreate {
+  name: string
+  preset: string
+  base_url: string
+  model: string
+  api_key?: string
+  is_active?: boolean
+}
+export interface AIProviderUpdate {
+  name?: string
+  base_url?: string
+  model?: string
+  api_key?: string
+  is_active?: boolean
+}
+export interface ProviderPreset {
+  key: string
+  label: string
+  base_url: string
+  model: string
+}
+
+export const getProviderPresets = () => request<ProviderPreset[]>('/ai/providers/presets')
+export const listProviders = () => request<AIProvider[]>('/ai/providers')
+export const createProvider = (data: AIProviderCreate) =>
+  request<AIProvider>('/ai/providers', { method: 'POST', body: JSON.stringify(data) })
+export const updateProvider = (id: number, data: AIProviderUpdate) =>
+  request<AIProvider>(`/ai/providers/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export const deleteProvider = (id: number) =>
+  request<void>(`/ai/providers/${id}`, { method: 'DELETE' })
+export const activateProvider = (id: number) =>
+  request<AIProvider>(`/ai/providers/${id}/activate`, { method: 'POST' })
+export const testProvider = (id: number) =>
+  request<{ status: string; model: string }>(`/ai/providers/${id}/test`, { method: 'POST' })

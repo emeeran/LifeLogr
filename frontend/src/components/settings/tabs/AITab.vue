@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
-import { getThemes, pullModel } from "../../../api/ai";
+import {
+  getThemes,
+  pullModel,
+  listProviders,
+  createProvider,
+  deleteProvider,
+  activateProvider,
+  testProvider,
+  getProviderPresets,
+} from "../../../api/ai";
+import type { AIProvider, ProviderPreset } from "../../../api/ai";
 import type { ThemeInsight } from "../../../types";
 import {
   getSettings,
@@ -295,13 +305,160 @@ const featureToggles = computed(
     ] as const,
 );
 
+// ── AI providers (cloud, OpenAI-compatible) ──
+const providers = ref<AIProvider[]>([]);
+const presets = ref<ProviderPreset[]>([]);
+const showAddProvider = ref(false);
+const providerForm = ref({ name: "", preset: "openai", base_url: "", model: "", api_key: "" });
+const providerSaving = ref(false);
+const testingId = ref<number | null>(null);
+
+async function loadProviders() {
+  try {
+    const [ps, list] = await Promise.all([getProviderPresets(), listProviders()]);
+    presets.value = ps;
+    providers.value = list;
+  } catch {
+    /* ignore */
+  }
+}
+function onProviderPresetChange() {
+  const p = presets.value.find((x) => x.key === providerForm.value.preset);
+  if (p) {
+    if (!providerForm.value.name) providerForm.value.name = p.label;
+    providerForm.value.base_url = p.base_url;
+    providerForm.value.model = p.model;
+  }
+}
+async function saveProvider() {
+  providerSaving.value = true;
+  try {
+    await createProvider({
+      name: providerForm.value.name.trim() || providerForm.value.preset,
+      preset: providerForm.value.preset,
+      base_url: providerForm.value.base_url.trim(),
+      model: providerForm.value.model.trim(),
+      api_key: providerForm.value.api_key || undefined,
+      is_active: providers.value.length === 0,
+    });
+    emit("toast", "success", "Provider added");
+    providerForm.value = { name: "", preset: "openai", base_url: "", model: "", api_key: "" };
+    showAddProvider.value = false;
+    await loadProviders();
+  } catch (e) {
+    emit("toast", "error", `Add failed: ${errMsg(e)}`);
+  } finally {
+    providerSaving.value = false;
+  }
+}
+async function removeProvider(p: AIProvider) {
+  try {
+    await deleteProvider(p.id);
+    await loadProviders();
+    emit("toast", "info", "Provider removed");
+  } catch (e) {
+    emit("toast", "error", errMsg(e));
+  }
+}
+async function setActive(p: AIProvider) {
+  try {
+    await activateProvider(p.id);
+    await loadProviders();
+  } catch (e) {
+    emit("toast", "error", errMsg(e));
+  }
+}
+async function testConn(p: AIProvider) {
+  testingId.value = p.id;
+  try {
+    const r = await testProvider(p.id);
+    emit("toast", "success", `Connected — ${r.model}`);
+  } catch (e) {
+    emit("toast", "error", `Test failed: ${errMsg(e)}`);
+  } finally {
+    testingId.value = null;
+  }
+}
+
 onMounted(() => {
   loadAppSettings();
   loadOllamaModels();
+  loadProviders();
 });
 </script>
 
 <template>
+  <SettingsSection
+    title="AI Providers"
+    :icon="Sparkles"
+    description="Cloud providers (OpenAI-compatible). The first one you add becomes active; Ollama below is the local fallback."
+    setting-key="AI Providers"
+  >
+    <div v-if="providers.length" class="space-y-1.5">
+      <div
+        v-for="p in providers"
+        :key="p.id"
+        class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-surface-hover"
+      >
+        <input
+          type="radio"
+          :checked="p.is_active"
+          class="accent-accent"
+          :title="p.is_active ? 'Active provider' : 'Set as active'"
+          @change="setActive(p)"
+        />
+        <div class="flex-1 min-w-0">
+          <div class="text-[12px] text-text-primary truncate">
+            {{ p.name }} <span class="text-text-muted">· {{ p.model }}</span>
+          </div>
+          <div class="text-[10px] text-text-muted truncate">
+            {{ p.base_url }}<span v-if="!p.has_key && p.preset !== 'ollama'"> · no key set</span>
+          </div>
+        </div>
+        <SButton variant="ghost" size="xs" :disabled="testingId === p.id" @click="testConn(p)">
+          <Loader v-if="testingId === p.id" :size="11" class="animate-spin" /> Test
+        </SButton>
+        <SButton
+          variant="ghost"
+          size="xs"
+          class="!text-text-muted hover:!text-danger"
+          title="Delete provider"
+          @click="removeProvider(p)"
+        >
+          Delete
+        </SButton>
+      </div>
+    </div>
+    <p v-else class="text-[11px] text-text-muted">No cloud providers — AI tools use local Ollama.</p>
+
+    <div v-if="showAddProvider" class="mt-2 space-y-1.5 p-2 rounded-md border border-border">
+      <div class="flex gap-1.5">
+        <select v-model="providerForm.preset" class="settings-select flex-1" @change="onProviderPresetChange">
+          <option v-for="p in presets" :key="p.key" :value="p.key">{{ p.label }}</option>
+        </select>
+        <input v-model="providerForm.name" placeholder="Name" class="settings-input flex-1" />
+      </div>
+      <input v-model="providerForm.base_url" placeholder="Base URL (…/v1)" class="settings-input w-full" />
+      <input v-model="providerForm.model" placeholder="Model" class="settings-input w-full" />
+      <input v-model="providerForm.api_key" type="password" placeholder="API key (stored encrypted)" class="settings-input w-full" />
+      <div class="flex gap-1.5">
+        <SButton variant="primary" :disabled="providerSaving || !providerForm.base_url || !providerForm.model" @click="saveProvider">
+          <Loader v-if="providerSaving" :size="11" class="animate-spin" /> Add provider
+        </SButton>
+        <SButton variant="ghost" @click="showAddProvider = false">Cancel</SButton>
+      </div>
+    </div>
+    <SButton
+      v-else
+      variant="outline"
+      size="xs"
+      :icon="Sparkles"
+      @click="showAddProvider = true; onProviderPresetChange()"
+    >
+      Add provider
+    </SButton>
+  </SettingsSection>
+
   <SettingsSection
     title="AI Configuration"
     :icon="Brain"

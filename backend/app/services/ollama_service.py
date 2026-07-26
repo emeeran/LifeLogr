@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core import security
 from app.core.config import settings
 from app.schemas.ai import (
     AIStatusResponse,
@@ -100,20 +101,50 @@ class OllamaService:
         num_predict: int = 2048,
         temperature: float | None = None,
     ) -> str:
-        """Send a generate request to Ollama and return the response text.
+        """Send a completion request and return the response text.
+
+        Routes through the active AI provider: an OpenAI-compatible cloud
+        provider (OpenAI/Groq/OpenRouter/Kimi/Gemini/custom) if one is active,
+        otherwise local Ollama (the default, or an ollama-preset provider).
 
         Raises :class:`OllamaServiceError` with an actionable message if the
-        request times out, Ollama is unreachable, or returns an error status.
+        request times out, the host is unreachable, or returns an error status.
         """
-        used_model = model or self.model
+        from app.services.ai_provider_service import get_active_provider
+
+        provider = await get_active_provider()
+        if provider is not None and provider.preset != "ollama":
+            api_key = (
+                security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
+            )
+            return await self._generate_openai(
+                provider.base_url, api_key, model or provider.model, prompt, num_predict, temperature
+            )
+        if provider is not None:  # ollama preset
+            base_url = provider.base_url or self.base_url
+            used_model = model or provider.model
+        else:
+            base_url = self.base_url
+            used_model = model or self.model
+        return await self._generate_ollama(
+            base_url, used_model, prompt, num_predict, temperature
+        )
+
+    async def _generate_ollama(
+        self,
+        base_url: str,
+        used_model: str,
+        prompt: str,
+        num_predict: int,
+        temperature: float | None,
+    ) -> str:
         options: dict[str, Any] = {"num_predict": num_predict}
         if temperature is not None:
             options["temperature"] = temperature
-
         client = _get_client()
         try:
             response = await client.post(
-                f"{self.base_url}/api/generate",
+                f"{base_url}/api/generate",
                 json={
                     "model": used_model,
                     "prompt": prompt,
@@ -133,9 +164,50 @@ class OllamaService:
                 f"Ollama rejected the request for '{used_model}' (HTTP {exc.response.status_code})."
             ) from exc
         except httpx.HTTPError as exc:  # ConnectError, ReadError, etc.
-            raise OllamaServiceError(f"Cannot reach Ollama at {self.base_url}: {exc}") from exc
+            raise OllamaServiceError(f"Cannot reach Ollama at {base_url}: {exc}") from exc
         data: dict[str, Any] = response.json()
         return str(data.get("response", ""))
+
+    async def _generate_openai(
+        self,
+        base_url: str,
+        api_key: str | None,
+        used_model: str,
+        prompt: str,
+        num_predict: int,
+        temperature: float | None,
+    ) -> str:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        body: dict[str, Any] = {
+            "model": used_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": num_predict,
+        }
+        if temperature is not None:
+            body["temperature"] = temperature
+        client = _get_client()
+        try:
+            response = await client.post(
+                f"{base_url}/chat/completions", json=body, headers=headers
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise OllamaServiceError(
+                f"Provider took too long to respond (timed out after {self.timeout}s)."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:200] if exc.response is not None else ""
+            raise OllamaServiceError(
+                f"Provider rejected the request for '{used_model}' "
+                f"(HTTP {exc.response.status_code}). {detail}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise OllamaServiceError(f"Cannot reach provider at {base_url}: {exc}") from exc
+        data: dict[str, Any] = response.json()
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        return str(choices[0].get("message", {}).get("content", ""))
 
     async def grammar_check(self, text: str, language: str = "en") -> GrammarCheckResponse:
         """Check grammar and spelling, returning suggestions and corrected text."""
@@ -230,14 +302,38 @@ class OllamaService:
     # ── Embeddings (semantic search) ────────────────────────────────────
 
     async def embed(self, text: str) -> list[float]:
-        """Get text embedding via Ollama /api/embeddings."""
+        """Get a text embedding via the active provider — Ollama
+        ``/api/embeddings`` by default, or an OpenAI-compatible ``/embeddings``
+        when a cloud provider is active."""
+        from app.services.ai_provider_service import get_active_provider
+
+        provider = await get_active_provider()
+        if provider is not None and provider.preset != "ollama":
+            api_key = (
+                security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
+            )
+            return await self._embed_openai(provider.base_url, api_key, provider.model, text)
+        base_url = provider.base_url if provider is not None else self.base_url
         client = _get_client()
         response = await client.post(
-            f"{self.base_url}/api/embeddings",
+            f"{base_url}/api/embeddings",
             json={"model": settings.OLLAMA_EMBED_MODEL, "prompt": text},
         )
         response.raise_for_status()
         return list(response.json()["embedding"])
+
+    async def _embed_openai(
+        self, base_url: str, api_key: str | None, model: str, text: str
+    ) -> list[float]:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        client = _get_client()
+        response = await client.post(
+            f"{base_url}/embeddings",
+            json={"model": model, "input": text},
+            headers=headers,
+        )
+        response.raise_for_status()
+        return list(response.json()["data"][0]["embedding"])
 
     # ── Combined analysis (sentiment + summary + prompts) ──────────────
 

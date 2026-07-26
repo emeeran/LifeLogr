@@ -8,6 +8,7 @@ Importing this package (e.g. from ``init_db``) guarantees the full set is
 registered before ``create_all`` / integrity checks run.
 """
 
+from app.models.ai_provider import AIProvider
 from app.models.backup import BackupConfig, BackupSchedule, BackupSnapshot
 from app.models.embedding import EntryEmbedding
 from app.models.entry import Entry
@@ -25,6 +26,7 @@ from app.models.template import Template
 from app.models.video_note import VideoNote
 
 __all__ = [
+    "AIProvider",
     "BackupConfig",
     "BackupSchedule",
     "BackupSnapshot",

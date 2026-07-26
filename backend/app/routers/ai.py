@@ -44,6 +44,18 @@ from app.schemas.ai import (
     VoiceChangeResponse,
 )
 from app.services.ollama_service import OllamaService
+from app.core import security
+from app.models.ai_provider import AIProvider
+from app.schemas.ai_provider import (
+    AIProviderCreate,
+    AIProviderResponse,
+    AIProviderUpdate,
+)
+from app.services.ai_provider_service import (
+    AIProviderService,
+    PROVIDER_PRESETS,
+    test_connection,
+)
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
@@ -266,3 +278,78 @@ async def pull_model(
 
     asyncio.create_task(_pull())
     return {"status": "pulling", "model": model}
+
+
+# ── AI providers (OpenAI-compatible cloud + local Ollama) ────────────────────
+def _to_provider_response(p: AIProvider) -> AIProviderResponse:
+    return AIProviderResponse(
+        id=p.id,
+        name=p.name,
+        preset=p.preset,
+        base_url=p.base_url,
+        model=p.model,
+        has_key=p.api_key_encrypted is not None,
+        is_active=p.is_active,
+        created_at=p.created_at,
+    )
+
+
+@router.get("/providers/presets")
+async def provider_presets() -> list[dict[str, str]]:
+    """The provider preset catalogue (key → label/base_url/default model)."""
+    return [
+        {"key": k, "label": v["label"], "base_url": v["base_url"], "model": v["model"]}
+        for k, v in PROVIDER_PRESETS.items()
+    ]
+
+
+@router.get("/providers", response_model=list[AIProviderResponse])
+async def list_providers(db: AsyncSession = Depends(get_db)) -> Any:
+    return [_to_provider_response(p) for p in await AIProviderService(db).list()]
+
+
+@router.post("/providers", response_model=AIProviderResponse, status_code=201)
+async def create_provider(data: AIProviderCreate, db: AsyncSession = Depends(get_db)) -> Any:
+    return _to_provider_response(await AIProviderService(db).create(data))
+
+
+@router.patch("/providers/{provider_id}", response_model=AIProviderResponse)
+async def update_provider(
+    provider_id: int, data: AIProviderUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    try:
+        return _to_provider_response(await AIProviderService(db).update(provider_id, data))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/providers/{provider_id}", status_code=204)
+async def delete_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    try:
+        await AIProviderService(db).delete(provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/providers/{provider_id}/activate", response_model=AIProviderResponse)
+async def activate_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    try:
+        return _to_provider_response(await AIProviderService(db).activate(provider_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/providers/{provider_id}/test")
+async def test_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Probe the provider with a 1-token completion to verify the key/endpoint."""
+    svc = AIProviderService(db)
+    try:
+        provider = await svc._get(provider_id)  # noqa: SLF001
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    api_key = security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
+    try:
+        model = await test_connection(provider.base_url, api_key, provider.model)
+    except Exception as exc:  # httpx errors, etc.
+        raise HTTPException(status_code=502, detail=f"Connection failed: {exc}") from exc
+    return {"status": "ok", "model": model}
