@@ -209,6 +209,36 @@ class TestCheckAppIntegrity:
         assert (await sc._check_fts_sync(db_session))["status"] == "warn"
 
     @pytest.mark.asyncio
+    async def test_schema_completeness_missing_is_error(self, db_engine, db_session):
+        async with db_engine.begin() as conn:
+            await conn.execute(text("PRAGMA foreign_keys=OFF"))
+            await conn.execute(text("DROP TABLE templates"))
+        res = await sc._check_schema_tables(db_session)
+        assert res["status"] == "error"
+        assert "templates" in res["detail"]
+
+    @pytest.mark.asyncio
+    async def test_unexpected_tables_ok_on_clean_db(self, db_session):
+        # FTS5 shadow tables (entries_fts_data, …) and sqlite internals must not trip.
+        res = await sc._check_unexpected_tables(db_session)
+        assert res["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_unexpected_tables_flags_rogue(self, db_session):
+        await db_session.execute(text("CREATE TABLE legacy_leftover (x INTEGER)"))
+        await db_session.commit()
+        res = await sc._check_unexpected_tables(db_session)
+        assert res["status"] == "warn"
+        assert "legacy_leftover" in res["detail"]
+
+    @pytest.mark.asyncio
+    async def test_fragmentation_reports_shape(self, db_session):
+        res = await sc._check_fragmentation_wal(db_session)
+        assert res["id"] == "db_fragmentation"
+        assert res["status"] in {"ok", "warn", "error"}
+        assert "free pages" in res["detail"]
+
+    @pytest.mark.asyncio
     async def test_structure_ok(self, db_session):
         assert (await sc._check_structure(db_session))["status"] == "ok"
 
@@ -228,9 +258,89 @@ class TestCheckAppIntegrity:
         assert len(report["checks"]) >= 8
         assert set(report["summary"]) == {"ok", "warn", "error"}
         ids = {c["id"] for c in report["checks"]}
-        assert {"database_structure", "encryption_key", "connection_pool", "data_dir"} <= ids
+        assert {
+            "database_structure",
+            "encryption_key",
+            "connection_pool",
+            "data_dir",
+            "unexpected_tables",
+            "db_fragmentation",
+        } <= ids
         assert all(c["status"] in {"ok", "warn", "error"} for c in report["checks"])
         assert sc.get_app_integrity()["ran_at"] == report["ran_at"]
+
+
+    @pytest.mark.asyncio
+    async def test_full_battery_self_heals_fts_drift(self, db_session, _scheduler_db):
+        # ORM insert bypasses the FTS triggers the test schema lacks → drift.
+        db_session.add(
+            Entry(
+                entry_date=date(2024, 1, 2),
+                body="hello",
+                title="t",
+                is_deleted=False,
+                is_encrypted=False,
+            )
+        )
+        await db_session.commit()
+        report = await sc.check_app_integrity()
+        fts = next(c for c in report["checks"] if c["id"] == "fts_sync")
+        assert fts["status"] == "ok"  # detected + rebuilt
+
+    @pytest.mark.asyncio
+    async def test_battery_runs_vacuum_on_fragmentation(self, _scheduler_db, monkeypatch):
+        from unittest.mock import AsyncMock, patch
+
+        monkeypatch.setattr(
+            sc,
+            "_check_fragmentation_wal",
+            AsyncMock(
+                return_value={
+                    "id": "db_fragmentation",
+                    "label": "DB fragmentation & WAL",
+                    "status": "warn",
+                    "detail": "80% free pages (fragmented)",
+                }
+            ),
+        )
+        with patch(
+            "app.services.scheduler_service._run_incremental_vacuum", new=AsyncMock()
+        ) as mock_vac:
+            await sc.check_app_integrity()
+        assert mock_vac.await_count >= 1
+
+
+class TestRebuildSearchIndex:
+    @pytest.mark.asyncio
+    async def test_rebuild_repopulates_entries_fts(self, db_session):
+        from app.core.database import rebuild_search_index
+
+        db_session.add(
+            Entry(
+                entry_date=date(2024, 1, 3),
+                body="hello world",
+                title="t",
+                is_deleted=False,
+                is_encrypted=False,
+            )
+        )
+        await db_session.commit()
+        # Simulate drift: empty the index.
+        await db_session.execute(text("DELETE FROM entries_fts"))
+        await db_session.commit()
+        counts = await rebuild_search_index()
+        assert counts["entries"] == 1
+        n = (await db_session.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar()
+        assert n == 1
+
+    @pytest.mark.asyncio
+    async def test_rebuild_skips_missing_fts(self, db_engine, db_session):
+        from app.core.database import rebuild_search_index
+
+        async with db_engine.begin() as conn:
+            await conn.execute(text("DROP TABLE entries_fts"))
+        counts = await rebuild_search_index()  # must not raise
+        assert counts["entries"] == 0
 
 
 class TestSystemIntegrityEndpoint:
@@ -248,4 +358,12 @@ class TestSystemIntegrityEndpoint:
         r = await client.post("/api/v1/system/integrity")
         assert r.status_code == 200
         assert r.json()["ran"] is True
+
+    @pytest.mark.asyncio
+    async def test_rebuild_search_index_endpoint(self, client):
+        r = await client.post("/api/v1/system/integrity/rebuild-search-index")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ran"] is True
+        assert isinstance(body["checks"], list)
 
