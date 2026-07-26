@@ -152,14 +152,13 @@ def get_backup_status() -> dict[str, Any]:
 # Tables whose absence indicates an incompatible/empty database.
 _CRITICAL_TABLES = (
     "entries", "notes", "tags", "contacts", "email_messages", "media",
-    "email_accounts", "google_sync_account",
+    "email_accounts",
 )
 
 # (table, column) holding AES-encrypted credentials — the encryption-key canary
 # decrypts one row of each to verify the active SECRET_KEY matches.
 _CREDENTIAL_PROBES = (
     ("email_accounts", "password_encrypted"),
-    ("google_sync_account", "credentials_encrypted"),
     ("backup_config", "credentials_encrypted"),
 )
 

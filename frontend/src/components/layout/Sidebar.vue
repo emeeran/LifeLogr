@@ -4,7 +4,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Settings,
-  Bell, ImageIcon, Users, ListTodo, Mail,
+  Bell, ImageIcon, Users, Mail,
   ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard, GripVertical
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
@@ -17,7 +17,6 @@ const navItems: { view: ViewType; icon: Component; label: string }[] = [
   { view: 'timeline', icon: Clock, label: 'Timeline' },
   { view: 'notes', icon: NotebookPen, label: 'Notes' },
   { view: 'reminders', icon: Bell, label: 'Reminders' },
-  { view: 'planner', icon: ListTodo, label: 'Planner' },
   { view: 'contacts', icon: Users, label: 'Contacts' },
   { view: 'email', icon: Mail, label: 'Email' },
   { view: 'media', icon: ImageIcon, label: 'Media' },

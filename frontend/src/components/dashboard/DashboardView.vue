@@ -4,9 +4,7 @@
  *
  *   • Slim sticky hero bar: greeting + one-line summary, live clock,
  *     "updated Ns ago", manual refresh, and a live-updates pause toggle.
- *   • Dense KPI strip (events / tasks / unread / streak).
- *   • Schedule (today + next 7 days, recurring-aware) + Tasks (overdue first,
- *     quick-add, inline complete).
+ *   • Dense KPI strip (unread / streak).
  *   • Inbox, account-wise: each mailbox with unread count + recent unread.
  *
  * "Real-time" is delivered by background polling: a 1s ticker drives the clock
@@ -18,23 +16,20 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import {
-  CalendarDays, ListTodo, Mail, Flame, RefreshCw, ArrowRight,
-  AlertCircle, Plus, Inbox, Settings as SettingsIcon, Repeat, CheckCircle2, Pause, Play,
+  Mail, Flame, RefreshCw, ArrowRight,
+  AlertCircle, Inbox, Settings as SettingsIcon, Pause, Play,
 } from 'lucide-vue-next'
 import { useUiStore } from '../../stores/ui'
-import { usePlannerStore } from '../../stores/planner'
 import { useEmailStore } from '../../stores/email'
-import * as plannerApi from '../../api/planner'
 import * as emailApi from '../../api/email'
 import * as analyticsApi from '../../api/analytics'
 import type {
-  AgendaItem, TaskResponse, TaskPriority, EmailAccountResponse, EmailMessageListResponse,
+  EmailAccountResponse, EmailMessageListResponse,
   OverviewResponse,
 } from '../../types'
 
 const ui = useUiStore()
 const router = useRouter()
-const planner = usePlannerStore()
 const emailStore = useEmailStore()
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -46,8 +41,6 @@ const liveOn = useLocalStorage<boolean>('lifelogr-dashboard-live', true)
 // Reactive "now" — bumped every second to drive the clock + "updated ago" label.
 const now = ref(new Date())
 
-const agenda = ref<AgendaItem[]>([])
-const allTasks = ref<TaskResponse[]>([])
 const overview = ref<OverviewResponse | null>(null)
 
 interface AccountSummary {
@@ -58,36 +51,9 @@ interface AccountSummary {
 }
 const accountSummaries = ref<AccountSummary[]>([])
 
-const quickTask = ref('')
-const addingTask = ref(false)
-const defaultListId = computed(() => planner.taskLists[0]?.id ?? null)
-
 // Flash the unread stat when it changes (real-time cue).
 const bump = ref(false)
 
-// ── Date / time helpers ──────────────────────────────────────────────────────
-function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
-function formatTime(s: string) {
-  return new Date(s).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-}
-function dayDiff(s: string) {
-  return Math.round((startOfDay(new Date(s)).getTime() - startOfDay(now.value).getTime()) / 86_400_000)
-}
-function dayLabel(s: string) {
-  const diff = dayDiff(s)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Tomorrow'
-  if (diff > 1 && diff < 7) return new Date(s).toLocaleDateString(undefined, { weekday: 'short' })
-  return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-function dueLabel(s: string) {
-  const diff = dayDiff(s)
-  if (diff < 0) return `${Math.abs(diff)}d over`
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Tom'
-  if (diff < 7) return new Date(s).toLocaleDateString(undefined, { weekday: 'short' })
-  return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
 function relTime(s: string | null) {
   if (!s) return ''
   const diff = (now.value.getTime() - new Date(s).getTime()) / 1000
@@ -119,48 +85,14 @@ const updatedLabel = computed(() => {
 })
 
 // ── Derived data ─────────────────────────────────────────────────────────────
-const todayEvents = computed(() => agenda.value.filter((a) => dayDiff(a.start_at) <= 0))
-const upcomingEvents = computed(() =>
-  agenda.value.filter((a) => dayDiff(a.start_at) > 0).slice(0, 5),
-)
-const openTasks = computed(() => allTasks.value.filter((t) => !t.is_completed))
-const completedTasks = computed(() => allTasks.value.filter((t) => t.is_completed))
-const overdueTasks = computed(() =>
-  openTasks.value.filter((t) => t.due_date && dayDiff(t.due_date) < 0),
-)
-const dueSoonTasks = computed(() =>
-  openTasks.value
-    .filter((t) => t.due_date && dayDiff(t.due_date) >= 0)
-    .sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1))
-    .slice(0, 6),
-)
-const tasksToShow = computed(() => [...overdueTasks.value, ...dueSoonTasks.value])
-const tasksProgress = computed(() => {
-  const total = allTasks.value.length
-  return total ? Math.round((completedTasks.value.length / total) * 100) : 0
-})
 const totalUnread = computed(() => accountSummaries.value.reduce((s, a) => s + a.unreadTotal, 0))
 const connectedAccounts = computed(() => accountSummaries.value.length)
 
 const summaryLine = computed(() => {
-  const parts: string[] = []
-  const te = todayEvents.value.length
-  if (te) parts.push(`${te} event${te > 1 ? 's' : ''}`)
-  const ot = openTasks.value.length
-  if (ot) parts.push(`${ot} task${ot > 1 ? 's' : ''}`)
-  const od = overdueTasks.value.length
-  if (od) parts.push(`${od} overdue`)
   const ur = totalUnread.value
-  if (ur) parts.push(`${ur} unread`)
-  if (!parts.length) return 'All caught up — nothing pending.'
-  return parts.join(' · ')
+  if (ur) return `${ur} unread`
+  return 'All caught up — nothing pending.'
 })
-
-const priorityStyle: Record<TaskPriority, string> = {
-  high: 'bg-rose-500/15 text-rose-400',
-  medium: 'bg-amber-500/15 text-amber-400',
-  low: 'bg-sky-500/15 text-sky-400',
-}
 
 // Flash on unread change.
 let prevUnread = -1
@@ -173,30 +105,6 @@ watch(totalUnread, (n) => {
 })
 
 // ── Actions ──────────────────────────────────────────────────────────────────
-async function addQuickTask() {
-  const title = quickTask.value.trim()
-  if (!title || defaultListId.value == null || addingTask.value) return
-  addingTask.value = true
-  try {
-    await plannerApi.createTask({ title, list_id: defaultListId.value })
-    quickTask.value = ''
-    allTasks.value = await plannerApi.listTasks({ include_completed: true })
-  } finally {
-    addingTask.value = false
-  }
-}
-
-async function toggleTask(t: TaskResponse) {
-  const next = !t.is_completed
-  t.is_completed = next
-  try {
-    await plannerApi.setTaskCompleted(t.id, next)
-  } catch {
-    t.is_completed = !next
-  }
-}
-
-function goPlanner() { ui.setView('planner'); router.push('/planner') }
 function goSettings() { ui.setView('settings'); router.push('/settings') }
 function goEmail(accountId?: number) {
   ui.setView('email')
@@ -223,20 +131,11 @@ async function loadEmailSummaries(accs: EmailAccountResponse[]) {
 async function loadAll(silent = false) {
   if (!silent) refreshing.value = true
   try {
-    const from = startOfDay(new Date())
-    const to = new Date(from)
-    to.setDate(to.getDate() + 7)
-
-    const [agendaRes, tasksRes, , accountsRes, overviewRes] = await Promise.allSettled([
-      plannerApi.getAgenda(from, to),
-      plannerApi.listTasks({ include_completed: true }),
-      planner.fetchTaskLists(),
+    const [accountsRes, overviewRes] = await Promise.allSettled([
       emailApi.listAccounts(),
       analyticsApi.getOverview(),
     ])
 
-    if (agendaRes.status === 'fulfilled') agenda.value = agendaRes.value.items
-    if (tasksRes.status === 'fulfilled') allTasks.value = tasksRes.value
     if (accountsRes.status === 'fulfilled') await loadEmailSummaries(accountsRes.value)
     if (overviewRes.status === 'fulfilled') overview.value = overviewRes.value
   } finally {
@@ -320,23 +219,7 @@ function initialsOf(s: string) {
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto max-w-7xl px-4 py-3">
         <!-- KPI strip -->
-        <div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-          <button class="stat" @click="goPlanner">
-            <span class="chip bg-accent/15 text-accent"><CalendarDays :size="15" /></span>
-            <span class="stat-body">
-              <span class="stat-num">{{ todayEvents.length }}</span>
-              <span class="stat-label">Events today · {{ upcomingEvents.length }} up</span>
-            </span>
-          </button>
-          <button class="stat" @click="goPlanner">
-            <span class="chip bg-emerald-500/15 text-emerald-400"><ListTodo :size="15" /></span>
-            <span class="stat-body">
-              <span class="stat-num">{{ openTasks.length }}</span>
-              <span class="stat-label" :class="overdueTasks.length ? 'text-rose-400' : ''">
-                {{ overdueTasks.length ? `${overdueTasks.length} overdue` : `${tasksProgress}% done` }}
-              </span>
-            </span>
-          </button>
+        <div class="grid grid-cols-2 gap-2.5">
           <button class="stat" @click="goEmail()">
             <span class="chip bg-amber-500/15 text-amber-400"><Mail :size="15" /></span>
             <span class="stat-body">
@@ -353,92 +236,8 @@ function initialsOf(s: string) {
           </div>
         </div>
 
-        <!-- Main grid -->
-        <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <!-- Left column -->
-          <div class="space-y-3 lg:col-span-2">
-            <!-- Schedule -->
-            <section class="panel">
-              <div class="panel-head">
-                <h2><CalendarDays :size="13" class="text-accent" /> Schedule</h2>
-                <button class="link" @click="goPlanner">Planner <ArrowRight :size="10" /></button>
-              </div>
-              <div class="p-2">
-                <ul class="space-y-0.5">
-                  <li v-if="todayEvents.length" class="group-label">Today</li>
-                  <li v-for="e in todayEvents" :key="e.event_id" class="event-row" @click="goPlanner">
-                    <span class="time">{{ e.all_day ? 'all day' : formatTime(e.start_at) }}</span>
-                    <span class="dot" :style="{ background: e.color || 'var(--color-accent)' }" />
-                    <div class="min-w-0 flex-1">
-                      <p class="flex items-center gap-1 truncate text-[12px] font-medium text-text-primary">
-                        <Repeat v-if="e.is_recurring" :size="10" class="shrink-0 text-text-muted" />{{ e.title }}
-                      </p>
-                      <p v-if="e.location" class="truncate text-[10.5px] text-text-muted">{{ e.location }}</p>
-                    </div>
-                  </li>
-                  <li v-if="upcomingEvents.length" class="group-label mt-1.5">Coming up</li>
-                  <li v-for="e in upcomingEvents" :key="e.event_id" class="event-row" @click="goPlanner">
-                    <span class="time">{{ dayLabel(e.start_at) }}</span>
-                    <span class="dot" :style="{ background: e.color || 'var(--color-accent)' }" />
-                    <div class="min-w-0 flex-1">
-                      <p class="flex items-center gap-1 truncate text-[12px] font-medium text-text-primary">
-                        <Repeat v-if="e.is_recurring" :size="10" class="shrink-0 text-text-muted" />{{ e.title }}
-                      </p>
-                      <p v-if="!e.all_day" class="truncate text-[10.5px] text-text-muted">{{ formatTime(e.start_at) }}</p>
-                    </div>
-                  </li>
-                </ul>
-                <div v-if="!todayEvents.length && !upcomingEvents.length" class="empty">
-                  <CalendarDays :size="20" class="text-text-muted/60" />
-                  <p class="text-[12px] font-medium text-text-secondary">No upcoming events</p>
-                  <p class="text-[10.5px] text-text-muted">Clear for the next 7 days.</p>
-                </div>
-              </div>
-            </section>
-
-            <!-- Tasks -->
-            <section class="panel">
-              <div class="panel-head">
-                <h2>
-                  <ListTodo :size="13" class="text-emerald-400" /> Tasks
-                  <span v-if="openTasks.length" class="badge bg-emerald-500/15 text-emerald-400">{{ openTasks.length }}</span>
-                </h2>
-                <button class="link" @click="goPlanner">All <ArrowRight :size="10" /></button>
-              </div>
-              <div class="border-b border-border px-2 py-1.5">
-                <form @submit.prevent="addQuickTask">
-                  <div class="relative">
-                    <Plus :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" />
-                    <input
-                      v-model="quickTask"
-                      :placeholder="defaultListId == null ? 'Create a task list in Planner first…' : 'Add a task, press Enter…'"
-                      :disabled="defaultListId == null"
-                      class="quick-input"
-                    />
-                  </div>
-                </form>
-              </div>
-              <div class="p-2">
-                <ul v-if="tasksToShow.length" class="space-y-0.5">
-                  <li v-for="t in tasksToShow" :key="t.id" class="task-row">
-                    <button class="check" :class="{ done: t.is_completed }" @click="toggleTask(t)">
-                      <CheckCircle2 v-if="t.is_completed" :size="13" />
-                    </button>
-                    <span class="min-w-0 flex-1 truncate text-[12px]" :class="t.is_completed ? 'text-text-muted line-through' : 'text-text-primary'">{{ t.title }}</span>
-                    <span v-if="t.priority" class="badge shrink-0 capitalize" :class="priorityStyle[t.priority]">{{ t.priority }}</span>
-                    <span v-if="t.due_date" class="shrink-0 text-[10.5px] font-medium" :class="dayDiff(t.due_date) < 0 && !t.is_completed ? 'text-rose-400' : 'text-text-muted'">{{ dueLabel(t.due_date) }}</span>
-                  </li>
-                </ul>
-                <div v-else class="empty">
-                  <CheckCircle2 :size="20" class="text-emerald-400/60" />
-                  <p class="text-[12px] font-medium text-text-secondary">All clear</p>
-                  <p class="text-[10.5px] text-text-muted">No pending or overdue tasks.</p>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <!-- Right column: inbox -->
+        <!-- Inbox -->
+        <div class="mt-3 grid grid-cols-1 gap-3">
           <div>
             <section class="panel">
               <div class="panel-head">
@@ -572,14 +371,6 @@ function initialsOf(s: string) {
   transition: color 0.15s;
 }
 .link:hover { color: var(--color-accent); }
-.group-label {
-  padding: 0.2rem 0.5rem 0.1rem;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -631,69 +422,6 @@ function initialsOf(s: string) {
   text-overflow: ellipsis;
 }
 
-/* ── Schedule rows ───────────────────────────────────────────────────────── */
-.event-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.32rem 0.5rem;
-  border-radius: 0.4rem;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.event-row:hover { background: var(--color-surface-hover); }
-.event-row .time {
-  flex-shrink: 0;
-  width: 50px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-.event-row .dot {
-  flex-shrink: 0;
-  width: 7px; height: 7px;
-  border-radius: 999px;
-}
-
-/* ── Task rows ───────────────────────────────────────────────────────────── */
-.quick-input {
-  width: 100%;
-  border-radius: 0.4rem;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-hover);
-  padding: 0.3rem 0.5rem 0.3rem 1.5rem;
-  font-size: 11.5px;
-  color: var(--color-text-primary);
-  outline: none;
-  transition: border-color 0.15s;
-}
-.quick-input::placeholder { color: var(--color-text-muted); }
-.quick-input:focus { border-color: var(--color-accent); }
-.quick-input:disabled { opacity: 0.6; }
-
-.task-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.32rem 0.4rem;
-  border-radius: 0.4rem;
-  transition: background 0.15s;
-}
-.task-row:hover { background: var(--color-surface-hover); }
-.check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px; height: 14px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  border: 1.5px solid var(--color-text-muted);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-.check:hover { border-color: var(--color-accent); }
-.check.done { border-color: var(--color-accent); background: var(--color-accent); color: #fff; }
-
 /* ── Inbox ───────────────────────────────────────────────────────────────── */
 .account-block { cursor: pointer; transition: background 0.15s; }
 .account-block:hover { background: var(--color-surface-hover); }
@@ -709,43 +437,36 @@ function initialsOf(s: string) {
   color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
-.msg-row {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.22rem 0.7rem 0.22rem 2.65rem;
-  transition: background 0.15s;
-}
-.msg-row:hover { background: var(--color-surface-hover); }
-.unread-dot {
-  flex-shrink: 0;
-  width: 5px; height: 5px;
-  border-radius: 999px;
-  background: var(--color-accent);
-}
-
-/* ── Empty states ────────────────────────────────────────────────────────── */
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.15rem;
-  padding: 1.1rem 0.75rem;
+  gap: 0.25rem;
   text-align: center;
+}
+.msg-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+}
+.unread-dot {
+  width: 6px; height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-accent);
 }
 .btn-accent {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.25rem;
   padding: 0.3rem 0.6rem;
   border-radius: 0.4rem;
-  font-size: 10.5px;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+  font-size: 11px;
   font-weight: 600;
-  color: #fff;
-  background: var(--color-accent);
   cursor: pointer;
-  transition: background 0.15s;
+  border: none;
 }
-.btn-accent:hover { background: color-mix(in srgb, var(--color-accent) 85%, #000); }
 </style>

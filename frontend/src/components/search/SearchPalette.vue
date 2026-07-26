@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSearchStore } from '../../stores/search'
 import { useUiStore } from '../../stores/ui'
 import { useNotesStore } from '../../stores/notes'
-import { Search as SearchIcon, Calendar, ArrowRight, Clock, NotebookPen, ListTodo, Bell } from 'lucide-vue-next'
+import { Search as SearchIcon, Calendar, ArrowRight, Clock, NotebookPen, Bell } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
 import type { SearchResultEntry } from '../../types'
 
@@ -43,11 +43,6 @@ function openResult(item: SearchResultEntry) {
   if (item.type === 'note') {
     notesStore.selectNote(item.id)
     router.push('/notes')
-    ui.closeSearchPalette()
-    return
-  }
-  if (item.type === 'task') {
-    router.push('/planner')
     ui.closeSearchPalette()
     return
   }
@@ -154,14 +149,12 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           @click="openResult(item)"
           @mouseenter="selectedIndex = i"
         >
-          <component :is="item.type === 'note' ? NotebookPen : item.type === 'task' ? ListTodo : item.type === 'reminder' ? Bell : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
+          <component :is="item.type === 'note' ? NotebookPen : item.type === 'reminder' ? Bell : Calendar" :size="13" class="text-text-muted mt-0.5 shrink-0" />
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
               <span class="text-xs font-medium text-text-primary">
                 {{ item.type === 'note'
                   ? (item.title || 'Untitled note')
-                  : item.type === 'task'
-                  ? (item.title || 'Untitled task')
                   : item.type === 'reminder'
                   ? (item.title || 'Reminder')
                   : (item.entry_date ? formatDate(item.entry_date) : '') }}

@@ -29,10 +29,9 @@ import {
   Mail, Inbox, Send, Star, Trash2, RefreshCw, Plus, Settings, X, Search,
   Reply, ReplyAll, Forward, Paperclip, Download, AlertCircle, CheckCircle2,
   Folder as FolderIcon, Archive, Ban, FileEdit, MailOpen, ChevronDown,
-  ChevronRight, ShieldAlert, ListTodo, CheckSquare, Square, User, Globe,
+  ChevronRight, ShieldAlert, CheckSquare, Square, User, Globe,
   Maximize2, Printer, Volume2, FileText, ChevronLeft,
 } from 'lucide-vue-next'
-import { createTask } from '../../api/planner'
 import { API_ORIGIN, request } from '../../api/client'
 import { useTtsStore } from '../../stores/tts'
 import PanelSplitter from '../layout/PanelSplitter.vue'
@@ -558,23 +557,6 @@ function printEmail() {
   setTimeout(() => w.print(), 400)
 }
 
-// ── Add the current message to the Planner as a task ──
-async function addToTask() {
-  const m = store.selectedMessage
-  if (!m) return
-  const from = m.from_name ? `${m.from_name} <${m.from_address}>` : m.from_address
-  const body = m.snippet || (m.text_body ? m.text_body.slice(0, 500) : '')
-  try {
-    await createTask({
-      title: (m.subject || '(no subject)').slice(0, 200),
-      notes: `From: ${from}\n\n${body}`,
-    })
-    showToast('success', 'Added to Tasks')
-  } catch {
-    showToast('error', 'Could not create task')
-  }
-}
-
 // ── Vocalize (TTS) + Summarize (AI) + prev/next nav for the open message ──
 const summarizing = ref(false)
 const summary = ref('')
@@ -1009,10 +991,6 @@ onUnmounted(() => {
                 <div class="flex items-start justify-between gap-3">
                   <h2 class="text-base font-semibold text-text-primary">{{ store.selectedMessage.subject || '(no subject)' }}</h2>
                   <div class="flex shrink-0 items-center gap-0.5">
-                    <button class="rounded p-1.5 text-text-muted hover:bg-surface-hover hover:text-accent" title="Add to Tasks"
-                      @click="addToTask">
-                      <ListTodo :size="15" />
-                    </button>
                     <button class="rounded p-1.5 hover:bg-surface-hover"
                       :class="store.selectedMessage.is_spam ? 'text-orange-500' : 'text-text-muted'"
                       :title="store.selectedMessage.is_spam ? 'Not spam' : 'Block sender (move to Junk / delete)'"

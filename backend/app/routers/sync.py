@@ -149,30 +149,21 @@ async def cloud_pull(data: CloudSyncRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/all")
 async def sync_all(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Sync everything in one go: IMAP mail + Google Calendar + Google Tasks.
-
-    Each leg is isolated — a mail failure still runs Google sync, and
-    ``GoogleSyncService`` isolates Calendar vs Tasks internally.
-    """
+    """Sync everything in one go: IMAP mail. (Google Calendar/Tasks sync removed.)"""
     from app.services.email_service import EmailSyncService
-    from app.services.google_sync_service import GoogleSyncService
 
     result: dict[str, Any] = {}
     try:
         await EmailSyncService(db).sync_all_accounts()
         result["mail"] = {"ok": True}
-    except Exception as exc:  # noqa: BLE001 — report, don't abort the other legs
+    except Exception as exc:  # noqa: BLE001 — report, don't abort
         result["mail"] = {"ok": False, "error": str(exc)}
-    try:
-        result["google"] = await GoogleSyncService(db).sync_all()
-    except Exception as exc:  # noqa: BLE001
-        result["google"] = {"ok": False, "error": str(exc)}
     return result
 
 
 @router.get("/pollers")
 async def get_pollers() -> dict[str, Any]:
-    """Whether the background email/Google sync pollers are currently paused."""
+    """Whether the background email sync poller is currently paused."""
     from app.services.scheduler_service import SchedulerService
 
     return {"paused": SchedulerService.background_syncs_paused()}
@@ -180,7 +171,7 @@ async def get_pollers() -> dict[str, Any]:
 
 @router.post("/pollers")
 async def set_pollers(paused: bool = Query(...)) -> dict[str, Any]:
-    """Pause/resume the background email + Google sync pollers.
+    """Pause/resume the background email sync poller.
 
     Called by the desktop shell when the window is minimized to drop idle CPU;
     reminders, backups, and DB maintenance keep running.

@@ -380,7 +380,7 @@ export interface VideoNoteResponse {
 
 export interface SearchResultEntry {
   id: number;
-  type: "entry" | "note" | "task" | "reminder";
+  type: "entry" | "note" | "reminder";
   entry_date: string | null;
   folder_id?: number | null;
   updated_at?: string | null;
@@ -583,113 +583,6 @@ export interface ContactListResponse {
   total: number;
   offset: number;
   limit: number;
-}
-
-// ── Planner: Tasks & Schedule ─────────────────────────────────────────
-
-export type TaskPriority = "low" | "medium" | "high";
-
-export interface TaskListResponse {
-  id: number;
-  name: string;
-  color: string | null;
-  sort_order: number;
-  is_deleted: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TaskListCreate {
-  name: string;
-  color?: string | null;
-  sort_order?: number;
-}
-
-export interface TaskResponse {
-  id: number;
-  parent_id: number | null;
-  list_id: number | null;
-  title: string;
-  notes: string | null;
-  is_completed: boolean;
-  completed_at: string | null;
-  priority: TaskPriority | null;
-  due_date: string | null;
-  sort_order: number;
-  is_deleted: boolean;
-  created_at: string;
-  updated_at: string;
-  subtasks: TaskResponse[];
-}
-
-export interface TaskCreate {
-  title: string;
-  list_id?: number | null;
-  parent_id?: number | null;
-  notes?: string | null;
-  priority?: TaskPriority | null;
-  due_date?: string | null;
-  sort_order?: number;
-}
-
-export interface TaskUpdate {
-  title?: string;
-  list_id?: number | null;
-  parent_id?: number | null;
-  notes?: string | null;
-  priority?: TaskPriority | null;
-  due_date?: string | null;
-  sort_order?: number;
-}
-
-export interface ScheduleEventResponse {
-  id: number;
-  title: string;
-  description: string | null;
-  location: string | null;
-  start_at: string;
-  end_at: string;
-  all_day: boolean;
-  rrule: string | null;
-  timezone_name: string | null;
-  color: string | null;
-  excluded_dates: string[] | null;
-  is_deleted: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ScheduleEventCreate {
-  title: string;
-  description?: string | null;
-  location?: string | null;
-  start_at: string;
-  end_at: string;
-  all_day?: boolean;
-  rrule?: string | null;
-  timezone_name?: string | null;
-  color?: string | null;
-}
-
-export interface ScheduleEventUpdate extends Partial<ScheduleEventCreate> {}
-
-export interface AgendaItem {
-  event_id: number;
-  title: string;
-  description: string | null;
-  location: string | null;
-  start_at: string;
-  end_at: string;
-  all_day: boolean;
-  color: string | null;
-  is_recurring: boolean;
-}
-
-export interface AgendaResponse {
-  items: AgendaItem[];
-  total: number;
-  frm: string;
-  to: string;
 }
 
 // ── Reminders ────────────────────────────────────────────────────────

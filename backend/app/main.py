@@ -268,7 +268,6 @@ from app.routers.backup import router as backup_router  # noqa: E402
 from app.routers.contacts import router as contacts_router  # noqa: E402
 from app.routers.email import router as email_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
-from app.routers.google_sync import router as google_sync_router  # noqa: E402
 from app.routers.box import router as box_router  # noqa: E402
 from app.routers.dropbox import router as dropbox_router  # noqa: E402
 from app.routers.onedrive import router as onedrive_router  # noqa: E402
@@ -280,7 +279,6 @@ from app.routers.encryption import (  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
 from app.routers.notes import router as notes_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
-from app.routers.planner import router as planner_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
 from app.routers.prompts import router as prompts_router  # noqa: E402
 from app.routers.recordings import router as recordings_router  # noqa: E402
@@ -307,7 +305,6 @@ app.include_router(media_router)
 app.include_router(recordings_router)
 app.include_router(backup_router)
 app.include_router(google_drive_router)
-app.include_router(google_sync_router)
 app.include_router(box_router)
 app.include_router(onedrive_router)
 app.include_router(dropbox_router)
@@ -317,7 +314,6 @@ app.include_router(encryption_global_router)
 app.include_router(encryption_notes_router)
 app.include_router(export_router)
 app.include_router(reminders_router)
-app.include_router(planner_router)
 app.include_router(search_router)
 app.include_router(sync_router)
 app.include_router(templates_router)
