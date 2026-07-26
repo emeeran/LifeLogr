@@ -12,7 +12,7 @@ SearchMode = Literal["keyword", "semantic", "hybrid"]
 class SearchResultEntry(BaseModel):
     """A single search result.
 
-    ``type`` discriminates entries from notes/tasks/reminders. Notes and
+    ``type`` discriminates entries from notes/reminders. Notes and
     reminders have no ``entry_date`` (they are not date-bound); callers should
     read ``updated_at`` instead.
     """

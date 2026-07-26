@@ -255,7 +255,7 @@ async def _check_encryption_key(session: AsyncSession) -> dict[str, Any]:
     if settings.SECRET_KEY == "change-me-before-production":
         return _check(
             "encryption_key", "Encryption key", "error",
-            "Using the default SECRET_KEY — stored email/cloud credentials cannot be "
+            "Using the default SECRET_KEY — stored cloud credentials cannot be "
             "decrypted safely.",
             "Set a SECRET_KEY (the packaged app manages this via .secret_key).",
         )
@@ -292,7 +292,7 @@ def _check_connection_pool() -> dict[str, Any]:
         return _check(
             "connection_pool", "Connection pool", "warn",
             f"{detail} — a single connection can be saturated by long background jobs "
-            "(entries may freeze during email sync / backup).", "Increase DB_POOL_SIZE.",
+            "(entries may freeze during backup).", "Increase DB_POOL_SIZE.",
         )
     return _check("connection_pool", "Connection pool", "ok", detail)
 

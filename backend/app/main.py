@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
     if settings.SECRET_KEY == "change-me-before-production":
         logger.warning(
-            "SECRET_KEY is the default — encrypted credentials (IMAP/SMTP/cloud "
+            "SECRET_KEY is the default — encrypted credentials (cloud "
             "OAuth) are keyed off it. Run a deployment that generates a key, or "
             "set SECRET_KEY in .env. (The packaged launcher does this for you.)"
         )
