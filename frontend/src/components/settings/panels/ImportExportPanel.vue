@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { entriesApi } from "../../../api/entries";
+import { notesApi } from "../../../api/notes";
 import {
   exportHtml,
   getExportPdfUrl,
@@ -177,6 +178,73 @@ async function downloadDiariumDb() {
     exportingDiariumDb.value = false;
   }
 }
+
+// ── Notes import / export ──
+const notesImporting = ref(false);
+const notesImportMenuOpen = ref(false);
+const notesExportMenuOpen = ref(false);
+const exportingNotesHtml = ref(false);
+
+async function runNotesImport(accept: string) {
+  notesImportMenuOpen.value = false;
+  const file = await pickFile({ accept });
+  if (!file) return;
+  notesImporting.value = true;
+  try {
+    const r = await notesApi.importFile(file);
+    emit(
+      "toast",
+      "success",
+      `Imported ${r.imported} notes${r.skipped ? ` (${r.skipped} skipped)` : ""}`,
+    );
+  } catch (e: unknown) {
+    emit("toast", "error", `Import failed: ${errMsg(e)}`);
+  } finally {
+    notesImporting.value = false;
+  }
+}
+
+async function downloadNotesMarkdown() {
+  notesExportMenuOpen.value = false;
+  const resp = await fetch(notesApi.exportMarkdownUrl());
+  const blob = await resp.blob();
+  await saveFile({
+    data: blob,
+    defaultName: "lifelogr-notes.zip",
+    filters: [{ name: "ZIP", extensions: ["zip"] }],
+  });
+  emit("toast", "success", "Notes ZIP saved");
+}
+async function downloadNotesJson() {
+  notesExportMenuOpen.value = false;
+  const resp = await fetch(notesApi.exportJsonUrl());
+  const blob = await resp.blob();
+  await saveFile({
+    data: blob,
+    defaultName: "lifelogr-notes.json",
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  emit("toast", "success", "Notes JSON saved");
+}
+async function downloadNotesHtml() {
+  notesExportMenuOpen.value = false;
+  exportingNotesHtml.value = true;
+  try {
+    const resp = await fetch(notesApi.exportHtmlUrl());
+    const html = await resp.text();
+    const blob = new Blob([html], { type: "text/html" });
+    await saveFile({
+      data: blob,
+      defaultName: "lifelogr-notes.html",
+      filters: [{ name: "HTML", extensions: ["html"] }],
+    });
+    emit("toast", "success", "Notes HTML saved");
+  } catch (e: unknown) {
+    emit("toast", "error", `Notes HTML failed: ${errMsg(e)}`);
+  } finally {
+    exportingNotesHtml.value = false;
+  }
+}
 </script>
 
 <template>
@@ -333,6 +401,81 @@ async function downloadDiariumDb() {
           </button>
         </div>
       </div>
+    </div>
+  </SettingsSection>
+
+  <!-- Notes import / export -->
+  <SettingsSection
+    title="Notes"
+    :icon="FileUp"
+    description="Import / export your notebooks"
+    setting-key="Notes"
+    card-class="divide-y divide-border"
+  >
+    <!-- Import notes -->
+    <div class="p-3">
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <Upload :size="13" class="text-text-muted shrink-0" aria-hidden="true" />
+        <span class="text-[13px] text-text-secondary flex-1">Import notes</span>
+        <div class="relative">
+          <SButton
+            variant="primary"
+            :disabled="notesImporting"
+            @click="notesImportMenuOpen = !notesImportMenuOpen"
+          >
+            <Loader v-if="notesImporting" :size="11" class="animate-spin" />
+            <Upload v-else :size="12" /> Import… <ChevronDown :size="11" />
+          </SButton>
+          <div
+            v-if="notesImportMenuOpen"
+            class="absolute z-20 right-0 mt-1 w-48 rounded-md border border-border bg-surface shadow-lg overflow-hidden"
+          >
+            <button class="import-item" @click="runNotesImport('.json')">
+              <FileJson :size="12" /> LifeLogr JSON
+            </button>
+            <button class="import-item" @click="runNotesImport('.zip')">
+              <FileUp :size="12" /> Markdown ZIP
+            </button>
+          </div>
+        </div>
+      </div>
+      <p class="text-[11px] text-text-muted pl-[25px] mt-1">
+        Round-trips with the export below. Encrypted notes import as plain text.
+      </p>
+    </div>
+
+    <!-- Export notes -->
+    <div class="p-3">
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <Download :size="13" class="text-text-muted shrink-0" aria-hidden="true" />
+        <span class="text-[13px] text-text-secondary flex-1">Export notes</span>
+        <div class="relative">
+          <SButton variant="primary" @click="notesExportMenuOpen = !notesExportMenuOpen">
+            <Download :size="12" /> Export as… <ChevronDown :size="11" />
+          </SButton>
+          <div
+            v-if="notesExportMenuOpen"
+            class="absolute z-20 right-0 mt-1 w-44 rounded-md border border-border bg-surface shadow-lg overflow-hidden"
+          >
+            <button class="export-item" @click="downloadNotesMarkdown">
+              <FileUp :size="12" /> Markdown ZIP
+            </button>
+            <button class="export-item" @click="downloadNotesJson">
+              <FileJson :size="12" /> JSON
+            </button>
+            <button
+              class="export-item"
+              :disabled="exportingNotesHtml"
+              @click="downloadNotesHtml"
+            >
+              <Loader v-if="exportingNotesHtml" :size="12" class="animate-spin" /><Download v-else :size="12" /> HTML
+            </button>
+          </div>
+        </div>
+      </div>
+      <p class="text-[11px] text-text-muted pl-[25px] mt-1">
+        Encrypted notes export with a placeholder body (ciphertext is never written).
+      </p>
     </div>
   </SettingsSection>
 </template>

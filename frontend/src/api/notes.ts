@@ -139,4 +139,25 @@ export const notesApi = {
   mediaFileUrl(noteId: number, mediaId: number): string {
     return `${API_ORIGIN}/api/v1/notes/${noteId}/media/${mediaId}/file`
   },
+
+  // ── Notes import / export ──
+  exportMarkdownUrl(): string {
+    return `${API_ORIGIN}/api/v1/notes/export/markdown`
+  },
+  exportJsonUrl(): string {
+    return `${API_ORIGIN}/api/v1/notes/export/json`
+  },
+  exportHtmlUrl(): string {
+    return `${API_ORIGIN}/api/v1/notes/export/html`
+  },
+  async importFile(file: File): Promise<{ imported: number; skipped: number }> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${API_ORIGIN}/api/v1/notes/import/file`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) throw new Error(`Import failed (${res.status})`)
+    return res.json()
+  },
 }

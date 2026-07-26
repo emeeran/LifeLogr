@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,7 @@ from app.schemas.note_media import NoteMediaFromPath, NoteMediaResponse
 from app.schemas.tag import TagBrief
 from app.services.note_media_service import NoteMediaService
 from app.services.note_service import NoteService
+from app.services.notes_export_service import NotesExportService
 from app.services.ocr_service import ocr_image_bytes
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
@@ -373,3 +374,49 @@ async def pin_note(note_id: int, body: _PinBody, db: AsyncSession = Depends(get_
     """Set the pinned state of a note."""
     svc = NoteService(db)
     return _to_response(await svc.set_pinned(note_id, body.is_pinned))
+
+
+# ── Notes import / export ────────────────────────────────────────────────────
+@router.get("/export/markdown")
+async def export_notes_markdown(db: AsyncSession = Depends(get_db)) -> Response:
+    """All notes as a ZIP of per-note Markdown files (with YAML frontmatter)."""
+    data = await NotesExportService(db).export_markdown()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="lifelogr-notes.zip"'},
+    )
+
+
+@router.get("/export/json")
+async def export_notes_json(db: AsyncSession = Depends(get_db)) -> Response:
+    """All notes as a portable LifeLogr JSON document."""
+    data = await NotesExportService(db).export_json()
+    return Response(
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="lifelogr-notes.json"'},
+    )
+
+
+@router.get("/export/html")
+async def export_notes_html(db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    """All notes as a single styled HTML document."""
+    return HTMLResponse(content=await NotesExportService(db).export_html())
+
+
+@router.post("/import/file")
+async def import_notes_file(
+    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Import notes from a LifeLogr notes .json or Markdown .zip export."""
+    content = await file.read()
+    svc = NotesExportService(db)
+    name = (file.filename or "").lower()
+    if name.endswith(".json"):
+        result = await svc.import_json(content)
+    elif name.endswith(".zip"):
+        result = await svc.import_markdown_zip(content)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use .json or .zip.")
+    return result
