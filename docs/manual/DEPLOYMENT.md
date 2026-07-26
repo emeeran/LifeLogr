@@ -399,9 +399,7 @@ Desktop-only features are automatically disabled:
 | Templates | ✅ | ✅ |
 | Search (FTS5) | ✅ | ✅ |
 | Media Upload | ✅ | ✅ |
-| Geotagging | ✅ | ✅ |
 | Reminders | ✅ | ✅ |
-| Analytics | ✅ | ✅ |
 
 The frontend checks `import.meta.env.VITE_PLATFORM === 'capacitor'` to hide desktop-only UI elements.
 

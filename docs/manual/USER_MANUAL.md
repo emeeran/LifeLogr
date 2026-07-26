@@ -3,7 +3,7 @@
 > **Privacy-first, offline-first journaling for Linux (Ubuntu 24.04).**
 > All your data stays on your machine. AI runs locally via Ollama; OCR via Tesseract; read-aloud via Edge TTS.
 
-*Version 0.7.0*
+*Version 0.7.1*
 
 ---
 
@@ -25,18 +25,13 @@
 14. [Read Aloud (TTS)](#14-read-aloud-tts)
 15. [AI Writing Assistant](#15-ai-writing-assistant)
 16. [Reminders](#16-reminders)
-17. [Planner (Tasks)](#17-planner-tasks)
-18. [Contacts](#18-contacts)
-19. [Email](#19-email)
-20. [Dashboard & Analytics](#20-dashboard--analytics)
-21. [Encryption](#21-encryption)
-22. [Export & Import](#22-export--import)
-23. [Backup & Cloud Sync](#23-backup--cloud-sync)
-24. [Google Calendar & Tasks Sync](#24-google-calendar--tasks-sync)
-25. [Settings](#25-settings)
-26. [Keyboard Shortcuts](#26-keyboard-shortcuts)
-27. [Troubleshooting](#27-troubleshooting)
-28. [Data, Privacy & File Locations](#28-data-privacy--file-locations)
+17. [Encryption](#17-encryption)
+18. [Export & Import](#18-export--import)
+19. [Backup & Cloud Sync](#19-backup--cloud-sync)
+20. [Settings](#20-settings)
+21. [Keyboard Shortcuts](#21-keyboard-shortcuts)
+22. [Troubleshooting](#22-troubleshooting)
+23. [Data, Privacy & File Locations](#23-data-privacy--file-locations)
 
 ---
 
@@ -50,7 +45,7 @@
 ### Install the desktop app (Tauri)
 A native window with everything bundled. **Required if you want screen-snipping.**
 ```bash
-sudo dpkg -i LifeLogr_0.7.0_amd64.deb
+sudo dpkg -i LifeLogr_0.7.1_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu.
@@ -58,7 +53,7 @@ Launch **LifeLogr** from your app menu.
 ### Install the web app (browser)
 Lighter; the backend serves the app and you use it in a browser tab. The Python virtualenv is built on your machine during install (needs network).
 ```bash
-sudo dpkg -i lifelogr-web_0.7.0_amd64.deb
+sudo dpkg -i lifelogr-web_0.7.1_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser tab on a free local port. Stop it with `lifelogr --stop`.
@@ -66,7 +61,7 @@ Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser t
 > **Upgrading:** fully **quit** the running app before relaunching (closing the window may leave the old process alive). Web app: `lifelogr --stop`.
 
 ### First launch
-1. The sidebar lists the main areas: **Dashboard, Journal, Timeline, Notes, Reminders, Planner, Contacts, Email, Media**.
+1. The sidebar lists the main areas: **Journal, Timeline, Notes, Reminders, Media**.
 2. Open **Journal** to write a dated entry, or **Notes** for standalone notebooks.
 3. (Optional) Go to **Settings → AI**, set your Ollama model (a CPU-friendly model like `gemma3:4b` is recommended) to enable the AI features.
 
@@ -77,7 +72,7 @@ Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser t
 ```
 ┌──────────┬──────────────────────────────────────┐
 │ Sidebar  │   Active view (Journal / Notes /     │
-│ (nav +   │   Planner / Email / Dashboard …)     │
+│ (nav +   │   Reminders / Media …)               │
 │  search) │   plus an editor panel on the right  │
 │          │   for entries and notes              │
 └──────────┴──────────────────────────────────────┘
@@ -115,11 +110,11 @@ Journal entries are **date-bound** (one per day, by default).
 ### Entry fields
 - **Title** — optional heading.
 - **Date** — the entry's date.
-- **Mood** — a short mood label (shown on the dashboard's mood distribution).
+- **Mood** — a short mood label.
 - **Body** — markdown (see [§9](#9-markdown-reference)).
 - **Summary** — a one-line summary (can be AI-generated; see [§15](#15-ai-writing-assistant)).
 - **Tags** — assign tags (see [§8](#8-tags)).
-- **Location** — optional latitude/longitude/place name (geotag data; stored for future map features).
+- **Location** — optional latitude/longitude/place name.
 - **Media** — attach images/audio/video/documents (see [§12](#12-media--attachments)).
 
 ### Saving
@@ -127,7 +122,7 @@ Journal entries are **date-bound** (one per day, by default).
 - **Notes** use manual save (see [§5](#5-notes-mode)); journal entries save on demand and on navigate.
 
 ### Formatting toolbar
-Bold, italic, strikethrough, inline code, code block, link, headings, bullet/numbered lists, checklists, blockquote, alignment, tables, emoji, find & replace — plus **AI tools** and (in Notes) the **clip** buttons. See [§26](#26-keyboard-shortcuts) for shortcuts.
+Bold, italic, strikethrough, inline code, code block, link, headings, bullet/numbered lists, checklists, blockquote, alignment, tables, emoji, find & replace — plus **AI tools** and (in Notes) the **clip** buttons. See [§21](#21-keyboard-shortcuts) for shortcuts.
 
 ---
 
@@ -150,7 +145,7 @@ Notes are standalone, non-date-bound documents organized into **notebooks**.
 - Embedded images are shown resizable in the preview.
 
 ### Encrypting a note
-See [§21](#21-encryption).
+See [§17](#17-encryption).
 
 ### Searching notes
 Notes are included in the global search palette (`Ctrl+K`) and have their own FTS5 search.
@@ -252,7 +247,7 @@ Press **`Ctrl+K`** to open the global search palette.
 | **Hybrid** (`Mix`, default) | Combines keyword + semantic via Reciprocal Rank Fusion. |
 
 ### Scope & filters
-- Results span **entries, notes, and tasks** in one stream.
+- Results span **entries and notes** in one stream.
 - Filter by **mood**, **tags**, and **date range**.
 - Navigate with `↑`/`↓`, open with `Enter`, close with `Esc`.
 
@@ -315,7 +310,7 @@ Each result can be **Replaced**, **Inserted**, or **Copied**.
 
 ### Automatic analysis (runs in the background after you save)
 - **Summary** — a one-line summary (shown in timeline/search previews).
-- **Sentiment** — primary/secondary emotion + valence (powers the mood timeline on the dashboard).
+- **Sentiment** — primary/secondary emotion + valence.
 - **Reflection prompts** — questions to reflect further (shown on the entry).
 - **Tag suggestions** — suggested tags appear as pills; click to add.
 - **Themes** — recurring topics detected across your writing.
@@ -336,48 +331,7 @@ Enable/disable each AI feature individually in **Settings → AI / Features** (e
 
 ---
 
-## 17. Planner (Tasks)
-
-- Organize work into **task lists** with **tasks** (and subtasks); mark complete, reorder.
-- Optionally **sync with Google Tasks** (two-way) — see [§24](#24-google-calendar--tasks-sync).
-- Tasks are included in global search.
-
----
-
-## 18. Contacts
-
-- A full **address book**: contacts with names, emails, phones, photos, notes.
-- Group contacts (**Contact groups**), mark **favorites**, and search/filter.
-- **Import/Export vCard** (`.vcf`).
-- Contacts can be linked to email messages.
-
----
-
-## 19. Email
-
-A built-in **IMAP/SMTP** client.
-
-- Add multiple **email accounts**; folders are auto-detected (INBOX, Sent, Trash, Junk, …).
-- Read threaded conversations; **compose and send** with attachments.
-- **Spam blocking** with a blocklist and rules.
-- Email is included in the app's navigation as its own mode.
-
----
-
-## 20. Dashboard & Analytics
-
-The **Dashboard** shows insights about your journaling:
-
-- **Overview** — total entries, total words, total media, longest/current streaks, date range.
-- **Writing habits** — day-of-week frequency + a GitHub-style **heatmap**.
-- **Word stats** — averages, longest/shortest entries.
-- **Tag stats** — most-used tags.
-- **Mood distribution** + **sentiment timeline** (powered by AI sentiment).
-- **Media stats** — counts and storage.
-
----
-
-## 21. Encryption
+## 17. Encryption
 
 Protect sensitive items with **AES-256-GCM** encryption (passphrase-derived key, per-item salt).
 
@@ -390,7 +344,7 @@ Protect sensitive items with **AES-256-GCM** encryption (passphrase-derived key,
 
 ---
 
-## 22. Export & Import
+## 18. Export & Import
 
 - **Export** your journal as **Markdown** (a ZIP of `.md` files), **HTML** (a styled single file), or **PDF** (requires WeasyPrint; desktop).
 - **Import** from **CSV**, **Day One** (`.diary`/JSON), or **Markdown** archives.
@@ -400,7 +354,7 @@ Protect sensitive items with **AES-256-GCM** encryption (passphrase-derived key,
 
 ---
 
-## 23. Backup & Cloud Sync
+## 19. Backup & Cloud Sync
 
 - **Local backup** — a full `.tar.gz` of database + media. Create/restore from Settings.
 - **Scheduled backup** — automatic, DB-backed schedule (managed via APScheduler); runs catch-up on startup if missed.
@@ -409,18 +363,7 @@ Protect sensitive items with **AES-256-GCM** encryption (passphrase-derived key,
 
 ---
 
-## 24. Google Calendar & Tasks Sync
-
-Two-way sync with Google (mail stays on IMAP via the Email mode).
-
-- Connect your Google account in **Settings → Google**.
-- Toggle **Calendar** and/or **Tasks** sync independently.
-- Trigger a full sync with **Sync all** (`POST /sync/all`); changes propagate both directions with provenance tracking.
-- Requires the Google Calendar + Tasks scopes and a test user when first authorized.
-
----
-
-## 25. Settings
+## 20. Settings
 
 Open from the sidebar (gear icon). Tabs:
 
@@ -429,8 +372,6 @@ Open from the sidebar (gear icon). Tabs:
 | **General** | Appearance (theme, font family/size), default template, other preferences. |
 | **AI** | Ollama endpoint + model, pull the embedding model, AI feature toggles. |
 | **Notes** | Notes-specific options. |
-| **Email** | Email account setup. |
-| **Google** | Google account connection, Calendar/Tasks sync toggles. |
 | **Features** | Read-aloud voice/rate/volume/pitch, system-setup checks (Ollama, GStreamer, Tesseract). |
 | **Data & Backup** | Storage location, import/export, backup schedule, cloud providers, reset. |
 | **Dedication** | Memorial/dedication settings. |
@@ -438,7 +379,7 @@ Open from the sidebar (gear icon). Tabs:
 
 ---
 
-## 26. Keyboard Shortcuts
+## 21. Keyboard Shortcuts
 
 | Action | Shortcut |
 |---|---|
@@ -454,7 +395,7 @@ Open from the sidebar (gear icon). Tabs:
 
 ---
 
-## 27. Troubleshooting
+## 22. Troubleshooting
 
 **The app didn't change after I upgraded.**
 The old process is still running. Fully quit it (web: `lifelogr --stop`; desktop: quit from the app menu) and relaunch.
@@ -482,7 +423,7 @@ Back up first, then use **Settings → Data & Backup** to restore from a backup 
 
 ---
 
-## 28. Data, Privacy & File Locations
+## 23. Data, Privacy & File Locations
 
 Everything is stored locally under one data directory:
 
@@ -493,7 +434,7 @@ Everything is stored locally under one data directory:
 
 Contents:
 ```
-lifelogr.db       # your database (entries, notes, tasks, contacts, …)
+lifelogr.db       # your database (entries, notes, reminders, …)
 .secret_key       # REQUIRED for encryption — never delete
 media/            # uploaded images/audio/video
 tts/              # read-aloud audio cache

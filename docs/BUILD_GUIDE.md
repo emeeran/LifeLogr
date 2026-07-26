@@ -398,7 +398,7 @@ ollama pull nomic-embed-text
 | Auto-tag suggestions | Ollama + llama3.2 model | Auto-runs after entry save |
 | Writer's block helper | Ollama + llama3.2 model | On-demand from editor |
 | On This Day reflection | Ollama + llama3.2 model | On-demand from sidebar |
-| Recurring theme detection | Ollama + llama3.2 model | On-demand from analytics |
+| Recurring theme detection | Ollama + llama3.2 model | Detected across entries |
 | PDF export | pango, cairo, gdk-pixbuf | Setup script or manual |
 | Voice transcription | faster-whisper (~1GB) | Optional Python dep |
 

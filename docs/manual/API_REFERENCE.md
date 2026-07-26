@@ -15,18 +15,16 @@ Base URL: `http://localhost:8000/api/v1`
 5. [Media](#media)
 6. [Recordings](#recordings)
 7. [Search](#search)
-8. [Analytics](#analytics)
-9. [AI](#ai)
-10. [Export](#export)
-11. [Backup](#backup)
-12. [Sync](#sync)
-13. [Encryption](#encryption)
-14. [Revisions](#revisions)
-15. [Geotagging](#geotagging)
-16. [Reminders](#reminders)
-17. [TTS](#tts)
-18. [Plugins](#plugins)
-19. [Error Responses](#error-responses)
+8. [AI](#ai)
+9. [Export](#export)
+10. [Backup](#backup)
+11. [Sync](#sync)
+12. [Encryption](#encryption)
+13. [Revisions](#revisions)
+14. [Reminders](#reminders)
+15. [TTS](#tts)
+16. [Plugins](#plugins)
+17. [Error Responses](#error-responses)
 
 > **New in AI:** A generic tool endpoint `POST /ai/tool/{tool_id}` powers nine new tools — Summarize, Key Points, Action Items, Shorten, Simplify, Polish, Translate, Structure, and Title. Active/Passive voice conversion (`POST /ai/change-voice`) and Rewrite for Clarity (`POST /ai/rewrite-for-clarity`) remain available.
 
@@ -565,133 +563,6 @@ GET /search?q={query}&mode=hybrid&tag_ids=1,2&date_from=2026-01-01&date_to=2026-
   "total": 7,
   "offset": 0,
   "limit": 20
-}
-```
-
----
-
-## Analytics
-
-### Overview
-
-```
-GET /analytics/overview
-```
-
-```json
-{
-  "total_entries": 142,
-  "total_words": 52840,
-  "total_media": 38,
-  "total_recordings": 5,
-  "date_range_start": "2025-06-01",
-  "date_range_end": "2026-05-19",
-  "longest_streak": 14,
-  "current_streak": 3
-}
-```
-
-### Writing Habits
-
-```
-GET /analytics/habits
-```
-
-Returns entry count grouped by day of week.
-
-### Word Count
-
-```
-GET /analytics/words
-```
-
-```json
-{
-  "total_words": 52840,
-  "average_words_per_entry": 372,
-  "longest_entry_words": 2840,
-  "shortest_entry_words": 12
-}
-```
-
-### Tag Statistics
-
-```
-GET /analytics/tags
-```
-
-Returns usage count per tag.
-
-### Mood Distribution
-
-```
-GET /analytics/moods
-```
-
-Returns mood distribution across entries.
-
-### Sentiment Timeline
-
-```
-GET /analytics/sentiment-timeline?year=2026&month=5
-```
-
-Returns valence scores over time for AI-analyzed entries within the specified month.
-
-**Query Parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `year` | int | Year (required) |
-| `month` | int | Month 1-12 (required) |
-
-**Response:**
-
-```json
-[
-  {
-    "entry_date": "2026-05-01",
-    "valence": 0.6,
-    "primary_emotion": "happy",
-    "intensity": 7
-  },
-  {
-    "entry_date": "2026-05-03",
-    "valence": -0.3,
-    "primary_emotion": "anxious",
-    "intensity": 5
-  }
-]
-```
-
-### Heatmap
-
-```
-GET /analytics/heatmap?year=2026
-```
-
-```json
-{
-  "year": 2026,
-  "days": [
-    {"date": "2026-01-01", "count": 2},
-    {"date": "2026-01-02", "count": 0}
-  ]
-}
-```
-
-### Media Statistics
-
-```
-GET /analytics/media
-```
-
-```json
-{
-  "total_images": 30,
-  "total_videos": 3,
-  "total_recordings": 5,
-  "total_size_bytes": 157286400
 }
 ```
 
@@ -1339,63 +1210,6 @@ GET /entries/{entry_id}/revisions/{from_rev}/diff/{to_rev}
 
 ```
 POST /entries/{entry_id}/revisions/{revision_number}/restore
-```
-
----
-
-## Geotagging
-
-### Set Geotag
-
-```
-PUT /entries/{entry_id}/geotag
-```
-
-**Body:**
-
-```json
-{
-  "latitude": 51.5074,
-  "longitude": -0.1278,
-  "location_name": "London, UK"
-}
-```
-
-### Remove Geotag
-
-```
-DELETE /entries/{entry_id}/geotag
-```
-
-### Map View
-
-```
-GET /entries/map
-```
-
-Returns all geotagged entries.
-
-### Nearby Entries
-
-```
-GET /entries/nearby?lat=51.5074&lon=-0.1278&radius_km=10&limit=20
-```
-
-```json
-{
-  "items": [
-    {
-      "id": 5,
-      "entry_date": "2026-05-19",
-      "title": "London Visit",
-      "latitude": 51.5080,
-      "longitude": -0.1280,
-      "location_name": "London, UK",
-      "distance_km": 0.07
-    }
-  ],
-  "total": 1
-}
 ```
 
 ---

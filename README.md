@@ -1,8 +1,8 @@
 # 📔 LifeLogr
 
-**Privacy-first, offline-first journaling for Linux.** A single-user, local-first app for daily journaling, rich notes, tasks, contacts, and email — with on-device AI (Ollama), OCR (Tesseract), read-aloud (Edge TTS), end-to-end encryption, and optional cloud backup/sync. **All your data stays on your machine.**
+**Privacy-first, offline-first journaling for Linux.** A single-user, local-first app for daily journaling and rich notes — with on-device AI (Ollama), OCR (Tesseract), read-aloud (Edge TTS), end-to-end encryption, and optional cloud backup. **All your data stays on your machine.**
 
-`v0.7.0` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
+`v0.7.1` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
 
 ![LifeLogr](docs/images/lifelogr_01.jpg)
 ![Editor](docs/images/lifelogr_Editor.jpg)
@@ -14,12 +14,11 @@
 - **Journal & Notes** — date-bound entries (mood, templates, media) plus a full **Notes** workspace: notebooks, page tabs, markdown, tags, encryption.
 - **Clip & OCR (new in 0.7.0)** — snippet a region of your screen (`Ctrl+Shift+S`, desktop) or clip a web page, embed it as a picture, and **OCR the text** straight into the note — instantly searchable.
 - **On-device AI** — grammar/spell check, rewrite, continue-writing, summarize, key points, tone, tag suggestions, themes, sentiment, reflection prompts — all via local **Ollama**. Nothing leaves your machine.
-- **Hybrid search** — full-text (SQLite FTS5) **plus** semantic vector search, unified across entries, notes, and tasks (`Ctrl+K`).
+- **Hybrid search** — full-text (SQLite FTS5) **plus** semantic vector search, unified across entries and notes (`Ctrl+K`).
 - **Read aloud** — Edge TTS with voice / rate / volume / pitch controls and a disk cache.
 - **Encrypt** individual entries or notes (AES-256-GCM, passphrase-derived keys).
-- **Stay organized** — Reminders, a Planner with **Google Tasks** two-way sync, a Contacts address book (vCard import/export), and a full **IMAP/SMTP email** client.
-- **Backup & sync** — scheduled local DB backup plus Google Drive / OneDrive / Dropbox / Box (OAuth), and **Google Calendar** two-way sync.
-- **Analytics dashboard** — streaks, word counts, mood distribution, writing habits, sentiment timeline, calendar heatmap.
+- **Stay organized** — Reminders with desktop notifications.
+- **Backup** — scheduled local DB backup plus Google Drive / OneDrive / Dropbox / Box (OAuth).
 - **Two ways to run** — a native **desktop app** (Tauri) or a lightweight **web app** (browser).
 
 ---
@@ -48,7 +47,7 @@ LifeLogr ships as two `.deb` packages. Pick one.
 A native window; bundles everything (no install-time network needed). This is the **only** build that supports screen-snippet capture.
 
 ```bash
-sudo dpkg -i LifeLogr_0.7.0_amd64.deb
+sudo dpkg -i LifeLogr_0.7.1_amd64.deb
 sudo apt-get install -f        # pulls tesseract-ocr, gstreamer, webkit, etc.
 ```
 Launch **LifeLogr** from your app menu.
@@ -57,7 +56,7 @@ Launch **LifeLogr** from your app menu.
 Lighter; the backend serves the SPA and you use it in a browser tab. The Python virtualenv is built **on your machine at install time** (needs network).
 
 ```bash
-sudo dpkg -i lifelogr-web_0.7.0_amd64.deb
+sudo dpkg -i lifelogr-web_0.7.1_amd64.deb
 sudo apt-get install -f        # pulls python3 (≥3.11), tesseract-ocr
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`); it opens a browser tab on a free local port. Stop it with `lifelogr --stop`.
@@ -100,7 +99,7 @@ Everything is local, under a single data directory (see the table above for the 
 
 ```
 <data-dir>/
-  lifelogr.db          # SQLite database (entries, notes, tasks, contacts, …)
+  lifelogr.db          # SQLite database (entries, notes, reminders, …)
   .secret_key          # do NOT delete — encrypts your data
   media/               # uploaded images/audio/video
   tts/                 # read-aloud audio cache
@@ -184,7 +183,7 @@ System blueprints are generated via a Spec-Driven Development pipeline:
 | p3 | `make review` | [REVIEW.md](docs/03-review/REVIEW.md) | Quality gate (PASS required) |
 | p4 | `make design` | [DESIGN.md](docs/04-design/DESIGN.md) | Module mapping & sequence diagrams |
 
-Further reading: [User Manual](docs/manual/USER_MANUAL.md) · [API Reference](docs/manual/API_REFERENCE.md) · [Deployment](docs/manual/DEPLOYMENT.md) · [Build Guide](docs/BUILD_GUIDE.md) · [Reviews](docs/reviews).
+Further reading: [User Manual](docs/manual/USER_MANUAL.md) · [API Reference](docs/manual/API_REFERENCE.md) · [Deployment](docs/manual/DEPLOYMENT.md) · [Build Guide](docs/BUILD_GUIDE.md).
 
 ---
 
