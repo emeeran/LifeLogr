@@ -263,10 +263,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 # Register routers
 from app.routers.ai import router as ai_router  # noqa: E402
-from app.routers.analytics import router as analytics_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
-from app.routers.contacts import router as contacts_router  # noqa: E402
-from app.routers.email import router as email_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
 from app.routers.box import router as box_router  # noqa: E402
 from app.routers.dropbox import router as dropbox_router  # noqa: E402
@@ -294,10 +291,7 @@ from app.routers.memorial import router as memorial_router  # noqa: E402
 from app.routers.system import router as system_router  # noqa: E402
 
 app.include_router(ai_router)
-app.include_router(analytics_router)
 app.include_router(entries_router)
-app.include_router(contacts_router)
-app.include_router(email_router)
 app.include_router(notes_router)
 app.include_router(tags_router)
 app.include_router(tts_router)

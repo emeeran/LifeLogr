@@ -268,39 +268,6 @@ _COLUMN_MIGRATIONS = [
         "transcription",
         "ALTER TABLE voice_recordings ADD COLUMN transcription VARCHAR",
     ),
-    # Contacts — EPIM-style rich fields. Scalar extras + JSON multi-value lists.
-    ("contacts", "nickname", "ALTER TABLE contacts ADD COLUMN nickname VARCHAR"),
-    ("contacts", "department", "ALTER TABLE contacts ADD COLUMN department VARCHAR"),
-    ("contacts", "profession", "ALTER TABLE contacts ADD COLUMN profession VARCHAR"),
-    (
-        "contacts",
-        "is_favorite",
-        "ALTER TABLE contacts ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0",
-    ),
-    ("contacts", "phones", "ALTER TABLE contacts ADD COLUMN phones JSON"),
-    ("contacts", "addresses", "ALTER TABLE contacts ADD COLUMN addresses JSON"),
-    ("contacts", "im_handles", "ALTER TABLE contacts ADD COLUMN im_handles JSON"),
-    ("contacts", "websites", "ALTER TABLE contacts ADD COLUMN websites JSON"),
-    ("contacts", "dates", "ALTER TABLE contacts ADD COLUMN dates JSON"),
-    ("contacts", "relationships", "ALTER TABLE contacts ADD COLUMN relationships JSON"),
-    # Email messages — local spam filter columns.
-    (
-        "email_messages",
-        "is_spam",
-        "ALTER TABLE email_messages ADD COLUMN is_spam BOOLEAN NOT NULL DEFAULT 0",
-    ),
-    ("email_messages", "spam_score", "ALTER TABLE email_messages ADD COLUMN spam_score FLOAT"),
-    (
-        "email_messages",
-        "spam_user_override",
-        "ALTER TABLE email_messages ADD COLUMN spam_user_override BOOLEAN",
-    ),
-    # Spam blocklist — what to do with mail from a blocked sender.
-    (
-        "spam_blocklist",
-        "action",
-        "ALTER TABLE spam_blocklist ADD COLUMN action VARCHAR(20) NOT NULL DEFAULT 'junk'",
-    ),
     # Encryption — random per-entry/per-note PBKDF2 salt (null on legacy rows).
     (
         "entries",
@@ -345,12 +312,16 @@ _INDEX_MIGRATIONS = [
 
 
 async def _drop_removed_feature_tables(conn: Any) -> None:
-    """Drop tables from removed features (Tasks, Schedule, Google Calendar/Tasks sync).
+    """Drop tables from removed features (Email, Contacts, Tasks, Schedule, Google sync).
 
     Idempotent (``IF EXISTS``); child-first so inbound FKs don't block. Purges
     the data as part of removing these features. Safe to run on every boot.
     """
-    for table in ("tasks", "task_lists", "schedule_events", "google_sync_account"):
+    for table in (
+        "email_attachments", "email_messages", "email_folders", "email_accounts",
+        "spam_blocklist", "contact_group_members", "contact_groups", "contacts",
+        "tasks", "task_lists", "schedule_events", "google_sync_account",
+    ):
         await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
 

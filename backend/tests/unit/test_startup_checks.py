@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import app.core.startup_checks as sc
 from app.core import security
 from app.core.config import settings
-from app.models.email_account import EmailAccount
+from app.models.backup import BackupConfig
 from app.models.entry import Entry
 from app.services.scheduler_service import SchedulerService, _mark_backup_run
 
@@ -158,18 +158,10 @@ class TestCheckBackupHealth:
         assert res["stale"] is False
 
 
-def _account(password_encrypted: str) -> EmailAccount:
-    return EmailAccount(
-        label="t",
-        email_address="a@b.c",
-        imap_host="h",
-        imap_port=993,
-        imap_use_ssl=True,
-        smtp_host="h",
-        smtp_port=587,
-        smtp_use_tls=True,
-        username="a@b.c",
-        password_encrypted=password_encrypted,
+def _backup_config(credentials_encrypted: str) -> BackupConfig:
+    return BackupConfig(
+        provider="google_drive",
+        credentials_encrypted=credentials_encrypted,
     )
 
 
@@ -183,7 +175,7 @@ class TestCheckAppIntegrity:
     @pytest.mark.asyncio
     async def test_encryption_key_valid_credential_ok(self, db_session, monkeypatch):
         monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")  # bypass the default guard
-        db_session.add(_account(security.encrypt("secret")))
+        db_session.add(_backup_config(security.encrypt("secret")))
         await db_session.commit()
         res = await sc._check_encryption_key(db_session)
         assert res["status"] == "ok"
@@ -191,11 +183,11 @@ class TestCheckAppIntegrity:
     @pytest.mark.asyncio
     async def test_encryption_key_undecryptable_is_error(self, db_session, monkeypatch):
         monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")
-        db_session.add(_account("not-a-valid-encrypted-token"))
+        db_session.add(_backup_config("not-a-valid-encrypted-token"))
         await db_session.commit()
         res = await sc._check_encryption_key(db_session)
         assert res["status"] == "error"
-        assert "email_accounts" in res["detail"]
+        assert "backup_config" in res["detail"]
 
     @pytest.mark.asyncio
     async def test_schema_tables_ok(self, db_session):

@@ -13,7 +13,6 @@ import {
   Sliders,
   Search,
   Heart,
-  Mail,
   StickyNote,
   Activity,
 } from "lucide-vue-next";
@@ -24,7 +23,6 @@ import FeaturesTab from "./tabs/FeaturesTab.vue";
 import DedicationTab from "./tabs/DedicationTab.vue";
 import AboutTab from "./tabs/AboutTab.vue";
 import DiagnosticsTab from "./tabs/DiagnosticsTab.vue";
-import EmailTab from "./tabs/EmailTab.vue";
 import NotesTab from "./tabs/NotesTab.vue";
 
 // ── Tab navigation ──
@@ -33,7 +31,6 @@ const tabs = [
   { id: "general", label: "General", icon: Sliders },
   { id: "ai", label: "AI", icon: Brain },
   { id: "notes", label: "Notes", icon: StickyNote },
-  { id: "email", label: "Email", icon: Mail },
   { id: "features", label: "Features", icon: Sparkles },
   { id: "data-backup", label: "Data & Backup", icon: HardDrive },
   { id: "dedication", label: "Dedication", icon: Heart },
@@ -184,22 +181,6 @@ const index: SearchEntry[] = [
     tab: "ai",
     label: "Themes & Insights",
     keywords: ["themes", "insights", "patterns"],
-  },
-
-  {
-    tab: "email",
-    label: "Email accounts",
-    keywords: [
-      "email",
-      "imap",
-      "smtp",
-      "mailbox",
-      "gmail",
-      "outlook",
-      "account",
-      "app password",
-      "mail server",
-    ],
   },
 
   {
@@ -515,7 +496,6 @@ provide("settings-highlight", highlightKey);
       >
         <GeneralTab v-if="activeTab === 'general'" @toast="showToast" />
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
-        <EmailTab v-if="activeTab === 'email'" @toast="showToast" />
         <NotesTab v-if="activeTab === 'notes'" @toast="showToast" />
         <FeaturesTab v-if="activeTab === 'features'" @toast="showToast" />
         <DataBackupTab v-if="activeTab === 'data-backup'" @toast="showToast" />

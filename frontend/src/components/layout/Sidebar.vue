@@ -4,21 +4,18 @@ import { useLocalStorage } from '@vueuse/core'
 import { useUiStore, type ViewType } from '../../stores/ui'
 import {
   Calendar, Clock, Search, Settings,
-  Bell, ImageIcon, Users, Mail,
-  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, LayoutDashboard, GripVertical
+  Bell, ImageIcon,
+  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, GripVertical
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 const ui = useUiStore()
 
 const navItems: { view: ViewType; icon: Component; label: string }[] = [
-  { view: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { view: 'calendar', icon: Calendar, label: 'Journal' },
   { view: 'timeline', icon: Clock, label: 'Timeline' },
   { view: 'notes', icon: NotebookPen, label: 'Notes' },
   { view: 'reminders', icon: Bell, label: 'Reminders' },
-  { view: 'contacts', icon: Users, label: 'Contacts' },
-  { view: 'email', icon: Mail, label: 'Email' },
   { view: 'media', icon: ImageIcon, label: 'Media' },
 ]
 

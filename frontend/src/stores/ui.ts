@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
-export type ViewType = 'dashboard' | 'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'settings' | 'email' | 'contacts'
+export type ViewType = 'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'settings'
 export type DrawerPanel = 'ai' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {

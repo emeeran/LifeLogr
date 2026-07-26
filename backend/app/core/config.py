@@ -196,12 +196,6 @@ class Settings(BaseSettings):
     # (home, app data dir, temp dir) — e.g. "/media,/mnt" for external drives.
     BACKUP_ALLOWED_ROOTS: str = ""
 
-    # Email client defaults (IMAP/SMTP polling sync)
-    EMAIL_SYNC_INTERVAL_MINUTES: int = 10
-    EMAIL_MAX_ATTACHMENT_SIZE_BYTES: int = 26_214_400  # 25 MB
-    EMAIL_SYNC_ON_STARTUP: bool = True
-    EMAIL_INITIAL_SYNC_BATCH: int = 100  # messages per FETCH round-trip
-
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
