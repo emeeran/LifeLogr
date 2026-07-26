@@ -400,19 +400,25 @@ async function onPasteTauri(e: ClipboardEvent) {
     if (f) await embedFile(f)
     return
   }
+  // Read text synchronously — the paste event's clipboardData is only reliable
+  // before any `await` (WebKitGTK drops it once the handler goes async), so the
+  // common text-paste path must not depend on the async image read below.
+  const text = cd?.getData('text/plain') ?? ''
+  if (text) {
+    e.preventDefault()
+    applyText(text)
+    return
+  }
+  // No text in the event — the system clipboard may hold an image WebKitGTK
+  // didn't surface as a file. Fall back to the Tauri clipboard plugin.
   e.preventDefault()
   try {
     const { readImage } = await import('@tauri-apps/plugin-clipboard-manager')
     const img = await readImage()
-    if (img) {
-      await uploadClipImage(img)
-      return
-    }
+    if (img) await uploadClipImage(img)
   } catch {
     /* clipboard has no image */
   }
-  const text = cd?.getData('text/plain') ?? ''
-  if (text) applyText(text)
 }
 
 async function uploadClipImage(img: {
