@@ -17,16 +17,16 @@ mark {
   --color-sidebar-text-secondary: #B2DFDB;
   --color-sidebar-text-muted: #80CBC4;
   --color-sidebar-hover: rgba(255, 255, 255, 0.12);
-  --color-surface: #F4F4F5;
-  --color-editor: #FFFFFF;
-  --color-surface-hover: #EBEBEF;
+  --color-surface: #E5E5E8;
+  --color-editor: #F4F4F5;
+  --color-surface-hover: #D6D6DB;
   --color-accent: #6366F1;
   --color-accent-hover: #4F46E5;
   --color-danger: #EF4444;
   --color-text-primary: #09090B;
-  --color-text-secondary: #27272A;
-  --color-text-muted: #52525B;
-  --color-border: #D4D4D8;
+  --color-text-secondary: #18181B;
+  --color-text-muted: #2A2A2E;
+  --color-border: #C0C0C6;
   --color-tag-chip: #6366F1;
 }
 
@@ -37,6 +37,11 @@ mark {
   /* Logo wordmark forced white so it reads on the teal sidebar in both themes.
      Declared in plain :root (not @theme) so Tailwind doesn't tree-shake it. */
   --logo-filter: brightness(0) invert(1);
+}
+
+/* ── Base legibility: medium weight so small UI text reads clearly ── */
+body {
+  font-weight: 500;
 }
 
 /* ── Markdown rendered body ─────────────────────────────────────────── */
@@ -141,16 +146,16 @@ mark {
   --color-sidebar-text-secondary: #80CBC4;
   --color-sidebar-text-muted: #4DB6AC;
   --color-sidebar-hover: rgba(255, 255, 255, 0.08);
-  --color-surface: #09090B;
-  --color-editor: #121214;
-  --color-surface-hover: #1C1C1E;
+  --color-surface: #1B1B1E;
+  --color-editor: #202024;
+  --color-surface-hover: #2A2A2E;
   --color-accent: #6366F1;
   --color-accent-hover: #818CF8;
   --color-danger: #EF4444;
   --color-text-primary: #F4F4F5;
-  --color-text-secondary: #D4D4D8;
-  --color-text-muted: #71717A;
-  --color-border: #27272A;
+  --color-text-secondary: #E4E4E7;
+  --color-text-muted: #B8B8C0;
+  --color-border: #303035;
   --color-tag-chip: #6366F1;
   --logo-filter: brightness(0) invert(1);
 }
