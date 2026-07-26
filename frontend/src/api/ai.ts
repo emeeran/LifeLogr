@@ -108,3 +108,18 @@ export const activateProvider = (id: number) =>
   request<AIProvider>(`/ai/providers/${id}/activate`, { method: 'POST' })
 export const testProvider = (id: number) =>
   request<{ status: string; model: string }>(`/ai/providers/${id}/test`, { method: 'POST' })
+
+export interface ProviderModel {
+  id: string
+  owned_by?: string
+}
+/** Fetch the provider's real model list (drives the per-card model selector). */
+export const listProviderModels = (id: number) =>
+  request<{ models: ProviderModel[] }>(`/ai/providers/${id}/models`).then((r) => r.models)
+
+/** Fetch models from an arbitrary endpoint before a provider is saved (Add form). */
+export const previewProviderModels = (base_url: string, api_key?: string) =>
+  request<{ models: ProviderModel[] }>(`/ai/providers/models`, {
+    method: 'POST',
+    body: JSON.stringify({ base_url, api_key: api_key || undefined }),
+  }).then((r) => r.models)

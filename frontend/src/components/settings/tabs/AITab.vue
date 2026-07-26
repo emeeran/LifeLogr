@@ -5,12 +5,15 @@ import {
   pullModel,
   listProviders,
   createProvider,
+  updateProvider,
   deleteProvider,
   activateProvider,
   testProvider,
+  listProviderModels,
+  previewProviderModels,
   getProviderPresets,
 } from "../../../api/ai";
-import type { AIProvider, ProviderPreset } from "../../../api/ai";
+import type { AIProvider, AIProviderUpdate, ProviderPreset } from "../../../api/ai";
 import type { ThemeInsight } from "../../../types";
 import {
   getSettings,
@@ -44,6 +47,23 @@ const emit = defineEmits<{
 }>();
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Pull the backend ``detail`` out of the API client's ``"API <code>: <body>"``
+ * message, so provider errors surface readably (e.g. Gemini's "API key not
+ * valid") instead of as raw ``{"detail": …}`` JSON. Falls back to ``errMsg``. */
+function apiErrMsg(e: unknown): string {
+  const raw = errMsg(e);
+  const m = raw.match(/API \d+:\s*([\s\S]*)$/);
+  if (m) {
+    try {
+      const parsed = JSON.parse(m[1]);
+      if (parsed && typeof parsed.detail === "string") return parsed.detail;
+    } catch {
+      /* body wasn't JSON */
+    }
+  }
+  return raw;
 }
 
 function formatModelSize(bytes: number): string {
@@ -308,10 +328,30 @@ const featureToggles = computed(
 // ── AI providers (cloud, OpenAI-compatible) ──
 const providers = ref<AIProvider[]>([]);
 const presets = ref<ProviderPreset[]>([]);
-const showAddProvider = ref(false);
+const testingId = ref<number | null>(null);
+
+// Shared inline Add/Edit form. `formMode` null = collapsed; "add" = new-provider
+// form; "edit" = editing `editingId`. The same field layout serves both.
+type ProviderFormMode = "add" | "edit" | null;
+const formMode = ref<ProviderFormMode>(null);
+const editingId = ref<number | null>(null);
 const providerForm = ref({ name: "", preset: "openai", base_url: "", model: "", api_key: "" });
 const providerSaving = ref(false);
-const testingId = ref<number | null>(null);
+
+// Model selector inside the form: ↻ fetches the provider's real model list
+// (preview endpoint for add-mode, or the saved-key per-id endpoint for edit-mode).
+// "Custom…" drops back to a free-text input for unlisted models.
+const formModels = ref<string[]>([]);
+const formModelsLoading = ref(false);
+const formModelCustom = ref(false);
+const formModelOptions = computed(() => {
+  const opts = formModels.value.slice();
+  // Always include the current model so the select is never blank.
+  if (providerForm.value.model && !opts.includes(providerForm.value.model)) {
+    opts.unshift(providerForm.value.model);
+  }
+  return opts;
+});
 
 async function loadProviders() {
   try {
@@ -322,59 +362,154 @@ async function loadProviders() {
     /* ignore */
   }
 }
-function onProviderPresetChange() {
+
+function resetFormModels() {
+  formModels.value = [];
+  formModelCustom.value = false;
+}
+
+function openAddForm() {
+  const p = presets.value.find((x) => x.key === "openai") ?? presets.value[0];
+  providerForm.value = {
+    name: p?.label ?? "",
+    preset: p?.key ?? "openai",
+    base_url: p?.base_url ?? "",
+    model: p?.model ?? "",
+    api_key: "",
+  };
+  editingId.value = null;
+  resetFormModels();
+  formMode.value = "add";
+}
+
+function openEditForm(p: AIProvider) {
+  providerForm.value = {
+    name: p.name,
+    preset: p.preset,
+    base_url: p.base_url,
+    model: p.model,
+    api_key: "", // never prefill — the key is write-only
+  };
+  editingId.value = p.id;
+  resetFormModels();
+  formMode.value = "edit";
+}
+
+function closeForm() {
+  formMode.value = null;
+  editingId.value = null;
+  resetFormModels();
+}
+
+function onFormPresetChange() {
+  // Preset is disabled in edit mode, so this only fires when adding.
   const p = presets.value.find((x) => x.key === providerForm.value.preset);
-  if (p) {
-    if (!providerForm.value.name) providerForm.value.name = p.label;
-    providerForm.value.base_url = p.base_url;
-    providerForm.value.model = p.model;
+  if (!p) return;
+  providerForm.value.name = providerForm.value.name || p.label;
+  providerForm.value.base_url = p.base_url;
+  providerForm.value.model = p.model;
+  resetFormModels();
+}
+
+async function fetchFormModels() {
+  if (!providerForm.value.base_url) return;
+  formModelsLoading.value = true;
+  try {
+    // Edit mode without a freshly-typed key → use the saved key (per-id endpoint).
+    // Otherwise (add mode, or edit with a new key) → preview endpoint.
+    const models =
+      formMode.value === "edit" && editingId.value != null && !providerForm.value.api_key
+        ? await listProviderModels(editingId.value)
+        : await previewProviderModels(
+            providerForm.value.base_url,
+            providerForm.value.api_key || undefined,
+          );
+    formModels.value = models.map((m) => m.id).sort();
+    formModelCustom.value = false;
+    const n = formModels.value.length;
+    emit("toast", "success", `Found ${n} model${n === 1 ? "" : "s"}`);
+  } catch (e) {
+    emit("toast", "error", `Models: ${apiErrMsg(e)}`);
+  } finally {
+    formModelsLoading.value = false;
   }
 }
+
+function onFormModelChange(value: string) {
+  if (value === "__custom__") {
+    formModelCustom.value = true; // current model stays in the free-text input
+    return;
+  }
+  providerForm.value.model = value;
+}
+
 async function saveProvider() {
   providerSaving.value = true;
   try {
-    await createProvider({
-      name: providerForm.value.name.trim() || providerForm.value.preset,
-      preset: providerForm.value.preset,
-      base_url: providerForm.value.base_url.trim(),
-      model: providerForm.value.model.trim(),
-      api_key: providerForm.value.api_key || undefined,
-      is_active: providers.value.length === 0,
-    });
-    emit("toast", "success", "Provider added");
-    providerForm.value = { name: "", preset: "openai", base_url: "", model: "", api_key: "" };
-    showAddProvider.value = false;
+    if (formMode.value === "add") {
+      await createProvider({
+        name: providerForm.value.name.trim() || providerForm.value.preset,
+        preset: providerForm.value.preset,
+        base_url: providerForm.value.base_url.trim(),
+        model: providerForm.value.model.trim(),
+        api_key: providerForm.value.api_key || undefined,
+        is_active: providers.value.length === 0, // first provider auto-activates
+      });
+      emit("toast", "success", "Provider added");
+    } else if (formMode.value === "edit" && editingId.value != null) {
+      const patch: AIProviderUpdate = {
+        name: providerForm.value.name.trim() || providerForm.value.preset,
+        base_url: providerForm.value.base_url.trim(),
+        model: providerForm.value.model.trim(),
+      };
+      // Only send the key when the user typed a new one — blank means "keep".
+      if (providerForm.value.api_key) patch.api_key = providerForm.value.api_key;
+      await updateProvider(editingId.value, patch);
+      emit("toast", "success", "Provider saved");
+    }
+    closeForm();
     await loadProviders();
   } catch (e) {
-    emit("toast", "error", `Add failed: ${errMsg(e)}`);
+    emit("toast", "error", `Save failed: ${apiErrMsg(e)}`);
   } finally {
     providerSaving.value = false;
   }
 }
+
 async function removeProvider(p: AIProvider) {
+  if (!window.confirm(`Delete provider "${p.name}"? This cannot be undone.`)) return;
   try {
     await deleteProvider(p.id);
+    if (editingId.value === p.id) closeForm();
     await loadProviders();
     emit("toast", "info", "Provider removed");
   } catch (e) {
-    emit("toast", "error", errMsg(e));
+    emit("toast", "error", apiErrMsg(e));
   }
 }
-async function setActive(p: AIProvider) {
+
+async function toggleActive(p: AIProvider) {
+  // Toggle = is_active. Turning the active provider off leaves none active
+  // (→ local Ollama fallback); turning one on deactivates the others.
   try {
-    await activateProvider(p.id);
+    if (p.is_active) {
+      await updateProvider(p.id, { is_active: false });
+    } else {
+      await activateProvider(p.id);
+    }
     await loadProviders();
   } catch (e) {
-    emit("toast", "error", errMsg(e));
+    emit("toast", "error", apiErrMsg(e));
   }
 }
+
 async function testConn(p: AIProvider) {
   testingId.value = p.id;
   try {
     const r = await testProvider(p.id);
     emit("toast", "success", `Connected — ${r.model}`);
   } catch (e) {
-    emit("toast", "error", `Test failed: ${errMsg(e)}`);
+    emit("toast", "error", `Test failed: ${apiErrMsg(e)}`);
   } finally {
     testingId.value = null;
   }
@@ -398,63 +533,121 @@ onMounted(() => {
       <div
         v-for="p in providers"
         :key="p.id"
-        class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-surface-hover"
+        class="rounded-md bg-surface-hover"
+        :class="formMode === 'edit' && editingId === p.id ? 'ring-1 ring-accent/60' : ''"
       >
-        <input
-          type="radio"
-          :checked="p.is_active"
-          class="accent-accent"
-          :title="p.is_active ? 'Active provider' : 'Set as active'"
-          @change="setActive(p)"
-        />
-        <div class="flex-1 min-w-0">
-          <div class="text-[12px] text-text-primary truncate">
-            {{ p.name }} <span class="text-text-muted">· {{ p.model }}</span>
+        <div class="flex items-center gap-2 px-2 py-1.5">
+          <ToggleSwitch
+            :model-value="p.is_active"
+            :title="p.is_active ? 'Active — AI tools route here' : 'Set as active'"
+            @update:model-value="toggleActive(p)"
+          />
+          <div class="flex-1 min-w-0">
+            <div class="text-[12px] text-text-primary truncate flex items-center gap-1.5">
+              <span class="truncate">{{ p.name }}</span>
+              <span
+                v-if="p.is_active"
+                class="shrink-0 text-[9px] px-1 py-px rounded bg-accent/15 text-accent"
+                >active</span
+              >
+            </div>
+            <div class="text-[10px] text-text-muted truncate">
+              {{ p.model }} · {{ p.base_url
+              }}<span v-if="!p.has_key && p.preset !== 'ollama'"> · no key</span>
+            </div>
           </div>
-          <div class="text-[10px] text-text-muted truncate">
-            {{ p.base_url }}<span v-if="!p.has_key && p.preset !== 'ollama'"> · no key set</span>
-          </div>
+          <SButton variant="ghost" size="xs" :disabled="testingId === p.id" @click="testConn(p)">
+            <Loader v-if="testingId === p.id" :size="11" class="animate-spin" /> Test
+          </SButton>
+          <SButton
+            variant="ghost"
+            size="xs"
+            :disabled="formMode !== null"
+            title="Edit provider"
+            @click="openEditForm(p)"
+          >
+            Edit
+          </SButton>
+          <SButton
+            variant="ghost"
+            size="xs"
+            class="!text-text-muted hover:!text-danger"
+            title="Delete provider"
+            @click="removeProvider(p)"
+          >
+            Delete
+          </SButton>
         </div>
-        <SButton variant="ghost" size="xs" :disabled="testingId === p.id" @click="testConn(p)">
-          <Loader v-if="testingId === p.id" :size="11" class="animate-spin" /> Test
-        </SButton>
-        <SButton
-          variant="ghost"
-          size="xs"
-          class="!text-text-muted hover:!text-danger"
-          title="Delete provider"
-          @click="removeProvider(p)"
-        >
-          Delete
-        </SButton>
       </div>
     </div>
-    <p v-else class="text-[11px] text-text-muted">No cloud providers — AI tools use local Ollama.</p>
+    <p v-else-if="formMode !== 'add'" class="text-[11px] text-text-muted">
+      No cloud providers — AI tools use local Ollama.
+    </p>
 
-    <div v-if="showAddProvider" class="mt-2 space-y-1.5 p-2 rounded-md border border-border">
+    <!-- Shared inline Add / Edit form -->
+    <div v-if="formMode !== null" class="mt-2 space-y-1.5 p-2 rounded-md border border-border">
+      <div class="flex items-center gap-1.5 text-[11px] text-text-secondary">
+        <Sparkles :size="12" />
+        {{ formMode === "add" ? "Add provider" : "Edit provider" }}
+      </div>
       <div class="flex gap-1.5">
-        <select v-model="providerForm.preset" class="settings-select flex-1" @change="onProviderPresetChange">
-          <option v-for="p in presets" :key="p.key" :value="p.key">{{ p.label }}</option>
+        <select
+          v-model="providerForm.preset"
+          class="settings-select flex-1"
+          :disabled="formMode === 'edit'"
+          @change="onFormPresetChange"
+        >
+          <option v-for="pr in presets" :key="pr.key" :value="pr.key">{{ pr.label }}</option>
         </select>
         <input v-model="providerForm.name" placeholder="Name" class="settings-input flex-1" />
       </div>
       <input v-model="providerForm.base_url" placeholder="Base URL (…/v1)" class="settings-input w-full" />
-      <input v-model="providerForm.model" placeholder="Model" class="settings-input w-full" />
-      <input v-model="providerForm.api_key" type="password" placeholder="API key (stored encrypted)" class="settings-input w-full" />
-      <div class="flex gap-1.5">
-        <SButton variant="primary" :disabled="providerSaving || !providerForm.base_url || !providerForm.model" @click="saveProvider">
-          <Loader v-if="providerSaving" :size="11" class="animate-spin" /> Add provider
+      <!-- Model: dropdown once a list is fetched, else free text. ↻ fetches from the provider. -->
+      <div class="flex items-center gap-1.5">
+        <select
+          v-if="formModels.length && !formModelCustom"
+          class="settings-select flex-1"
+          :value="providerForm.model"
+          @change="onFormModelChange(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="m in formModelOptions" :key="m" :value="m">{{ m }}</option>
+          <option value="__custom__">Custom…</option>
+        </select>
+        <input v-else v-model="providerForm.model" placeholder="Model id" class="settings-input flex-1" />
+        <SButton
+          variant="ghost"
+          size="xs"
+          :disabled="formModelsLoading || !providerForm.base_url"
+          title="Fetch available models from provider"
+          @click="fetchFormModels"
+        >
+          <Loader v-if="formModelsLoading" :size="12" class="animate-spin" />
+          <RefreshCw v-else :size="12" />
         </SButton>
-        <SButton variant="ghost" @click="showAddProvider = false">Cancel</SButton>
+      </div>
+      <input
+        v-model="providerForm.api_key"
+        type="password"
+        :placeholder="
+          formMode === 'edit'
+            ? 'API key (leave blank to keep current)'
+            : 'API key (stored encrypted)'
+        "
+        class="settings-input w-full"
+      />
+      <div class="flex gap-1.5">
+        <SButton
+          variant="primary"
+          :disabled="providerSaving || !providerForm.base_url || !providerForm.model"
+          @click="saveProvider"
+        >
+          <Loader v-if="providerSaving" :size="11" class="animate-spin" />
+          {{ formMode === "add" ? "Add provider" : "Save" }}
+        </SButton>
+        <SButton variant="ghost" @click="closeForm">Cancel</SButton>
       </div>
     </div>
-    <SButton
-      v-else
-      variant="outline"
-      size="xs"
-      :icon="Sparkles"
-      @click="showAddProvider = true; onProviderPresetChange()"
-    >
+    <SButton v-else variant="outline" size="xs" :icon="Sparkles" @click="openAddForm">
       Add provider
     </SButton>
   </SettingsSection>

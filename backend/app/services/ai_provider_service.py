@@ -183,3 +183,24 @@ async def test_connection(base_url: str, api_key: str | None, model: str) -> str
         )
         resp.raise_for_status()
         return str(resp.json().get("model") or model)
+
+
+async def list_models(base_url: str, api_key: str | None) -> list[dict[str, str]]:
+    """List the models an OpenAI-compatible endpoint exposes (``GET /models``).
+
+    Every cloud preset speaks this (OpenAI/Groq/OpenRouter/Kimi, and Gemini's
+    ``/v1beta/openai/models``). Returns ``[{"id", "owned_by"}, ...]`` sorted by
+    id. Raises ``httpx.HTTPError`` on failure (the router surfaces the body).
+    """
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
+        resp = await client.get(f"{base_url}/models", headers=headers)
+        resp.raise_for_status()
+    data = resp.json().get("data") or []
+    models = [
+        {"id": str(m["id"]), "owned_by": str(m.get("owned_by", ""))}
+        for m in data
+        if m.get("id")
+    ]
+    models.sort(key=lambda m: m["id"])
+    return models

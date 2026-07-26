@@ -6,6 +6,7 @@ import logging
 from datetime import date, timedelta
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,10 +51,12 @@ from app.schemas.ai_provider import (
     AIProviderCreate,
     AIProviderResponse,
     AIProviderUpdate,
+    ProviderModelsRequest,
 )
 from app.services.ai_provider_service import (
     AIProviderService,
     PROVIDER_PRESETS,
+    list_models,
     test_connection,
 )
 
@@ -294,6 +297,23 @@ def _to_provider_response(p: AIProvider) -> AIProviderResponse:
     )
 
 
+def _provider_http_error(exc: Exception) -> HTTPException:
+    """Map an httpx failure to a 502 carrying the provider's own error body.
+
+    Providers return actionable JSON on auth/model failures (e.g. Gemini's 401
+    body is literally ``"API key not valid. Please pass a valid API key."``).
+    Surfacing it — instead of a bare ``Client error '401 Unauthorized'`` — tells
+    the user exactly what's wrong. Used by both the Test and List-models routes.
+    """
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        body = exc.response.text[:300]
+        return HTTPException(
+            status_code=502,
+            detail=f"Provider returned HTTP {exc.response.status_code}: {body}",
+        )
+    return HTTPException(status_code=502, detail=f"Connection failed: {exc}")
+
+
 @router.get("/providers/presets")
 async def provider_presets() -> list[dict[str, str]]:
     """The provider preset catalogue (key → label/base_url/default model)."""
@@ -351,5 +371,37 @@ async def test_provider(provider_id: int, db: AsyncSession = Depends(get_db)) ->
     try:
         model = await test_connection(provider.base_url, api_key, provider.model)
     except Exception as exc:  # httpx errors, etc.
-        raise HTTPException(status_code=502, detail=f"Connection failed: {exc}") from exc
+        raise _provider_http_error(exc) from exc
     return {"status": "ok", "model": model}
+
+
+@router.get("/providers/{provider_id}/models")
+async def list_provider_models(
+    provider_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """List the models the provider exposes (drives the model selector in the UI)."""
+    svc = AIProviderService(db)
+    try:
+        provider = await svc._get(provider_id)  # noqa: SLF001
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    api_key = security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
+    try:
+        models = await list_models(provider.base_url, api_key)
+    except Exception as exc:  # httpx errors, etc.
+        raise _provider_http_error(exc) from exc
+    return {"models": models}
+
+
+@router.post("/providers/models")
+async def preview_provider_models(data: ProviderModelsRequest) -> dict[str, Any]:
+    """List models from an arbitrary base_url + key (Add form, pre-save).
+
+    Mirrors ``GET /providers/{id}/models`` but takes the endpoint + key directly
+    so the Add form can browse a provider's models before it is created.
+    """
+    try:
+        models = await list_models(data.base_url, data.api_key)
+    except Exception as exc:  # httpx errors, etc.
+        raise _provider_http_error(exc) from exc
+    return {"models": models}
