@@ -35,7 +35,7 @@ test.describe('Settings UI verification', () => {
   // ── Appearance Tab (default) ──
   test('Appearance tab: theme, writing, read aloud', async ({ page }) => {
     // Appearance is the default tab
-    await expect(page.getByText('Appearance', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
     await expect(page.getByText('Customize the look and feel')).toBeVisible()
 
     // Toggle switches: should use role="switch", not raw checkboxes in the UI
@@ -150,7 +150,7 @@ test.describe('Settings UI verification', () => {
   test('Focus rings on tab navigation', async ({ page }) => {
     await tab(page, 'Appearance').click()
     // Wait for the Appearance tab to render before driving keyboard focus onto it.
-    await expect(page.getByText('Appearance', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
 
     // Tab to first interactive element and check focus outline
     await page.keyboard.press('Tab')
