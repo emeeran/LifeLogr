@@ -30,3 +30,9 @@ export function getIntegrity(): Promise<IntegrityReport> {
 export function refreshIntegrity(): Promise<IntegrityReport> {
   return request<IntegrityReport>('/system/integrity', { method: 'POST' })
 }
+
+export function rebuildSearchIndex(): Promise<IntegrityReport> {
+  return request<IntegrityReport>('/system/integrity/rebuild-search-index', {
+    method: 'POST',
+  })
+}

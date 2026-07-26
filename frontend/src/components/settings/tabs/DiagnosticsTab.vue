@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { CheckCircle2, AlertTriangle, AlertCircle, RefreshCw } from 'lucide-vue-next'
+import { CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, Search } from 'lucide-vue-next'
 import { useSystemHealthStore } from '../../../stores/systemHealth'
 
 const emit = defineEmits<{
@@ -25,6 +25,11 @@ async function recheck() {
     health.hasIssues ? `Still ${health.issueCount} issue(s).` : 'All checks passed.',
   )
 }
+
+async function rebuildIndex() {
+  await health.rebuildIndex()
+  emit('toast', 'success', 'Search index rebuilt.')
+}
 </script>
 
 <template>
@@ -36,14 +41,24 @@ async function recheck() {
           Startup app-integrity check — last run {{ ranAt }}
         </p>
       </div>
-      <button
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border text-[12px] text-text-primary hover:bg-surface-hover cursor-pointer disabled:opacity-50"
-        :disabled="health.refreshing"
-        @click="recheck"
-      >
-        <RefreshCw :size="13" :class="{ 'animate-spin': health.refreshing }" />
-        Re-check
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border text-[12px] text-text-primary hover:bg-surface-hover cursor-pointer disabled:opacity-50"
+          :disabled="health.refreshing"
+          @click="rebuildIndex"
+        >
+          <Search :size="13" />
+          Rebuild index
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border text-[12px] text-text-primary hover:bg-surface-hover cursor-pointer disabled:opacity-50"
+          :disabled="health.refreshing"
+          @click="recheck"
+        >
+          <RefreshCw :size="13" :class="{ 'animate-spin': health.refreshing }" />
+          Re-check
+        </button>
+      </div>
     </div>
 
     <div class="flex flex-wrap gap-2 text-[11px]">

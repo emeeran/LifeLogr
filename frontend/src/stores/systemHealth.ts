@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getIntegrity, refreshIntegrity, type IntegrityReport } from '../api/system'
+import { getIntegrity, refreshIntegrity, rebuildSearchIndex, type IntegrityReport } from '../api/system'
 
 export const useSystemHealthStore = defineStore('systemHealth', () => {
   const report = ref<IntegrityReport | null>(null)
@@ -33,9 +33,20 @@ export const useSystemHealthStore = defineStore('systemHealth', () => {
     }
   }
 
+  async function rebuildIndex() {
+    refreshing.value = true
+    try {
+      report.value = await rebuildSearchIndex()
+      loaded.value = true
+      dismissed.value = false
+    } finally {
+      refreshing.value = false
+    }
+  }
+
   function dismiss() {
     dismissed.value = true
   }
 
-  return { report, loaded, dismissed, refreshing, summary, issueCount, hasIssues, showBanner, load, refresh, dismiss }
+  return { report, loaded, dismissed, refreshing, summary, issueCount, hasIssues, showBanner, load, refresh, rebuildIndex, dismiss }
 })

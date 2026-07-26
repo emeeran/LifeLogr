@@ -25,3 +25,12 @@ async def get_integrity() -> dict[str, Any]:
 async def refresh_integrity() -> dict[str, Any]:
     """Re-run the integrity battery live and return the fresh report."""
     return await check_app_integrity()
+
+
+@router.post("/integrity/rebuild-search-index")
+async def rebuild_search_index() -> dict[str, Any]:
+    """Repopulate the FTS search index, then return the refreshed integrity report."""
+    from app.core.database import rebuild_search_index as do_rebuild
+
+    await do_rebuild()
+    return await check_app_integrity()
