@@ -93,9 +93,8 @@ watch(
   { immediate: true },
 )
 
-// Autosave is intentionally OFF — edits persist on explicit Save (saveNow), on
-// page switch (selectPage), and on close (the onUnmounted flush below). Saving
-// is your responsibility before switching notes, or the outgoing edits are lost.
+// Autosave is OFF — notes persist ONLY on explicit Save (Ctrl+S / saveNow).
+// Switching pages or closing the editor does NOT save; unsaved edits are lost.
 
 async function doSave() {
   if (isMain.value) {
@@ -135,12 +134,7 @@ async function saveNow() {
 }
 
 async function selectPage(id: number | null) {
-  // Flush any pending edits on the outgoing source before switching.
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-    saveTimer = null
-    await doSave()
-  }
+  // Auto-save disabled: switching pages does NOT persist unsaved edits.
   activePageId.value = id
 }
 
@@ -334,8 +328,7 @@ onMounted(async () => {
   }
 })
 onUnmounted(() => {
-  // Manual-save mode: flush any unsaved edits to the active source on close.
-  void doSave()
+  // Auto-save disabled: closing the editor does NOT persist unsaved edits.
   unlistenDrag?.()
   unlistenDrag = null
   unlistenSnip?.()
