@@ -203,6 +203,12 @@ async def init_db() -> None:
 
     await validate_db_health()
 
+    # Ensure every ORM model is registered in Base.metadata before create_all —
+    # some are only imported lazily inside service functions and would otherwise
+    # be missing from create_all / schema introspection. (Lazy to avoid a
+    # load-time cycle: models import Base from this module.)
+    import app.models  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_schema(conn)
@@ -312,15 +318,19 @@ _INDEX_MIGRATIONS = [
 
 
 async def _drop_removed_feature_tables(conn: Any) -> None:
-    """Drop tables from removed features (Email, Contacts, Tasks, Schedule, Google sync).
+    """Drop tables from removed or never-active features.
 
     Idempotent (``IF EXISTS``); child-first so inbound FKs don't block. Purges
     the data as part of removing these features. Safe to run on every boot.
     """
     for table in (
+        # Email / Contacts / Tasks / Schedule / Google sync (recently removed)
         "email_attachments", "email_messages", "email_folders", "email_accounts",
         "spam_blocklist", "contact_group_members", "contact_groups", "contacts",
         "tasks", "task_lists", "schedule_events", "google_sync_account",
+        # Older legacy tables — no ORM model, no active code path (verified unused)
+        "alembic_version", "digests", "entry_revisions",
+        "ocr_results", "plugin_hooks", "plugins",
     ):
         await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
@@ -632,6 +642,58 @@ async def _setup_fts() -> None:
                     SELECT notes.id, COALESCE(notes.title, ''), notes.body FROM notes WHERE notes.is_deleted = 0 AND notes.is_encrypted = 0
                 """)
                 )
+            else:
+                # Index exists — verify it isn't corrupt or stale; rebuild if so.
+                try:
+                    fts_n = int(
+                        (await conn.execute(text("SELECT COUNT(*) FROM notes_fts"))).scalar() or 0
+                    )
+                    note_n = int(
+                        (
+                            await conn.execute(
+                                text(
+                                    "SELECT COUNT(*) FROM notes WHERE is_deleted = 0 AND is_encrypted = 0"
+                                )
+                            )
+                        ).scalar()
+                        or 0
+                    )
+                    if fts_n != note_n:
+                        logger.info(
+                            "Notes FTS index stale (%d/%d rows), rebuilding...", fts_n, note_n
+                        )
+                        await conn.execute(text("DELETE FROM notes_fts"))
+                        await conn.execute(
+                            text("""
+                                INSERT INTO notes_fts(rowid, title, body)
+                                SELECT notes.id, COALESCE(notes.title, ''), notes.body FROM notes WHERE notes.is_deleted = 0 AND notes.is_encrypted = 0
+                            """)
+                        )
+                except Exception:
+                    logger.warning("Notes FTS index corrupt, rebuilding...", exc_info=True)
+                    try:
+                        for name in (
+                            "fts_note_ai",
+                            "fts_note_au",
+                            "fts_note_ad",
+                            "fts_note_soft_del",
+                            "fts_note_restore",
+                            "fts_note_encrypt",
+                            "fts_note_decrypt",
+                        ):
+                            await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
+                        await conn.execute(text("DROP TABLE IF EXISTS notes_fts"))
+                        await conn.execute(text("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body)"))
+                        await conn.execute(
+                            text("""
+                                INSERT INTO notes_fts(rowid, title, body)
+                                SELECT notes.id, COALESCE(notes.title, ''), notes.body FROM notes WHERE notes.is_deleted = 0 AND notes.is_encrypted = 0
+                            """)
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Notes FTS rebuild failed — notes search unavailable", exc_info=True
+                        )
 
             # Triggers (DROP + CREATE for idempotency). Same conventions as the
             # entries triggers: UPDATE does DELETE-by-rowid then INSERT (NOT the
@@ -745,18 +807,30 @@ async def rebuild_search_index() -> dict[str, int]:
             if not exists:
                 counts[base] = 0
                 continue
-            await session.execute(text(f"DELETE FROM {fts}"))
-            await session.execute(
-                text(f"""
-                    INSERT INTO {fts}(rowid, title, body)
-                    SELECT {base}.id, COALESCE({base}.title, ''), {base}.body
-                    FROM {base}
-                    WHERE {base}.is_deleted = 0 AND {base}.is_encrypted = 0
-                """)
-            )
-            counts[base] = int(
-                (await session.execute(text(f"SELECT COUNT(*) FROM {fts}"))).scalar() or 0
-            )
+            try:
+                await session.execute(text(f"DELETE FROM {fts}"))
+                await session.execute(
+                    text(f"""
+                        INSERT INTO {fts}(rowid, title, body)
+                        SELECT {base}.id, COALESCE({base}.title, ''), {base}.body
+                        FROM {base}
+                        WHERE {base}.is_deleted = 0 AND {base}.is_encrypted = 0
+                    """)
+                )
+                counts[base] = int(
+                    (await session.execute(text(f"SELECT COUNT(*) FROM {fts}"))).scalar() or 0
+                )
+            except Exception:
+                # Corrupt FTS table — full DROP+CREATE recovery happens at next
+                # boot via _setup_fts; here we roll back so the *other* index can
+                # still rebuild, and skip this one.
+                await session.rollback()
+                logger.warning(
+                    "%s rebuild failed (may be corrupt); will recover on next boot",
+                    fts,
+                    exc_info=True,
+                )
+                counts[base] = 0
         await session.commit()
     logger.info("Search index rebuilt: %s", counts)
     return counts

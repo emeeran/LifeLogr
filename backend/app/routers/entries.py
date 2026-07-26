@@ -552,7 +552,6 @@ async def reset_database(db: AsyncSession = Depends(get_db)) -> Any:
 
     tables = [
         "entry_tags",
-        "entry_revisions",
         "media",
         "voice_recordings",
         "video_notes",

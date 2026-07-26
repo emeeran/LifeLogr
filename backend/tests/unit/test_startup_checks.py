@@ -367,3 +367,39 @@ class TestSystemIntegrityEndpoint:
         assert body["ran"] is True
         assert isinstance(body["checks"], list)
 
+
+class TestSchemaIntrospectionAccuracy:
+    def test_models_package_registers_lazy_models(self):
+        """Importing app.models registers every ORM table, including ones that
+        are otherwise only imported lazily inside service functions."""
+        import app.models  # noqa: F401
+        from app.core.database import Base
+
+        tables = set(Base.metadata.tables)
+        assert "entry_sentiments" in tables  # only lazily imported by enrichment
+        assert "entry_prompts" in tables
+        assert len(tables) >= 22
+
+    @pytest.mark.asyncio
+    async def test_drop_orphan_legacy_tables(self, db_engine):
+        from app.core.database import _drop_removed_feature_tables
+
+        orphans = (
+            "alembic_version", "digests", "entry_revisions",
+            "ocr_results", "plugin_hooks", "plugins",
+        )
+        async with db_engine.begin() as conn:
+            for t in orphans:
+                await conn.execute(text(f"CREATE TABLE {t} (x INTEGER)"))
+        async with db_engine.begin() as conn:
+            await _drop_removed_feature_tables(conn)
+        async with db_engine.connect() as conn:
+            for t in orphans:
+                exists = (
+                    await conn.execute(
+                        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:n"),
+                        {"n": t},
+                    )
+                ).scalar()
+                assert exists is None, f"{t} should have been dropped"
+
