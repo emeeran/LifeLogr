@@ -96,7 +96,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
           ref="inputRef"
           v-model="query"
           class="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
-          placeholder="Search journals, notes, tasks & reminders… (Ctrl+K)"
+          placeholder="Search journals, notes & reminders… (Ctrl+K)"
           @keydown="onKeydown"
         />
         <!-- Search mode toggle -->
@@ -138,7 +138,7 @@ const showHistory = computed(() => !query.value.trim() && searchStore.searchHist
         </div>
 
         <div v-else-if="!query && !showHistory" class="px-4 py-6 text-center text-text-muted text-xs">
-          Type to search across journals, notes, tasks & reminders
+          Type to search across journals, notes & reminders
         </div>
 
         <div

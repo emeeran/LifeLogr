@@ -6,7 +6,7 @@ import { isTauri } from '../api/client'
  * query-only links are in-app and must be left to the router.
  *
  * Do NOT resolve via `new URL(href, window.location.href)`: that turns every
- * router-link ("/email" → "http://host/email") into an "external" http URL,
+ * router-link ("/notes" → "http://host/notes") into an "external" http URL,
  * and the capture-phase interceptor then `preventDefault()`s the click — which
  * makes vue-router's RouterLink bail (it skips when `event.defaultPrevented`),
  * breaking all in-app nav. (In Tauri the origin is `tauri://`, so the bug was
@@ -40,10 +40,6 @@ export async function openExternal(href: string): Promise<void> {
  * Document-level delegated click handler: any `<a href>` pointing at an
  * external scheme is opened by the OS instead of navigating the webview.
  * Internal/relative links (vue-router) are left untouched. Returns a cleanup.
- *
- * Links inside the email `<iframe sandbox>` live in a separate document and
- * can't be caught here — those are wired separately via postMessage in
- * EmailView (see the iframe `srcdoc` script + window message listener).
  */
 export function installExternalLinkInterceptor(): () => void {
   const onClick = (e: MouseEvent) => {

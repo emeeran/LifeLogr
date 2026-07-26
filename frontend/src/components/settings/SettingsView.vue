@@ -116,11 +116,6 @@ const index: SearchEntry[] = [
   },
   {
     tab: "general",
-    label: "Auto-tag location",
-    keywords: ["geotag", "location", "auto-tag", "gps"],
-  },
-  {
-    tab: "general",
     label: "Default template",
     keywords: ["template", "default template"],
   },

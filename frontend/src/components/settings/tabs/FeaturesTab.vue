@@ -241,7 +241,7 @@ onMounted(() => { remindersStore.fetchAll(); loadVoices(); checkSystemDeps() })
       <input type="range" v-model.number="ttsVolume" min="0" max="100" step="5" class="w-28 accent-accent" />
     </SettingRow>
     <SettingRow indent :label="`Pitch (${ttsPitch > 0 ? '+' : ''}${ttsPitch} Hz)`"
-      description="Lower for a deeper, warmer voice; raise for brighter. Applies to journals, notes and email.">
+      description="Lower for a deeper, warmer voice; raise for brighter. Applies to journals and notes.">
       <input type="range" v-model.number="ttsPitch" min="-40" max="40" step="5" class="w-28 accent-accent" />
     </SettingRow>
     <div class="pl-[31px]">

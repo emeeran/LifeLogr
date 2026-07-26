@@ -5,7 +5,7 @@ import { useUiStore } from '../../../stores/ui'
 import { useSearchStore } from '../../../stores/search'
 import { useTemplatesStore } from '../../../stores/templates'
 import {
-  Sun, Moon, Type, Sliders, Clock, Eye, Search, MapPin, LayoutTemplate, Keyboard, RefreshCw,
+  Sun, Moon, Type, Sliders, Clock, Eye, Search, LayoutTemplate, Keyboard, RefreshCw,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
@@ -31,7 +31,6 @@ function onResult(kind: 'available' | 'up-to-date' | 'offline', latest?: string)
 }
 
 // ── Preferences ──
-const autoGeotag = useLocalStorage<boolean>('lifelogr-auto-geotag', false)
 const defaultTemplateId = useLocalStorage<number | null>('lifelogr-default-template', null)
 
 // ── Appearance ──
@@ -134,12 +133,6 @@ function resetEditorDefaults() {
     </SettingGroup>
 
     <SettingGroup label="Preferences">
-      <SettingRow label="Auto-tag location">
-        <template #icon>
-          <MapPin :size="13" class="text-text-muted shrink-0" aria-hidden="true" />
-        </template>
-        <ToggleSwitch v-model="autoGeotag" />
-      </SettingRow>
       <SettingRow :icon="LayoutTemplate" label="Default template">
         <select v-model.number="defaultTemplateId" class="settings-select max-w-44">
           <option :value="null">None</option>

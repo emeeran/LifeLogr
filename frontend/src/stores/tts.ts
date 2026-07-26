@@ -6,7 +6,7 @@ import { ttsApi } from '../api/tts'
  * App-wide read-aloud player.
  *
  * Owns a single HTMLAudioElement and all transport state. Every read-aloud
- * button (entry, editor, note, email) drives this one player so only one stream
+ * button (entry, editor, note) drives this one player so only one stream
  * plays at a time and behaviour is consistent. Audio is served Range-capable
  * from the backend's TTS cache (FileResponse), so playback starts on first
  * bytes and is seekable; background prewarm makes the common path instant.
