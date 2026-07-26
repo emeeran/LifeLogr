@@ -723,6 +723,45 @@ async def _setup_fts() -> None:
         )
 
 
+async def rebuild_search_index() -> dict[str, int]:
+    """Repopulate the ``entries_fts`` / ``notes_fts`` indexes from base tables.
+
+    Lightweight drift repair used by the startup integrity check (self-heal)
+    and the Diagnostics "Rebuild search index" action: clears and re-inserts
+    the indexable rows, leaving the FTS virtual tables and their triggers in
+    place. Tables that don't yet exist are skipped (count 0). Idempotent.
+
+    Uses the module ``async_session`` (not ``engine`` directly) so tests that
+    repoint it at a temp DB are followed.
+    """
+    counts: dict[str, int] = {}
+    async with async_session() as session:
+        for fts, base in (("entries_fts", "entries"), ("notes_fts", "notes")):
+            exists = (
+                await session.execute(
+                    text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:n"), {"n": fts}
+                )
+            ).scalar()
+            if not exists:
+                counts[base] = 0
+                continue
+            await session.execute(text(f"DELETE FROM {fts}"))
+            await session.execute(
+                text(f"""
+                    INSERT INTO {fts}(rowid, title, body)
+                    SELECT {base}.id, COALESCE({base}.title, ''), {base}.body
+                    FROM {base}
+                    WHERE {base}.is_deleted = 0 AND {base}.is_encrypted = 0
+                """)
+            )
+            counts[base] = int(
+                (await session.execute(text(f"SELECT COUNT(*) FROM {fts}"))).scalar() or 0
+            )
+        await session.commit()
+    logger.info("Search index rebuilt: %s", counts)
+    return counts
+
+
 async def _seed_builtin_templates() -> None:
     from sqlalchemy import select
 
