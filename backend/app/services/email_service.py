@@ -473,14 +473,6 @@ class EmailSyncService:
                 logger.exception("Email sync failed for account %s", account_id)
 
     async def sync_account(self, account_id: int) -> int:
-        """Discover folders then sync each enabled one, serialized across SQLite's
-        single writer (see app.core.database.serializable_write)."""
-        from app.core.database import serializable_write
-
-        async with serializable_write():
-            return await self._sync_account_inner(account_id)
-
-    async def _sync_account_inner(self, account_id: int) -> int:
         """Discover folders then sync each enabled one. Returns new message count."""
         account_svc = EmailAccountService(self.db)
         account = await account_svc.get(account_id)

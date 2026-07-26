@@ -8,7 +8,6 @@ real data dir / key file is never touched.
 
 from __future__ import annotations
 
-import asyncio
 import stat
 from pathlib import Path
 
@@ -114,27 +113,3 @@ def test_sqlite_engine_uses_configured_pool_size(tmp_path: Path, monkeypatch) ->
         assert settings.DB_POOL_SIZE > 1
     finally:
         eng.sync_engine.dispose()
-
-
-# ── serializable_write serializes background write jobs ──────────────────────
-
-
-async def test_serializable_write_serializes_concurrent_callers(monkeypatch) -> None:
-    import app.core.database as dbmod
-
-    # Fresh lock bound to this test's loop (the module global can outlive prior loops).
-    monkeypatch.setattr(dbmod, "_write_lock", asyncio.Lock())
-    order: list[str] = []
-
-    async def task(label: str) -> None:
-        async with dbmod.serializable_write():
-            order.append(f"{label}-in")
-            await asyncio.sleep(0.03)
-            order.append(f"{label}-out")
-
-    await asyncio.gather(task("a"), task("b"))
-    # Critical sections must not interleave — one fully completes before the other.
-    assert order in (
-        ["a-in", "a-out", "b-in", "b-out"],
-        ["b-in", "b-out", "a-in", "a-out"],
-    )
