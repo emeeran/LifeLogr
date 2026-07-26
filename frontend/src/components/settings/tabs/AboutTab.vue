@@ -7,14 +7,18 @@ import { useEntriesStore } from '../../../stores/entries'
 import { getSettings } from '../../../api/settings'
 import type { AppSettings } from '../../../api/settings'
 import { APP_VERSION } from '../../../version'
-import { REPO_URL } from '../../../composables/useUpdateChecker'
+import { REPO_URL, useUpdateChecker } from '../../../composables/useUpdateChecker'
 import {
   AlertTriangle, Loader, Info as InfoIcon,
   ShieldCheck, WifiOff, Cloud, Mic, Sparkles, Github, Newspaper,
+  RefreshCw, Wrench, MonitorCheck, CheckCircle2,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
 import UpdateStatus from '../shared/UpdateStatus.vue'
 import SButton from '../shared/SButton.vue'
+import ToggleSwitch from '../shared/ToggleSwitch.vue'
+import AccordionItem from '../shared/AccordionItem.vue'
 
 // Bake the changelog into the bundle — always offline-available.
 import changelogRaw from '../../../../../CHANGELOG.md?raw'
@@ -23,6 +27,7 @@ const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: 
 function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 const entriesStore = useEntriesStore()
+const { autoCheckEnabled } = useUpdateChecker()
 const appSettings = ref<AppSettings | null>(null)
 async function loadAppSettings() {
   try { appSettings.value = await getSettings() } catch { /* ignore */ }
@@ -48,6 +53,29 @@ const features = [
   { icon: Cloud, label: 'Encrypted Sync', sub: 'End-to-end backups' },
 ]
 
+// ── System Setup (Tauri desktop only) ──
+const isTauri = !!(window as any).__TAURI_INTERNALS__
+const depsStatus = ref<{ ollama: boolean; gst_plugins_bad: boolean; all_installed: boolean } | null>(null)
+const setupRunning = ref(false)
+const setupOutput = ref('')
+
+async function checkSystemDeps() {
+  if (!isTauri) return
+  try { const { invoke } = await import('@tauri-apps/api/core'); depsStatus.value = await invoke('check_deps') as any }
+  catch { /* not running in Tauri */ }
+}
+async function runSystemSetup() {
+  if (!isTauri) return
+  setupRunning.value = true; setupOutput.value = ''
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    setupOutput.value = await invoke('run_setup') as string
+    emit('toast', 'success', 'System setup complete!')
+    await checkSystemDeps()
+  } catch (e: unknown) { setupOutput.value = errMsg(e); emit('toast', 'error', `Setup failed: ${errMsg(e)}`) }
+  finally { setupRunning.value = false }
+}
+
 const showResetConfirm = ref(false)
 const resetConfirmText = ref('')
 const resetting = ref(false)
@@ -69,7 +97,7 @@ const renderedChangelog = computed(() => {
   return DOMPurify.sanitize(marked(body) as string)
 })
 
-onMounted(() => { loadAppSettings() })
+onMounted(() => { loadAppSettings(); checkSystemDeps() })
 </script>
 
 <template>
@@ -92,10 +120,6 @@ onMounted(() => { loadAppSettings() })
           <span v-if="appSettings && appSettings.version && appSettings.version !== APP_VERSION"
             class="text-[10px] text-text-muted">(backend {{ appSettings.version }})</span>
         </div>
-
-        <div class="flex items-center gap-2">
-          <UpdateStatus @result="onResult" />
-        </div>
       </div>
 
       <div class="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 w-full max-w-2xl">
@@ -116,6 +140,40 @@ onMounted(() => { loadAppSettings() })
       </div>
     </div>
   </section>
+
+  <!-- Updates -->
+  <SettingsSection title="Updates" :icon="RefreshCw" description="Check for new LifeLogr releases" setting-key="Updates">
+    <SettingRow label="Check for updates weekly"
+      description="Quietly checks GitHub Releases once a week. Off by default.">
+      <ToggleSwitch v-model="autoCheckEnabled" />
+    </SettingRow>
+    <UpdateStatus @result="onResult" />
+  </SettingsSection>
+
+  <!-- System Setup (desktop only) -->
+  <AccordionItem v-if="isTauri" title="System Setup" :icon="Wrench" description="Check and install system dependencies">
+    <div class="space-y-2">
+      <div v-if="depsStatus === null" class="text-[11px] text-text-muted">Checking dependencies...</div>
+      <div v-else-if="depsStatus.all_installed && depsStatus.gst_plugins_bad" class="flex items-center gap-1.5 text-[11px] text-green-400">
+        <MonitorCheck :size="12" /> All system dependencies installed
+      </div>
+      <div v-else class="space-y-1.5">
+        <div class="flex items-center gap-1.5 text-[11px]" :class="depsStatus.ollama ? 'text-green-400' : 'text-red-400'">
+          <CheckCircle2 v-if="depsStatus.ollama" :size="11" /><AlertTriangle v-else :size="11" />
+          Ollama AI {{ depsStatus.ollama ? '(installed)' : '(missing)' }}
+        </div>
+        <div class="flex items-center gap-1.5 text-[11px]" :class="depsStatus.gst_plugins_bad ? 'text-green-400' : 'text-yellow-400'">
+          <CheckCircle2 v-if="depsStatus.gst_plugins_bad" :size="11" /><AlertTriangle v-else :size="11" />
+          Audio Recording {{ depsStatus.gst_plugins_bad ? '(ready)' : '(needs gstreamer1.0-plugins-bad)' }}
+        </div>
+        <SButton variant="primary" :disabled="setupRunning" :icon="Wrench" class="mt-1" @click="runSystemSetup">
+          <Loader v-if="setupRunning" :size="12" class="animate-spin" />
+          {{ setupRunning ? 'Installing…' : 'Install Missing Dependencies' }}
+        </SButton>
+      </div>
+      <div v-if="setupOutput" class="p-2 rounded-md bg-black/30 text-[10px] font-mono text-green-300 max-h-32 overflow-y-auto whitespace-pre-wrap">{{ setupOutput }}</div>
+    </div>
+  </AccordionItem>
 
   <!-- Release notes (merged from former "What's New" tab) -->
   <SettingsSection title="Release Notes" :icon="Newspaper" description="What changed in this and recent versions" setting-key="Release notes"

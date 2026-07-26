@@ -236,6 +236,15 @@ onUnmounted(() => {
           </div>
         </div>
         <p class="text-[11px] text-white/70 mb-2">These rotate in the dock. They stay private on your device.</p>
+        <label class="flex items-center justify-between gap-2 mb-2 cursor-pointer">
+          <span class="text-[11px] text-white/80">Show “Ever in memory of you” title</span>
+          <button type="button" role="switch" :aria-checked="memorialTitle"
+            class="px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors"
+            :class="memorialTitle ? 'bg-amber-400 text-stone-900' : 'bg-white/15 text-white/70'"
+            @click="memorialTitle = !memorialTitle">
+            {{ memorialTitle ? 'On' : 'Off' }}
+          </button>
+        </label>
         <div class="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
           <div v-for="(line, i) in tributeLines" :key="i" class="flex items-center gap-1.5">
             <input :value="line" @input="tributeLines[i] = ($event.target as HTMLInputElement).value"

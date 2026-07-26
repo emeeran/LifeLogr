@@ -32,9 +32,9 @@ test.describe('Settings UI verification', () => {
     await page.locator('text=Settings').first().click()
   })
 
-  // ── General Tab ──
-  test('General tab: toggle switches render, descriptions visible', async ({ page }) => {
-    // Should be on General tab by default
+  // ── Appearance Tab (default) ──
+  test('Appearance tab: theme, writing, read aloud', async ({ page }) => {
+    // Appearance is the default tab
     await expect(page.getByText('Appearance', { exact: true })).toBeVisible()
     await expect(page.getByText('Customize the look and feel')).toBeVisible()
 
@@ -46,10 +46,14 @@ test.describe('Settings UI verification', () => {
     await expect(page.getByText('Editor & Writing', { exact: true })).toBeVisible()
     await expect(page.getByText('Writing behavior, search, and preferences')).toBeVisible()
 
-    // Keyboard shortcuts accordion (open by default — its <kbd> shortcuts are
-    // rendered in-DOM via a CSS grid collapse).
+    // Keyboard shortcuts accordion
     await expect(page.getByText('Keyboard Shortcuts', { exact: true })).toBeVisible()
     await expect(page.locator('kbd').first()).toBeVisible()
+
+    // Read aloud (moved here from the former Features tab)
+    await expect(page.getByText('Read Aloud', { exact: true })).toBeVisible()
+    await expect(page.getByText('Text-to-speech voice settings')).toBeVisible()
+    await expect(page.getByText('Voice', { exact: true })).toBeVisible()
   })
 
   // ── AI Tab ──
@@ -91,13 +95,12 @@ test.describe('Settings UI verification', () => {
     await expect(page.getByText('Themes & Insights', { exact: true })).toBeVisible()
   })
 
-  // ── Data & Backup Tab ──
-  // The old separate "Data" and "Backup" nav tabs were merged into a single
-  // "Data & Backup" tab whose body is a Storage / Import-Export / Backups pill
-  // sub-nav. Assert the nav tab opens, the default Storage panel renders, and
-  // that drilling into the Backups pill surfaces the backup sections.
-  test('Data & Backup tab: storage and backup sections render', async ({ page }) => {
-    await tab(page, 'Data & Backup').click()
+  // ── Data Tab ──
+  // Storage / Import-Export / Backups / Maintenance / Diagnostics live behind a
+  // pill sub-nav. Assert the nav tab opens, the default Storage panel renders,
+  // and that drilling into the Backups pill surfaces the backup sections.
+  test('Data tab: storage and backup sections render', async ({ page }) => {
+    await tab(page, 'Data').click()
 
     // Storage is the default pill → its section renders immediately.
     await expect(page.getByText('Storage', { exact: true }).first()).toBeVisible()
@@ -109,26 +112,6 @@ test.describe('Settings UI verification', () => {
     await expect(page.getByText('Local Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Scheduled Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Cloud Backup', { exact: true })).toBeVisible()
-  })
-
-  // ── Features Tab ──
-  test('Features tab: TTS voice selector, notifications', async ({ page }) => {
-    await tab(page, 'Features').click()
-
-    // Read Aloud section
-    await expect(page.getByText('Read Aloud', { exact: true })).toBeVisible()
-    await expect(page.getByText('Text-to-speech voice settings')).toBeVisible()
-
-    // Voice select label
-    await expect(page.getByText('Voice', { exact: true })).toBeVisible()
-
-    // Speed and Volume sliders
-    await expect(page.getByText(/Speed/).first()).toBeVisible()
-    await expect(page.getByText(/Volume/).first()).toBeVisible()
-
-    // Notifications section
-    await expect(page.getByText('Notifications', { exact: true })).toBeVisible()
-    await expect(page.getByText('Writing reminders and alerts')).toBeVisible()
   })
 
   // ── About Tab ──
@@ -150,7 +133,7 @@ test.describe('Settings UI verification', () => {
 
   // ── CSS: settings-select class ──
   test('CSS utility classes applied to selects and inputs', async ({ page }) => {
-    await tab(page, 'General').click()
+    await tab(page, 'Appearance').click()
 
     // A count check doesn't auto-retry like toBeVisible, so wait for at least
     // one styled control to render before counting them.
@@ -165,8 +148,8 @@ test.describe('Settings UI verification', () => {
 
   // ── Keyboard navigation ──
   test('Focus rings on tab navigation', async ({ page }) => {
-    await tab(page, 'General').click()
-    // Wait for the General tab to render before driving keyboard focus onto it.
+    await tab(page, 'Appearance').click()
+    // Wait for the Appearance tab to render before driving keyboard focus onto it.
     await expect(page.getByText('Appearance', { exact: true })).toBeVisible()
 
     // Tab to first interactive element and check focus outline

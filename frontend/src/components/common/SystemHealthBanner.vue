@@ -11,7 +11,7 @@ const warns = computed(() => health.summary.warn)
 const tone = computed<'error' | 'warn'>(() => (errors.value > 0 ? 'error' : 'warn'))
 
 function view() {
-  ui.requestSettingsTab('diagnostics')
+  ui.requestSettingsTab('data')
 }
 </script>
 

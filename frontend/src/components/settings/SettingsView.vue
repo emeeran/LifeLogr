@@ -8,34 +8,44 @@ import {
   X,
   Info,
   Brain,
-  Sparkles,
-  HardDrive,
-  Sliders,
-  Search,
   Heart,
-  StickyNote,
-  Activity,
+  Palette,
+  Database,
+  Search,
 } from "lucide-vue-next";
-import GeneralTab from "./tabs/GeneralTab.vue";
+import AppearanceTab from "./tabs/AppearanceTab.vue";
 import AITab from "./tabs/AITab.vue";
-import DataBackupTab from "./tabs/DataBackupTab.vue";
-import FeaturesTab from "./tabs/FeaturesTab.vue";
+import DataTab from "./tabs/DataTab.vue";
 import DedicationTab from "./tabs/DedicationTab.vue";
 import AboutTab from "./tabs/AboutTab.vue";
-import DiagnosticsTab from "./tabs/DiagnosticsTab.vue";
-import NotesTab from "./tabs/NotesTab.vue";
 
 // ── Tab navigation ──
-const activeTab = useLocalStorage<string>("lifelogr-settings-tab", "general");
+const TAB_IDS = ["appearance", "ai", "data", "dedication", "about"] as const;
+// Map stale tab ids from the old 8-tab layout → the new 5-tab one, so an
+// existing user's persisted selection isn't a blank screen after upgrade.
+const LEGACY_TAB: Record<string, string> = {
+  general: "appearance",
+  notes: "appearance",
+  features: "appearance",
+  "data-backup": "data",
+  diagnostics: "data",
+};
+function migrateTabId(id: string): string {
+  return (TAB_IDS as readonly string[]).includes(id) ? id : LEGACY_TAB[id] ?? "appearance";
+}
+const _storedTab = useLocalStorage<string>("lifelogr-settings-tab", "appearance");
+const activeTab = computed<string>({
+  get: () => migrateTabId(_storedTab.value),
+  set: (v) => {
+    _storedTab.value = v;
+  },
+});
 const tabs = [
-  { id: "general", label: "General", icon: Sliders },
+  { id: "appearance", label: "Appearance", icon: Palette },
   { id: "ai", label: "AI", icon: Brain },
-  { id: "notes", label: "Notes", icon: StickyNote },
-  { id: "features", label: "Features", icon: Sparkles },
-  { id: "data-backup", label: "Data & Backup", icon: HardDrive },
+  { id: "data", label: "Data", icon: Database },
   { id: "dedication", label: "Dedication", icon: Heart },
   { id: "about", label: "About", icon: Info },
-  { id: "diagnostics", label: "Diagnostics", icon: Activity },
 ] as const;
 
 // Deep-linking: a component (e.g. the health banner) can request a Settings tab.
@@ -69,238 +79,72 @@ interface SearchEntry {
   keywords: string[];
 }
 const index: SearchEntry[] = [
+  // ── Appearance ──
   {
-    tab: "general",
+    tab: "appearance",
     label: "Appearance",
-    keywords: [
-      "appearance",
-      "dark mode",
-      "theme",
-      "font",
-      "font family",
-      "font size",
-      "look",
-      "night",
-    ],
+    keywords: ["appearance", "dark mode", "theme", "font", "font family", "font size", "look", "night"],
   },
-  {
-    tab: "general",
-    label: "Dark mode",
-    keywords: ["dark mode", "dark", "light", "theme"],
-  },
-  {
-    tab: "general",
-    label: "Font family",
-    keywords: ["font", "font family", "typeface"],
-  },
-  { tab: "general", label: "Font size", keywords: ["font size", "text size"] },
-  {
-    tab: "general",
-    label: "Auto-save",
-    keywords: ["autosave", "auto-save", "save", "interval"],
-  },
-  {
-    tab: "general",
-    label: "OCR language",
-    keywords: ["ocr", "image text", "language"],
-  },
-  {
-    tab: "general",
-    label: "Default title",
-    keywords: ["default title", "title"],
-  },
-  {
-    tab: "general",
-    label: "Search mode",
-    keywords: ["search mode", "hybrid", "keyword", "semantic"],
-  },
-  {
-    tab: "general",
-    label: "Default template",
-    keywords: ["template", "default template"],
-  },
-  {
-    tab: "general",
-    label: "Updates",
-    keywords: ["update", "updates", "version", "release", "check for updates"],
-  },
-  {
-    tab: "general",
-    label: "Keyboard shortcuts",
-    keywords: ["shortcut", "keyboard", "hotkey"],
-  },
+  { tab: "appearance", label: "Dark mode", keywords: ["dark mode", "dark", "light", "theme"] },
+  { tab: "appearance", label: "Font family", keywords: ["font", "font family", "typeface"] },
+  { tab: "appearance", label: "Font size", keywords: ["font size", "text size"] },
+  { tab: "appearance", label: "Auto-save", keywords: ["autosave", "auto-save", "save", "interval"] },
+  { tab: "appearance", label: "OCR language", keywords: ["ocr", "image text", "language"] },
+  { tab: "appearance", label: "Default title", keywords: ["default title", "title"] },
+  { tab: "appearance", label: "Search mode", keywords: ["search mode", "hybrid", "keyword", "semantic"] },
+  { tab: "appearance", label: "Default template", keywords: ["template", "default template"] },
+  { tab: "appearance", label: "Voice", keywords: ["voice", "tts", "read aloud", "speech", "text to speech"] },
+  { tab: "appearance", label: "Speed", keywords: ["speed", "rate", "tts speed"] },
+  { tab: "appearance", label: "Volume", keywords: ["volume", "tts volume"] },
+  { tab: "appearance", label: "Preview voice", keywords: ["preview", "test voice"] },
+  { tab: "appearance", label: "Keyboard shortcuts", keywords: ["shortcut", "keyboard", "hotkey"] },
 
-  {
-    tab: "ai",
-    label: "Ollama URL",
-    keywords: ["ollama", "url", "connection", "ai url"],
-  },
-  {
-    tab: "ai",
-    label: "Chat model",
-    keywords: ["chat model", "model", "llama"],
-  },
-  {
-    tab: "ai",
-    label: "Embedding model",
-    keywords: ["embedding", "embed", "nomic", "semantic model"],
-  },
+  // ── AI ──
+  { tab: "ai", label: "Ollama URL", keywords: ["ollama", "url", "connection", "ai url"] },
+  { tab: "ai", label: "Chat model", keywords: ["chat model", "model", "llama"] },
+  { tab: "ai", label: "Embedding model", keywords: ["embedding", "embed", "nomic", "semantic model"] },
   { tab: "ai", label: "Embeddings", keywords: ["embeddings", "vector"] },
-  {
-    tab: "ai",
-    label: "Tag suggestions",
-    keywords: ["tag suggestions", "auto tag", "tags"],
-  },
+  { tab: "ai", label: "Tag suggestions", keywords: ["tag suggestions", "auto tag", "tags"] },
   { tab: "ai", label: "Sentiment analysis", keywords: ["sentiment", "mood"] },
-  {
-    tab: "ai",
-    label: "Summarization",
-    keywords: ["summarization", "summary", "summarize"],
-  },
-  {
-    tab: "ai",
-    label: "Reflection prompts",
-    keywords: ["reflection", "prompts", "prompt"],
-  },
-  {
-    tab: "ai",
-    label: "Writer's block helper",
-    keywords: ["writer block", "writer", "block", "suggestion"],
-  },
-  {
-    tab: "ai",
-    label: "Pull model",
-    keywords: ["pull model", "download model", "install model"],
-  },
-  {
-    tab: "ai",
-    label: "Themes & Insights",
-    keywords: ["themes", "insights", "patterns"],
-  },
+  { tab: "ai", label: "Summarization", keywords: ["summarization", "summary", "summarize"] },
+  { tab: "ai", label: "Reflection prompts", keywords: ["reflection", "prompts", "prompt"] },
+  { tab: "ai", label: "Writer's block helper", keywords: ["writer block", "writer", "block", "suggestion"] },
+  { tab: "ai", label: "Pull model", keywords: ["pull model", "download model", "install model"] },
+  { tab: "ai", label: "Themes & Insights", keywords: ["themes", "insights", "patterns"] },
 
+  // ── Data ──
   {
-    tab: "features",
-    label: "Voice",
-    keywords: ["voice", "tts", "read aloud", "speech", "text to speech"],
-  },
-  { tab: "features", label: "Speed", keywords: ["speed", "rate", "tts speed"] },
-  { tab: "features", label: "Volume", keywords: ["volume", "tts volume"] },
-  {
-    tab: "features",
-    label: "Preview voice",
-    keywords: ["preview", "test voice"],
-  },
-  {
-    tab: "features",
-    label: "Reminders",
-    keywords: ["reminder", "reminders", "notification", "alert", "notify"],
-  },
-  {
-    tab: "features",
-    label: "System setup",
-    keywords: [
-      "system setup",
-      "dependencies",
-      "ollama install",
-      "gstreamer",
-      "audio recording",
-    ],
-  },
-  {
-    tab: "features",
-    label: "Memorial title",
-    keywords: [
-      "memorial",
-      "dedication",
-      "remembrance",
-      "ever in memory",
-      "tribute",
-      "title",
-      "flash",
-    ],
-  },
-
-  {
-    tab: "data-backup",
+    tab: "data",
     label: "Storage",
-    keywords: [
-      "storage",
-      "disk",
-      "database size",
-      "usage",
-      "entries count",
-      "media",
-    ],
+    keywords: ["storage", "disk", "database size", "usage", "entries count", "media"],
   },
   {
-    tab: "data-backup",
+    tab: "data",
     label: "Import entries",
-    keywords: [
-      "import",
-      "import entries",
-      "zip",
-      "json",
-      "html",
-      "diarium import",
-    ],
+    keywords: ["import", "import entries", "zip", "json", "html", "diarium import"],
   },
   {
-    tab: "data-backup",
+    tab: "data",
     label: "Export",
-    keywords: [
-      "export",
-      "markdown",
-      "pdf",
-      "html export",
-      "diarium export",
-      "backup export",
-    ],
+    keywords: ["export", "markdown", "pdf", "html export", "diarium export", "backup export"],
   },
+  { tab: "data", label: "Remove duplicates", keywords: ["duplicate", "duplicates", "deduplicate", "dedupe"] },
+  { tab: "data", label: "Compact database", keywords: ["compact", "vacuum", "database maintenance"] },
+  { tab: "data", label: "Check integrity", keywords: ["integrity", "corrupt", "check database"] },
+  { tab: "data", label: "Local backup", keywords: ["local backup", "archive", "tar", "manual backup"] },
+  { tab: "data", label: "Scheduled backup", keywords: ["auto backup", "scheduled", "schedule", "automatic", "cron"] },
   {
-    tab: "data-backup",
-    label: "Remove duplicates",
-    keywords: ["duplicate", "duplicates", "deduplicate", "dedupe"],
-  },
-  {
-    tab: "data-backup",
-    label: "Compact database",
-    keywords: ["compact", "vacuum", "database maintenance"],
-  },
-  {
-    tab: "data-backup",
-    label: "Check integrity",
-    keywords: ["integrity", "corrupt", "check database"],
-  },
-
-  {
-    tab: "data-backup",
-    label: "Local backup",
-    keywords: ["local backup", "archive", "tar", "manual backup"],
-  },
-  {
-    tab: "data-backup",
-    label: "Scheduled backup",
-    keywords: ["auto backup", "scheduled", "schedule", "automatic", "cron"],
-  },
-  {
-    tab: "notes",
-    label: "Read-aloud voice",
-    keywords: ["notes", "voice", "read aloud", "tts", "speech", "read"],
-  },
-  {
-    tab: "data-backup",
+    tab: "data",
     label: "Cloud backup",
-    keywords: [
-      "cloud",
-      "google drive",
-      "webdav",
-      "onedrive",
-      "dropbox",
-      "nas",
-      "sync",
-    ],
+    keywords: ["cloud", "google drive", "webdav", "onedrive", "dropbox", "nas", "sync"],
+  },
+  {
+    tab: "data",
+    label: "Diagnostics",
+    keywords: ["diagnostics", "health", "system status", "rebuild index", "search index"],
   },
 
+  // ── Dedication ──
   {
     tab: "dedication",
     label: "Memorial",
@@ -314,35 +158,23 @@ const index: SearchEntry[] = [
       "candle",
       "reflection",
       "in memory",
+      "title",
     ],
   },
-  {
-    tab: "dedication",
-    label: "Reflection",
-    keywords: ["reflection", "reflect", "personal note", "remembrance"],
-  },
 
+  // ── About ──
+  { tab: "about", label: "Version", keywords: ["version", "about"] },
+  { tab: "about", label: "Release notes", keywords: ["release notes", "changelog", "what's new"] },
+  { tab: "about", label: "Updates", keywords: ["update", "updates", "check for updates", "release"] },
   {
     tab: "about",
-    label: "Version",
-    keywords: ["version", "about", "release notes", "changelog"],
+    label: "System setup",
+    keywords: ["system setup", "dependencies", "ollama install", "gstreamer", "audio recording"],
   },
   {
     tab: "about",
     label: "Reset database",
-    keywords: [
-      "reset",
-      "reset database",
-      "erase",
-      "danger",
-      "clear",
-      "delete all",
-    ],
-  },
-  {
-    tab: "about",
-    label: "Release notes",
-    keywords: ["release notes", "changelog", "what's new", "updates"],
+    keywords: ["reset", "reset database", "erase", "danger", "clear", "delete all"],
   },
 ];
 
@@ -354,8 +186,7 @@ const filteredTabs = computed(() => {
         (e) =>
           e.label.toLowerCase().includes(searchLower.value) ||
           e.keywords.some(
-            (k) =>
-              k.includes(searchLower.value) || searchLower.value.includes(k),
+            (k) => k.includes(searchLower.value) || searchLower.value.includes(k),
           ),
       )
       .map((e) => e.tab),
@@ -370,9 +201,7 @@ const filteredTabs = computed(() => {
 const bestMatch = computed<SearchEntry | null>(() => {
   if (!searchLower.value) return null;
   // Prefer a label that starts with the query, then any label/keyword match.
-  const starts = index.find((e) =>
-    e.label.toLowerCase().startsWith(searchLower.value),
-  );
+  const starts = index.find((e) => e.label.toLowerCase().startsWith(searchLower.value));
   if (starts) return starts;
   const contains = index.find(
     (e) =>
@@ -489,15 +318,11 @@ provide("settings-highlight", highlightKey);
             : 'overflow-y-auto px-5 py-3 space-y-3'
         "
       >
-        <GeneralTab v-if="activeTab === 'general'" @toast="showToast" />
+        <AppearanceTab v-if="activeTab === 'appearance'" @toast="showToast" />
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
-        <NotesTab v-if="activeTab === 'notes'" @toast="showToast" />
-        <FeaturesTab v-if="activeTab === 'features'" @toast="showToast" />
-        <DataBackupTab v-if="activeTab === 'data-backup'" @toast="showToast" />
+        <DataTab v-if="activeTab === 'data'" @toast="showToast" />
         <DedicationTab v-if="activeTab === 'dedication'" />
         <AboutTab v-if="activeTab === 'about'" @toast="showToast" />
-        <DiagnosticsTab v-if="activeTab === 'diagnostics'" @toast="showToast" />
-
       </div>
     </div>
 
@@ -506,8 +331,7 @@ provide("settings-highlight", highlightKey);
         v-if="toast"
         class="absolute bottom-3 left-3 right-3 flex items-center gap-2 px-3 py-1.5 rounded-md border text-[12px]"
         :class="{
-          'bg-green-900/80 border-green-700 text-green-200':
-            toast.type === 'success',
+          'bg-green-900/80 border-green-700 text-green-200': toast.type === 'success',
           'bg-red-900/80 border-red-700 text-red-200': toast.type === 'error',
           'bg-surface border-border text-text-primary': toast.type === 'info',
         }"

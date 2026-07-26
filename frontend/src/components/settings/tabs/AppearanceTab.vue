@@ -1,34 +1,55 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useUiStore } from '../../../stores/ui'
 import { useSearchStore } from '../../../stores/search'
 import { useTemplatesStore } from '../../../stores/templates'
+import { API_ORIGIN } from '../../../api/client'
+import { ttsApi } from '../../../api/tts'
 import {
-  Sun, Moon, Type, Sliders, Clock, Eye, Search, LayoutTemplate, Keyboard, RefreshCw,
+  Sun, Moon, Type, Sliders, Clock, Eye, Search, LayoutTemplate, Keyboard,
+  Volume2, Play, X,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
 import ToggleSwitch from '../shared/ToggleSwitch.vue'
 import AccordionItem from '../shared/AccordionItem.vue'
 import SettingGroup from '../shared/SettingGroup.vue'
-import UpdateStatus from '../shared/UpdateStatus.vue'
-import { useUpdateChecker } from '../../../composables/useUpdateChecker'
+import SButton from '../shared/SButton.vue'
+
+interface TTSVoice { short_name: string; locale: string; gender: string }
+
+function voiceLabel(v: TTSVoice): string {
+  const name = v.short_name.replace(/Neural$/, '').replace(/V2$/, '')
+  const parts = name.split('-')
+  const voiceName = parts.length > 2 ? parts.slice(2).join(' ') : parts[parts.length - 1]
+  const gender = v.gender === 'Female' ? 'F' : v.gender === 'Male' ? 'M' : ''
+  return `${voiceName} ${gender ? `(${gender})` : ''}`.trim()
+}
+
+const LOCALE_LABELS: Record<string, string> = {
+  'en-US': 'English (US)', 'en-GB': 'English (UK)', 'en-AU': 'English (AU)',
+  'en-CA': 'English (CA)', 'en-IN': 'English (IN)', 'en-IE': 'English (IE)',
+  'fr-FR': 'French', 'fr-CA': 'French (CA)', 'de-DE': 'German', 'de-AT': 'German (AT)',
+  'es-ES': 'Spanish', 'es-MX': 'Spanish (MX)', 'pt-BR': 'Portuguese (BR)',
+  'pt-PT': 'Portuguese (PT)', 'it-IT': 'Italian', 'nl-NL': 'Dutch', 'pl-PL': 'Polish',
+  'ru-RU': 'Russian', 'ja-JP': 'Japanese', 'zh-CN': 'Chinese (CN)', 'zh-TW': 'Chinese (TW)',
+  'ko-KR': 'Korean', 'ar-SA': 'Arabic', 'hi-IN': 'Hindi', 'sv-SE': 'Swedish',
+  'da-DK': 'Danish', 'fi-FI': 'Finnish', 'nb-NO': 'Norwegian', 'tr-TR': 'Turkish',
+}
+function localeLabel(locale: string): string { return LOCALE_LABELS[locale] ?? locale }
+function voicesByLocale(voices: TTSVoice[]): Map<string, TTSVoice[]> {
+  const groups = new Map<string, TTSVoice[]>()
+  for (const v of voices) { const list = groups.get(v.locale) ?? []; list.push(v); groups.set(v.locale, list) }
+  return groups
+}
 
 const ui = useUiStore()
 const searchStore = useSearchStore()
 const templatesStore = useTemplatesStore()
-const { autoCheckEnabled } = useUpdateChecker()
-
-onMounted(() => { templatesStore.fetchAll() })
 
 const emit = defineEmits<{ toast: [type: 'success' | 'error' | 'info', message: string] }>()
-
-function onResult(kind: 'available' | 'up-to-date' | 'offline', latest?: string) {
-  if (kind === 'available') emit('toast', 'info', `LifeLogr ${latest} is available`)
-  else if (kind === 'up-to-date') emit('toast', 'success', `You're on the latest version`)
-  else if (kind === 'offline') emit('toast', 'error', 'Could not check for updates (offline)')
-}
+function errMsg(e: unknown): string { return e instanceof Error ? e.message : String(e) }
 
 // ── Preferences ──
 const defaultTemplateId = useLocalStorage<number | null>('lifelogr-default-template', null)
@@ -55,6 +76,47 @@ const ocrLanguages = [
   { value: 'hin', label: 'Hindi' },
 ]
 
+// ── Read aloud (TTS) ──
+const ttsSpeed = useLocalStorage<number>('lifelogr-tts-speed', 1.0)
+const ttsVolume = useLocalStorage<number>('lifelogr-tts-volume', 100)
+const ttsVoice = useLocalStorage<string>('lifelogr-tts-voice', 'en-US-AvaNeural')
+const ttsPitch = useLocalStorage<number>('lifelogr-tts-pitch', 0)
+const ttsVoices = ref<TTSVoice[]>([])
+const ttsVoicesLoading = ref(false)
+const ttsPreviewing = ref(false)
+let previewAudio: HTMLAudioElement | null = null
+
+async function loadVoices() {
+  ttsVoicesLoading.value = true
+  try {
+    const res = await fetch(`${API_ORIGIN}/api/v1/tts/voices`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    ttsVoices.value = await res.json()
+  } catch { /* ignore */ } finally { ttsVoicesLoading.value = false }
+}
+
+/** Speak a short sample using the currently-selected voice/speed/volume. */
+async function previewVoice() {
+  if (ttsPreviewing.value && previewAudio) { previewAudio.pause(); ttsPreviewing.value = false; return }
+  ttsPreviewing.value = true
+  try {
+    const { key } = await ttsApi.speakUrl('This is how your journal will sound when read aloud.')
+    if (!key) { ttsPreviewing.value = false; return }
+    previewAudio = new Audio(ttsApi.fileUrl(key))
+    previewAudio.volume = ttsVolume.value / 100
+    previewAudio.onended = () => { ttsPreviewing.value = false }
+    await previewAudio.play()
+  } catch (e: unknown) {
+    ttsPreviewing.value = false
+    emit('toast', 'error', `Voice preview failed: ${errMsg(e)}`)
+  }
+}
+
+function resetTTSDefaults() {
+  ttsVoice.value = 'en-US-AvaNeural'; ttsSpeed.value = 1.0; ttsVolume.value = 100; ttsPitch.value = 0
+  emit('toast', 'success', 'Read-aloud settings reset to defaults')
+}
+
 const shortcuts = [
   { keys: 'Ctrl + K', desc: 'Open search palette' },
   { keys: 'Ctrl + S', desc: 'Save entry' },
@@ -78,6 +140,8 @@ function resetEditorDefaults() {
   autosaveInterval.value = 2; ocrLanguage.value = 'eng'; ui.defaultTitle = ''
   emit('toast', 'success', 'Editor settings reset to defaults')
 }
+
+onMounted(() => { templatesStore.fetchAll(); loadVoices() })
 </script>
 
 <template>
@@ -142,12 +206,33 @@ function resetEditorDefaults() {
     </SettingGroup>
   </SettingsSection>
 
-  <SettingsSection title="Updates" :icon="RefreshCw" description="Check for new LifeLogr releases" setting-key="Updates">
-    <SettingRow label="Check for updates weekly"
-      description="Quietly checks GitHub Releases once a week. Off by default.">
-      <ToggleSwitch v-model="autoCheckEnabled" />
+  <SettingsSection title="Read Aloud" :icon="Volume2" description="Text-to-speech voice settings" setting-key="Voice"
+    reset-label="Reset" @reset="resetTTSDefaults">
+    <SettingRow :icon="Volume2" label="Voice" description="Voice used when reading entries aloud.">
+      <select v-model="ttsVoice" class="settings-select max-w-44" :disabled="ttsVoicesLoading">
+        <option v-if="ttsVoicesLoading" disabled value="">Loading voices...</option>
+        <template v-for="[locale, voices] in voicesByLocale(ttsVoices)" :key="locale">
+          <optgroup :label="localeLabel(locale)">
+            <option v-for="v in voices" :key="v.short_name" :value="v.short_name">{{ voiceLabel(v) }}</option>
+          </optgroup>
+        </template>
+      </select>
     </SettingRow>
-    <UpdateStatus @result="onResult" />
+    <SettingRow indent :label="`Speed (${ttsSpeed.toFixed(1)}x)`">
+      <input type="range" v-model.number="ttsSpeed" min="0.5" max="2.0" step="0.1" class="w-28 accent-accent" />
+    </SettingRow>
+    <SettingRow indent :label="`Volume (${ttsVolume}%)`">
+      <input type="range" v-model.number="ttsVolume" min="0" max="100" step="5" class="w-28 accent-accent" />
+    </SettingRow>
+    <SettingRow indent :label="`Pitch (${ttsPitch > 0 ? '+' : ''}${ttsPitch} Hz)`"
+      description="Lower for a deeper, warmer voice; raise for brighter. Applies to journals and notes.">
+      <input type="range" v-model.number="ttsPitch" min="-40" max="40" step="5" class="w-28 accent-accent" />
+    </SettingRow>
+    <div class="pl-[31px]">
+      <SButton variant="outline" size="xs" :icon="ttsPreviewing ? X : Play" :disabled="ttsVoicesLoading" @click="previewVoice">
+        {{ ttsPreviewing ? 'Stop' : 'Preview voice' }}
+      </SButton>
+    </div>
   </SettingsSection>
 
   <AccordionItem title="Keyboard Shortcuts" :icon="Keyboard" description="Quick reference for editor shortcuts">
