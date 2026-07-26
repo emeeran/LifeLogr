@@ -149,10 +149,12 @@ def get_backup_status() -> dict[str, Any]:
 # ``init_db``; this adds quick_check + schema/FTS/encryption-key/pool/data-dir
 # checks so problems are visible in the UI instead of buried in logs.
 
-# Tables whose absence indicates an incompatible/empty database.
-_CRITICAL_TABLES = (
-    "entries", "notes", "tags", "media",
-)
+# FTS5 virtual tables created by raw DDL (no ORM model) — counted as "expected".
+_FTS_TABLES = ("entries_fts", "notes_fts")
+
+# Fragmentation/WAL warn thresholds for the maintenance check.
+_FRAGMENTATION_THRESHOLD_PCT = 30.0
+_WAL_SIZE_THRESHOLD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 # (table, column) holding AES-encrypted credentials — the encryption-key canary
 # decrypts one row of each to verify the active SECRET_KEY matches.
@@ -175,6 +177,15 @@ def _check(
     if hint:
         out["hint"] = hint
     return out
+
+
+def _replace_check(checks: list[dict[str, Any]], new: dict[str, Any]) -> None:
+    """Replace the check whose id == new['id'] in place, or append if absent."""
+    for i, c in enumerate(checks):
+        if c["id"] == new["id"]:
+            checks[i] = new
+            return
+    checks.append(new)
 
 
 async def _check_structure(session: AsyncSession) -> dict[str, Any]:
@@ -204,25 +215,63 @@ async def _check_foreign_keys(session: AsyncSession) -> dict[str, Any]:
     )
 
 
+async def _db_table_names(session: AsyncSession) -> set[str] | None:
+    """Actual user-table names from sqlite_master; None if the read failed."""
+    try:
+        return {
+            str(r[0])
+            for r in (
+                await session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            ).fetchall()
+        }
+    except Exception:
+        return None
+
+
 async def _check_schema_tables(session: AsyncSession) -> dict[str, Any]:
-    missing: list[str] = []
-    for t in _CRITICAL_TABLES:
-        try:
-            exists = (
-                await session.execute(
-                    text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:n"), {"n": t}
-                )
-            ).scalar()
-        except Exception:
-            exists = None
-        if not exists:
-            missing.append(t)
+    """Schema completeness: every ORM-mapped table plus the FTS virtual tables."""
+    from app.core.database import Base
+
+    expected = set(Base.metadata.tables) | set(_FTS_TABLES)
+    actual = await _db_table_names(session)
+    if actual is None:
+        return _check("schema_tables", "Schema", "error", "Could not read schema.")
+    missing = sorted(expected - actual)
     if missing:
         return _check(
             "schema_tables", "Schema", "error", f"Missing table(s): {', '.join(missing)}",
             "Database may be from an incompatible version — back it up and reinitialize.",
         )
-    return _check("schema_tables", "Schema", "ok", "All critical tables present.")
+    return _check("schema_tables", "Schema", "ok", f"All {len(expected)} expected tables present.")
+
+
+async def _check_unexpected_tables(session: AsyncSession) -> dict[str, Any]:
+    """Tables present that aren't model-mapped or FTS/internal (warn only).
+
+    Allow-lists SQLite internals (``sqlite_*``) and FTS5 shadow tables
+    (``entries_fts_*`` / ``notes_fts_*``) so a healthy DB doesn't false-positive.
+    """
+    from app.core.database import Base
+
+    expected = set(Base.metadata.tables) | set(_FTS_TABLES)
+    actual = await _db_table_names(session)
+    if actual is None:
+        return _check("unexpected_tables", "Unexpected tables", "error", "Could not read schema.")
+    unexpected = sorted(
+        t
+        for t in actual
+        if t not in expected
+        and not t.startswith("sqlite_")
+        and not t.startswith("entries_fts")
+        and not t.startswith("notes_fts")
+    )
+    if unexpected:
+        return _check(
+            "unexpected_tables", "Unexpected tables", "warn",
+            f"{len(unexpected)} table(s) not in the current schema: {', '.join(unexpected)}",
+            "Leftover from an older version — safe to ignore; no active data is stored there.",
+        )
+    return _check("unexpected_tables", "Unexpected tables", "ok", "No unexpected tables.")
 
 
 async def _check_fts_sync(session: AsyncSession) -> dict[str, Any]:
@@ -246,6 +295,46 @@ async def _check_fts_sync(session: AsyncSession) -> dict[str, Any]:
             "Rebuild the search index from Settings → Diagnostics.",
         )
     return _check("fts_sync", "Search index", "ok", "Index in sync.")
+
+
+async def _check_fragmentation_wal(session: AsyncSession) -> dict[str, Any]:
+    """Free-page fragmentation + WAL size (detection only).
+
+    Healing (incremental vacuum) runs in ``check_app_integrity`` after the read
+    session closes — it can't run here because the battery holds the size-1 pool.
+    """
+    from app.core.config import settings
+
+    try:
+        freelist = int((await session.execute(text("PRAGMA freelist_count"))).scalar() or 0)
+        page_count = int((await session.execute(text("PRAGMA page_count"))).scalar() or 1)
+    except Exception as e:
+        return _check(
+            "db_fragmentation", "DB fragmentation & WAL", "error", f"Could not read pragmas: {e}"
+        )
+    pct = (freelist / page_count * 100.0) if page_count else 0.0
+
+    wal_path = settings.db_path.parent / (settings.db_path.name + "-wal")
+    try:
+        wal_kb = wal_path.stat().st_size // 1024 if wal_path.exists() else 0
+    except OSError:
+        wal_kb = 0
+
+    issues: list[str] = []
+    if pct > _FRAGMENTATION_THRESHOLD_PCT:
+        issues.append(f"{pct:.0f}% free pages (fragmented)")
+    if wal_kb > _WAL_SIZE_THRESHOLD_BYTES // 1024:
+        issues.append(f"WAL is {wal_kb // 1024} MB (checkpoint may be stalled)")
+    if issues:
+        return _check(
+            "db_fragmentation", "DB fragmentation & WAL", "warn",
+            "; ".join(issues),
+            "Run Vacuum from Settings → Data & Backup → Maintenance.",
+        )
+    return _check(
+        "db_fragmentation", "DB fragmentation & WAL", "ok",
+        f"{pct:.0f}% free pages; WAL {wal_kb} KB",
+    )
 
 
 async def _check_encryption_key(session: AsyncSession) -> dict[str, Any]:
@@ -342,6 +431,9 @@ async def check_app_integrity() -> dict[str, Any]:
     """Run the full app-integrity battery; cache and return the report.
 
     Warn-only — never raises; a failing check is reported, not propagated.
+    Fixable problems (search-index drift, free-page fragmentation) are
+    self-healed after the read pass and the affected checks are re-run so the
+    report reflects the repaired state.
     """
     from app.core.database import async_session
 
@@ -351,11 +443,54 @@ async def check_app_integrity() -> dict[str, Any]:
             checks.append(await _check_structure(session))
             checks.append(await _check_foreign_keys(session))
             checks.append(await _check_schema_tables(session))
+            checks.append(await _check_unexpected_tables(session))
             checks.append(await _check_fts_sync(session))
             checks.append(await _check_encryption_key(session))
+            checks.append(await _check_fragmentation_wal(session))
     except Exception as e:
         logger.warning("App-integrity battery could not complete DB checks", exc_info=True)
         checks.append(_check("database", "Database access", "error", f"Could not run DB checks: {e}"))
+
+    # Self-heal fixable problems. Each heal runs on its own committing
+    # transaction *after* the read session above has closed — the engine pool
+    # is size 1, so opening a second connection while it's held would deadlock.
+    healed: list[str] = []
+    fts_check = next((c for c in checks if c["id"] == "fts_sync"), None)
+    if (
+        fts_check is not None
+        and fts_check["status"] == "warn"
+        and "unavailable" not in fts_check["detail"]
+    ):
+        try:
+            from app.core.database import rebuild_search_index
+
+            await rebuild_search_index()
+            healed.append("search index")
+        except Exception:
+            logger.warning("Search-index self-heal failed", exc_info=True)
+    frag_check = next((c for c in checks if c["id"] == "db_fragmentation"), None)
+    if (
+        frag_check is not None
+        and frag_check["status"] == "warn"
+        and "fragmented" in frag_check["detail"]
+    ):
+        try:
+            from app.services.scheduler_service import _run_incremental_vacuum
+
+            await _run_incremental_vacuum()
+            healed.append("incremental vacuum")
+        except Exception:
+            logger.warning("Fragmentation self-heal failed", exc_info=True)
+    if healed:
+        logger.info("Integrity self-healed: %s", ", ".join(healed))
+        try:
+            async with async_session() as session:
+                if any(c["id"] == "fts_sync" and c["status"] == "warn" for c in checks):
+                    _replace_check(checks, await _check_fts_sync(session))
+                if any(c["id"] == "db_fragmentation" and c["status"] == "warn" for c in checks):
+                    _replace_check(checks, await _check_fragmentation_wal(session))
+        except Exception:
+            logger.warning("Post-heal re-check failed", exc_info=True)
 
     checks.append(_check_connection_pool())
     checks.append(_check_data_dir())
