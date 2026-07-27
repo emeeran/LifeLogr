@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import zipfile
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
-from app.services.importers import parse_csv, parse_dayone_zip
+from app.services.importers import (
+    parse_csv,
+    parse_diarium_json_entry,
+    parse_diarium_sqlite,
+    parse_dayone_zip,
+    parse_markdown_entry,
+)
 
 
 # ── CSV parser ───────────────────────────────────────────────────────────────
@@ -141,3 +148,60 @@ async def test_import_csv_via_endpoint(client):
     )
     assert r.status_code == 200
     assert r.json()["imported"] == 2
+
+
+# ── Diarium JSON + markdown parsers (extracted from the entries router) ──────
+
+
+def test_parse_diarium_json_entry_strips_html_and_maps_mood():
+    parsed = parse_diarium_json_entry(
+        {"date": "2026-03-04T00:00:00", "heading": "<b>Title</b>", "html": "<p>Body</p>", "rating": 5}
+    )
+    assert parsed["entry_date"] == "2026-03-04"
+    assert parsed["title"] == "Title"  # HTML stripped from heading
+    assert parsed["body"] == "Body"  # HTML stripped to text
+    assert parsed["mood"] == "great"  # rating 5 -> great
+    assert parsed["tags"] == []
+
+
+def test_parse_markdown_entry_reads_frontmatter():
+    raw = "---\ndate: 2026-02-01\nmood: good\ntags:\n  - work\n  - trip\n---\n\nThe body."
+    parsed = parse_markdown_entry(raw)
+    assert parsed is not None
+    assert parsed["entry_date"] == "2026-02-01"
+    assert parsed["mood"] == "good"
+    assert parsed["tags"] == ["work", "trip"]
+    assert parsed["body"] == "The body."
+
+
+def test_parse_diarium_sqlite_converts_ticks_and_maps_rating(tmp_path):
+    db = tmp_path / "test.diary"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE Entries (DiaryEntryId INTEGER, Heading TEXT, Text TEXT, "
+        "Rating REAL, Latitude REAL, Longitude REAL)"
+    )
+    conn.execute("CREATE TABLE EntryTags (DiaryEntryId INTEGER, DiaryTagId INTEGER)")
+    conn.execute("CREATE TABLE Tags (DiaryTagId INTEGER, Value TEXT)")
+    # DiaryEntryId is .NET ticks (100ns since 0001-01-01); 621355968000000000 is
+    # the Unix-epoch offset the parser subtracts.
+    target = datetime(2026, 1, 15, tzinfo=timezone.utc)
+    ticks = 621355968000000000 + int(target.timestamp()) * 10_000_000
+    conn.execute(
+        "INSERT INTO Entries VALUES (?, ?, ?, ?, NULL, NULL)",
+        (ticks, "<b>My Title</b>", "Hello world", 4),
+    )
+    conn.execute("INSERT INTO EntryTags VALUES (?, 1)", (ticks,))
+    conn.execute("INSERT INTO Tags VALUES (1, 'work')")
+    conn.commit()
+    conn.close()
+
+    entries = parse_diarium_sqlite(db.read_bytes())
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["entry_date"] == "2026-01-15"  # ticks -> date
+    assert e["title"] == "My Title"  # HTML stripped
+    assert e["body"] == "Hello world"
+    assert e["mood"] == "good"  # rating 4 -> good
+    assert e["tags"] == ["work"]  # joined via EntryTags/Tags
+    assert e["latitude"] is None and e["longitude"] is None

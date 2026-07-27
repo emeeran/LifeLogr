@@ -32,6 +32,7 @@ from app.services.entry_service import EntryService
 from app.services.importers import (
     parse_csv,
     parse_diarium_json_entry,
+    parse_diarium_sqlite,
     parse_dayone_zip,
     parse_markdown_entry,
 )
@@ -632,7 +633,6 @@ async def import_file(
     - Markdown ZIP (entries/*.md with YAML frontmatter: date, mood, tags)
     """
     import hashlib
-    import shutil
     from datetime import date as date_type
 
     from sqlalchemy import select
@@ -645,74 +645,8 @@ async def import_file(
     entries_data: list[dict[str, Any]] = []
 
     if filename.endswith(".diary"):
-        # Diarium SQLite database — stream to temp file
-        import sqlite3 as sqlite3_mod
-        import tempfile
-        from pathlib import Path as PathLib
-        from datetime import datetime as dt_mod
-        import datetime as dt_pkg
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
-        shutil.copyfileobj(file.file, tmp)
-        tmp.close()
-        try:
-            conn = sqlite3_mod.connect(tmp.name)
-            conn.row_factory = sqlite3_mod.Row
-            rows = conn.execute(
-                "SELECT e.DiaryEntryId, e.Heading, e.Text, e.Rating, e.Latitude, e.Longitude FROM Entries e ORDER BY e.DiaryEntryId"
-            ).fetchall()
-
-            tag_rows = conn.execute(
-                "SELECT et.DiaryEntryId, t.Value FROM EntryTags et JOIN Tags t ON et.DiaryTagId = t.DiaryTagId"
-            ).fetchall()
-            entry_tags_map: dict[int, list[str]] = {}
-            for tr in tag_rows:
-                entry_tags_map.setdefault(tr["DiaryEntryId"], []).append(tr["Value"])
-
-            for row in rows:
-                ticks = row["DiaryEntryId"]
-                try:
-                    us = (ticks - 621355968000000000) / 10
-                    entry_dt = dt_mod.fromtimestamp(us / 1_000_000, tz=dt_pkg.timezone.utc)
-                    entry_date_str = entry_dt.strftime("%Y-%m-%d")
-                except Exception:
-                    logger.warning("Failed to parse Diarium date (ticks=%s)", ticks)
-                    continue
-
-                heading = re.sub(r"<[^>]+>", "", row["Heading"] or "").strip() or None
-                body_text = row["Text"] or ""
-                if body_text:
-                    body_text = re.sub(r"<br\s*/?>", "\n", body_text)
-                    body_text = re.sub(r"</?p>", "\n", body_text)
-                    body_text = re.sub(r"<[^>]+>", "", body_text).strip()
-
-                if not body_text:
-                    continue
-
-                if heading == "Today's Summary":
-                    heading = None
-
-                mood_val = None
-                rating = row["Rating"]
-                if rating and isinstance(rating, (int, float)) and 1 <= int(rating) <= 5:
-                    mood_val = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}.get(
-                        int(rating)
-                    )
-
-                entries_data.append(
-                    {
-                        "entry_date": entry_date_str,
-                        "title": heading,
-                        "body": body_text,
-                        "mood": mood_val,
-                        "tags": entry_tags_map.get(row["DiaryEntryId"], []),
-                        "latitude": row["Latitude"] if row["Latitude"] else None,
-                        "longitude": row["Longitude"] if row["Longitude"] else None,
-                    }
-                )
-            conn.close()
-        finally:
-            PathLib(tmp.name).unlink(missing_ok=True)
+        # Diarium .diary SQLite database — parsing lives in the importers service.
+        entries_data.extend(parse_diarium_sqlite(await file.read()))
 
     else:
         # Small files — read into memory

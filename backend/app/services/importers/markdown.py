@@ -42,8 +42,11 @@ def parse_markdown_entry(raw: str) -> dict[str, Any] | None:
             title = line.split(":", 1)[1].strip().strip('"')
         elif line.startswith("mood:"):
             mood = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("  - "):
-            tags.append(line[4:].strip())
+        elif line.startswith("- "):
+            # Lines are stripped above, so a YAML list item is "- item" here.
+            # (Previously checked "  - " which never matched post-strip, silently
+            # dropping all frontmatter tags.)
+            tags.append(line[2:].strip())
 
     return {
         "entry_date": entry_date,
