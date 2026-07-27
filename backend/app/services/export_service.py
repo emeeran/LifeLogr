@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import date
 
 from markdown_it import MarkdownIt
@@ -333,3 +334,117 @@ class ExportService:
                         else:
                             lines.append(f"  - {item}")
         return "\n".join(lines)
+
+
+# ── Diarium-native .diary SQLite export ─────────────────────────────────────
+# Moved from app.routers.entries so the router stays a thin transport layer.
+# Produces the real Diarium schema (Entries keyed by .NET DateTime ticks, Tags,
+# EntryTags) so the file opens in Diarium or re-imports via the .diary importer.
+_DOTNET_TICKS_EPOCH = 621355968000000000
+_TICKS_PER_SECOND = 10_000_000
+_MOOD_TO_RATING = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
+
+
+def _markdown_to_diarium_html(body: str) -> str:
+    """Convert a markdown/plain-text body into Diarium-style HTML.
+
+    Diarium stores entry text as HTML (<p>...</p> with <br> line breaks) — the
+    inverse of the HTML-stripping performed by the .diary importer.
+    """
+    escaped = html.escape(body or "")
+    paragraphs = re.split(r"\n\s*\n", escaped)
+    rendered = []
+    for para in paragraphs:
+        if not para.strip():
+            continue
+        para = para.replace("\n", "<br>")
+        rendered.append(f"<p>{para}</p>")
+    return "".join(rendered)
+
+
+def build_diarium_database(entries: list[Entry]) -> bytes:
+    """Build a Diarium-native .diary SQLite database (as bytes) from entries.
+
+    ``entries`` must have ``tag_associations`` loaded (selectinload). Returns the
+    serialized SQLite file so the caller can wrap it in a StreamingResponse.
+    """
+    import sqlite3
+    import tempfile
+    from datetime import date as date_type
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE Entries (
+                DiaryEntryId INTEGER PRIMARY KEY,
+                Heading     TEXT,
+                Text        TEXT,
+                Rating      INTEGER DEFAULT 0,
+                Latitude    REAL,
+                Longitude   REAL
+            );
+            CREATE TABLE Tags (
+                DiaryTagId  INTEGER PRIMARY KEY AUTOINCREMENT,
+                Value       TEXT NOT NULL
+            );
+            CREATE TABLE EntryTags (
+                DiaryEntryId INTEGER NOT NULL,
+                DiaryTagId   INTEGER NOT NULL,
+                PRIMARY KEY (DiaryEntryId, DiaryTagId)
+            );
+            """
+        )
+
+        tag_id_map: dict[str, int] = {}
+        used_entry_ids: set[int] = set()
+
+        for entry in entries:
+            ed = entry.entry_date
+            if isinstance(ed, str):
+                ed = date_type.fromisoformat(ed[:10])
+            # DiaryEntryId = .NET ticks for the entry date at 00:00:00 UTC.
+            midnight = datetime.combine(ed, datetime.min.time(), tzinfo=timezone.utc)
+            unix_us = int(midnight.timestamp() * 1_000_000)
+            entry_id = _DOTNET_TICKS_EPOCH + unix_us * 10
+            # Guarantee uniqueness while staying on the same calendar day.
+            while entry_id in used_entry_ids:
+                entry_id += _TICKS_PER_SECOND
+            used_entry_ids.add(entry_id)
+
+            heading = (entry.title or "").strip()
+            text_html = _markdown_to_diarium_html(entry.body or "")
+            rating = _MOOD_TO_RATING.get(entry.mood or "", 0)
+
+            conn.execute(
+                "INSERT INTO Entries (DiaryEntryId, Heading, Text, Rating, Latitude, Longitude) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (entry_id, heading, text_html, rating, None, None),
+            )
+            for assoc in entry.tag_associations:
+                tag = assoc.tag
+                if not tag or not tag.name:
+                    continue
+                if tag.name not in tag_id_map:
+                    cur = conn.execute("INSERT INTO Tags (Value) VALUES (?)", (tag.name,))
+                    tag_id_map[tag.name] = cur.lastrowid  # type: ignore[assignment]
+                conn.execute(
+                    "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId) VALUES (?, ?)",
+                    (entry_id, tag_id_map[tag.name]),
+                )
+        conn.commit()
+        # Serialize to a binary SQLite file. conn.serialize()/iterdump() aren't
+        # available under pysqlite3 (the frozen-build FTS5 swap), so backup() to
+        # a file connection (works in both stdlib sqlite3 and pysqlite3).
+        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
+        tmp.close()
+        try:
+            with sqlite3.connect(tmp.name) as out:
+                conn.backup(out)
+            return Path(tmp.name).read_bytes()
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+    finally:
+        conn.close()

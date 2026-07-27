@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import re
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -29,6 +28,7 @@ from app.schemas.entry import (
 )
 from app.schemas.tag import TagBrief
 from app.services.entry_service import EntryService
+from app.services.export_service import build_diarium_database
 from app.services.importers import (
     parse_csv,
     parse_diarium_json_entry,
@@ -330,30 +330,6 @@ async def export_json(
 
 
 # .NET DateTime ticks for 0001-01-01 (the epoch Diarium's DiaryEntryId is based on).
-_DOTNET_TICKS_EPOCH = 621355968000000000
-_TICKS_PER_SECOND = 10_000_000
-_MOOD_TO_RATING = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
-
-
-def _markdown_to_diarium_html(body: str) -> str:
-    """Convert a markdown/plain-text body into Diarium-style HTML.
-
-    Diarium stores entry text as HTML (<p>...</p> with <br> line breaks).
-    This is the inverse of the HTML-stripping performed by the .diary importer.
-    """
-    import html as html_mod
-
-    escaped = html_mod.escape(body or "")
-    paragraphs = re.split(r"\n\s*\n", escaped)
-    rendered = []
-    for para in paragraphs:
-        if not para.strip():
-            continue
-        para = para.replace("\n", "<br>")
-        rendered.append(f"<p>{para}</p>")
-    return "".join(rendered)
-
-
 @router.get("/export/diarium-db")
 async def export_diarium_db(
     start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
@@ -366,10 +342,6 @@ async def export_diarium_db(
     Tags, EntryTags) so the file can be opened/imported directly by the
     Diarium app or re-imported here via the .diary importer.
     """
-    import sqlite3
-    from datetime import date as date_type
-    from datetime import datetime, timezone
-
     q = (
         select(Entry)
         .where(Entry.is_deleted.is_(False))
@@ -386,94 +358,9 @@ async def export_diarium_db(
     result = await db.execute(q)
     entries = list(result.scalars().all())
 
-    conn = sqlite3.connect(":memory:")
-    try:
-        # Core Diarium tables (text/tags/rating subset — matches what the
-        # .diary importer reads back, and what Diarium requires to import).
-        conn.executescript(
-            """
-            CREATE TABLE Entries (
-                DiaryEntryId INTEGER PRIMARY KEY,
-                Heading     TEXT,
-                Text        TEXT,
-                Rating      INTEGER DEFAULT 0,
-                Latitude    REAL,
-                Longitude   REAL
-            );
-            CREATE TABLE Tags (
-                DiaryTagId  INTEGER PRIMARY KEY AUTOINCREMENT,
-                Value       TEXT NOT NULL
-            );
-            CREATE TABLE EntryTags (
-                DiaryEntryId INTEGER NOT NULL,
-                DiaryTagId   INTEGER NOT NULL,
-                PRIMARY KEY (DiaryEntryId, DiaryTagId)
-            );
-            """
-        )
-
-        tag_id_map: dict[str, int] = {}
-        used_entry_ids: set[int] = set()
-
-        for entry in entries:
-            ed = entry.entry_date
-            if isinstance(ed, str):
-                ed = date_type.fromisoformat(ed[:10])
-            # DiaryEntryId = .NET ticks for the entry date at 00:00:00 UTC.
-            midnight = datetime.combine(ed, datetime.min.time(), tzinfo=timezone.utc)
-            unix_us = int(midnight.timestamp() * 1_000_000)
-            entry_id = _DOTNET_TICKS_EPOCH + unix_us * 10
-            # Guarantee uniqueness while staying on the same calendar day
-            # (offsets in whole seconds so the importer still resolves the date).
-            while entry_id in used_entry_ids:
-                entry_id += _TICKS_PER_SECOND
-            used_entry_ids.add(entry_id)
-
-            heading = (entry.title or "").strip()
-            text_html = _markdown_to_diarium_html(entry.body or "")
-            rating = _MOOD_TO_RATING.get(entry.mood or "", 0)
-
-            conn.execute(
-                "INSERT INTO Entries (DiaryEntryId, Heading, Text, Rating, Latitude, Longitude) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (entry_id, heading, text_html, rating, None, None),
-            )
-
-            for assoc in entry.tag_associations:
-                tag = assoc.tag
-                if not tag or not tag.name:
-                    continue
-                if tag.name not in tag_id_map:
-                    cur = conn.execute("INSERT INTO Tags (Value) VALUES (?)", (tag.name,))
-                    tag_id_map[tag.name] = cur.lastrowid  # type: ignore[assignment]
-                conn.execute(
-                    "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId) VALUES (?, ?)",
-                    (entry_id, tag_id_map[tag.name]),
-                )
-
-        conn.commit()
-        # Serialize to a binary SQLite file. We can't use Connection.serialize()
-        # because the PyInstaller build swaps stdlib sqlite3 for pysqlite3
-        # (for FTS5), and pysqlite3's Connection does not implement
-        # serialize()/iterdump(). backup() to a file connection works in both
-        # and yields a byte-identical SQLite database file.
-        import tempfile
-        from pathlib import Path as _Path
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
-        tmp.close()
-        try:
-            with sqlite3.connect(tmp.name) as out:
-                conn.backup(out)
-            buf = io.BytesIO(_Path(tmp.name).read_bytes())
-        finally:
-            _Path(tmp.name).unlink(missing_ok=True)
-    finally:
-        conn.close()
-
-    buf.seek(0)
+    data = build_diarium_database(entries)
     return StreamingResponse(
-        buf,
+        io.BytesIO(data),
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="lifelogr-export.diary"'},
     )
