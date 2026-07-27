@@ -78,3 +78,43 @@ class TestSearch:
         assert any(item.type == "reminder" and item.id == r1.id for item in results)
         # The non-matching reminder must not appear.
         assert not any(item.id == r2.id for item in results)
+
+
+class TestSearchIndexRebuild:
+    """rebuild_search_index() repopulates entries_fts/notes_fts from base rows.
+
+    Covers the Diagnostics 'Rebuild search index' action + the startup self-heal
+    path, which were previously untested.
+    """
+
+    async def test_rebuild_populates_fts_from_entries(self, db_session: AsyncSession):
+        from sqlalchemy import text
+
+        from app.core.database import rebuild_search_index
+
+        db_session.add(
+            Entry(entry_date=date(2026, 5, 10), title="Rebuild", body="rebuildable content")
+        )
+        await db_session.commit()
+        # Wipe the FTS index, then rebuild — the entry must reappear.
+        await db_session.execute(text("DELETE FROM entries_fts"))
+        await db_session.commit()
+
+        counts = await rebuild_search_index()
+        n = (
+            await db_session.execute(
+                text("SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'rebuildable'")
+            )
+        ).scalar()
+        assert int(n or 0) >= 1
+        assert counts.get("entries", 0) >= 1
+
+    async def test_rebuild_is_idempotent(self, db_session: AsyncSession):
+        from app.core.database import rebuild_search_index
+
+        db_session.add(Entry(entry_date=date(2026, 5, 11), body="idempotent rebuild token"))
+        await db_session.commit()
+        first = await rebuild_search_index()
+        second = await rebuild_search_index()
+        assert first == second  # re-running doesn't duplicate or drop rows
+
