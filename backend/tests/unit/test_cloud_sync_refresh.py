@@ -15,7 +15,11 @@ import time
 import httpx
 import respx
 
-from app.services.cloud_sync_service import OneDriveProvider
+from app.services.cloud_sync_service import (
+    BoxProvider,
+    DropboxProvider,
+    OneDriveProvider,
+)
 
 
 def _creds(expired: bool = True) -> dict[str, str]:
@@ -80,3 +84,61 @@ async def test_skips_refresh_when_token_still_valid() -> None:
         call for call in respx.calls if str(call.request.url) == OneDriveProvider.TOKEN_URL
     ]
     assert token_calls == []
+
+
+# ── Dropbox + Box: same contract, exercised directly via _ensure_valid_token ─
+
+
+@respx.mock
+async def test_dropbox_refreshes_and_invokes_2arg_callback() -> None:
+    captured: dict[str, str] = {}
+
+    async def on_refresh(access: str, expiry: str) -> None:
+        captured["access_token"] = access
+        captured["token_expiry"] = expiry
+
+    provider = DropboxProvider(_creds(expired=True), on_token_refresh=on_refresh)
+    respx.post(DropboxProvider.TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "db-new", "expires_in": 3600}
+        )
+    )
+
+    token = await provider._ensure_valid_token()
+    await provider.close()
+
+    assert token == "db-new"
+    assert provider._access_token == "db-new"
+    assert captured["access_token"] == "db-new"  # 2-arg callback fired
+
+
+@respx.mock
+async def test_box_refreshes_rotates_and_invokes_3arg_callback() -> None:
+    captured: dict[str, str] = {}
+
+    async def on_refresh(access: str, refresh: str, expiry: str) -> None:
+        captured["access_token"] = access
+        captured["refresh_token"] = refresh
+        captured["token_expiry"] = expiry
+
+    provider = BoxProvider(_creds(expired=True), on_token_refresh=on_refresh)
+    respx.post(BoxProvider.TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "box-new",
+                "expires_in": 3600,
+                "refresh_token": "rt-rotated",  # Box rotates every refresh
+            },
+        )
+    )
+
+    token = await provider._ensure_valid_token()
+    await provider.close()
+
+    assert token == "box-new"
+    assert provider._access_token == "box-new"
+    assert provider._refresh_token == "rt-rotated"  # rotated refresh token kept
+    # 3-arg callback fired with the rotated refresh token.
+    assert captured["access_token"] == "box-new"
+    assert captured["refresh_token"] == "rt-rotated"
