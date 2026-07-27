@@ -36,6 +36,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
 
@@ -107,6 +112,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
 
@@ -147,7 +157,11 @@ jobs:
   # ── macOS Desktop (DMG) ──
   build-mac:
     needs: [tests]
-    runs-on: macos-latest
+    # Intel runner: an x86_64 build runs on Intel Macs natively and on Apple
+    # Silicon via Rosetta. An arm64 build would NOT run on Intel, so build Intel
+    # to cover both. (A universal2 binary is the proper fix but needs universal
+    # PyInstaller + Rust targets — tracked separately.)
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
 
@@ -159,6 +173,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0" --locked
@@ -184,8 +203,8 @@ jobs:
       - name: Prepare sidecar
         run: |
           cp desktop/dist/lifelogr-backend \
-            desktop/src-tauri/lifelogr-backend-aarch64-apple-darwin
-          chmod +x desktop/src-tauri/lifelogr-backend-aarch64-apple-darwin
+            desktop/src-tauri/lifelogr-backend-x86_64-apple-darwin
+          chmod +x desktop/src-tauri/lifelogr-backend-x86_64-apple-darwin
 
       - name: Build Tauri (DMG)
         uses: tauri-apps/tauri-action@v0
