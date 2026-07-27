@@ -245,8 +245,10 @@ class NoteService:
         """Full-text search via the notes_fts index (falls back to ILIKE on error)."""
         from sqlalchemy import text as sa_text
 
-        # Quote each token so special characters don't break the FTS5 MATCH parser.
-        fts_query = " ".join(f'"{tok}"' for tok in query.split() if tok.strip())
+        # Sanitise the query for FTS5 MATCH (shared helper quotes each token).
+        from app.core.fts import sanitize_fts_query
+
+        fts_query = sanitize_fts_query(query)
 
         try:
             fts_sql = sa_text(

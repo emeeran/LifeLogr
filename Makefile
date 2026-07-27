@@ -6,7 +6,7 @@ UV      := uv
 # AI CLI used by the SDD pipeline. Override with: make domain AI=codex
 AI      ?= claude
 
-.PHONY: help setup domain reqs spec review design code review-code test lint run clean bump
+.PHONY: help setup domain reqs spec review design code review-code test lint run clean bump check-version
 
 help:
 	@echo ""
@@ -24,6 +24,7 @@ help:
 	@echo "  make lint         Ruff + mypy"
 	@echo "  make run          Start dev server"
 	@echo "  make bump V=x    Bump version in all 4 places"
+	@echo "  make check-version  Verify all 4 version sources match"
 	@echo "  make clean        Remove __pycache__ and .pytest_cache"
 	@echo ""
 
@@ -90,6 +91,9 @@ bump:
 	@# 4. desktop/src-tauri/tauri.conf.json
 	sed -i 's/"version": "[0-9.]*"/"version": "$(V)"/' desktop/src-tauri/tauri.conf.json
 	@echo "✔ Version bumped to $(V). Verify with: git diff"
+
+check-version:
+	@python scripts/check_version.py
 
 all: domain reqs spec review design code review-code test
 	@echo "✔ Full SDD pipeline complete."

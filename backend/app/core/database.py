@@ -376,6 +376,64 @@ async def _migrate_schema(conn: Any) -> None:
             logger.info("Creating index %s ...", idx_name)
             await conn.execute(text(sql))
 
+    await _stamp_schema_version(conn)
+
+
+# Bumped whenever a new column/index migration is added to _COLUMN_MIGRATIONS /
+# _INDEX_MIGRATIONS. Stamped into ``_schema_meta`` only after a completed
+# migration run, so a partial/crashed run stays detectable on the next startup
+# (the previous, lower stamp remains; the idempotent migrations then re-run and
+# heal). NOTE: ``PRAGMA user_version`` is reserved for FTS-index rebuild tracking.
+_SCHEMA_VERSION = 1
+
+
+async def _stamp_schema_version(conn: Any) -> None:
+    """Record that the schema migration run reached the current version.
+
+    Uses a small ``_schema_meta`` key/value table. Also appends a short auditable
+    log of completed runs (capped to the last 10) so recoverability is visible.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    await conn.execute(
+        text("CREATE TABLE IF NOT EXISTS _schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+    )
+    prev = (
+        await conn.execute(text("SELECT value FROM _schema_meta WHERE key='schema_version'"))
+    ).scalar()
+    prev_int = int(prev) if prev and str(prev).isdigit() else 0
+    await conn.execute(
+        text(
+            "INSERT INTO _schema_meta(key, value) VALUES('schema_version', :v) "
+            "ON CONFLICT(key) DO UPDATE SET value = :v"
+        ),
+        {"v": str(_SCHEMA_VERSION)},
+    )
+    log_row = (
+        await conn.execute(text("SELECT value FROM _schema_meta WHERE key='migration_log'"))
+    ).scalar()
+    try:
+        runs = json.loads(log_row) if log_row else []
+    except (ValueError, TypeError):
+        runs = []
+    runs.append(
+        {
+            "from": prev_int,
+            "to": _SCHEMA_VERSION,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    runs = runs[-10:]
+    await conn.execute(
+        text(
+            "INSERT INTO _schema_meta(key, value) VALUES('migration_log', :v) "
+            "ON CONFLICT(key) DO UPDATE SET value = :v"
+        ),
+        {"v": json.dumps(runs)},
+    )
+    logger.info("Schema migrations complete: version %d (was %d)", _SCHEMA_VERSION, prev_int)
+
 
 async def _backfill_entry_templates(conn: Any) -> None:
     """One-time best-effort link of existing entries to a template.

@@ -8,6 +8,7 @@ from datetime import date
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.fts import sanitize_fts_query
 from app.models.embedding import EntryEmbedding
 from app.models.entry import Entry
 from app.models.note import Note, NoteTag
@@ -97,7 +98,7 @@ class SearchService:
                 JOIN notes n ON n.id = notes_fts.rowid
                 WHERE notes_fts MATCH :query AND n.is_deleted = 0
             """)
-            params: dict[str, object] = {"query": query}
+            params: dict[str, object] = {"query": sanitize_fts_query(query)}
             if tag_ids:
                 placeholders = ", ".join(f":tag_{i}" for i in range(len(tag_ids)))
                 fts_q = text(
@@ -225,7 +226,7 @@ class SearchService:
               AND e.is_deleted = 0
         """)
 
-        params: dict[str, object] = {"query": query}
+        params: dict[str, object] = {"query": sanitize_fts_query(query)}
 
         conditions = []
         if mood:

@@ -1,14 +1,15 @@
-"""OneDrive (Microsoft Graph) OAuth 2.0 route handlers."""
+"""OneDrive (Microsoft Graph) OAuth 2.0 route handlers.
+
+Exchange/upsert/render plumbing is shared via ``app.routers._oauth_helpers``.
+"""
 
 from __future__ import annotations
 
-import html
 import json
 import logging
 import time
 from urllib.parse import urlencode
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
@@ -17,8 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oauth_state import OAuthStateStore
-from app.core.security import decrypt, encrypt
+from app.core.security import decrypt
 from app.models.backup import BackupConfig
+from app.routers._oauth_helpers import (
+    error_page,
+    exchange_authorization_code,
+    success_page,
+    upsert_backup_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,25 +37,6 @@ AUTHORIZE_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
 TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 
 _state = OAuthStateStore()
-
-
-def _result_page(ok: bool, detail: str = "") -> HTMLResponse:
-    title = "OneDrive Connected" if ok else "Connection Failed"
-    emoji = "✅" if ok else "❌"
-    body = (
-        "LifeLogr connected to your OneDrive account. You can close this tab."
-        if ok
-        else html.escape(detail)
-    )
-    return HTMLResponse(
-        content=(
-            "<!DOCTYPE html><html><body style='font-family:sans-serif;background:#0f172a;color:#f8fafc;"
-            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center'>"
-            f"<div><div style='font-size:3rem'>{emoji}</div><h2>{title}</h2>"
-            f"<p style='color:#94a3b8'>{body}</p></div></body></html>"
-        ),
-        status_code=200 if ok else 400,
-    )
 
 
 @router.get("/auth-url")
@@ -86,7 +74,7 @@ async def oauth_callback(
 ) -> HTMLResponse:
     """Exchange the OneDrive auth code for tokens and save the config."""
     if not _state.consume(state):
-        return _result_page(False, "Invalid or expired OAuth state. Please retry.")
+        return error_page("Invalid or expired OAuth state. Please retry.")
 
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "onedrive"))
     config = result.scalar_one_or_none()
@@ -100,34 +88,29 @@ async def oauth_callback(
             client_id = stored.get("client_id", client_id)
             client_secret = stored.get("client_secret", client_secret)
         except Exception:
-            logger.warning(
-                "Failed to decrypt OneDrive credentials for token exchange", exc_info=True
-            )
+            logger.warning("Failed to decrypt OneDrive credentials for token exchange", exc_info=True)
     if not client_id or not client_secret:
-        return _result_page(False, "OneDrive client_id/client_secret are not configured")
+        return error_page("OneDrive client_id/client_secret are not configured")
 
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(
-                TOKEN_URL,
-                data={
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "code": code,
-                    "redirect_uri": REDIRECT_URI,
-                    "grant_type": "authorization_code",
-                    "scope": SCOPES,
-                },
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            token_data = resp.json()
-        except Exception as e:
-            return _result_page(False, f"Failed to exchange code: {e}")
+    try:
+        token_data = await exchange_authorization_code(
+            TOKEN_URL,
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "redirect_uri": REDIRECT_URI,
+                "grant_type": "authorization_code",
+                "scope": SCOPES,
+            },
+        )
+    except Exception:
+        logger.warning("OneDrive token exchange failed", exc_info=True)
+        return error_page("Failed to connect to OneDrive. Please retry.")
 
     refresh_token = token_data.get("refresh_token") or stored.get("refresh_token")
     if not refresh_token:
-        return _result_page(False, "No refresh token returned. Please retry.")
+        return error_page("No refresh token returned. Please retry.")
     new_creds = {
         "client_id": client_id,
         "client_secret": client_secret,
@@ -135,10 +118,13 @@ async def oauth_callback(
         "refresh_token": refresh_token,
         "token_expiry": str(time.time() + token_data["expires_in"]),
     }
-    encrypted = encrypt(json.dumps(new_creds))
-    if config:
-        config.credentials_encrypted = encrypted
-    else:
-        db.add(BackupConfig(provider="onedrive", credentials_encrypted=encrypted))
-    await db.commit()
-    return _result_page(True)
+    try:
+        await upsert_backup_config(db, "onedrive", new_creds, existing=config)
+    except Exception:
+        logger.warning("Failed to persist OneDrive credentials", exc_info=True)
+        return error_page("Failed to save the OneDrive connection. Please retry.")
+    return success_page(
+        "OneDrive Connected!",
+        "✅",
+        "LifeLogr is now connected to your OneDrive account.",
+    )

@@ -269,9 +269,10 @@ class EntryService:
         """
         from sqlalchemy import text as sa_text
 
-        # Sanitise the query for FTS5 MATCH: quote each token so special
-        # characters / operators don't break the parser.
-        fts_query = " ".join(f'"{tok}"' for tok in query.split() if tok.strip())
+        # Sanitise the query for FTS5 MATCH (shared helper quotes each token).
+        from app.core.fts import sanitize_fts_query
+
+        fts_query = sanitize_fts_query(query)
 
         try:
             fts_sql = sa_text(
