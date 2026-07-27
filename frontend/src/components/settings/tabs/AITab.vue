@@ -328,6 +328,18 @@ const featureToggles = computed(
 // ── AI providers (cloud, OpenAI-compatible) ──
 const providers = ref<AIProvider[]>([]);
 const presets = ref<ProviderPreset[]>([]);
+
+// Cloud-egress warning: the active provider (if non-Ollama) receives the text of
+// any entry/note an AI tool runs on — it leaves the device. Surfaced as a banner
+// here and drives the editor "leaves device" badge + the Privacy tab.
+const cloudWarningDismissed = ref(false);
+const activeCloudProvider = computed(
+  () => providers.value.find((p) => p.is_active && p.preset !== "ollama") ?? null,
+);
+const activeProviderIsCloud = computed(() => activeCloudProvider.value !== null);
+const activeCloudProviderName = computed(
+  () => activeCloudProvider.value?.name ?? "your cloud provider",
+);
 const testingId = ref<number | null>(null);
 
 // Shared inline Add/Edit form. `formMode` null = collapsed; "add" = new-provider
@@ -523,6 +535,25 @@ onMounted(() => {
 </script>
 
 <template>
+  <div
+    v-if="activeProviderIsCloud && !cloudWarningDismissed"
+    class="mb-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] leading-snug text-amber-200"
+  >
+    <AlertTriangle :size="14" class="mt-px shrink-0" />
+    <div class="flex-1">
+      <strong class="font-medium">Cloud AI is on.</strong> Running any AI tool on an
+      entry or note sends its text to <strong>{{ activeCloudProviderName }}</strong> —
+      it leaves your device. Switch the active provider to local Ollama to keep
+      everything on your machine. See <em>Privacy</em> for the full picture.
+    </div>
+    <button
+      class="shrink-0 text-amber-200/70 hover:text-amber-200"
+      title="Dismiss"
+      @click="cloudWarningDismissed = true"
+    >
+      ✕
+    </button>
+  </div>
   <SettingsSection
     title="AI Providers"
     :icon="Sparkles"

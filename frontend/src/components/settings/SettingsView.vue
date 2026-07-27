@@ -12,15 +12,17 @@ import {
   Palette,
   Database,
   Search,
+  Shield,
 } from "lucide-vue-next";
 import AppearanceTab from "./tabs/AppearanceTab.vue";
 import AITab from "./tabs/AITab.vue";
 import DataTab from "./tabs/DataTab.vue";
+import PrivacyTab from "./tabs/PrivacyTab.vue";
 import DedicationTab from "./tabs/DedicationTab.vue";
 import AboutTab from "./tabs/AboutTab.vue";
 
 // ── Tab navigation ──
-const TAB_IDS = ["appearance", "ai", "data", "dedication", "about"] as const;
+const TAB_IDS = ["appearance", "ai", "data", "privacy", "dedication", "about"] as const;
 // Map stale tab ids from the old 8-tab layout → the new 5-tab one, so an
 // existing user's persisted selection isn't a blank screen after upgrade.
 const LEGACY_TAB: Record<string, string> = {
@@ -44,6 +46,7 @@ const tabs = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "ai", label: "AI", icon: Brain },
   { id: "data", label: "Data", icon: Database },
+  { id: "privacy", label: "Privacy", icon: Shield },
   { id: "dedication", label: "Dedication", icon: Heart },
   { id: "about", label: "About", icon: Info },
 ] as const;
@@ -142,6 +145,24 @@ const index: SearchEntry[] = [
     tab: "data",
     label: "Diagnostics",
     keywords: ["diagnostics", "health", "system status", "rebuild index", "search index"],
+  },
+
+  // ── Privacy ──
+  {
+    tab: "privacy",
+    label: "What leaves your machine",
+    keywords: [
+      "privacy",
+      "leaves device",
+      "egress",
+      "cloud",
+      "data leaves",
+      "local",
+      "offline",
+      "encryption",
+      "secret key",
+      "what leaves",
+    ],
   },
 
   // ── Dedication ──
@@ -321,6 +342,7 @@ provide("settings-highlight", highlightKey);
         <AppearanceTab v-if="activeTab === 'appearance'" @toast="showToast" />
         <AITab v-if="activeTab === 'ai'" @toast="showToast" />
         <DataTab v-if="activeTab === 'data'" @toast="showToast" />
+        <PrivacyTab v-if="activeTab === 'privacy'" />
         <DedicationTab v-if="activeTab === 'dedication'" />
         <AboutTab v-if="activeTab === 'about'" @toast="showToast" />
       </div>

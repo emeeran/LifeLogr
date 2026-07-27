@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { aiStatus, callAiTool } from '../../api/ai'
 import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
+import { getEgressReport } from '../../api/system'
 import type { GrammarSuggestion } from '../../types'
 import {
   CheckCircle, AlertCircle, Loader,
   Sparkles, Eraser,
   Copy, Check,
+  Cloud,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -41,6 +43,18 @@ async function checkAvailability() {
   }
 }
 checkAvailability()
+
+// Per-invocation transparency: if the active AI provider is in the cloud, the
+// selected text leaves the device. Surfaced as a badge in the drawer header.
+const leavesDevice = ref(false)
+onMounted(async () => {
+  try {
+    const report = await getEgressReport()
+    leavesDevice.value = report.cloud_ai.leaves_device
+  } catch {
+    leavesDevice.value = false
+  }
+})
 
 async function runTool(toolId: string) {
   const def = AI_TOOL_BY_ID[toolId]
@@ -106,6 +120,13 @@ function copyResult() {
           <CheckCircle :size="11" /> Ready
         </span>
         <span v-else class="text-[10px] text-text-muted animate-pulse">...</span>
+        <span
+          v-if="leavesDevice"
+          class="text-[9px] text-amber-300 flex items-center gap-1"
+          title="The active AI provider is in the cloud — the selected text leaves your device when you run a tool."
+        >
+          <Cloud :size="10" /> leaves device
+        </span>
       </div>
     </div>
 
