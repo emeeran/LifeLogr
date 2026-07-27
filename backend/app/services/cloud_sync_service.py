@@ -241,7 +241,24 @@ class NextcloudProvider:
 # ── Google Drive provider ──────────────────────────────────────────────
 
 
-class GoogleDriveProvider:
+class _OAuthProviderBase:
+    """Shared OAuth-provider HTTP-client lifecycle.
+
+    Each concrete provider (Google Drive / OneDrive / Dropbox / Box) keeps its
+    own token-refresh logic — Box rotates its refresh token and uses a 3-arg
+    callback; OneDrive sends a scope — so refresh stays per-subclass. Only the
+    identical lazy HTTP-client helper lives here, deduped from four copies.
+    """
+
+    _client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient()
+        return self._client
+
+
+class GoogleDriveProvider(_OAuthProviderBase):
     """Google Drive sync provider with a shared httpx client.
 
     Backups are stored in a visible ``LifeLogr Backups`` folder in My Drive
@@ -264,11 +281,6 @@ class GoogleDriveProvider:
         self._on_token_refresh = on_token_refresh
         self._client: httpx.AsyncClient | None = None
         self._folder_id: str | None = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient()
-        return self._client
 
     async def _ensure_valid_token(self) -> str:
         """Refreshes the access token if expired or missing."""
@@ -582,7 +594,7 @@ class GoogleDriveProvider:
 # ── OneDrive (Microsoft Graph app folder) provider ─────────────────────
 
 
-class OneDriveProvider:
+class OneDriveProvider(_OAuthProviderBase):
     """OneDrive sync provider via the Microsoft Graph API (app root folder)."""
 
     GRAPH = "https://graph.microsoft.com/v1.0/me/drive/special/approot"
@@ -600,11 +612,6 @@ class OneDriveProvider:
         self._token_expiry = credentials.get("token_expiry")
         self._on_token_refresh = on_token_refresh
         self._client: httpx.AsyncClient | None = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient()
-        return self._client
 
     async def _ensure_valid_token(self) -> str:
         import time
@@ -721,7 +728,7 @@ class OneDriveProvider:
 # ── Dropbox provider ───────────────────────────────────────────────────
 
 
-class DropboxProvider:
+class DropboxProvider(_OAuthProviderBase):
     """Dropbox sync provider via the Dropbox API (offline token refresh)."""
 
     TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
@@ -740,11 +747,6 @@ class DropboxProvider:
         self._token_expiry = credentials.get("token_expiry")
         self._on_token_refresh = on_token_refresh
         self._client: httpx.AsyncClient | None = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient()
-        return self._client
 
     async def _ensure_valid_token(self) -> str:
         import time
@@ -861,7 +863,7 @@ class DropboxProvider:
 # ── Box provider ────────────────────────────────────────────────────────
 
 
-class BoxProvider:
+class BoxProvider(_OAuthProviderBase):
     """Box sync provider via the Box Content API (LifeLogr folder in root).
 
     Raw httpx — mirrors OneDriveProvider. Box **rotates** its refresh token on
@@ -889,11 +891,6 @@ class BoxProvider:
         self._on_token_refresh = on_token_refresh
         self._client: httpx.AsyncClient | None = None
         self._folder_id: str | None = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient()
-        return self._client
 
     async def _ensure_valid_token(self) -> str:
         import time
