@@ -85,3 +85,77 @@ async def test_no_active_provider_falls_back_to_ollama(db_session):
         out = await OllamaService()._generate("hello")
     # Native path extracts data["response"] → proves the Ollama fallback.
     assert out == "ollama-reply"
+
+
+# ── test_connection / list_models error paths (respx) ────────────────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_connection_returns_reported_model():
+    from app.services.ai_provider_service import test_connection
+
+    respx.post("https://provider.test/v1/chat/completions").respond(
+        200, json={"model": "gpt-x", "choices": []}
+    )
+    assert await test_connection("https://provider.test/v1", "key", "gpt-x") == "gpt-x"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_connection_raises_on_http_error():
+    import httpx
+
+    from app.services.ai_provider_service import test_connection
+
+    respx.post("https://provider.test/v1/chat/completions").respond(503)
+    with pytest.raises(httpx.HTTPStatusError):
+        await test_connection("https://provider.test/v1", "key", "m")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_connection_raises_on_timeout():
+    import httpx
+
+    from app.services.ai_provider_service import test_connection
+
+    respx.post("https://provider.test/v1/chat/completions").mock(
+        side_effect=httpx.ConnectTimeout("timeout")
+    )
+    with pytest.raises(httpx.HTTPError):
+        await test_connection("https://provider.test/v1", "key", "m")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_connection_without_key_omits_auth_header():
+    from app.services.ai_provider_service import test_connection
+
+    route = respx.post("https://provider.test/v1/chat/completions").respond(200, json={"model": "m"})
+    await test_connection("https://provider.test/v1", None, "m")
+    assert "Authorization" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_models_sorts_and_drops_empty_ids():
+    from app.services.ai_provider_service import list_models
+
+    respx.get("https://provider.test/v1/models").respond(
+        200, json={"data": [{"id": "b"}, {"id": "a"}, {"id": ""}, {"owned_by": "x"}]}
+    )
+    assert await list_models("https://provider.test/v1", "key") == [
+        {"id": "a", "owned_by": ""},
+        {"id": "b", "owned_by": ""},
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_models_missing_data_returns_empty():
+    from app.services.ai_provider_service import list_models
+
+    respx.get("https://provider.test/v1/models").respond(200, json={})
+    assert await list_models("https://provider.test/v1", "key") == []
+
