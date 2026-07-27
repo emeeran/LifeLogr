@@ -96,7 +96,11 @@ class TestEncryption:
         }
         assert rows[e1["id"]] and rows[e2["id"]]
         assert rows[e1["id"]] != rows[e2["id"]]
-        assert len(base64.b64decode(rows[e1["id"]])) >= 16
+        # New encryptions use the memory-hard scrypt KDF (v2-prefixed salt).
+        salt_str = rows[e1["id"]]
+        assert salt_str is not None
+        assert salt_str.startswith("v2:")
+        assert len(base64.b64decode(salt_str.removeprefix("v2:"))) >= 16
 
     async def test_legacy_entry_without_salt_still_decrypts(
         self, client: AsyncClient, db_session: AsyncSession
@@ -116,6 +120,30 @@ class TestEncryption:
 
         r = await client.post(
             f"/api/v1/entries/{e['id']}/encryption/decrypt", json={"passphrase": "legacypw"}
+        )
+        assert r.status_code == 200
+        assert r.json()["is_encrypted"] is False
+
+    async def test_modern_pbkdf2_entry_still_decrypts(
+        self, client: AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # An entry encrypted by the PREVIOUS modern path (PBKDF2 + a bare base64
+        # per-entry salt, no v2 prefix) must still decrypt after the scrypt
+        # switch — backward compatibility is load-bearing (no entry may become
+        # undecryptable). Uses the retained PBKDF2 _derive_key directly.
+        e = await _entry(client)
+        svc = EncryptionService(db_session)
+        entry = (
+            await db_session.execute(select(Entry).where(Entry.id == e["id"]))
+        ).scalar_one()
+        salt = b"0123456789abcdef"  # 16-byte legacy per-entry salt
+        entry.body = svc._encrypt(b"Secret diary", svc._derive_key("oldpw", salt))
+        entry.is_encrypted = True
+        entry.encryption_salt = base64.b64encode(salt).decode()  # bare, no v2 prefix
+        await db_session.commit()
+
+        r = await client.post(
+            f"/api/v1/entries/{e['id']}/encryption/decrypt", json={"passphrase": "oldpw"}
         )
         assert r.status_code == 200
         assert r.json()["is_encrypted"] is False

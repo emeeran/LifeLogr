@@ -17,6 +17,19 @@ from app.models.note import Note
 # 12-byte nonce is standard for AES-GCM
 _NONCE_SIZE = 12
 
+# KDF versioning for passphrase-derived keys. The stored ``encryption_salt``
+# carries a prefix so decrypt knows which KDF encrypted the entry — an entry can
+# never become undecryptable, so every historical KDF stays supported:
+#   "v2:<b64>" → scrypt (memory-hard; current default for new encryptions)
+#   "<b64>"    → legacy PBKDF2-HMAC-SHA256 with a per-entry salt
+#   None       → oldest legacy PBKDF2 with the deterministic (passphrase-derived) salt
+_KDF_V2_PREFIX = "v2:"
+# scrypt cost (N=2^15, r=8, p=1) → ~32 MiB memory, ~0.1–0.3s — memory-hard, so
+# far more GPU/ASIC-resistant than PBKDF2 at any practical iteration count.
+_SCRYPT_N = 1 << 15
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+
 
 class EncryptionService:
     def __init__(self, db: AsyncSession) -> None:
@@ -24,11 +37,11 @@ class EncryptionService:
 
     @staticmethod
     def _derive_key(passphrase: str, salt: bytes | None = None) -> bytes:
-        """Derive a 256-bit key from a passphrase + salt via PBKDF2-HMAC-SHA256.
+        """Derive a 256-bit key via PBKDF2-HMAC-SHA256 (the *legacy* KDF).
 
-        ``salt`` should be a random per-entry salt (modern path). ``None`` falls
-        back to the legacy deterministic (passphrase-derived) salt so entries
-        encrypted before per-entry salts were introduced still decrypt.
+        Retained so entries encrypted before scrypt became the default still
+        decrypt. ``salt=None`` falls back to the deterministic (passphrase-derived)
+        salt for the oldest entries.
         """
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -43,6 +56,27 @@ class EncryptionService:
             iterations=600_000,
         )
         return kdf.derive(passphrase.encode())
+
+    @staticmethod
+    def _derive_key_scrypt(passphrase: str, salt: bytes) -> bytes:
+        """Derive a 256-bit key with scrypt (memory-hard; the current default)."""
+        from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
+        kdf = Scrypt(salt=salt, length=32, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P)
+        return kdf.derive(passphrase.encode())
+
+    @staticmethod
+    def _derive_key_for_decrypt(passphrase: str, stored_salt: str | None) -> bytes:
+        """Pick the KDF from the stored-salt format and derive the key.
+
+        See the ``_KDF_V2_PREFIX`` note above for the three supported formats.
+        """
+        if stored_salt and stored_salt.startswith(_KDF_V2_PREFIX):
+            salt = base64.b64decode(stored_salt[len(_KDF_V2_PREFIX) :])
+            return EncryptionService._derive_key_scrypt(passphrase, salt)
+        return EncryptionService._derive_key(
+            passphrase, base64.b64decode(stored_salt) if stored_salt else None
+        )
 
     @staticmethod
     def _encrypt(plaintext: bytes, key: bytes) -> str:
@@ -78,11 +112,11 @@ class EncryptionService:
             raise ValueError("Entry is already encrypted")
 
         salt = os.urandom(16)
-        key = self._derive_key(passphrase, salt)
+        key = self._derive_key_scrypt(passphrase, salt)
         entry.body = self._encrypt(entry.body.encode(), key)
         if entry.mood is not None:
             entry.mood = self._encrypt(entry.mood.encode(), key)
-        entry.encryption_salt = base64.b64encode(salt).decode()
+        entry.encryption_salt = _KDF_V2_PREFIX + base64.b64encode(salt).decode()
 
         entry.is_encrypted = True
         entry.encrypted_at = datetime.now(timezone.utc)
@@ -97,8 +131,7 @@ class EncryptionService:
         if not entry.is_encrypted:
             raise ValueError("Entry is not encrypted")
 
-        salt = base64.b64decode(entry.encryption_salt) if entry.encryption_salt else None
-        key = self._derive_key(passphrase, salt)
+        key = self._derive_key_for_decrypt(passphrase, entry.encryption_salt)
 
         entry.body = self._decrypt(entry.body, key).decode()
         if entry.mood is not None:
@@ -137,9 +170,9 @@ class EncryptionService:
         if note.is_encrypted:
             raise ValueError("Note is already encrypted")
         salt = os.urandom(16)
-        key = self._derive_key(passphrase, salt)
+        key = self._derive_key_scrypt(passphrase, salt)
         note.body = self._encrypt(note.body.encode(), key)
-        note.encryption_salt = base64.b64encode(salt).decode()
+        note.encryption_salt = _KDF_V2_PREFIX + base64.b64encode(salt).decode()
         note.is_encrypted = True
         note.encrypted_at = datetime.now(timezone.utc)
         await self.db.commit()
@@ -151,8 +184,7 @@ class EncryptionService:
         note = await self._get_note(note_id)
         if not note.is_encrypted:
             raise ValueError("Note is not encrypted")
-        salt = base64.b64decode(note.encryption_salt) if note.encryption_salt else None
-        key = self._derive_key(passphrase, salt)
+        key = self._derive_key_for_decrypt(passphrase, note.encryption_salt)
         note.body = self._decrypt(note.body, key).decode()
         note.encryption_salt = None
         note.is_encrypted = False
