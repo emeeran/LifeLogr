@@ -29,10 +29,9 @@ dependencies = [
 
 [project.optional-dependencies]
 ocr = ["pytesseract>=0.3.13", "pillow>=12.2.0"]
-pdf = ["weasyprint>=68.1"]
 tts = ["edge-tts>=7.2.8"]
 image = ["pillow>=12.2.0"]
-all = ["lifelogr[ocr,pdf,tts,image]"]
+all = ["lifelogr[ocr,tts,image]"]
 
 [dependency-groups]
 dev = [

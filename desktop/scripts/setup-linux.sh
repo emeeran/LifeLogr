@@ -28,7 +28,7 @@ echo "==================================="
 echo "Detected distro: $DISTRO"
 echo ""
 
-# ── 1. System packages (weasyprint deps, gstreamer) ──
+# ── 1. System packages (gstreamer, OCR, audio) ──
 install_system_deps() {
     echo ">>> Installing system packages..."
 
@@ -36,25 +36,24 @@ install_system_deps() {
         ubuntu|debian|linuxmint|pop)
             apt-get update -qq
             apt-get install -y --no-install-recommends \
-                libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
-                libgdk-pixbuf2.0-0 libffi-dev shared-mime-info \
+                libffi-dev shared-mime-info \
                 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
                 gstreamer1.0-plugins-bad \
                 libportaudio2 \
                 tesseract-ocr tesseract-ocr-eng
             ;;
         fedora|rhel|centos)
-            dnf install -y pango cairo gdk-pixbuf2 libffi shared-mime-info
+            dnf install -y libffi shared-mime-info
             ;;
         arch|manjaro|endeavouros)
-            pacman -S --needed --noconfirm pango cairo gdk-pixbuf2 libffi shared-mime-info
+            pacman -S --needed --noconfirm libffi shared-mime-info
             ;;
         opensuse*|sles)
-            zypper install -y pango cairo gdk-pixbuf libffi shared-mime-info
+            zypper install -y libffi shared-mime-info
             ;;
         *)
             warn "Unsupported distro: $DISTRO"
-            warn "Install manually: pango, cairo, gdk-pixbuf, libffi"
+            warn "Install manually: libffi, shared-mime-info"
             return
             ;;
     esac
@@ -95,40 +94,7 @@ install_ollama() {
     fi
 }
 
-# ── 3. Optional: Python deps for PDF export ──
-install_python_optional() {
-    echo ">>> Installing optional Python packages..."
-
-    # Detect the owner of the home directory when run via sudo
-    REAL_HOME="${SUDO_HOME:-${HOME}}"
-    if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
-        REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-    fi
-
-    local VENV="$REAL_HOME/.local/share/lifelogr/python-deps"
-
-    if [ ! -d "$VENV" ]; then
-        python3 -m venv "$VENV"
-        # Fix ownership when run via sudo
-        if [ -n "${SUDO_USER:-}" ]; then
-            chown -R "$SUDO_USER:$SUDO_USER" "$VENV"
-        fi
-    fi
-
-    "$VENV/bin/pip" install --upgrade pip -q 2>/dev/null
-    "$VENV/bin/pip" install -q weasyprint 2>/dev/null || \
-        warn "Some optional Python deps failed to install (non-critical)"
-
-    # Fix ownership of installed packages
-    if [ -n "${SUDO_USER:-}" ]; then
-        chown -R "$SUDO_USER:$SUDO_USER" "$VENV"
-    fi
-
-    log "Optional Python deps installed to $VENV"
-    warn "Note: weasyprint is optional — not required for core features"
-}
-
-# ── 4. Verify installation ──
+# ── 3. Verify installation ──
 verify_install() {
     echo ""
     echo "=== Verification ==="
@@ -161,5 +127,4 @@ verify_install() {
 # ── Run ──
 install_system_deps
 install_ollama
-install_python_optional
 verify_install
