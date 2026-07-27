@@ -4,1225 +4,409 @@
 
 Base URL: `http://localhost:8000/api/v1`
 
+> In the **web** build the launcher picks a free local port (it prefers **18765** so
+> that OAuth sign-in callbacks complete on the loopback interface) and falls back to
+> `8000`–`8019`. The backend always binds to `127.0.0.1` (loopback only).
+
 ---
 
 ## Table of Contents
 
-1. [Authentication](#authentication)
+1. [Authentication & Limits](#authentication--limits)
 2. [Entries](#entries)
-3. [Tags](#tags)
-4. [Templates](#templates)
-5. [Media](#media)
-6. [Recordings](#recordings)
-7. [Search](#search)
-8. [AI](#ai)
-9. [Export](#export)
-10. [Backup](#backup)
-11. [Sync](#sync)
-12. [Encryption](#encryption)
-13. [Revisions](#revisions)
-14. [Reminders](#reminders)
-15. [TTS](#tts)
-16. [Plugins](#plugins)
-17. [Error Responses](#error-responses)
-
-> **New in AI:** A generic tool endpoint `POST /ai/tool/{tool_id}` powers nine new tools — Summarize, Key Points, Action Items, Shorten, Simplify, Polish, Translate, Structure, and Title. Active/Passive voice conversion (`POST /ai/change-voice`) and Rewrite for Clarity (`POST /ai/rewrite-for-clarity`) remain available.
+3. [Notes](#notes)
+4. [Tags](#tags)
+5. [Templates](#templates)
+6. [Media](#media)
+7. [Recordings](#recordings)
+8. [Video Notes](#video-notes)
+9. [Search](#search)
+10. [AI](#ai)
+11. [AI Providers](#ai-providers)
+12. [TTS](#tts)
+13. [Prompts](#prompts)
+14. [Encryption](#encryption)
+15. [Reminders](#reminders)
+16. [Export](#export)
+17. [Backup & Cloud Providers](#backup--cloud-providers)
+18. [Sync](#sync)
+19. [System](#system)
+20. [Memorial](#memorial)
+21. [Settings](#settings)
+22. [Error Responses](#error-responses)
 
 ---
 
-## Authentication
+## Authentication & Limits
 
-Currently, LifeLogr runs locally without authentication. In production deployments behind a reverse proxy, add authentication at the proxy layer.
+LifeLogr runs locally as a **single-user** app and binds to `127.0.0.1` only — there
+is **no authentication**. Behind a reverse proxy / shared deployment, add auth at the
+proxy layer.
 
-**Rate Limiting:** 60 requests per minute per IP (in-memory).
+**Rate limiting:** 60 requests/minute per IP, **scoped to production deployments
+only** (`APP_ENV=production`) — the desktop app does not self-throttle its background
+enrichment.
 
 ---
 
 ## Entries
 
-### List Entries
-
-```
-GET /entries
-```
-
-**Query Parameters:**
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `offset` | int | 0 | Pagination offset |
-| `limit` | int | 50 | Results per page |
-| `tag_ids` | int[] | — | Filter by tag IDs (repeat param) |
-| `year` | int | — | Filter by year |
-| `month` | int | — | Filter by month (1-12) |
-
-**Response:** `EntryListResponse`
-
-```json
-{
-  "items": [
-    {
-      "id": 1,
-      "entry_date": "2026-05-19",
-      "title": "My Day",
-      "body": "Today was productive...",
-      "is_deleted": false,
-      "is_encrypted": false,
-      "tags": [{"id": 1, "name": "personal"}],
-      "media_count": 2,
-      "has_recording": false,
-      "created_at": "2026-05-19T10:00:00",
-      "updated_at": "2026-05-19T10:30:00"
-    }
-  ],
-  "total": 42,
-  "offset": 0,
-  "limit": 50
-}
-```
-
-### Get Entry
-
-```
-GET /entries/{entry_id}
-```
-
-**Response:** `EntryResponse` (single object)
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/entries` | Create a journal entry |
+| `GET` | `/entries` | List entries (paginated, filterable) |
+| `GET` | `/entries/calendar/{year}/{month}` | All entries for a calendar month |
+| `GET` | `/entries/search` | Legacy entry search (prefer `/search`) |
+| `GET` | `/entries/{entry_id}` | Get a single entry |
+| `PATCH` | `/entries/{entry_id}` | Update an entry |
+| `DELETE` | `/entries/{entry_id}` | Soft-delete an entry |
+| `POST` | `/entries/{entry_id}/restore` | Restore a soft-deleted entry (re-indexes FTS) |
+| `POST` | `/entries/reset` | **Irreversible** — delete all entries, tags, media, recordings |
+| `POST` | `/entries/import` | Import entries from a JSON payload |
+| `POST` | `/entries/import/file` | Import from an uploaded file (`.diary` / `.json` / `.zip`) |
+| `POST` | `/entries/deduplicate` | Find & soft-delete duplicates (by date + title) |
+| `GET` | `/entries/export/markdown` | Export as Markdown ZIP |
+| `GET` | `/entries/export/diarium` | Export as Diarium JSON |
+| `GET` | `/entries/export/json` | Export as JSON |
+| `GET` | `/entries/export/diarium-db` | Export as a Diarium SQLite database |
 
 ### Create Entry
-
 ```
 POST /entries
 ```
-
-**Body:** `EntryCreate`
-
 ```json
-{
-  "entry_date": "2026-05-19",
-  "title": "My Day",
-  "body": "Content here...",
-  "tag_ids": [1, 3]
-}
+{ "entry_date": "2026-05-19", "title": "My Day", "body": "Content…", "tag_ids": [1, 3] }
 ```
+**Response:** `201` → `EntryResponse`. Body is capped at 1,000,000 characters.
 
-**Response:** `201 Created` → `EntryResponse`
-
-### Update Entry
-
+### List Entries
 ```
-PATCH /entries/{entry_id}
+GET /entries?offset=0&limit=50&tag_ids=1&tag_ids=2&year=2026&month=5
 ```
+Returns `EntryListResponse` (`items`, `total`, `offset`, `limit`). Each item includes
+`tags`, `media_count`, `has_recording`, and `is_encrypted`.
 
-**Body:** `EntryUpdate`
-
-```json
-{
-  "title": "Updated Title",
-  "body": "Updated content...",
-  "tag_ids": [1, 2, 3]
-}
+### Import from file
 ```
-
-**Response:** `EntryResponse`
-
-### Delete Entry
-
+POST /entries/import/file     (multipart/form-data, field: file)
 ```
-DELETE /entries/{entry_id}
-```
-
-Soft-deletes the entry (`is_deleted = true`).
-
-**Response:** `204 No Content`
-
-### Calendar Month
-
-```
-GET /entries/calendar/{year}/{month}
-```
-
-Returns all entries for the specified month.
-
-**Response:** `EntryResponse[]`
-
-### Search Entries
-
-```
-GET /entries/search?q={query}&offset=0&limit=20
-```
-
-Uses SQLite FTS5 full-text search.
-
-**Response:** `EntryListResponse`
-
-### Import Entries
-
-```
-POST /entries/import
-```
-
-**Body:**
-
-```json
-[
-  {"entry_date": "2026-01-01", "title": "New Year", "body": "Happy new year!"}
-]
-```
-
-**Response:**
-
-```json
-{"imported": 1, "skipped": 0}
-```
-
-### Import from File
-
-```
-POST /entries/import/file
-```
-
-**Body:** `multipart/form-data` with `file` field
-
-Supports: `.diary` (Diarium), `.json`, `.zip` (Markdown archive)
-
-**Response:**
-
-```json
-{"imported": 15, "skipped": 2}
-```
-
-### Export Markdown
-
-```
-GET /entries/export/markdown?start_date=2026-01-01&end_date=2026-12-31
-```
-
-**Response:** ZIP file download (Diarium-compatible format)
+Supports Diarium `.diary` (SQLite), `.json`, and Markdown `.zip` archives.
+**Response:** `{ "imported": 15, "skipped": 2 }`
 
 ### Deduplicate
-
 ```
 POST /entries/deduplicate
 ```
+**Response:** `{ "groups_found": 3, "duplicates_removed": 3 }`
 
-Finds and soft-deletes duplicate entries based on date + title.
+---
 
-**Response:**
+## Notes
 
-```json
-{"groups_found": 3, "duplicates_removed": 3}
+Notes are standalone documents organized into **folders**, each with tabbed **pages**
+and its own **media**.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/notes` | Create a note |
+| `GET` | `/notes` | List notes (paginated) |
+| `GET` | `/notes/search` | Full-text search notes |
+| `POST` | `/notes/web-clip` | Clip a URL's text into a note (SSRF-hardened) |
+| `GET` | `/notes/{note_id}` | Get a note (with pages) |
+| `PATCH` | `/notes/{note_id}` | Update a note |
+| `POST` | `/notes/folders` · `GET` · `PATCH /{id}` · `DELETE /{id}` | Folder CRUD |
+| `POST` | `/notes/{note_id}/pages` | Add a page |
+| `PATCH` | `/notes/{note_id}/pages/{page_id}` | Update a page |
+| `DELETE` | `/notes/{note_id}/pages/{page_id}` | Delete a page |
+| `POST` | `/notes/{note_id}/pages/reorder` | Reorder pages |
+| `POST` | `/notes/{note_id}/media` | Attach media (upload) |
+| `POST` | `/notes/{note_id}/media/from-path` | Attach media from a local file path (desktop) |
+| `GET` | `/notes/{note_id}/media` | List a note's media |
+| `GET` | `/notes/{note_id}/media/{media_id}/file` | Download a note media file |
+| `DELETE` | `/notes/{note_id}/media/{media_id}` | Delete note media |
+| `POST` | `/notes/{note_id}/media/{media_id}/ocr` | OCR a note image |
+
+### Web-clip
 ```
-
-### Reset Database
-
+POST /notes/web-clip        { "url": "https://example.com/article", "note_id": 12 }
 ```
-POST /entries/reset
-```
-
-Deletes all entries, tags, media, and recordings. **Irreversible.**
-
-**Response:**
-
-```json
-{"status": "ok", "message": "All data deleted"}
-```
+Fetches the page **server-side** through an SSRF-hardened extractor (internal /
+loopback addresses blocked on every hop, including redirects) and returns markdown.
 
 ---
 
 ## Tags
 
-### List Tags
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/tags` | Create a tag (optional `parent_id` for hierarchy) |
+| `GET` | `/tags` | List tags |
+| `GET` | `/tags/tree` | Hierarchical tree with `children` |
+| `GET` | `/tags/{tag_id}` | Get a tag |
+| `PATCH` | `/tags/{tag_id}` | Rename a tag |
+| `DELETE` | `/tags/{tag_id}` | Delete a tag |
 
-```
-GET /tags
-```
-
-**Response:** `TagResponse[]`
-
-### Tag Tree
-
-```
-GET /tags/tree
-```
-
-Returns tags in hierarchical tree structure with children.
-
-**Response:** `TagResponse[]` with nested `children`
-
-### Get Tag
-
-```
-GET /tags/{tag_id}
-```
-
-**Response:** `TagResponse`
-
-### Create Tag
-
-```
-POST /tags
-```
-
-**Body:**
-
-```json
-{"name": "Travel", "parent_id": null}
-```
-
-**Response:** `201 Created` → `TagResponse`
-
-### Update Tag
-
-```
-PATCH /tags/{tag_id}
-```
-
-**Body:**
-
-```json
-{"name": "Renamed Tag"}
-```
-
-**Response:** `TagResponse`
-
-### Delete Tag
-
-```
-DELETE /tags/{tag_id}
-```
-
-**Response:** `204 No Content`
+Tags are **shared** across entries and notes.
 
 ---
 
 ## Templates
 
-### List Templates
-
-```
-GET /templates
-```
-
-**Response:** `TemplateResponse[]`
-
-```json
-[
-  {
-    "id": 1,
-    "name": "Daily Reflection",
-    "body": "## How I'm feeling\n\n...",
-    "is_builtin": true,
-    "created_at": "2026-01-01T00:00:00",
-    "updated_at": "2026-01-01T00:00:00"
-  }
-]
-```
-
-### Create Template
-
-```
-POST /templates
-```
-
-**Body:**
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/templates` | List templates (built-in + custom) |
+| `POST` | `/templates` | Create a custom template |
+| `PATCH` | `/templates/{template_id}` | Update (custom only) |
+| `DELETE` | `/templates/{template_id}` | Delete (custom only) |
 
 ```json
-{"name": "My Template", "body": "## Section 1\n\n## Section 2\n"}
+{ "name": "My Template", "body": "## Section 1\n\n## Section 2\n" }
 ```
-
-**Response:** `201 Created` → `TemplateResponse`
-
-### Update Template
-
-```
-PATCH /templates/{template_id}
-```
-
-Cannot update built-in templates (`is_builtin=true`).
-
-**Body:**
-
-```json
-{"name": "Updated Name", "body": "New template body"}
-```
-
-**Response:** `TemplateResponse`
-
-### Delete Template
-
-```
-DELETE /templates/{template_id}
-```
-
-Cannot delete built-in templates.
-
-**Response:** `204 No Content`
 
 ---
 
 ## Media
 
-### Upload Media
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/media` | Upload a media file (max 25 MB) |
+| `POST` | `/media/batch` | Upload multiple files |
+| `GET` | `/media/all` | Media timeline (gallery) |
+| `GET` | `/media/entry/{entry_id}` | List media for an entry |
+| `GET` | `/media/{media_id}` | Media metadata |
+| `GET` | `/media/{media_id}/file` | Download the binary |
+| `POST` | `/media/{media_id}/ocr` | OCR an image (`?language=eng`) |
+| `DELETE` | `/media/{media_id}` | Delete media (cleans up the file) |
 
+### Upload
 ```
-POST /media
+POST /media        (multipart/form-data: file, entry_id, caption?)
 ```
+**Response:** `MediaResponse` (`id`, `entry_id`, `filename`, `media_type`,
+`file_size`, `caption`, …).
 
-**Body:** `multipart/form-data`
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `file` | File | Yes | The media file (max 25 MB) |
-| `entry_id` | int | Yes | Target entry ID |
-| `caption` | string | No | Optional caption |
-
-**Response:** `MediaResponse`
-
-```json
-{
-  "id": 1,
-  "entry_id": 5,
-  "filename": "photo.jpg",
-  "media_type": "image/jpeg",
-  "file_size": 1048576,
-  "caption": "Sunset photo",
-  "created_at": "2026-05-19T10:00:00"
-}
-```
-
-### Get Media
-
-```
-GET /media/{media_id}
-```
-
-**Response:** `MediaResponse`
-
-### Download Media File
-
-```
-GET /media/{media_id}/file
-```
-
-**Response:** Binary file with appropriate Content-Type header
-
-### Delete Media
-
-```
-DELETE /media/{media_id}
-```
-
-**Response:** `204 No Content`
-
-### OCR (Extract Text from Image)
-
+### OCR
 ```
 POST /media/{media_id}/ocr?language=eng
 ```
+**Response:** `{ "media_id": 1, "extracted_text": "…", "confidence": 0.92, "language": "eng" }`
 
-**Response:**
-
-```json
-{
-  "media_id": 1,
-  "extracted_text": "Extracted text content...",
-  "confidence": 0.92,
-  "language": "eng"
-}
-```
-
-### Batch Upload
-
-```
-POST /media/batch
-```
-
-**Body:** `multipart/form-data` with multiple `files` fields + `entry_id`
-
-### List Media by Entry
-
-```
-GET /media/entry/{entry_id}
-```
-
-**Response:** `MediaResponse[]`
+> Images are stored as WebP; OCR runs locally via **Tesseract** (never leaves the
+> device). Returns a helpful error if Tesseract is missing.
 
 ---
 
 ## Recordings
 
-### Upload Recording
+Voice clips attached to entries.
 
-```
-POST /recordings
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/recordings` | Upload a recording (`file` + `entry_id`) |
+| `POST` | `/recordings/start` | Start a backend-driven recording |
+| `POST` | `/recordings/stop` | Stop and persist the recording |
+| `GET` | `/recordings/entry/{entry_id}` | List recordings for an entry |
+| `GET` | `/recordings/{recording_id}` | Get recording metadata |
+| `DELETE` | `/recordings/{recording_id}` | Delete a recording |
 
-**Body:** `multipart/form-data` with `file` and `entry_id`
+**Response (`VoiceRecordingResponse`):** includes `duration_seconds`,
+`audio_format`, and `media_id` (the recording is stored as media).
 
-**Response:** `VoiceRecordingResponse`
+> **Speech-to-text transcription is not available** in this release. Recordings are
+> stored as audio attachments only.
 
-```json
-{
-  "id": 1,
-  "entry_id": 5,
-  "media_id": 10,
-  "duration_seconds": 120,
-  "audio_format": "webm",
-  "transcription": null,
-  "is_transcribed": false,
-  "created_at": "2026-05-19T10:00:00"
-}
-```
+---
 
-### List Recordings by Entry
+## Video Notes
 
-```
-GET /recordings/entry/{entry_id}
-```
+Short video clips attached to entries.
 
-**Response:** `VoiceRecordingResponse[]`
-
-### Transcribe Recording
-
-```
-POST /recordings/{recording_id}/transcribe
-```
-
-Uses local Whisper model for transcription. Requires `faster-whisper` to be installed (`uv pip install -e ".[stt]"`).
-
-**Response:** `VoiceRecordingResponse` (with `transcription` populated)
-
-**Error Responses:**
-
-| Status | Condition |
-|--------|-----------|
-| `501` | `faster-whisper` not installed |
-| `500` | Model loading or transcription failed |
-| `409` | Recording already transcribed |
-| `404` | Recording not found |
-
-### Get Recording
-
-```
-GET /recordings/{recording_id}
-```
-
-### Delete Recording
-
-```
-DELETE /recordings/{recording_id}
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/videos` | Upload a video note |
+| `GET` | `/videos/entry/{entry_id}` | List videos for an entry |
+| `GET` | `/videos/{video_id}` | Video metadata |
+| `GET` | `/videos/{video_id}/file` | Download the video file |
+| `DELETE` | `/videos/{video_id}` | Delete a video note |
 
 ---
 
 ## Search
 
 ### Global Search
-
 ```
 GET /search?q={query}&mode=hybrid&tag_ids=1,2&date_from=2026-01-01&date_to=2026-12-31&offset=0&limit=20
 ```
 
-**Query Parameters:**
-
 | Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `q` | string | — | **Required.** Search query |
-| `mode` | string | `hybrid` | Search mode: `keyword`, `semantic`, or `hybrid` |
+|---|---|---|---|
+| `q` | string | — | **Required.** Query |
+| `mode` | string | `hybrid` | `keyword` · `semantic` · `hybrid` |
 | `tag_ids` | string | — | Comma-separated tag IDs |
-| `date_from` | string | — | Start date (YYYY-MM-DD) |
-| `date_to` | string | — | End date (YYYY-MM-DD) |
-| `offset` | int | `0` | Pagination offset |
-| `limit` | int | `20` | Results per page |
-
-**Search Modes:**
+| `date_from` / `date_to` | string | — | `YYYY-MM-DD` |
+| `offset` / `limit` | int | `0` / `20` | Pagination |
 
 | Mode | Description |
-|------|-------------|
-| `keyword` | Traditional FTS5 full-text search with BM25 ranking |
-| `semantic` | AI-powered meaning-based search using `nomic-embed-text` embeddings |
-| `hybrid` | Combines keyword and semantic results via Reciprocal Rank Fusion (default) |
+|---|---|
+| `keyword` | SQLite FTS5 full-text, BM25-ranked |
+| `semantic` | Meaning-based via `nomic-embed-text` embeddings |
+| `hybrid` | Keyword + semantic via Reciprocal Rank Fusion |
 
-> Semantic and hybrid modes require the `nomic-embed-text` embedding model to be pulled and entries to have been enriched (happens automatically after save).
+**Response:** `GlobalSearchResponse` — `items` (each with `snippet` of highlighted
+match, `rank`, and `similarity_score`), `total`, `offset`, `limit`. Results span
+entries **and** notes.
 
-**Response:** `GlobalSearchResponse`
-
-```json
-{
-  "items": [
-    {
-      "id": 5,
-      "entry_date": "2026-05-19",
-      "title": "My Day",
-      "snippet": "...text with <mark>highlighted</mark> match...",
-      "rank": -3.2,
-      "similarity_score": 0.87
-    }
-  ],
-  "total": 7,
-  "offset": 0,
-  "limit": 20
-}
-```
+> Semantic / hybrid modes require the embedding model and enriched entries. If a cloud
+> AI provider is active, embeddings are generated through it.
 
 ---
 
 ## AI
 
-### Check AI Status
-
-```
-GET /ai/status
-```
-
-```json
-{
-  "ollama_available": true,
-  "model_name": "llama3.2:3b",
-  "model_loaded": true,
-  "embed_model_available": true,
-  "error": null
-}
-```
-
-### Grammar Check
-
-```
-POST /ai/grammar-check
-```
-
-**Body:** `{"text": "Your journal entry text..."}`
-
-**Response:**
-
-```json
-{
-  "corrected_text": "Corrected version of the text...",
-  "suggestions": [
-    {
-      "offset": 15,
-      "length": 4,
-      "original": "teh",
-      "suggestion": "the",
-      "rule_id": "GRAMMAR_001",
-      "message": "Possible typo"
-    }
-  ]
-}
-```
-
-### Spell Check
-
-```
-POST /ai/spell-check
-```
-
-**Body:** `{"text": "Text to check..."}`
-
-**Response:** Same format as grammar check with misspellings.
-
-### Rewrite
-
-```
-POST /ai/rewrite
-```
-
-**Body:**
-
-```json
-{
-  "text": "Original text...",
-  "style": "concise",
-  "instructions": "Make it shorter while preserving meaning"
-}
-```
-
-**Response:**
-
-```json
-{
-  "rewritten_text": "Shortened version...",
-  "style": "concise"
-}
-```
-
-### Suggest Tags
-
-```
-POST /ai/suggest-tags
-```
-
-Suggests relevant tags for an entry based on its content. Considers existing tag names for reuse.
-
-**Body:**
-
-```json
-{"text": "Had a great hiking trip in the mountains today..."}
-```
-
-**Response:**
-
-```json
-{
-  "tags": ["travel", "nature", "exercise", "outdoors"]
-}
-```
-
-### Get Entry Analysis
-
-```
-GET /ai/entry-analysis/{entry_id}
-```
-
-Returns the AI-generated analysis for an entry: sentiment, auto-summary, and reflection prompts.
-
-**Response:**
-
-```json
-{
-  "entry_id": 5,
-  "sentiment": {
-    "primary_emotion": "happy",
-    "secondary_emotion": "grateful",
-    "intensity": 7,
-    "valence": 0.6
-  },
-  "summary": "A productive day spent hiking and reflecting on recent accomplishments.",
-  "reflection_prompts": [
-    "What made this hiking trip particularly meaningful?",
-    "How can you carry this sense of accomplishment into next week?",
-    "What are you most grateful for from today?"
-  ]
-}
-```
-
-### Find Similar Entries
-
-```
-GET /ai/similar/{entry_id}?top_k=5
-```
-
-Finds entries with similar content using embedding cosine similarity.
-
-**Query Parameters:**
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `top_k` | int | `5` | Number of similar entries to return |
-
-**Response:**
-
-```json
-{
-  "entry_id": 5,
-  "similar": [
-    {
-      "entry_id": 12,
-      "entry_date": "2026-04-15",
-      "title": "Mountain Weekend",
-      "similarity": 0.89
-    },
-    {
-      "entry_id": 28,
-      "entry_date": "2026-03-22",
-      "title": "Trail Running",
-      "similarity": 0.82
-    }
-  ]
-}
-```
-
-### Continue Writing (Writer's Block Helper)
-
-```
-POST /ai/continue-writing
-```
-
-Generates a 1-3 sentence continuation of the provided text to help overcome writer's block.
-
-**Body:**
-
-```json
-{"text": "Today I visited the old library downtown. The architecture was stunning, with tall ceilings and..." }
-```
-
-**Response:**
-
-```json
-{
-  "continuation": "wrought-iron chandeliers casting warm light across rows of weathered bookshelves. I spent hours wandering the aisles, discovering titles I hadn't thought about in years."
-}
-```
-
-### On This Day Reflection
-
-```
-GET /ai/on-this-day
-```
-
-Fetches entries from today's date in past years and generates an AI reflection on personal growth and change.
-
-**Response:**
-
-```json
-{
-  "entries": [
-    {
-      "id": 42,
-      "entry_date": "2024-05-21",
-      "title": "Starting a new chapter",
-      "body": "Today I decided to change careers...",
-      "years_ago": 2
-    }
-  ],
-  "reflection": "Two years ago you were at a crossroads, uncertain about a career change. Looking at your entries since then, you've shown remarkable resilience and growth..."
-}
-```
-
-### Detect Recurring Themes
-
-```
-GET /ai/themes
-```
-
-Analyzes all entries with AI summaries to detect recurring themes and patterns over time.
-
-**Response:**
-
-```json
-{
-  "themes": [
-    {
-      "theme": "Career Growth",
-      "frequency": 12,
-      "months_active": ["2026-01", "2026-03", "2026-05"],
-      "description": "Regular entries about professional development, learning new skills, and workplace challenges."
-    },
-    {
-      "theme": "Health & Fitness",
-      "frequency": 8,
-      "months_active": ["2026-02", "2026-04"],
-      "description": "Entries about exercise routines, diet changes, and physical wellbeing goals."
-    }
-  ]
-}
-```
-
-### List Digests
-
-```
-GET /ai/digests?limit=10
-```
-
-Lists generated weekly digests in reverse chronological order.
-
-**Query Parameters:**
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `limit` | int | `10` | Maximum digests to return |
-
-**Response:** `DigestResponse[]`
-
-### Get Latest Digest
-
-```
-GET /ai/digests/latest
-```
-
-Returns the most recently generated weekly digest.
-
-**Response:** `DigestResponse`
-
-```json
-{
-  "id": 3,
-  "week_start": "2026-05-12",
-  "week_end": "2026-05-18",
-  "themes": ["productivity", "self-reflection", "nature"],
-  "emotional_trajectory": "The week started with some anxiety about deadlines, shifted to satisfaction mid-week as tasks were completed, and ended on a peaceful note with a weekend hike.",
-  "notable_moments": [
-    "Completed a major project milestone on Wednesday",
-    "Had a meaningful conversation with an old friend on Thursday",
-    "Discovered a new hiking trail on Saturday"
-  ],
-  "summary_text": "This was a week of contrasts — intense focus during workdays gave way to restorative weekends in nature. Key themes were productivity and the importance of balancing ambition with self-care.",
-  "created_at": "2026-05-19T02:00:00"
-}
-```
-
-### Generate Digest
-
-```
-POST /ai/digests/generate
-```
-
-Generates a new weekly digest for the most recent complete week (or current week). Uses a map-reduce approach: individual entry summaries are concatenated and sent to the LLM for a coherent narrative.
-
-**Response:** `DigestResponse` (same format as above)
-
-### Pull Embedding Model
-
-```
-POST /ai/pull-model?model=nomic-embed-text
-```
-
-Triggers download of an Ollama model. The pull runs in the background — the endpoint returns immediately.
-
-**Query Parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `model` | string | **Required.** Model name to pull (e.g., `nomic-embed-text`) |
-
-**Response:**
-
-```json
-{
-  "status": "pulling",
-  "model": "nomic-embed-text"
-}
-```
-
-### Change Voice (Active/Passive)
-
-```
-POST /ai/change-voice
-```
-
-Converts text between active and passive voice.
-
-**Body:**
-
-```json
-{
-  "text": "The ball was thrown by the boy.",
-  "voice": "active"
-}
-```
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `text` | string | Text to convert (1-50000 chars) |
-| `voice` | string | Target voice: `active` or `passive` |
-
-**Response:**
-
-```json
-{
-  "changed_text": "The boy threw the ball.",
-  "voice": "active"
-}
-```
-
-### Rewrite for Clarity
-
-```
-POST /ai/rewrite-for-clarity
-```
-
-Rewrites text for maximum clarity and readability. Simplifies complex sentences, removes ambiguity, and improves flow while preserving meaning.
-
-**Body:**
-
-```json
-{
-  "text": "In spite of the fact that it was raining, we went ahead and decided to go outside anyway."
-}
-```
-
-**Response:**
-
-```json
-{
-  "rewritten_text": "Despite the rain, we went outside."
-}
-```
-
-### Generic AI Tool
-
-```
-POST /ai/tool/{tool_id}
-```
-
-Runs any registry-driven text tool and returns its result as plain text. The available `tool_id` values:
+AI runs **locally via Ollama by default** and can optionally route through a cloud
+provider (see [AI Providers](#ai-providers)). When a cloud provider is active, these
+endpoints call it; otherwise they call local Ollama. Ollama is the automatic fallback
+if the cloud provider is unreachable.
+
+### Status & models
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/ai/status` | Service status (Ollama availability, model, embed model) |
+| `POST` | `/ai/pull-model?model=…` | Trigger a background Ollama model pull |
+
+### On-demand text tools
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/ai/grammar-check` | Grammar check |
+| `POST` | `/ai/spell-check` | Spell check |
+| `POST` | `/ai/rewrite` | Rewrite (style/instructions) |
+| `POST` | `/ai/rewrite-for-clarity` | Rewrite for clarity |
+| `POST` | `/ai/change-tone` | Change tone |
+| `POST` | `/ai/change-voice` | Active ↔ passive voice |
+| `POST` | `/ai/expand` | Expand text |
+| `POST` | `/ai/define-text` | Define terms |
+| `POST` | `/ai/analyze-text` | Emotions/themes/summary of text |
+| `POST` | `/ai/suggest-tags` | Suggest tags for content |
+| `POST` | `/ai/continue-writing` | Writer's-block continuation |
+| `POST` | `/ai/tool/{tool_id}` | **Generic registry tool** (see below) |
+
+#### Generic tool (`POST /ai/tool/{tool_id}`)
+Registry-driven tools — `result` returned as plain text:
 
 | `tool_id` | Output |
 |---|---|
 | `summarize` | 2–3 sentence summary |
 | `key-points` | 3–7 markdown bullets |
 | `action-items` | markdown checklist of to-dos |
-| `shorten` | condensed text (~half length, meaning preserved) |
+| `shorten` | condensed (~half length) |
 | `simplify` | plain-language / ELI5 rewrite |
-| `polish` | improved word choice and flow |
-| `translate` | translation into the `param` language (default `Spanish`) |
-| `add-structure` | reorganized with markdown headings/bullets |
-| `title` | a concise (≤8 words) title |
+| `polish` | improved word choice & flow |
+| `translate` | translation into `param` language (default `Spanish`) |
+| `add-structure` | reorganized with headings/bullets |
+| `title` | concise (≤8 words) title |
 
-**Body:**
+**Body:** `{ "text": "…", "param": "French" }` (`param` optional, validated against
+the tool's allowed values). **Response:** `{ "result": "…" }`.
+Errors: `404` unknown tool · `400` invalid `param` · `422` empty `text`.
 
-```json
-{ "text": "Text to process.", "param": "French" }
-```
+### Insights (background-generated, read here)
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/ai/themes` | Recurring themes across entries |
+| `GET` | `/ai/entry-analysis/{entry_id}` | Sentiment + summary + reflection prompts for an entry |
+| `GET` | `/ai/similar/{entry_id}?top_k=5` | Entries with similar embeddings |
+| `GET` | `/ai/on-this-day` | Past-years entries for today + an AI reflection |
+| `GET` | `/ai/digests?limit=10` | List weekly digests |
+| `GET` | `/ai/digests/latest` | Most recent weekly digest |
+| `POST` | `/ai/digests/generate` | Generate a weekly digest (map-reduce over entry summaries) |
 
-`param` is optional and only used by tools that take one (e.g. `translate`). It must be one of the tool's allowed values.
-
-**Response:**
-
-```json
-{ "result": "J'ai terminé la migration aujourd'hui." }
-```
-
-- `404` — unknown `tool_id`
-- `400` — invalid `param` for the tool
-- `422` — empty/missing `text`
-
----
-
-## Export
-
-### Export HTML
-
-```
-GET /export/html?start_date=2026-01-01&end_date=2026-12-31
-```
-
-**Response:** Styled HTML document (text/html)
-
-### Export PDF
-
-```
-GET /export/pdf?start_date=2026-01-01&end_date=2026-12-31
-```
-
-**Response:** PDF document (application/pdf)
-
-> Requires WeasyPrint. Desktop-only.
+> Background analysis (summary, sentiment, reflection prompts, tag suggestions,
+> embeddings) runs automatically after you save an entry, controlled by the per-feature
+> toggles in **Settings → AI**.
 
 ---
 
-## Backup
+## AI Providers
 
-### Create Backup Config
+Manage optional cloud providers. All cloud presets speak the OpenAI chat-completions
+API: **OpenAI, Groq, OpenRouter, Kimi (Moonshot), Google Gemini**, plus a **Custom**
+endpoint. API keys are AES-GCM encrypted at rest and **never returned** by the API.
 
-```
-POST /backup/config
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/ai/providers/presets` | Catalogue of provider presets (label, base URL, defaults) |
+| `GET` | `/ai/providers` | List configured providers |
+| `POST` | `/ai/providers` | Add a provider (`name`, `preset`, `base_url`, `model`, `api_key?`) |
+| `PATCH` | `/ai/providers/{provider_id}` | Update a provider |
+| `DELETE` | `/ai/providers/{provider_id}` | Delete a provider |
+| `POST` | `/ai/providers/{provider_id}/activate` | Set as the active provider |
+| `POST` | `/ai/providers/{provider_id}/test` | Probe the endpoint (1-token completion) |
+| `GET` | `/ai/providers/{provider_id}/models` | List models the endpoint exposes (`GET /models`) |
+| `POST` | `/ai/providers/models` | Preview models for a not-yet-saved provider config |
 
-**Body:**
-
-```json
-{
-  "provider": "webdav",
-  "credentials": {
-    "url": "https://cloud.example.com/dav",
-    "username": "user",
-    "password": "pass"
-  },
-  "schedule_cron": "0 2 * * *"
-}
-```
-
-### List Backup Configs
-
-```
-GET /backup/config
-```
-
-### Test Connection
-
-```
-POST /backup/config/{config_id}/test
-```
-
-### Run Backup
-
-```
-POST /backup/run
-```
-
-### List Snapshots
-
-```
-GET /backup/snapshots
-```
-
-### Restore from Backup
-
-```
-POST /backup/restore
-```
-
-### Export Local Backup
-
-```
-GET /backup/export
-```
-
-**Response:** `.tar.gz` file download
-
-### Import Local Backup
-
-```
-POST /backup/import
-```
-
-**Body:** `multipart/form-data` with backup file
-
-### Schedule Automated Backup
-
-```
-POST /backup/schedule
-```
-
-**Body:**
-
-```json
-{
-  "backup_path": "/path/to/backup.tar.gz",
-  "cron": "0 2 * * *"
-}
-```
-
-### Check Schedule Status
-
-```
-GET /backup/schedule/status
-```
-
-### Remove Schedule
-
-```
-DELETE /backup/schedule
-```
+**Precedence:** the active provider is used; if none is active (or it's the `ollama`
+preset), local Ollama is used. See [Privacy & Data Egress](#system) for what this
+means for data leaving the device.
 
 ---
 
-## Sync
+## TTS
 
-### Enqueue Operation
+Read-aloud via Microsoft Edge TTS, cached on disk.
 
-```
-POST /sync/enqueue
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/tts/voices` | List available voices |
+| `GET` | `/tts/entry/{entry_id}?voice=…` | Speak an entry |
+| `POST` | `/tts/speak` | Speak arbitrary text |
+| `GET` | `/tts/file/{key}` | Fetch a cached TTS audio file (Range-capable) |
+| `POST` | `/tts/prewarm` | Background-cache TTS for an entry |
 
-### Get Pending Operations
+**Body (`/tts/speak`):** `{ "text": "…", "voice": "en-US-AvaNeural" }`
+**Response:** audio blob.
 
-```
-GET /sync/pending
-```
+---
 
-### Get Sync Status
+## Prompts
 
-```
-GET /sync/status
-```
-
-### Mark as Synced
-
-```
-POST /sync/flush
-```
-
-### Push to Cloud
-
-```
-POST /sync/cloud/push
-```
-
-### Pull from Cloud
-
-```
-POST /sync/cloud/pull
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/prompts/today` | Today's writing prompt |
 
 ---
 
 ## Encryption
 
-### Encrypt Entry
+AES-256-GCM with a scrypt-derived key (per-item salt).
 
-```
-POST /entries/{entry_id}/encryption/encrypt
-```
+### Entry encryption
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/entries/{entry_id}/encryption/encrypt` | Encrypt an entry |
+| `POST` | `/entries/{entry_id}/encryption/decrypt` | Decrypt an entry |
+| `GET` | `/entries/{entry_id}/encryption/status` | Encryption status |
 
-**Body:**
+### Note encryption
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/notes/{note_id}/encryption/encrypt` | Encrypt a note |
+| `POST` | `/notes/{note_id}/encryption/decrypt` | Decrypt a note |
+| `GET` | `/notes/{note_id}/encryption/status` | Encryption status |
 
-```json
-{"passphrase": "my-secret-passphrase"}
-```
-
-### Decrypt Entry
-
-```
-POST /entries/{entry_id}/encryption/decrypt
-```
-
-**Body:**
-
-```json
-{"passphrase": "my-secret-passphrase"}
-```
-
-### Check Encryption Status
-
-```
-GET /entries/{entry_id}/encryption/status
-```
-
----
-
-## Revisions
-
-### List Revisions
-
-```
-GET /entries/{entry_id}/revisions?offset=0&limit=50
-```
-
-### Get Revision
-
-```
-GET /entries/{entry_id}/revisions/{revision_number}
-```
-
-### Diff Revisions
-
-```
-GET /entries/{entry_id}/revisions/{from_rev}/diff/{to_rev}
-```
-
-```json
-{
-  "from_revision": 1,
-  "to_revision": 3,
-  "title_changed": true,
-  "body_changed": true,
-  "from_title": "Old Title",
-  "to_title": "New Title",
-  "from_body": "Old body content",
-  "to_body": "New body content"
-}
-```
-
-### Restore Revision
-
-```
-POST /entries/{entry_id}/revisions/{revision_number}/restore
-```
+**Body:** `{ "passphrase": "…" }`
 
 ---
 
 ## Reminders
 
-### Create Reminder
-
-```
-POST /reminders
-```
-
-**Body:**
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/reminders` | Create a reminder |
+| `GET` | `/reminders` | List reminders |
+| `GET` | `/reminders/{reminder_id}` | Get a reminder |
+| `PATCH` | `/reminders/{reminder_id}` | Update a reminder |
+| `DELETE` | `/reminders/{reminder_id}` | Delete a reminder |
+| `POST` | `/reminders/{reminder_id}/test` | Fire a test notification |
 
 ```json
 {
@@ -1234,188 +418,170 @@ POST /reminders
 }
 ```
 
-### List Reminders
-
-```
-GET /reminders
-```
-
-### Update Reminder
-
-```
-PATCH /reminders/{reminder_id}
-```
-
-### Delete Reminder
-
-```
-DELETE /reminders/{reminder_id}
-```
-
-### Test Notification
-
-```
-POST /reminders/{reminder_id}/test
-```
-
-```json
-{"sent": true, "title": "Evening Journal"}
-```
+Reminders are APScheduler-driven and reconciled with the DB on startup and after every
+CRUD op; missed reminders are caught up on launch.
 
 ---
 
-## TTS
+## Export
 
-### List Voices
+Whole-journal document exports (in addition to the per-format entry exports under
+`/entries/export/*`).
 
-```
-GET /tts/voices
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/export/html?start_date=…&end_date=…` | Styled single HTML document |
+| `GET` | `/export/pdf?start_date=…&end_date=…` | PDF (desktop — bundled fpdf2) |
+| `GET` | `/export/markdown` | Obsidian-compatible Markdown ZIP |
 
-### Speak Entry
-
-```
-GET /tts/entry/{entry_id}?voice=en-US-AvaNeural
-```
-
-**Response:** Audio blob
-
-### Speak Text
-
-```
-POST /tts/speak
-```
-
-**Body:**
-
-```json
-{"text": "Text to speak", "voice": "en-US-AvaNeural"}
-```
-
-**Response:** Audio blob
+> Exports never include encrypted content in cleartext.
 
 ---
 
-## Plugins
+## Backup & Cloud Providers
 
-### Install Plugin
+### Local backup & schedule
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/backup/export` | Download a full `.tar.gz` (DB + media) |
+| `POST` | `/backup/import` | Restore from an uploaded `.tar.gz` (path-traversal-safe, atomic) |
+| `POST` | `/backup/schedule` | Schedule an automated backup (cron) |
+| `GET` | `/backup/schedule/status` | Current schedule |
+| `DELETE` | `/backup/schedule` | Remove the schedule |
 
-```
-POST /plugins
-```
+### Config & cloud run
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/backup/config` | Create a backup config (provider + credentials + cron) |
+| `GET` | `/backup/config` | List backup configs |
+| `DELETE` | `/backup/config/{config_id}` | Delete a config |
+| `POST` | `/backup/config/{config_id}/test` | Test a cloud connection |
+| `POST` | `/backup/config/migrate-credentials` | Upgrade legacy v1 credentials → v2 (HKDF) |
+| `POST` | `/backup/run` | Incremental backup to the configured provider |
+| `POST` | `/backup/run-now` | Run a backup immediately (local or cloud) |
+| `GET` | `/backup/snapshots` | Paginated backup history |
+| `DELETE` | `/backup/snapshots/{snapshot_id}` | Delete a snapshot (+ cloud file) |
+| `POST` | `/backup/restore` | Restore from the latest cloud backup |
 
-**Body:**
+### OAuth cloud providers
+Each provider exposes the same pair; the callback is served on the loopback
+`127.0.0.1:18765` so the sign-in round-trips locally. Tokens are encrypted at rest and
+auto-refreshed.
 
-```json
-{
-  "name": "word-cloud",
-  "version": "1.0.0",
-  "description": "Generate word clouds from entries",
-  "entry_point": "word_cloud.main"
-}
-```
+| Method | Path | Provider |
+|---|---|---|
+| `GET` | `/backup/google-drive/auth-url` · `/callback` | Google Drive (`drive.file`, `drive.appdata`) |
+| `GET` | `/backup/onedrive/auth-url` · `/callback` | OneDrive (`Files.ReadWrite.AppFolder offline_access`) |
+| `GET` | `/backup/dropbox/auth-url` · `/callback` | Dropbox (`token_access_type=offline`) |
+| `GET` | `/backup/box/auth-url` · `/callback` | Box (rotating refresh tokens) |
 
-### List Plugins
+**WebDAV / Synology NAS** are configured via `POST /backup/config` with
+`provider: "webdav"` (Synology is stored as `webdav`).
 
-```
-GET /plugins
-```
+---
 
-### Get Plugin
+## Sync
 
-```
-GET /plugins/{plugin_id}
-```
+An operation queue plus cloud push/pull (last-writer-wins on `updated_at`).
 
-### Enable Plugin
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/sync/enqueue` | Queue an operation for later sync |
+| `GET` | `/sync/pending` | List unsynced operations |
+| `GET` | `/sync/status` | Sync status per provider |
+| `POST` | `/sync/flush` | Mark pending operations as synced |
+| `POST` | `/sync/cloud/push` | Push pending changes to the cloud (optional E2E encryption) |
+| `POST` | `/sync/cloud/pull` | Pull & merge remote changes |
 
-```
-POST /plugins/{plugin_id}/enable
-```
+---
 
-### Disable Plugin
+## System
 
-```
-POST /plugins/{plugin_id}/disable
-```
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/system/integrity` | Cached integrity report |
+| `POST` | `/system/integrity` | Re-run integrity checks |
+| `POST` | `/system/integrity/rebuild-search-index` | Rebuild the FTS5 search index |
+| `GET` | `/system/egress-report` | **Privacy egress report** (see below) |
 
-### Uninstall Plugin
+### Egress report
+`GET /system/egress-report` returns a per-surface table of what leaves the device:
 
-```
-DELETE /plugins/{plugin_id}
-```
+| Surface | `leaves_device` |
+|---|---|
+| Cloud AI tools & analysis | `true` only when a non-Ollama provider is active |
+| Embeddings | mirrors the AI provider |
+| Cloud backup | `true` only for configured providers |
+| Web-clip | `false` (only the URL leaves; content stays local) |
+| OCR | `false` (local Tesseract) |
 
-### Get Plugin Hooks
+The **Settings → Privacy** tab renders this report live.
 
-```
-GET /plugins/{plugin_id}/hooks
-```
+---
 
-### List Hook Registry
+## Memorial
 
-```
-GET /plugins/hooks/registry
-```
+Background audio for the dedication/memorial tribute (played via a system audio player
+to bypass browser autoplay restrictions).
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/memorial/audio/start` | Start the memorial audio player |
+| `POST` | `/memorial/audio/stop` | Stop the memorial audio player |
+
+---
+
+## Settings
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/settings` | Get application settings |
+| `PUT` | `/settings` | Update application settings |
+| `GET` | `/settings/models` | List available AI models |
+| `GET` | `/settings/storage-path` | Storage path info |
+| `POST` | `/settings/storage-path` | Relocate the data directory |
+| `POST` | `/settings/vacuum` | Vacuum the database |
+| `POST` | `/settings/integrity-check` | Run an integrity check |
+
+`GET /settings` is the API-consumer source of truth for the app version (`APP_VERSION`).
+The in-app **About** version is injected at frontend build time (`VITE_APP_VERSION`),
+so it always matches the installed bundle.
 
 ---
 
 ## Error Responses
 
-All endpoints return errors in this format:
-
+All errors use:
 ```json
-{
-  "detail": "Error message describing what went wrong"
-}
+{ "detail": "Error message describing what went wrong" }
 ```
 
-### Common HTTP Status Codes
-
 | Code | Meaning |
-|------|---------|
+|---|---|
 | `200` | Success |
 | `201` | Created |
 | `204` | No Content (successful deletion) |
 | `400` | Bad Request (invalid input) |
 | `404` | Not Found |
-| `409` | Conflict (e.g., already transcribed) |
+| `409` | Conflict |
 | `413` | Payload Too Large (media exceeds 25 MB) |
 | `422` | Validation Error (Pydantic) |
-| `429` | Too Many Requests (rate limited) |
+| `429` | Too Many Requests (rate limited, production only) |
 | `500` | Internal Server Error |
 | `501` | Not Implemented (missing optional dependency) |
 
-### Rate Limiting
-
-Requests exceeding 60/minute per IP receive `429` with:
-
-```json
-{"detail": "Rate limit exceeded: 60 per 1 minute"}
-```
-
-### Validation Errors
-
-Pydantic validation errors return `422` with:
-
+### Validation errors (422)
 ```json
 {
   "detail": [
-    {
-      "loc": ["body", "entry_date"],
-      "msg": "field required",
-      "type": "value_error.missing"
-    }
+    { "loc": ["body", "entry_date"], "msg": "field required", "type": "missing" }
   ]
 }
 ```
 
----
-
-## Interactive Docs
-
-When running in development mode, interactive API documentation is available at:
-
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
+### Interactive docs
+In development, interactive API docs are available at:
+- **Swagger UI:** `http://localhost:8000/docs`
+- **ReDoc:** `http://localhost:8000/redoc`
 
 > These are disabled in production (`APP_ENV=production`).

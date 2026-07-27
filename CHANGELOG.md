@@ -9,6 +9,100 @@ offline at any time.
 
 ---
 
+## [0.7.1] — 2026-07-27
+
+A major release focused on **AI choice, privacy transparency, encryption strength,
+and reliability** — backed by a large test-coverage and CI expansion under the hood.
+
+### Added
+- **Multi-provider AI.** Beyond local Ollama, connect any OpenAI-compatible cloud
+  provider — **OpenAI, Groq, OpenRouter, Kimi (Moonshot), Google Gemini**, or a
+  **Custom** endpoint — and choose which is active. **Ollama stays the automatic
+  fallback** if the active provider is unreachable. API keys are AES-GCM encrypted at
+  rest and never returned by the API. *(Settings → AI)*
+- **Privacy tab + data-egress report.** A new *Settings → Privacy* tab shows,
+  surface-by-surface, exactly what leaves your device (AI tools, embeddings, cloud
+  backup, web-clip, OCR) and flags when a cloud AI provider is active. Powered by
+  `GET /system/egress-report`.
+- **Stronger entry/note encryption.** New passphrase-encrypted items now derive their
+  key with a **memory-hard scrypt KDF** (AES-256-GCM, per-item salt), making brute-force
+  of short passphrases far more expensive. Legacy items still decrypt.
+- **Cloud backup providers (OAuth).** Connect **Google Drive, OneDrive, Dropbox, or
+  Box** via loopback OAuth sign-in (callback on `127.0.0.1:18765`), or **WebDAV /
+  Synology NAS** with manual credentials. Tokens are encrypted and auto-refreshed.
+- **Diarium interop.** Import from and export to Diarium — including the native `.diary`
+  SQLite format, plus JSON and Markdown-ZIP archives.
+- **Startup integrity battery + self-heal.** On boot the app runs a broader integrity
+  check (DB structure, FTS, encryption key) and self-heals where it can; a Diagnostics
+  panel exposes maintenance actions.
+- **Rebuild search index** endpoint + Diagnostics button, with idempotent FTS
+  repopulation.
+- **Tag typeahead picker** in the entry editor.
+- **Notes import/export** in Markdown ZIP, JSON, and HTML.
+
+### Changed
+- **Settings redesigned** from 8 tabs down to a cleaner set (Appearance, AI, Data,
+  Backup, Privacy, Dedication, About).
+- **Performance:** lazy-loaded `fpdf2` (−~450 ms startup, −~32 MB RSS), split vendor
+  chunks (entry bundle 209 KB → 134 KB), virtualized list views, body-snippet
+  projection on list/search queries, and SQLite tuning (4 MB cache, capped WAL
+  autocheckpoint, **incremental `auto_vacuum`** with a daily vacuum maintenance job).
+- Background sync/AI pollers now **pause when the window is hidden**.
+- Desktop sidecar now **loads `.secret_key`** and uses a larger SQLite pool (fixes
+  desktop-only decryption failures).
+- Greyer theme background with enhanced text visibility.
+
+### Fixed
+- **Backup-restore path-traversal** hardened on both the restore and import paths.
+- **Full-text search works in the packaged desktop app** — the `pysqlite3` swap resolves
+  the FTS5 qualified-column bug that previously forced skipping FTS in frozen builds.
+- FTS triggers made **restore- and encrypt-safe** (ciphertext is never indexed; undelete
+  re-indexes plaintext).
+- Web-clip **SSRF hardening**: internal/loopback IPs blocked, DNS-rebinding guard,
+  re-validated on every redirect hop.
+- SQLite reliability: no re-`SET auto_vacuum` per pooled connection; cursor/`fetchone()`
+  fix for `pysqlite3`; reduced write-lock contention.
+- Desktop NoteEditor `Ctrl+V` text paste.
+
+### Security
+- Memory-hard scrypt KDF for passphrase encryption (see Added).
+- Cloud-AI egress made explicit and auditable (Privacy tab + egress report).
+- Credential encryption upgraded to HKDF (v2); legacy v1 tokens auto-migrate on write.
+- SSRF guards on web-clip; tar extraction uses PEP 706 `filter="data"`.
+
+### Removed
+- **Scoped to journaling + notes.** The app is now focused on the journal and notes
+  experience. The **Email, Contacts, Dashboard, and Schedule/Tasks (Google
+  Calendar/Tasks sync)** surfaces have been removed. *(Reminders, Tags, Media,
+  search, and cloud backup remain.)*
+
+### Quality & CI
+- Major **test-coverage expansion**: backup cloud-restore orchestration, Dropbox/Box
+  token-refresh contracts, AI provider connection/model-list error paths, search-index
+  rebuild idempotency, and the Diarium `.diary` export endpoint.
+- New **CI gates**: a coverage floor, **version-parity** check across the four version
+  sources, **cargo-check** for the Tauri shell, **vitest** wired into CI, cached Rust
+  builds, and **macOS-Intel** release builds.
+- Code-health refactors: shared OAuth HTTP-client base, extracted `cron_utils`
+  (cron→occurrence math), `importers/` and `export_service` packages, a shared OAuth
+  callback base, and FTS-query escaping.
+
+---
+
+## [0.7.0] — 2026-07-17
+
+### Added
+- **Screen-snippet + web-clip with OCR (Notes).** Snip a region of your screen
+  (`Ctrl+Shift+S`, desktop) or clip a web page, embed it as a picture, and **OCR the
+  text** straight into the note — instantly searchable.
+- **Manual save for Notes** (autosave off); opening Notes creates a fresh blank note,
+  ready to write or clip.
+
+### Fixed
+- Web-clip **SSRF** redirect and DNS-rebinding protection.
+
+---
+
 ## [0.2.1] — 2026-06-24
 
 ### Added

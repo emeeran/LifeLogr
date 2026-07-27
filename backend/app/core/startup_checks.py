@@ -160,6 +160,12 @@ def get_backup_status() -> dict[str, Any]:
 
 # FTS5 virtual tables created by raw DDL (no ORM model) — counted as "expected".
 _FTS_TABLES = ("entries_fts", "notes_fts")
+# App-created internal tables that aren't ORM-mapped (so absent from
+# ``Base.metadata``) but are expected infrastructure — e.g. ``_schema_meta``,
+# written by the inline migration system (schema_version + migration_log). It is
+# recreated ``IF NOT EXISTS`` every boot, so it is allow-listed here rather than
+# required by the missing-tables check.
+_INTERNAL_TABLES = ("_schema_meta",)
 
 # Fragmentation/WAL warn thresholds for the maintenance check.
 _FRAGMENTATION_THRESHOLD_PCT = 30.0
@@ -257,8 +263,9 @@ async def _check_schema_tables(session: AsyncSession) -> dict[str, Any]:
 async def _check_unexpected_tables(session: AsyncSession) -> dict[str, Any]:
     """Tables present that aren't model-mapped or FTS/internal (warn only).
 
-    Allow-lists SQLite internals (``sqlite_*``) and FTS5 shadow tables
-    (``entries_fts_*`` / ``notes_fts_*``) so a healthy DB doesn't false-positive.
+    Allow-lists SQLite internals (``sqlite_*``), FTS5 shadow tables
+    (``entries_fts_*`` / ``notes_fts_*``), and app-created internal tables
+    (``_schema_meta``) so a healthy DB doesn't false-positive.
     """
     from app.core.database import Base
 
@@ -273,6 +280,7 @@ async def _check_unexpected_tables(session: AsyncSession) -> dict[str, Any]:
         and not t.startswith("sqlite_")
         and not t.startswith("entries_fts")
         and not t.startswith("notes_fts")
+        and t not in _INTERNAL_TABLES
     )
     if unexpected:
         return _check(

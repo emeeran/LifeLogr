@@ -321,7 +321,7 @@ The Tauri shell passes `DIARI_DATA_DIR` to the backend sidecar:
 The backend is bundled using `desktop/scripts/pyinstaller.spec`:
 
 - Includes all required Python packages
-- Excludes heavy optional dependencies (Whisper, Tesseract, WeasyPrint)
+- Excludes heavy unused dependencies (torch, scipy, matplotlib, weasyprint, mega) for a smaller bundle
 - Produces a single executable with no Python installation required
 - Stripped and UPX-compressed for smaller binary size
 
@@ -391,8 +391,7 @@ Desktop-only features are automatically disabled:
 | Feature | Desktop | Mobile |
 |---------|---------|--------|
 | OCR (Tesseract) | ✅ | ❌ |
-| Whisper Transcription | ✅ | ❌ |
-| PDF Export (WeasyPrint) | ✅ | ❌ |
+| PDF Export (fpdf2) | ✅ | ❌ |
 | TTS (edge-tts) | ✅ | ❌ |
 | AI (Ollama) | ✅ | ❌ |
 | Cloud Sync | ✅ | ❌ |

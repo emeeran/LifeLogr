@@ -232,6 +232,19 @@ class TestCheckAppIntegrity:
         assert "legacy_leftover" in res["detail"]
 
     @pytest.mark.asyncio
+    async def test_unexpected_tables_ignores_schema_meta(self, db_session):
+        # ``_schema_meta`` is created by the inline migration system
+        # (schema_version + migration_log) and is expected infrastructure, not a
+        # leftover — it must not be flagged. Regression test for the false
+        # "Unexpected tables: _schema_meta" warning.
+        await db_session.execute(
+            text("CREATE TABLE _schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+        )
+        await db_session.commit()
+        res = await sc._check_unexpected_tables(db_session)
+        assert res["status"] == "ok"
+
+    @pytest.mark.asyncio
     async def test_fragmentation_reports_shape(self, db_session):
         res = await sc._check_fragmentation_wal(db_session)
         assert res["id"] == "db_fragmentation"
