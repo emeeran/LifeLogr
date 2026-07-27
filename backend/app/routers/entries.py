@@ -29,6 +29,12 @@ from app.schemas.entry import (
 )
 from app.schemas.tag import TagBrief
 from app.services.entry_service import EntryService
+from app.services.importers import (
+    parse_csv,
+    parse_diarium_json_entry,
+    parse_dayone_zip,
+    parse_markdown_entry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -715,7 +721,6 @@ async def import_file(
         if filename.endswith(".zip"):
             import zipfile as zf
 
-            from app.services.importers import parse_dayone_zip
 
             buf = io.BytesIO(content)
             # Day One exports carry Journal.json — detect and handle first.
@@ -738,7 +743,7 @@ async def import_file(
                         for jf in json_files:
                             try:
                                 entry = json.loads(z.read(jf))
-                                entries_data.append(_parse_diarium_json_entry(entry))
+                                entries_data.append(parse_diarium_json_entry(entry))
                             except Exception:
                                 logger.warning("Failed to parse JSON entry from %s", jf)
 
@@ -749,19 +754,18 @@ async def import_file(
                                     data = json.loads(z.read(n))
                                     if isinstance(data, list):
                                         for entry in data:
-                                            entries_data.append(_parse_diarium_json_entry(entry))
+                                            entries_data.append(parse_diarium_json_entry(entry))
                                 except Exception:
                                     logger.warning("Failed to parse bulk JSON from %s", n)
 
                     md_files = sorted([n for n in names if n.endswith(".md")])
                     for mf in md_files:
                         raw = z.read(mf).decode("utf-8")
-                        entry = _parse_markdown_entry(raw)
+                        entry = parse_markdown_entry(raw)
                         if entry:
                             entries_data.append(entry)
 
         elif filename.endswith(".csv"):
-            from app.services.importers import parse_csv
 
             entries_data.extend(parse_csv(content.decode("utf-8", errors="replace")))
 
@@ -769,7 +773,7 @@ async def import_file(
             data = json.loads(content)
             items = data if isinstance(data, list) else data.get("entries", [])
             for item in items:
-                parsed = _parse_diarium_json_entry(item)
+                parsed = parse_diarium_json_entry(item)
                 if not parsed.get("body") and not parsed.get("entry_date"):
                     parsed = {
                         "entry_date": item.get("entry_date") or item.get("date", "")[:10],
@@ -844,86 +848,3 @@ async def import_file(
     return {"imported": imported, "skipped": skipped}
 
 
-def _parse_diarium_json_entry(item: dict[str, Any]) -> dict[str, Any]:
-    """Parse a single Diarium JSON entry into our import format."""
-    # Diarium date format: "2026-01-15T00:00:00.0000000+00:00" or similar
-    raw_date = str(item.get("date", ""))[:10]
-
-    # Body: prefer "text" then "html" then "content"
-    body = item.get("text", "") or item.get("content", "")
-    if not body and item.get("html"):
-        # Strip basic HTML tags for markdown body
-        body = re.sub(r"<br\s*/?>", "\n", item["html"])
-        body = re.sub(r"</?p>", "\n", body)
-        body = re.sub(r"<[^>]+>", "", body).strip()
-
-    # Title from heading (may be HTML)
-    title = item.get("heading", "")
-    if title:
-        title = re.sub(r"<[^>]+>", "", title).strip()
-        if not title:
-            title = None
-
-    # Mood from rating (1-5 scale)
-    mood = None
-    rating = item.get("rating")
-    if rating and isinstance(rating, (int, float)):
-        moods = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}
-        mood = moods.get(int(rating))
-
-    tags = item.get("tags", []) or []
-    if isinstance(tags, str):
-        tags = [t.strip() for t in tags.split(",") if t.strip()]
-
-    return {
-        "entry_date": raw_date,
-        "title": title,
-        "body": body,
-        "mood": mood,
-        "tags": tags,
-    }
-
-
-def _parse_markdown_entry(raw: str) -> dict[str, Any] | None:
-    """Parse a markdown file with YAML frontmatter into an import dict."""
-
-    if not raw.startswith("---"):
-        # No frontmatter — try to extract date from filename later
-        body = raw.strip()
-        if not body:
-            return None
-        return {"entry_date": "", "title": None, "body": body, "mood": None, "tags": []}
-
-    # Extract frontmatter
-    parts = raw.split("---", 2)
-    if len(parts) < 3:
-        return None
-
-    frontmatter = parts[1].strip()
-    body = parts[2].strip()
-    if not body:
-        return None
-
-    entry_date = ""
-    title = None
-    mood = None
-    tags: list[str] = []
-
-    for line in frontmatter.split("\n"):
-        line = line.strip()
-        if line.startswith("date:"):
-            entry_date = line.split(":", 1)[1].strip()[:10]
-        elif line.startswith("title:"):
-            title = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("mood:"):
-            mood = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("  - "):
-            tags.append(line[4:].strip())
-
-    return {
-        "entry_date": entry_date,
-        "title": title,
-        "body": body,
-        "mood": mood,
-        "tags": tags,
-    }
