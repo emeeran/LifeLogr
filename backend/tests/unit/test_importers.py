@@ -205,3 +205,37 @@ def test_parse_diarium_sqlite_converts_ticks_and_maps_rating(tmp_path):
     assert e["mood"] == "good"  # rating 4 -> good
     assert e["tags"] == ["work"]  # joined via EntryTags/Tags
     assert e["latitude"] is None and e["longitude"] is None
+
+
+# ── Diarium .diary SQLite EXPORT (round-trips with the importer above) ───────
+
+
+@pytest.mark.asyncio
+async def test_export_diarium_db_builds_diarium_schema(client, db_session, tmp_path):
+    import sqlite3
+
+    from app.models.entry import Entry
+
+    db_session.add(
+        Entry(entry_date=date(2026, 1, 15), title="Hi", body="Line one\nLine two", mood="good")
+    )
+    await db_session.commit()
+
+    r = await client.get("/api/v1/entries/export/diarium-db")
+    assert r.status_code == 200
+
+    # Parse the returned SQLite and confirm the Diarium schema + tick conversion.
+    db_file = tmp_path / "export.diary"
+    db_file.write_bytes(r.content)
+    conn = sqlite3.connect(db_file)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT DiaryEntryId, Heading, Rating FROM Entries").fetchall()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["Heading"] == "Hi"
+    assert row["Rating"] == 4  # mood "good" -> 4 (inverse of the importer map)
+    # DiaryEntryId is .NET ticks; the importer's offset converts it back to the date.
+    ticks = row["DiaryEntryId"]
+    us = (ticks - 621355968000000000) / 10
+    assert datetime.fromtimestamp(us / 1_000_000, tz=timezone.utc).strftime("%Y-%m-%d") == "2026-01-15"
+    conn.close()
