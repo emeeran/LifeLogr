@@ -10,7 +10,7 @@ import { ref, computed, type Ref } from 'vue'
  *   - ``saved``  — just saved successfully (reverts to ``idle`` after 3s)
  */
 
-export type SaveState = 'idle' | 'pending' | 'saving' | 'saved'
+export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
 export function useAutoSave(options: {
   isNew: Ref<boolean>
@@ -38,8 +38,13 @@ export function useAutoSave(options: {
 }) {
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let savedTimer: ReturnType<typeof setTimeout> | null = null
+  // In-flight guard: prevents a debounced autosave from racing a manual save
+  // (two concurrent updateEntry calls with different snapshots = last-write-wins
+  // data loss) and from overlapping itself.
+  let saving = false
 
   const saveState = ref<SaveState>('idle')
+  const saveError = ref<string | null>(null)
 
   const autosaveMs = computed(() => {
     const secs = parseInt(localStorage.getItem('lifelogr-autosave-interval') || '2')
@@ -65,6 +70,13 @@ export function useAutoSave(options: {
 
     saveState.value = 'pending'
     saveTimer = setTimeout(async () => {
+      // Skip if a save is already in flight (e.g. a manual save just started) —
+      // the next change will re-arm the timer once it finishes.
+      if (saving) {
+        saveTimer = null
+        return
+      }
+      saving = true
       saveState.value = 'saving'
       try {
         if (options.isNew.value) {
@@ -84,11 +96,15 @@ export function useAutoSave(options: {
             tag_ids: options.tagIds.value,
           })
         }
+        saveError.value = null
         _setSaved()
-      } catch {
-        saveState.value = 'idle'
-        /* ignore auto-save failures */
+      } catch (e) {
+        // Surface the failure instead of silently flipping to idle — the user
+        // must know their last edit didn't persist.
+        saveError.value = e instanceof Error ? e.message : 'Save failed'
+        saveState.value = 'error'
       } finally {
+        saving = false
         saveTimer = null
       }
     }, autosaveMs.value)
@@ -99,5 +115,6 @@ export function useAutoSave(options: {
     triggerAutosave,
     cancelSave,
     saveState,
+    saveError,
   }
 }

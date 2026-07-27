@@ -313,7 +313,7 @@ async def speak_entry(
         logger.error("TTS entry generation failed: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=502,
-            detail=f"Text-to-speech failed: {exc}. Edge TTS needs internet access.",
+            detail="Text-to-speech failed. Edge TTS needs internet access.",
         ) from exc
 
     return FileResponse(path=str(path), media_type="audio/mpeg", filename="tts.mp3")
@@ -342,7 +342,7 @@ async def speak_text(req: SpeakRequest) -> dict[str, Any]:
         logger.error("TTS generation failed: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=502,
-            detail=f"Text-to-speech failed: {exc}. Edge TTS needs internet access.",
+            detail="Text-to-speech failed. Edge TTS needs internet access.",
         ) from exc
 
     return {"key": key}

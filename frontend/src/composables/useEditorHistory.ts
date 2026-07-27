@@ -11,7 +11,10 @@ export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaEl
     const el = textarea.value
     const cursor = el ? el.selectionStart : 0
     const now = Date.now()
-    if (now - lastPushTime < 500 && undoStack.value.length > 0) {
+    // Coalesce rapid edits into one undo step — but only once a base snapshot
+    // AND at least one edit exist (length >= 2). Coalescing at length 1 would
+    // overwrite the initial snapshot, making the first edit un-undoable.
+    if (now - lastPushTime < 500 && undoStack.value.length >= 2) {
       const last = undoStack.value[undoStack.value.length - 1]
       if (last.content === body.value) return
       undoStack.value[undoStack.value.length - 1] = { content: body.value, cursor }
@@ -24,16 +27,21 @@ export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaEl
   }
 
   function doUndo() {
-    if (undoStack.value.length < 2) return
+    if (!undoStack.value.length) return
     const current = undoStack.value.pop()!
     redoStack.value.push(current)
     const prev = undoStack.value[undoStack.value.length - 1]
-    body.value = prev.content
-    nextTick(() => {
-      if (textarea.value) {
-        textarea.value.selectionStart = textarea.value.selectionEnd = prev.cursor
-      }
-    })
+    if (prev) {
+      body.value = prev.content
+      nextTick(() => {
+        if (textarea.value) {
+          textarea.value.selectionStart = textarea.value.selectionEnd = prev.cursor
+        }
+      })
+    } else {
+      // Undid past the first snapshot — restore the empty/base state.
+      body.value = ''
+    }
   }
 
   function doRedo() {

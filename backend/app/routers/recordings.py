@@ -52,7 +52,8 @@ async def start_recording_route(
     try:
         await svc.start_recording(entry_id)
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.warning("Failed to start recording for entry %s", entry_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Recording failed to start.") from exc
     return {"ok": True, "entry_id": entry_id}
 
 
@@ -63,7 +64,8 @@ async def stop_recording_route(db: AsyncSession = Depends(get_db)) -> Any:
     try:
         return await svc.stop_recording()
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.warning("Failed to stop recording", exc_info=True)
+        raise HTTPException(status_code=500, detail="Recording failed to stop.") from exc
 
 
 @router.get("/entry/{entry_id}", response_model=list[VoiceRecordingResponse])

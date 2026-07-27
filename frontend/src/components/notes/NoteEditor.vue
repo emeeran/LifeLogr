@@ -41,10 +41,21 @@ const activePage = computed(
 )
 const isMain = computed(() => activePageId.value === null)
 
+// True when the buffers differ from what was last loaded/saved — i.e. the user
+// has typed something not yet persisted. Notes have autosave OFF by design, so
+// this flag gates confirm prompts to prevent silent data loss.
+const isDirty = computed(
+  () => title.value !== loadedTitle.value || body.value !== loadedBody.value,
+)
+
 // ── Local editable buffers (resynced on note/page identity change only, so
 //    our own autosave responses don't clobber in-flight typing) ──
 const title = ref('')
 const body = ref('')
+// Snapshot of the source text last loaded/saved into the buffers — drives
+// isDirty so we can warn before unsaved edits are lost on a page/note switch.
+const loadedTitle = ref('')
+const loadedBody = ref('')
 const showPreview = ref(false)
 const showAi = ref(false)
 const showTags = ref(false)
@@ -66,6 +77,8 @@ function syncFromActive() {
     title.value = props.note.title ?? ''
     body.value = props.note.body
   }
+  loadedTitle.value = title.value
+  loadedBody.value = body.value
   // Fresh undo stack per source — undo never crosses a note/page boundary.
   core.resetHistory()
 }
@@ -94,7 +107,8 @@ watch(
 )
 
 // Autosave is OFF — notes persist ONLY on explicit Save (Ctrl+S / saveNow).
-// Switching pages or closing the editor does NOT save; unsaved edits are lost.
+// Switching pages with unsaved edits now prompts (selectPage), and closing the
+// tab/window warns (beforeunload), so edits are never silently lost.
 
 async function doSave() {
   if (isMain.value) {
@@ -103,6 +117,8 @@ async function doSave() {
     try {
       await store.updateNote(props.note.id, { title: title.value, body: body.value })
       savedAt.value = Date.now()
+      loadedTitle.value = title.value
+      loadedBody.value = body.value
       if (!props.note.is_encrypted) tts.prewarmText(ttsText.value)
     } catch {
       /* store surfaces error */
@@ -117,6 +133,8 @@ async function doSave() {
     try {
       await store.updatePage(p.id, { title: title.value, body: body.value })
       savedAt.value = Date.now()
+      loadedTitle.value = title.value
+      loadedBody.value = body.value
     } catch {
       /* store surfaces error */
     } finally {
@@ -134,7 +152,15 @@ async function saveNow() {
 }
 
 async function selectPage(id: number | null) {
-  // Auto-save disabled: switching pages does NOT persist unsaved edits.
+  // Autosave is OFF, so guard against silently dropping unsaved edits: confirm
+  // before switching away from a dirty page.
+  if (isDirty.value) {
+    const discard = confirm(
+      'You have unsaved changes on this page.\n\n' +
+        'Click "Cancel" to stay and save them, or "OK" to discard.',
+    )
+    if (!discard) return
+  }
   activePageId.value = id
 }
 
@@ -305,7 +331,16 @@ async function handleDroppedPaths(paths: string[]) {
   if (paths.length) showPreview.value = true
 }
 
+// Warn before closing the tab/window if there are unsaved edits.
+function beforeUnloadGuard(e: BeforeUnloadEvent) {
+  if (isDirty.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('beforeunload', beforeUnloadGuard)
   if (!isTauri) return
   try {
     const { getCurrentWebview } = await import('@tauri-apps/api/webview')
@@ -328,7 +363,8 @@ onMounted(async () => {
   }
 })
 onUnmounted(() => {
-  // Auto-save disabled: closing the editor does NOT persist unsaved edits.
+  // Autosave disabled: closing the editor does NOT persist unsaved edits.
+  window.removeEventListener('beforeunload', beforeUnloadGuard)
   unlistenDrag?.()
   unlistenDrag = null
   unlistenSnip?.()
@@ -705,6 +741,9 @@ watch(
 onUnmounted(() => {
   disconnectMedia()
 })
+
+// Exposed so a parent (e.g. NotesView) can guard note-level switching.
+defineExpose({ isDirty })
 </script>
 
 <template>

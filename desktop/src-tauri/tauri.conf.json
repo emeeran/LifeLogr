@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:18765; media-src 'self' data: blob: http://127.0.0.1:18765; connect-src 'self' http://127.0.0.1:18765 http://localhost:5173 http://localhost:8000"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:18765; media-src 'self' data: blob: http://127.0.0.1:18765; connect-src 'self' http://127.0.0.1:18765"
     }
   },
   "plugins": {},
@@ -45,7 +45,8 @@
           "gstreamer1.0-libav",
           "gstreamer1.0-plugins-bad",
           "tesseract-ocr",
-          "tesseract-ocr-eng"
+          "tesseract-ocr-eng",
+          "psmisc"
         ]
       },
       "appimage": {

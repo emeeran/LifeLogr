@@ -34,6 +34,10 @@ WORKDIR /app/backend
 
 ENV APP_ENV=production
 ENV DATABASE_URL=sqlite+aiosqlite:///./prod.db
+# Bind 0.0.0.0 *inside* the container — required so the host port-forward in
+# docker-compose.yml can reach the app. Host-side exposure is gated by the
+# compose `ports:` mapping (bound to 127.0.0.1 by default). Do NOT widen that
+# mapping without an authenticated reverse proxy in front.
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

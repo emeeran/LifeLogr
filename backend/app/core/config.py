@@ -85,22 +85,43 @@ def write_storage_override(data_dir: Path) -> None:
     path.write_text(json.dumps({"data_dir": str(Path(data_dir).expanduser())}))
 
 
+def _is_managed_run() -> bool:
+    """True for packaged local runs that should auto-manage a per-data-dir key.
+
+    The desktop sidecar (Tauri) sets ``DATA_DIR``; the web-deb launcher sets
+    ``LIFELOGR_DATA_DIR`` — both signal "we own this data dir, generate its key".
+    Dev and bare-server deployments set neither and keep their env/.env/default
+    key (servers must set SECRET_KEY; ``validate_production`` enforces it).
+
+    Deliberately env-only: consulting the persisted storage override here would
+    couple the decision to the host's config dir (and to test isolation). The
+    launchers re-derive and set the env var on every start, so the override is a
+    user choice *within* a managed run, not a signal of one.
+    """
+    return bool(os.environ.get("DATA_DIR") or os.environ.get("LIFELOGR_DATA_DIR"))
+
+
 def _resolve_secret_key(data_dir: Path, current: str) -> str:
-    """Return a stable SECRET_KEY for the packaged desktop sidecar.
+    """Return a stable SECRET_KEY for packaged local runs.
 
-    Only engages when ``DATA_DIR`` is in the environment (the Tauri sidecar),
-    mirroring ``scripts/build-web-deb.sh``: an explicit non-default SECRET_KEY
-    (env / .env) always wins; otherwise load ``DATA_DIR/.secret_key`` if present;
-    otherwise generate ``secrets.token_hex(32)`` and persist it (mode 0600).
+    Engages for managed runs (desktop sidecar / web-deb) — see
+    ``_is_managed_run`` — mirroring the launchers in ``scripts/build-web-deb.sh``:
+    an explicit non-default SECRET_KEY (env / .env) always wins; otherwise load
+    ``DATA_DIR/.secret_key`` if present; otherwise generate
+    ``secrets.token_hex(32)`` and persist it (mode 0600).
 
-    Dev and server deployments are untouched (no ``DATA_DIR`` env) — they keep
-    their env/.env/default SECRET_KEY (servers must set it; ``validate_production``
-    enforces it). Runs during ``Settings()`` instantiation, before
-    ``security.py`` derives the AES key at import.
+    Dev and server deployments are untouched — they keep their env/.env/default
+    SECRET_KEY (servers must set it; ``validate_production`` enforces it). Runs
+    during ``Settings()`` instantiation, before ``security.py`` derives the AES
+    key at import.
     """
     if current and current != "change-me-before-production":
         return current
-    if not os.environ.get("DATA_DIR"):
+    # Gate on the *resolved* managed-run state, not the raw DATA_DIR env: the
+    # web-deb launcher sets LIFELOGR_DATA_DIR (and a user may relocate via the
+    # storage override) without ever setting DATA_DIR, which previously fell
+    # through to the insecure default key.
+    if not _is_managed_run():
         return current
     key_file = data_dir / ".secret_key"
     if key_file.exists():
@@ -111,15 +132,31 @@ def _resolve_secret_key(data_dir: Path, current: str) -> str:
         except Exception:
             _logger.warning("Could not read %s", key_file, exc_info=True)
     generated = secrets.token_hex(32)
+    # Persist or fail hard. Returning an ephemeral in-memory key on write
+    # failure would silently make every encrypted cloud credential (keyed off
+    # .secret_key) undecryptable on the next restart.
+    prev = os.umask(0o077)
     try:
-        prev = os.umask(0o077)
-        try:
-            key_file.write_text(generated)
-        finally:
-            os.umask(prev)
-    except Exception:
-        _logger.warning("Could not write %s", key_file, exc_info=True)
+        key_file.write_text(generated)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Could not persist the secret key to {key_file}. Fix the data "
+            f"directory's permissions and relaunch — encrypted cloud credentials "
+            f"require a stable key."
+        ) from exc
+    finally:
+        os.umask(prev)
     return generated
+
+
+def _is_loopback(host: str) -> bool:
+    """True for loopback bind addresses (127.0.0.1, ::1, localhost)."""
+    return host.strip().lower() in (
+        "127.0.0.1",
+        "::1",
+        "localhost",
+        "0:0:0:0:0:0:0:1",
+    )
 
 
 def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
@@ -178,6 +215,12 @@ class Settings(BaseSettings):
     APP_NAME: str = "LifeLogr"
     APP_VERSION: str = "0.7.1"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
+    # Network bind host. Defaults to loopback — a privacy-first single-user app
+    # must not listen on external interfaces. ``validate_production`` rejects a
+    # non-loopback bind for direct production server deployments (Docker binds
+    # 0.0.0.0 *inside* the container by design; host exposure is gated by the
+    # compose port mapping, so it leaves this default untouched).
+    BIND_HOST: str = "127.0.0.1"
     SECRET_KEY: str = "change-me-before-production"
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty
     MEDIA_DIR: Path = Path("")  # derived from DATA_DIR if empty
@@ -299,10 +342,23 @@ class Settings(BaseSettings):
         """Validate critical settings when running in production.
 
         Only enforced for server deployments (Docker, cloud). Desktop/Tauri
-        sidecar runs locally with no external access — validation is skipped.
+        sidecar runs locally with no external access — validation is skipped
+        (``APP_ENV`` is not ``production`` there).
         """
-        if self.is_production and self.SECRET_KEY == "change-me-before-production":
+        if not self.is_production:
+            return
+        if self.SECRET_KEY == "change-me-before-production":
             raise RuntimeError("SECRET_KEY must be changed in production. Set it in .env")
+        # Refuse to bind an unauthenticated single-user API to a network
+        # interface. A non-loopback production bind must be intentional and
+        # fronted by an authenticated reverse proxy — the app itself has no auth.
+        if not _is_loopback(self.BIND_HOST):
+            raise RuntimeError(
+                f"Refusing to start in production bound to {self.BIND_HOST!r} "
+                f"(non-loopback). LifeLogr's API is unauthenticated and single-user; "
+                f"do not expose it to the network directly. Set BIND_HOST=127.0.0.1, "
+                f"or front this instance with an authenticated reverse proxy."
+            )
 
 
 settings = Settings()

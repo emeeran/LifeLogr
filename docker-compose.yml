@@ -1,8 +1,13 @@
 services:
   app:
     build: .
+    # Bind the published port to host loopback only. LifeLogr is a single-user,
+    # unauthenticated local app — exposing its API on all host interfaces would
+    # let anything on the LAN read/overwrite the journal. For a networked/reverse-
+    # proxy deploy, front this with an authenticated proxy instead of widening
+    # this binding.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/backend/prod.db
       - ./media:/app/backend/media

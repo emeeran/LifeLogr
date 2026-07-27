@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -130,8 +131,15 @@ class BackupService:
 
         fd, archive_name = tempfile.mkstemp(suffix=".tar.gz", dir=str(settings.DATA_DIR))
         os.close(fd)
-        with tarfile.open(archive_name, "w:gz") as tar:
-            add_backup_members(tar, db_file, media_dir)
+
+        # Gzipping the whole DB + media is synchronous file I/O — run it off the
+        # event loop so a backup doesn't stall other requests (e.g. /health).
+        def _pack() -> None:
+
+            with tarfile.open(archive_name, "w:gz") as tar:
+                add_backup_members(tar, db_file, media_dir)
+
+        await asyncio.to_thread(_pack)
         return Path(archive_name)
 
     async def run_backup(self, config_id: int) -> BackupSnapshot:
@@ -371,9 +379,7 @@ class BackupService:
         config = await self._get_config(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
 
-        import io
         import shutil
-        import tarfile
         import tempfile
         from pathlib import Path
         from app.core.archive import extract_tar_safely
@@ -449,9 +455,16 @@ class BackupService:
 
             tmpdir = tempfile.mkdtemp()
             try:
-                with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as tar:
-                    # Shared traversal + symlink guard (see app.core.archive).
-                    extract_tar_safely(tar, tmpdir)
+                # Extraction is synchronous and the archive can be large — offload it.
+                def _extract(data: bytes, dest: str) -> None:
+                    import io
+                    import tarfile
+
+                    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+                        # Shared traversal + symlink guard (see app.core.archive).
+                        extract_tar_safely(tar, dest)
+
+                await asyncio.to_thread(_extract, archive_data, tmpdir)
 
                 extracted_db = Path(tmpdir) / "diarium.diarium"
                 if not extracted_db.exists():

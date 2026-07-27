@@ -68,6 +68,15 @@ try:
 except ImportError:
     pass  # pysqlite3 not installed (Windows/macOS) — stdlib sqlite3 fallback
 
+# Memorial dedication track — bundled so the backend-driven system audio player
+# can find it in the frozen build (memorial._resolve_track looks under
+# sys._MEIPASS/frontend/public/). Without it the memorial splash falls back to
+# in-browser audio, which browsers block on a cold page load.
+_memorial_track = []
+_track_src = ROOT / 'frontend' / 'public' / 'Garden.mp3'
+if _track_src.exists():
+    _memorial_track = [(str(_track_src), 'frontend/public')]
+
 a = Analysis(
     [str(ROOT / 'backend' / 'app' / 'main.py')],
     pathex=[str(ROOT / 'backend')],
@@ -84,6 +93,8 @@ a = Analysis(
         # sounddevice's bundled PortAudio + soundfile's libsndfile libraries.
         *_sounddevice_datas,
         *_soundfile_datas,
+        # Memorial dedication track (resolved via sys._MEIPASS when frozen).
+        *_memorial_track,
     ],
     hiddenimports=[
         # Auto-discovered app modules

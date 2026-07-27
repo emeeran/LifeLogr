@@ -61,9 +61,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     # Load persisted runtime settings (model selections, feature toggles)
     try:
-        from app.routers.settings import load_persisted_settings
+        from app.services.settings_service import load_runtime_settings
 
-        load_persisted_settings()
+        load_runtime_settings()
     except Exception:
         logger.warning("Failed to load persisted settings", exc_info=True)
     await init_db()
@@ -228,6 +228,49 @@ async def rate_limiter(request: Request, call_next: Any) -> Response:
     if len(timestamps) >= RATE_LIMIT:
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
     timestamps.append(now)
+    return await call_next(request)  # type: ignore[no-any-return]
+
+
+# ── CSRF / origin guard ──────────────────────────────────────────────────────
+# The API is unauthenticated and loopback-only, so CORS alone is NOT enough: a
+# malicious web page can issue "simple" cross-origin POSTs (form-urlencoded /
+# text/plain, no custom headers) which bypass CORS preflight and are executed by
+# the server even though the attacker can't read the response. Browsers always
+# send an `Origin` header on cross-site requests and cannot forge it, so we reject
+# mutating requests whose Origin is not a trusted (loopback / Tauri) host.
+# Requests without an Origin (curl, the sidecar's own scripts, etc.) pass through.
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _origin_is_trusted(origin: str) -> bool:
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    # Tauri webview (tauri://localhost) + any loopback host. The web-deb serves
+    # the SPA on a dynamic local port, so we trust the host, not a fixed origin.
+    if scheme == "tauri":
+        return True
+    return host in ("127.0.0.1", "localhost", "tauri.localhost")
+
+
+@app.middleware("http")
+async def csrf_origin_guard(request: Request, call_next: Any) -> Response:
+    if request.method in _MUTATING_METHODS:
+        origin = (request.headers.get("origin") or request.headers.get("referer") or "").strip()
+        if origin and not _origin_is_trusted(origin):
+            logger.warning(
+                "Rejected cross-origin %s %s from untrusted origin",
+                request.method,
+                request.url.path,
+            )
+            return JSONResponse(
+                status_code=403, content={"detail": "Cross-origin request not allowed"}
+            )
     return await call_next(request)  # type: ignore[no-any-return]
 
 
@@ -444,6 +487,11 @@ if _FRONTEND_DIST.is_dir():
         """Serve frontend SPA — fall back to index.html for client-side routing."""
         file_path = _FRONTEND_DIST / full_path
         target = file_path if file_path.is_file() else (_FRONTEND_DIST / "index.html")
+        # Containment: reject any path that resolves outside the frontend dist
+        # directory (e.g. a crafted /%2e%2e/... URL). FastAPI does not collapse
+        # ".." in path params, so this is defence-in-depth against traversal.
+        if not target.resolve().is_relative_to(_FRONTEND_DIST.resolve()):
+            raise NotFoundError("Not found")
         # index.html must always revalidate so new content-hashed assets are
         # picked up; the hashed asset files themselves can be cached forever.
         is_index = target.name == "index.html"
@@ -461,7 +509,7 @@ if __name__ == "__main__":
     import uvicorn
 
     parser = argparse.ArgumentParser(description="LifeLogr backend server")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host")
+    parser.add_argument("--host", default=settings.BIND_HOST, help="Bind host")
     parser.add_argument("--port", type=int, default=18765, help="Bind port")
     args = parser.parse_args()
     uvicorn.run("app.main:app", host=args.host, port=args.port, reload=False)

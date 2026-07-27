@@ -36,6 +36,7 @@ def _ip_is_internal(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         or ip.is_link_local
         or ip.is_reserved
         or ip.is_multicast
+        or ip.is_unspecified  # 0.0.0.0 / :: — "any" must not be clip-able
     )
 
 
@@ -102,22 +103,37 @@ async def extract_markdown_from_url(url: str) -> str:
 
     try:
         # `follow_redirects` is safe here because `_request_guard` re-runs the
-        # SSRF check (incl. DNS resolution) on every redirect target.
+        # SSRF check (incl. DNS resolution) on every redirect target. We STREAM
+        # the body and cap it mid-flight so an oversized response can't be
+        # downloaded whole before being truncated.
         async with httpx.AsyncClient(
             timeout=_TIMEOUT_SECONDS,
             follow_redirects=True,
             max_redirects=_MAX_REDIRECTS,
             event_hooks={"request": [_request_guard]},
         ) as client:
-            resp = await client.get(
-                str(parsed), headers={"User-Agent": "LifeLogr/1.0 (+web clip)"}
-            )
-            resp.raise_for_status()
+            chunks: list[bytes] = []
+            total = 0
+            truncated = False
+            async with client.stream(
+                "GET", str(parsed), headers={"User-Agent": "LifeLogr/1.0 (+web clip)"}
+            ) as resp:
+                resp.raise_for_status()
+                content_type = (
+                    resp.headers.get("content-type", "").split(";")[0].strip().lower()
+                )
+                if not content_type.startswith(_HTML_CONTENT_TYPES):
+                    raise ValidationError("Only HTML pages can be clipped.")
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > _MAX_BYTES:
+                        truncated = True
+                        break
+                    chunks.append(chunk)
     except httpx.HTTPError as exc:
         raise ValidationError(f"Could not fetch page: {exc}") from exc
 
-    content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
-    if not content_type.startswith(_HTML_CONTENT_TYPES):
-        raise ValidationError("Only HTML pages can be clipped.")
-
-    return _html_to_markdown(resp.text[:_MAX_BYTES])
+    if truncated:
+        logger.warning("Web clip %s truncated at %d bytes", str(parsed), _MAX_BYTES)
+    html = b"".join(chunks).decode("utf-8", errors="replace")
+    return _html_to_markdown(html)

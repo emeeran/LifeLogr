@@ -19,6 +19,7 @@ import logging
 import os
 import shutil
 import signal
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -38,7 +39,20 @@ _TRACK_PATHS = [
 
 
 def _resolve_track() -> Path | None:
-    for candidate in _TRACK_PATHS:
+    # In a PyInstaller build the source tree isn't on disk; the track is bundled
+    # under sys._MEIPASS (see desktop/scripts/pyinstaller.spec). Prefer that when
+    # frozen so the system-player path works — browser autoplay can't start the
+    # memorial track on a cold load, which is why the backend player exists.
+    candidates: list[Path]
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", str(_ROOT)))
+        candidates = [
+            base / "frontend" / "public" / "Garden.mp3",
+            base / "frontend" / "dist" / "Garden.mp3",
+        ]
+    else:
+        candidates = _TRACK_PATHS
+    for candidate in candidates:
         if candidate.is_file():
             return candidate
     return None

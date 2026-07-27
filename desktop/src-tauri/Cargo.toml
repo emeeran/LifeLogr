@@ -23,12 +23,16 @@ log = "0.4"
 env_logger = "0.11"
 
 [features]
-default = ["devtools", "snip"]
+# `devtools` is intentionally NOT in `default`: Tauri auto-enables the webview
+# inspector in debug builds, so excluding it here keeps devtools out of release
+# bundles (the inspector must not be reachable in a shipped privacy-first app).
+# Pass `--features devtools` only for an explicit release-with-devtools build.
+default = ["snip"]
 devtools = ["tauri/devtools"]
 # Screen-region snip requires xcap, which needs libpipewire-0.3-dev to build on
 # Linux. Off => the capture_screen command returns a friendly error (web-clip
 # image capture and the text fallback still work). Build without it with
-# `--no-default-features --features devtools`.
+# `--no-default-features`.
 snip = ["dep:xcap"]
 
 [target.'cfg(target_os = "linux")'.dependencies]

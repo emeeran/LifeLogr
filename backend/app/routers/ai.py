@@ -307,11 +307,13 @@ def _provider_http_error(exc: Exception) -> HTTPException:
     """
     if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
         body = exc.response.text[:300]
+        logger.warning("AI provider returned HTTP %s: %s", exc.response.status_code, body)
         return HTTPException(
             status_code=502,
             detail=f"Provider returned HTTP {exc.response.status_code}: {body}",
         )
-    return HTTPException(status_code=502, detail=f"Connection failed: {exc}")
+    logger.warning("AI provider connection failure", exc_info=True)
+    return HTTPException(status_code=502, detail="Could not reach the AI provider.")
 
 
 @router.get("/providers/presets")

@@ -2,10 +2,16 @@
 
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use log::{error, info, warn};
 use tauri::{Emitter, Manager, RunEvent};
+
+/// Owns the backend sidecar child so shutdown kills the exact process we spawned
+/// (PID-correct) instead of matching by name with `pkill -f lifelogr-backend`,
+/// which could hit an unrelated process sharing that token.
+struct SidecarChild(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 use tauri::ipc::Response;
 use tauri_plugin_global_shortcut::{Builder as ShortcutBuilder, GlobalShortcutExt, ShortcutState};
 use tauri_plugin_shell::ShellExt;
@@ -195,6 +201,41 @@ fn shutdown_sidecar(port: u16) {
     warn!("Backend sidecar still on port {port} after SIGKILL (next launch will reclaim it)");
 }
 
+/// Best-effort PID owning a TCP port, via `lsof`. `None` if lsof is unavailable
+/// or the port has no identifiable owner.
+#[cfg(target_os = "linux")]
+fn port_owner_pid(port: u16) -> Option<u32> {
+    let out = std::process::Command::new("lsof")
+        .args(["-ti", &format!(":{port}")])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .next()
+}
+
+/// Confirm our sidecar actually owns the port it reports ready on. Catches the
+/// TOCTOU window where a foreign process grabs the port between `reclaim_port`
+/// and our sidecar's bind — otherwise we'd TCP-probe that foreign listener and
+/// silently talk to a stale backend. Best-effort, Linux only; silent when lsof
+/// is absent.
+#[cfg(target_os = "linux")]
+fn verify_sidecar_owner(port: u16, expected_pid: u32) {
+    match port_owner_pid(port) {
+        Some(pid) if pid == expected_pid => info!("Verified sidecar pid {pid} owns port {port}"),
+        Some(other) => warn!(
+            "Port {port} is owned by pid {other}, not our sidecar (pid {expected_pid}) — \
+             the app may be talking to a stale backend; try restarting LifeLogr."
+        ),
+        None => {}
+    }
+}
+
+/// No-op on non-Linux targets (lsof-based verification isn't available).
+#[cfg(not(target_os = "linux"))]
+fn verify_sidecar_owner(_port: u16, _expected_pid: u32) {}
+
 fn init_logging(data_dir: &std::path::Path) {
     let log_path = data_dir.join("lifelogr-desktop.log");
     let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
@@ -317,9 +358,13 @@ fn main() {
                 .env("DATA_DIR", data_dir.to_string_lossy().to_string())
                 .env("APP_ENV", "production");
 
-            let (mut rx, _child) = sidecar_command
+            let (mut rx, child) = sidecar_command
                 .spawn()
                 .map_err(|e| format!("Failed to start backend sidecar: {e}"))?;
+            // Remember the sidecar PID + own its child handle so shutdown kills
+            // the exact process (see SidecarChild / verify_sidecar_owner).
+            let child_pid = child.pid();
+            app.manage(SidecarChild(Mutex::new(Some(child))));
 
             // Log sidecar output/stderr
             std::thread::spawn(move || {
@@ -341,10 +386,13 @@ fn main() {
                 });
             });
 
-            // Sidecar health check — TCP probe until backend is ready
+            // Sidecar health check — TCP probe until backend is ready, then
+            // verify (best-effort, Linux) that OUR sidecar owns the port and not
+            // a stale process that grabbed it during the bind window.
             let health_port = port;
             std::thread::spawn(move || {
                 wait_for_sidecar(health_port);
+                verify_sidecar_owner(health_port, child_pid);
             });
 
             // SAFETY: Auto-grant permission requests (microphone, camera, geolocation).
@@ -378,10 +426,31 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
             if let RunEvent::ExitRequested { .. } = event {
                 info!("Exit requested — shutting down backend sidecar");
-                shutdown_sidecar(backend_port());
+                let port = backend_port();
+                // Preferred: kill the exact child we spawned (PID-correct).
+                let killed = app_handle
+                    .try_state::<SidecarChild>()
+                    .and_then(|state| state.0.lock().ok()?.take())
+                    .map(|child| {
+                        let _ = child.kill();
+                        true
+                    })
+                    .unwrap_or(false);
+                if killed {
+                    for _ in 0..(SIDECAR_GRACE_MS / 100) {
+                        if !port_is_listening(port) {
+                            info!("Backend sidecar stopped via child handle");
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    warn!("Sidecar child killed but port {port} still listening");
+                }
+                // Fallback: pattern-based graceful shutdown (SIGTERM → SIGKILL).
+                shutdown_sidecar(port);
             }
         });
 }

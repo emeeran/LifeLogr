@@ -78,8 +78,17 @@ async def check_backup_health() -> None:
     Catches the silent-stop mode: a ``backup_schedule`` row exists (so the user
     expects daily backups) but the ``auto_backup`` APScheduler job didn't
     register — re-register it. Also warns on a stale/missing last backup and an
-    unwritable local destination. Never raises.
+    unwritable local destination. Never raises — a failure here must not abort
+    boot (it reaches the scheduler/DB, which may be mid-init).
     """
+    try:
+        await _check_backup_health_impl()
+    except Exception:
+        logger.warning("Backup-health check failed", exc_info=True)
+        _backup_result.update(ran=True, scheduled=False, last_run=None, stale=None)
+
+
+async def _check_backup_health_impl() -> None:
     from app.services.scheduler_service import SchedulerService, _get_active_schedule
 
     active = await _get_active_schedule()

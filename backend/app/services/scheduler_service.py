@@ -838,8 +838,13 @@ async def _run_backup(backup_path: str, retention: int = 10) -> str:
 
     tmpdir = tempfile.mkdtemp()
     try:
-        with tarfile.open(archive_path, "w:gz") as tar:
-            add_backup_members(tar, db_file, media_dir)
+        # Gzipping DB + media is synchronous file I/O — offload it so the
+        # scheduled backup job doesn't block the event loop.
+        def _pack() -> None:
+            with tarfile.open(archive_path, "w:gz") as tar:
+                add_backup_members(tar, db_file, media_dir)
+
+        await asyncio.to_thread(_pack)
         logger.info(f"Backup complete: {archive_path}")
         await _mark_backup_run()
     except Exception:

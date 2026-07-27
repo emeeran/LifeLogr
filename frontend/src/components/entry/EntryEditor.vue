@@ -167,7 +167,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const { isDragging, handlers: dragHandlers } = useDragDrop();
 
 // Auto-save composable
-const { triggerAutosave, saveState: saveActive } = useAutoSave({
+const { triggerAutosave, cancelSave, saveState: saveActive } = useAutoSave({
   isNew,
   hasEntry,
   body,
@@ -441,6 +441,9 @@ defineExpose({
 
 // ── Save ──
 async function save() {
+  // Cancel any pending debounced autosave so it can't race this manual save
+  // (two concurrent updateEntry calls with different snapshots lose data).
+  cancelSave();
   try {
     if (isNew.value) {
       if (!body.value.trim() && !title.value.trim()) {

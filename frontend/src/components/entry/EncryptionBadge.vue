@@ -68,6 +68,9 @@ async function submit() {
       <div class="text-sm font-medium text-text-primary">
         {{ mode === 'encrypt' ? 'Set encryption passphrase' : 'Enter passphrase to decrypt' }}
       </div>
+      <p v-if="mode === 'encrypt'" class="text-[10px] leading-snug text-text-muted">
+        Encrypts the entry's text and mood only — attached media stays as-is on disk.
+      </p>
       <input v-model="passphrase" type="password" placeholder="Passphrase"
         class="w-full px-3 py-2 bg-surface-hover border border-border rounded text-sm text-text-primary"
         @keydown.enter="submit" />

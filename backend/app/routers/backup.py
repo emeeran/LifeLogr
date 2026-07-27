@@ -167,14 +167,19 @@ async def export_local_backup(
     db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
 
+    import asyncio
     import tarfile
 
     # Checkpoint WAL before reading to ensure consistency
     if db_file.exists():
         await checkpoint_wal(db_file)
 
-    with tarfile.open(archive_path, "w:gz") as tar:
-        add_backup_members(tar, db_file, media_dir)
+    # Gzipping DB + media is synchronous file I/O — offload it from the loop.
+    def _pack() -> None:
+        with tarfile.open(archive_path, "w:gz") as tar:
+            add_backup_members(tar, db_file, media_dir)
+
+    await asyncio.to_thread(_pack)
 
     background_tasks.add_task(shutil.rmtree, tmpdir, ignore_errors=True)
 
@@ -224,13 +229,19 @@ async def import_local_backup(file: UploadFile) -> dict[str, Any]:
         upload.flush()
         upload.close()
 
+        import asyncio
+
         extract_dir = tempfile.mkdtemp()
         try:
-            with tarfile.open(upload_path, mode="r:gz") as tar:
-                try:
-                    extract_tar_safely(tar, extract_dir)
-                except ValueError as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            # Extraction is synchronous and can be large — offload it.
+            def _extract() -> None:
+                with tarfile.open(upload_path, mode="r:gz") as tar:
+                    try:
+                        extract_tar_safely(tar, extract_dir)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            await asyncio.to_thread(_extract)
 
             extracted_db = Path(extract_dir) / "diarium.diarium"
             # Backward compat: accept old archives that used "dev.db"

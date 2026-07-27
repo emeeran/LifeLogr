@@ -2,75 +2,30 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.entry import Entry
-from app.models.media import Media
+from app.services.settings_service import (
+    db_file_size,
+    dir_size,
+    persist_runtime_settings,
+    storage_info,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
-# ── Settings persistence ─────────────────────────────────────────────────
-
-
-def _settings_file() -> Path:
-    """Path to the persisted runtime settings JSON file."""
-    return Path(settings.DATA_DIR) / ".runtime-settings.json"
-
-
-# Persisted mutable settings; the JSON key matches the settings attribute name.
-_PERSISTED_SETTING_FIELDS: tuple[str, ...] = (
-    "OLLAMA_MODEL",
-    "OLLAMA_BASE_URL",
-    "OLLAMA_EMBED_MODEL",
-    "AI_ENABLE_EMBEDDINGS",
-    "AI_ENABLE_TAG_SUGGESTIONS",
-    "AI_ENABLE_SENTIMENT",
-    "AI_ENABLE_SUMMARIZATION",
-    "AI_ENABLE_REFLECTION_PROMPTS",
-    "AI_ENABLE_WRITER_BLOCK_HELPER",
-)
-
-
-def _persist_settings() -> None:
-    """Write current mutable settings to disk so they survive restarts."""
-    data = {name: getattr(settings, name) for name in _PERSISTED_SETTING_FIELDS}
-    try:
-        Path(settings.DATA_DIR).mkdir(parents=True, exist_ok=True)
-        _settings_file().write_text(json.dumps(data, indent=2))
-    except Exception:
-        logger.warning("Failed to persist settings", exc_info=True)
-
-
-def load_persisted_settings() -> None:
-    """Load previously saved runtime settings from disk.
-
-    Called once during app startup. Values here override the defaults
-    from .env / environment variables.
-    """
-    path = _settings_file()
-    if not path.exists():
-        return
-    try:
-        data = json.loads(path.read_text())
-        for name in _PERSISTED_SETTING_FIELDS:
-            if name in data:
-                setattr(settings, name, data[name])
-        logger.info("Loaded persisted settings from %s", path)
-    except Exception:
-        logger.warning("Failed to load persisted settings", exc_info=True)
+# Runtime-settings persistence + storage reporting live in
+# ``app.services.settings_service`` (keeps file/DB side effects out of the
+# router). Startup loads via ``load_runtime_settings`` (see app.main).
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────
@@ -129,27 +84,6 @@ class StoragePathUpdate(BaseModel):
     data_dir: str
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-
-def _dir_size(path: Path) -> int:
-    """Recursively compute total file size under a directory."""
-    total = 0
-    if path.is_dir():
-        for entry in os.scandir(path):
-            if entry.is_file(follow_symlinks=False):
-                total += entry.stat(follow_symlinks=False).st_size
-            elif entry.is_dir(follow_symlinks=False):
-                total += _dir_size(Path(entry.path))
-    return total
-
-
-def _db_file_size() -> int:
-    """Return the SQLite database file size in bytes."""
-    p = settings.db_path
-    return p.stat().st_size if p.exists() else 0
-
-
 def _get_ai_settings() -> AISettings:
     return AISettings(
         ollama_model=settings.OLLAMA_MODEL,
@@ -170,20 +104,10 @@ def _get_ai_settings() -> AISettings:
 @router.get("", response_model=AppSettingsResponse)
 async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
     """Return current application settings and storage info."""
-    entry_count = (
-        await db.execute(select(func.count()).select_from(Entry).where(~Entry.is_deleted))
-    ).scalar() or 0
-
-    media_count = (await db.execute(select(func.count()).select_from(Media))).scalar() or 0
-
+    info = await storage_info(db)
     return AppSettingsResponse(
         ai=_get_ai_settings(),
-        storage=StorageInfo(
-            db_size_bytes=_db_file_size(),
-            media_count=media_count,
-            media_size_bytes=_dir_size(settings.MEDIA_DIR),
-            entry_count=entry_count,
-        ),
+        storage=StorageInfo(**info),
         version=settings.APP_VERSION,
         app_name=settings.APP_NAME,
     )
@@ -219,7 +143,7 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
             val = getattr(data.ai, field, None)
             if val is not None:
                 setattr(settings, attr, val)
-        _persist_settings()
+        persist_runtime_settings()
     return {"status": "ok"}
 
 
@@ -248,9 +172,9 @@ async def list_ollama_models() -> list[dict[str, Any]]:
 @router.post("/vacuum")
 async def vacuum_database(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Run VACUUM to compact the SQLite database and reclaim disk space."""
-    before = _db_file_size()
+    before = db_file_size()
     await db.execute(text("VACUUM"))
-    after = _db_file_size()
+    after = db_file_size()
     return {"status": "ok", "reclaimed_bytes": before - after}
 
 
@@ -269,8 +193,8 @@ async def get_storage_path() -> Any:
     return StoragePathResponse(
         data_dir=str(settings.DATA_DIR),
         db_path=str(settings.db_path),
-        db_size_bytes=_db_file_size(),
-        media_size_bytes=_dir_size(settings.MEDIA_DIR),
+        db_size_bytes=db_file_size(),
+        media_size_bytes=dir_size(settings.MEDIA_DIR),
     )
 
 

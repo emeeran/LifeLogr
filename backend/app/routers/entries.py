@@ -499,22 +499,26 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
     if not rows:
         return {"groups_found": 0, "duplicates_removed": 0}
 
-    total_removed = 0
+    from datetime import datetime, timezone
+
+    from sqlalchemy import bindparam
+
+    # Collect every id to soft-delete across all duplicate groups, then issue one
+    # bulk UPDATE + a single commit (previously one UPDATE per id).
+    ids_to_delete: list[int] = []
     for row in rows:
         id_list = [int(x) for x in row[2].split(",")]
-        # Keep the first (oldest) id, delete the rest
-        ids_to_delete = id_list[1:]
-        for eid in ids_to_delete:
-            from datetime import datetime, timezone
+        ids_to_delete.extend(id_list[1:])  # keep the first (oldest), delete the rest
 
-            await db.execute(
-                text("UPDATE entries SET is_deleted = 1, deleted_at = :now WHERE id = :id"),
-                {"now": datetime.now(timezone.utc), "id": eid},
-            )
-            total_removed += 1
+    if ids_to_delete:
+        await db.execute(
+            text("UPDATE entries SET is_deleted = 1, deleted_at = :now WHERE id IN :ids")
+            .bindparams(bindparam("ids", expanding=True)),
+            {"now": datetime.now(timezone.utc), "ids": ids_to_delete},
+        )
 
     await db.commit()
-    return {"groups_found": len(rows), "duplicates_removed": total_removed}
+    return {"groups_found": len(rows), "duplicates_removed": len(ids_to_delete)}
 
 
 @router.get("/{entry_id}", response_model=EntryResponse)

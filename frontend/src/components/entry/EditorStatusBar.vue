@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlignLeft, Clock, Check, Loader, Pencil } from 'lucide-vue-next'
+import { AlignLeft, Clock, Check, Loader, Pencil, AlertCircle } from 'lucide-vue-next'
 import type { SaveState } from '../../composables/useAutoSave'
 
 defineProps<{
@@ -26,6 +26,9 @@ defineProps<{
     </span>
     <span v-else-if="saveState === 'saved'" class="flex items-center gap-1 text-green-500">
       <Check :size="10" /> Saved
+    </span>
+    <span v-else-if="saveState === 'error'" class="flex items-center gap-1 text-red-400">
+      <AlertCircle :size="10" /> Save failed — retry
     </span>
     <span v-else-if="hasContent" class="flex items-center gap-1 text-text-muted/70">
       <Check :size="10" /> All changes saved

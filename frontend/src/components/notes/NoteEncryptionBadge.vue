@@ -73,6 +73,9 @@ async function submit() {
       <div class="text-sm font-medium text-text-primary">
         {{ mode === 'encrypt' ? 'Set encryption passphrase' : 'Enter passphrase to decrypt' }}
       </div>
+      <p v-if="mode === 'encrypt'" class="text-[10px] leading-snug text-text-muted">
+        Encrypts the note's text only — attached images, audio, and video stay as-is on disk.
+      </p>
       <input
         v-model="passphrase"
         type="password"
