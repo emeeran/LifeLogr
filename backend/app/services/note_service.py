@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models.note import Note, NoteFolder, NotePage, NoteTag
+from app.services.hashtag import extract_hashtags, resolve_tag_ids
 from app.schemas.note import (
     NoteCreate,
     NoteFolderCreate,
@@ -64,8 +65,11 @@ class NoteService:
         )
         self.db.add(note)
         await self.db.flush()
-        if data.tag_ids:
-            self.db.add_all([NoteTag(note_id=note.id, tag_id=tid) for tid in data.tag_ids])
+        # Tags live in the text: derive from #tokens in the body.
+        names = extract_hashtags(data.body)
+        if names:
+            tag_ids = await resolve_tag_ids(self.db, names)
+            self.db.add_all([NoteTag(note_id=note.id, tag_id=tid) for tid in tag_ids])
             await self.db.flush()
         await self.db.commit()
         await self.db.refresh(note)
@@ -132,9 +136,11 @@ class NoteService:
             note.folder_id = None
         elif data.folder_id is not None:
             note.folder_id = data.folder_id
-        if data.tag_ids is not None:
+        # Tags live in the text: when the body changes, re-derive the note's tags
+        # from its #tokens (body is the source of truth; client tag_ids ignored).
+        if data.body is not None:
+            desired = set(await resolve_tag_ids(self.db, extract_hashtags(data.body)))
             current = {a.tag_id for a in note.tag_associations}
-            desired = set(data.tag_ids)
             to_add = desired - current
             to_remove = current - desired
             if to_add:
@@ -356,9 +362,37 @@ class NoteService:
             folder.color = data.color
         if data.sort_order is not None:
             folder.sort_order = data.sort_order
+        # Re-parenting (nesting). clear_parent wins if both are set. A no-op
+        # cycle guard keeps the tree acyclic (can't move a folder into itself
+        # or one of its own descendants).
+        if data.clear_parent:
+            folder.parent_id = None
+        elif data.parent_id is not None and not await self._would_create_cycle(
+            folder_id, data.parent_id
+        ):
+            folder.parent_id = data.parent_id
         await self.db.commit()
         await self.db.refresh(folder)
         return folder
+
+    async def _would_create_cycle(self, folder_id: int, new_parent_id: int) -> bool:
+        """True if making ``new_parent_id`` the parent of ``folder_id`` would
+        create a cycle — i.e. ``folder_id`` is an ancestor of ``new_parent_id``
+        (or they are the same folder)."""
+        if new_parent_id == folder_id:
+            return True
+        cur: int | None = new_parent_id
+        seen: set[int] = set()
+        while cur is not None and cur not in seen:
+            if cur == folder_id:
+                return True
+            seen.add(cur)
+            cur = (
+                await self.db.execute(
+                    select(NoteFolder.parent_id).where(NoteFolder.id == cur)
+                )
+            ).scalar_one_or_none()
+        return False
 
     async def soft_delete_folder(self, folder_id: int) -> None:
         """Soft-delete a folder. Notes keep their folder_id (visible in 'All Notes');

@@ -53,21 +53,20 @@ class TestNoteCRUD:
 
 class TestNoteTags:
     async def test_assign_and_swap_tags(self, client: AsyncClient):
-        t1 = (await client.post("/api/v1/tags", json={"name": "work"})).json()
-        t2 = (await client.post("/api/v1/tags", json={"name": "home"})).json()
-        note = await _create_note(client, tag_ids=[t1["id"]])
+        # Tags live in the text: #tokens in the body are the note's tags.
+        note = await _create_note(client, body="plan #work")
         assert [t["name"] for t in note["tags"]] == ["work"]
-        r = await client.patch(f"/api/v1/notes/{note['id']}", json={"tag_ids": [t2["id"]]})
+        r = await client.patch(f"/api/v1/notes/{note['id']}", json={"body": "plan #home"})
         assert [t["name"] for t in r.json()["tags"]] == ["home"]
 
     async def test_list_filter_by_tag(self, client: AsyncClient):
         t = (await client.post("/api/v1/tags", json={"name": "important"})).json()
-        await _create_note(client, body="tagged", tag_ids=[t["id"]])
+        await _create_note(client, body="#important tagged")
         await _create_note(client, body="untagged")
         r = await client.get(f"/api/v1/notes?tag_ids={t['id']}")
         items = r.json()["items"]
         assert len(items) == 1
-        assert items[0]["body_snippet"] == "tagged"
+        assert "tagged" in items[0]["body_snippet"]
 
 
 class TestNotePin:
@@ -252,8 +251,9 @@ class TestNoteMediaOcr:
     async def test_ocr_returns_recognized_text(self, client: AsyncClient, monkeypatch):
         seen: dict[str, bytes] = {}
 
-        def fake_ocr(data: bytes) -> str:
+        def fake_ocr(data: bytes, lang: str = "eng") -> str:
             seen["bytes"] = data
+            seen["lang"] = lang
             return "  hello world  "
 
         monkeypatch.setattr("app.routers.notes.ocr_image_bytes", fake_ocr)
@@ -277,7 +277,7 @@ class TestNoteMediaOcr:
         # In the trigger-less test DB, search falls back to ILIKE on body/title,
         # so inserting the OCR text into the body is what makes it findable.
         monkeypatch.setattr(
-            "app.routers.notes.ocr_image_bytes", lambda data: "QuantumWidget gizmo"
+            "app.routers.notes.ocr_image_bytes", lambda data, lang="eng": "QuantumWidget gizmo"
         )
         note = await _create_note(client, body="snip note")
         up = await client.post(
@@ -314,7 +314,7 @@ class TestNoteMediaOcr:
     async def test_ocr_missing_binary_returns_500_with_hint(
         self, client: AsyncClient, monkeypatch
     ):
-        def boom(data: bytes) -> str:
+        def boom(data: bytes, lang: str = "eng") -> str:
             raise FileNotFoundError("tesseract not found")
 
         monkeypatch.setattr("app.routers.notes.ocr_image_bytes", boom)
@@ -333,6 +333,67 @@ class TestNoteMediaOcr:
         note = await _create_note(client)
         r = await client.post(f"/api/v1/notes/{note['id']}/media/9999/ocr")
         assert r.status_code == 404
+
+    async def test_ocr_passes_language_param(self, client: AsyncClient, monkeypatch):
+        # The ?lang= query param (mirroring Settings → Appearance → OCR language)
+        # is forwarded to the OCR helper; the default is "eng".
+        captured: dict[str, str] = {}
+
+        def fake_ocr(data: bytes, lang: str = "eng") -> str:
+            captured["lang"] = lang
+            return "bonjour le monde"
+
+        monkeypatch.setattr("app.routers.notes.ocr_image_bytes", fake_ocr)
+        note = await _create_note(client, body="x")
+        up = await client.post(
+            f"/api/v1/notes/{note['id']}/media",
+            files={"file": ("pixel.png", _PNG_1x1, "image/png")},
+        )
+        mid = up.json()["id"]
+
+        r = await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr")
+        assert r.status_code == 200, r.text
+        assert captured["lang"] == "eng"
+
+        r = await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr?lang=tam")
+        assert r.status_code == 200, r.text
+        assert captured["lang"] == "tam"
+
+    async def test_ocr_rejects_unsupported_language(self, client: AsyncClient):
+        # The whitelist check runs inside the real ocr_image_bytes before any
+        # tesseract call, so this is independent of the binary being installed.
+        note = await _create_note(client, body="x")
+        up = await client.post(
+            f"/api/v1/notes/{note['id']}/media",
+            files={"file": ("pixel.png", _PNG_1x1, "image/png")},
+        )
+        mid = up.json()["id"]
+
+        r = await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr?lang=h4x")
+        assert r.status_code == 400
+        assert "h4x" in r.json()["detail"]
+
+    async def test_ocr_missing_language_pack_returns_500(
+        self, client: AsyncClient, monkeypatch
+    ):
+        from app.services.ocr_service import OcrLanguageUnavailable
+
+        def fake_ocr(data: bytes, lang: str = "eng") -> str:
+            raise OcrLanguageUnavailable(
+                "OCR language 'tam' isn't available. Install its Tesseract language data…"
+            )
+
+        monkeypatch.setattr("app.routers.notes.ocr_image_bytes", fake_ocr)
+        note = await _create_note(client, body="x")
+        up = await client.post(
+            f"/api/v1/notes/{note['id']}/media",
+            files={"file": ("pixel.png", _PNG_1x1, "image/png")},
+        )
+        mid = up.json()["id"]
+
+        r = await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr?lang=tam")
+        assert r.status_code == 500
+        assert "tam" in r.json()["detail"]
 
 
 class TestNoteWebClip:

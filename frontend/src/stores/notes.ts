@@ -111,10 +111,10 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
-  async function createFolder(name: string) {
+  async function createFolder(name: string, parentId?: number | null) {
     error.value = null
     try {
-      await notesApi.createFolder({ name })
+      await notesApi.createFolder({ name, parent_id: parentId ?? null })
       await fetchFolders()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to create folder'

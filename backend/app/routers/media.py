@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schemas.media import MediaResponse, MediaTimelineItem, MediaTimelineResponse
 from app.services.media_service import MediaService
-from app.services.ocr_service import ocr_image_bytes
+from app.services.ocr_service import OcrLanguageUnavailable, ocr_image_bytes
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
 logger = logging.getLogger(__name__)
@@ -104,8 +104,16 @@ async def get_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Any:
 
 
 @router.post("/{media_id}/ocr")
-async def ocr_media(media_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
-    """Extract text from an image attachment via OCR (tesseract/pytesseract)."""
+async def ocr_media(
+    media_id: int,
+    lang: str = "eng",
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Extract text from an image attachment via OCR (tesseract/pytesseract).
+
+    ``lang`` selects the Tesseract language (e.g. ``eng``, ``jpn``); it mirrors
+    the Settings → Appearance → "OCR language" picker.
+    """
     svc = MediaService(db)
     media = await svc.get(media_id)
     if not (media.media_type == "image" or media.media_type.startswith("image/")):
@@ -113,7 +121,13 @@ async def ocr_media(media_id: int, db: AsyncSession = Depends(get_db)) -> dict[s
 
     file_data, _content_type, _filename = await svc.get_file(media.id)
     try:
-        text = await asyncio.to_thread(ocr_image_bytes, file_data)
+        text = await asyncio.to_thread(ocr_image_bytes, file_data, lang)
+    except ValueError as exc:
+        # Unsupported language code (not in the whitelist).
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OcrLanguageUnavailable as exc:
+        # Tesseract is installed but the language's data pack is not.
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ImportError as exc:
         raise HTTPException(status_code=501, detail=f"OCR unavailable: {exc}") from exc
     except Exception as exc:

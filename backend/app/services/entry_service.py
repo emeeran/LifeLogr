@@ -16,6 +16,7 @@ from app.models.tag import EntryTag, Tag
 from app.schemas.entry import CalendarEntryResponse, EntryCreate, EntryUpdate
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
+from app.services.hashtag import extract_hashtags, resolve_tag_ids
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,11 @@ class EntryService:
         )
         self.db.add(entry)
         await self.db.flush()
-        if data.tag_ids:
-            self.db.add_all([EntryTag(entry_id=entry.id, tag_id=tid) for tid in data.tag_ids])
+        # Tags live in the text: derive from #tokens in the body.
+        names = extract_hashtags(data.body)
+        if names:
+            tag_ids = await resolve_tag_ids(self.db, names)
+            self.db.add_all([EntryTag(entry_id=entry.id, tag_id=tid) for tid in tag_ids])
             await self.db.flush()
         await self.db.commit()
         await self.db.refresh(entry)
@@ -134,9 +138,11 @@ class EntryService:
             entry.title = data.title
         if data.mood is not None:
             entry.mood = data.mood
-        if data.tag_ids is not None:
+        # Tags live in the text: when the body changes, re-derive the entry's tags
+        # from its #tokens (body is the source of truth; client tag_ids ignored).
+        if data.body is not None:
+            desired = set(await resolve_tag_ids(self.db, extract_hashtags(data.body)))
             current = {a.tag_id for a in entry.tag_associations}
-            desired = set(data.tag_ids)
             to_add = desired - current
             to_remove = current - desired
             if to_add:

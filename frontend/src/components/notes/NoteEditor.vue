@@ -2,7 +2,7 @@
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   Eye, Pencil, Sparkles, Pin, Trash2, Loader, Volume2, Plus, X,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Download,
 } from 'lucide-vue-next'
 import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
 import { useDragDrop } from '../../composables/useDragDrop'
@@ -15,10 +15,14 @@ import NoteEncryptionBadge from './NoteEncryptionBadge.vue'
 import SnipOverlay from './SnipOverlay.vue'
 import WebClipModal from './WebClipModal.vue'
 import { useNotesStore } from '../../stores/notes'
-import { tagsApi } from '../../api/tags'
 import { notesApi } from '../../api/notes'
+import { saveFile } from '../../utils/fileDialog'
 import { isTauri } from '../../api/client'
 import { useTtsStore } from '../../stores/tts'
+import TagAutocomplete from '../editor/TagAutocomplete.vue'
+import { useInlineTags } from '../../composables/useInlineTags'
+import { useTagsStore } from '../../stores/tags'
+import { extractHashtags } from '../../utils/tags'
 import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse, NoteMediaResponse } from '../../types'
 
 const props = defineProps<{
@@ -65,6 +69,52 @@ const textarea = ref<HTMLTextAreaElement | null>(null)
 const core = useRichTextEditor({ body, textarea, onSave: saveNow })
 // Notes' embed / emoji / paste insert at the selection via the core.
 const applyText = core.applyToSelection
+
+// ── Inline #tag autocomplete. Tags live in the body: typing `#` opens a
+//    popover of existing tags, picking one writes `#name` into the text, and on
+//    save the body's #tokens become the note's tags (see doSave). ──
+const tagsStore = useTagsStore()
+const tagOptions = computed(() => props.allTags)
+const bodyTagNames = computed(() => new Set(extractHashtags(body.value)))
+const canTag = computed(() => !(isMain.value && props.note.is_encrypted))
+const {
+  active: tagAcActive,
+  rows: tagAcRows,
+  activeIndex: tagAcIndex,
+  coords: tagAcCoords,
+  onInput: tagOnInput,
+  onKeydown: tagOnKeydown,
+  pick: tagPick,
+  scheduleClose: tagScheduleClose,
+} = useInlineTags({
+  body,
+  textarea,
+  tags: tagOptions,
+  onPick: onInlinePick,
+})
+async function onInlinePick(name: string) {
+  if (!props.allTags.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+    try {
+      await tagsStore.createTag({ name })
+      emit('tag-created')
+    } catch {
+      /* ignore — tag may already exist */
+    }
+  }
+}
+function onEditorInput() {
+  core.onInput()
+  if (canTag.value) tagOnInput()
+}
+function onEditorKeydownCapture(e: KeyboardEvent) {
+  if (canTag.value && tagOnKeydown(e)) return
+  core.onShortcutKeydown(e)
+}
+function onEditorBlur() {
+  core.startSelCache()
+  tagScheduleClose()
+}
+
 const saving = ref(false)
 const savedAt = ref<number | null>(null)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -115,6 +165,8 @@ async function doSave() {
     if (title.value === (props.note.title ?? '') && body.value === props.note.body) return
     saving.value = true
     try {
+      // Tags live in the text: the backend derives the note's tags from #tokens
+      // in the body, so we just persist title + body.
       await store.updateNote(props.note.id, { title: title.value, body: body.value })
       savedAt.value = Date.now()
       loadedTitle.value = title.value
@@ -480,6 +532,8 @@ async function uploadClipImage(img: {
 const snipping = ref(false)
 const snipSrc = ref('')
 const ocrBusy = ref(false)
+// OCR language from Settings → Appearance (same key the settings tab writes).
+const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 let unlistenSnip: (() => void) | null = null
 
 async function startSnip() {
@@ -521,7 +575,7 @@ async function onSnipCropped(file: File) {
 async function runOcr(mediaId: number) {
   ocrBusy.value = true
   try {
-    const { text } = await notesApi.ocrNoteMedia(props.note.id, mediaId)
+    const { text } = await notesApi.ocrNoteMedia(props.note.id, mediaId, ocrLang.value)
     if (text.trim()) {
       applyText(`\n\n<details><summary>📷 OCR</summary>\n\n${text.trim()}\n\n</details>\n`)
     }
@@ -590,10 +644,21 @@ async function changeFolder(value: string) {
   if (!value) return
   await store.updateNote(props.note.id, { folder_id: Number(value) })
 }
-async function toggleTag(id: number) {
-  const current = props.note.tags.map((t) => t.id)
-  const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
-  await store.updateNote(props.note.id, { tag_ids: next })
+function escapeRe(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+/** Toggle a `#tag` in the body: insert at the caret, or remove the token. */
+function toggleBodyTag(name: string) {
+  const token = new RegExp('(?<![\\w-])#' + escapeRe(name) + '(?![\\w-])')
+  if (token.test(body.value)) {
+    body.value = body.value.replace(
+      new RegExp('\\s*(?<![\\w-])#' + escapeRe(name) + '(?![\\w-])'),
+      '',
+    )
+  } else {
+    applyText(' #' + name)
+    showPreview.value = false
+  }
 }
 async function onEncryptionChange() {
   await store.selectNote(props.note.id)
@@ -603,6 +668,30 @@ async function deleteNote() {
   if (!confirm('Delete this note? It can be restored later.')) return
   await store.deleteNote(props.note.id)
   emit('deleted')
+}
+
+// ── Export this note as a single Markdown file (frontmatter + body) ──
+const exportingMd = ref(false)
+async function exportMarkdown() {
+  exportingMd.value = true
+  try {
+    const resp = await fetch(notesApi.exportSingleMarkdownUrl(props.note.id))
+    if (!resp.ok) throw new Error(`Export failed (${resp.status})`)
+    const blob = await resp.blob()
+    const raw = (title.value || props.note.title || 'note').trim() || 'note'
+    const slug =
+      raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) ||
+      'note'
+    await saveFile({
+      data: blob,
+      defaultName: `${slug}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+  } catch (e: unknown) {
+    alert(`Export failed: ${e instanceof Error ? e.message : e}`)
+  } finally {
+    exportingMd.value = false
+  }
 }
 
 // ── Tags ─────────────────────────────────────────────────────────────────────
@@ -616,8 +705,8 @@ const filteredTags = computed(() => {
   if (!q) return props.allTags
   return props.allTags.filter((t) => t.name.toLowerCase().includes(q))
 })
-function isSelected(id: number) {
-  return props.note.tags.some((t) => t.id === id)
+function isSelected(name: string) {
+  return bodyTagNames.value.has(name)
 }
 function closeTags() {
   showTags.value = false
@@ -632,11 +721,12 @@ async function createAndAssignTag() {
   const name = tagQuery.value.trim()
   if (!name) return
   try {
-    const tag = await tagsApi.create({ name })
+    await tagsStore.createTag({ name })
     emit('tag-created')
-    const current = props.note.tags.map((t) => t.id)
-    await store.updateNote(props.note.id, { tag_ids: [...current, tag.id] })
+    applyText(' #' + name)
+    showPreview.value = false
     tagQuery.value = ''
+    closeTags()
   } catch {
     /* store surfaces error */
   }
@@ -867,14 +957,14 @@ defineExpose({ isDirty })
           v-show="!showPreview"
           ref="textarea"
           v-model="body"
-          @input="core.onInput"
+          @input="onEditorInput"
           @keydown="core.onTextareaKeydown"
-          @keydown.capture="core.onShortcutKeydown"
+          @keydown.capture="onEditorKeydownCapture"
           @keyup="core.cacheSelection"
           @mouseup="core.cacheSelection"
           @select="core.cacheSelection"
           @focus="core.clearSelCache"
-          @blur="core.startSelCache"
+          @blur="onEditorBlur"
           @paste="onPaste"
           @contextmenu="onContextMenu"
           class="flex-1 w-full resize-none bg-transparent px-4 py-3 text-sm text-text-primary outline-none custom-scrollbar"
@@ -929,6 +1019,15 @@ defineExpose({ isDirty })
       <button class="iconbtn" :class="{ 'text-accent': showAi }" title="AI tools" @click="showAi = !showAi">
         <Sparkles :size="13" />
       </button>
+      <button
+        class="iconbtn"
+        :disabled="exportingMd"
+        :title="exportingMd ? 'Exporting…' : 'Export as Markdown (.md)'"
+        @click="exportMarkdown"
+      >
+        <Loader v-if="exportingMd" :size="13" class="animate-spin" />
+        <Download v-else :size="13" />
+      </button>
 
       <span class="flex-1" />
 
@@ -946,7 +1045,7 @@ defineExpose({ isDirty })
       <!-- Tags -->
       <div class="relative shrink-0">
         <button class="tagbtn" @click="showTags = !showTags">
-          <span>#</span>{{ note.tags.length ? note.tags.length : 'Tags' }}
+          <span>#</span>{{ bodyTagNames.size ? bodyTagNames.size : 'Tags' }}
         </button>
         <div v-if="showTags" class="fixed inset-0 z-30" @click="closeTags" />
         <div v-if="showTags" class="absolute bottom-full right-0 mb-1 w-56 bg-surface border border-border rounded-lg shadow-xl z-40 overflow-hidden">
@@ -958,8 +1057,8 @@ defineExpose({ isDirty })
               v-for="t in filteredTags"
               :key="t.id"
               class="tag-item"
-              :class="isSelected(t.id) ? 'sel' : ''"
-              @click="toggleTag(t.id)"
+              :class="isSelected(t.name) ? 'sel' : ''"
+              @click="toggleBodyTag(t.name)"
             >
               <span class="truncate">#{{ t.name }}</span>
             </button>
@@ -1037,6 +1136,15 @@ defineExpose({ isDirty })
 
     <!-- Web-page clip URL prompt -->
     <WebClipModal v-if="showWebClip" @clip="startWebClip" @cancel="showWebClip = false" />
+
+    <!-- Inline #tag autocomplete -->
+    <TagAutocomplete
+      v-if="tagAcActive"
+      :rows="tagAcRows"
+      :active-index="tagAcIndex"
+      :coords="tagAcCoords"
+      @pick="tagPick"
+    />
   </div>
 </template>
 

@@ -32,7 +32,7 @@ from app.schemas.tag import TagBrief
 from app.services.note_media_service import NoteMediaService
 from app.services.note_service import NoteService
 from app.services.notes_export_service import NotesExportService
-from app.services.ocr_service import ocr_image_bytes
+from app.services.ocr_service import OcrLanguageUnavailable, ocr_image_bytes
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 logger = logging.getLogger(__name__)
@@ -313,13 +313,18 @@ async def delete_note_media(
 
 @router.post("/{note_id}/media/{media_id}/ocr")
 async def ocr_note_media(
-    note_id: int, media_id: int, db: AsyncSession = Depends(get_db)
+    note_id: int,
+    media_id: int,
+    lang: str = "eng",
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     """Extract text from a note image attachment via OCR (tesseract/pytesseract).
 
-    Returns only the recognized text. The frontend inserts it into the note
-    body; the autosave PATCH then makes it searchable (the ``notes_fts``
-    AFTER-UPDATE trigger reindexes ``notes.body``).
+    ``lang`` selects the Tesseract language (e.g. ``eng``, ``jpn``); it mirrors
+    the Settings → Appearance → "OCR language" picker. Returns only the
+    recognized text. The frontend inserts it into the note body; the autosave
+    PATCH then makes it searchable (the ``notes_fts`` AFTER-UPDATE trigger
+    reindexes ``notes.body``).
     """
     svc = NoteMediaService(db)
     path, content_type, _filename = await svc.get_file_path(media_id, note_id)
@@ -327,7 +332,13 @@ async def ocr_note_media(
         raise HTTPException(status_code=400, detail="OCR is only available for images.")
 
     try:
-        text = await asyncio.to_thread(ocr_image_bytes, path.read_bytes())
+        text = await asyncio.to_thread(ocr_image_bytes, path.read_bytes(), lang)
+    except ValueError as exc:
+        # Unsupported language code (not in the whitelist).
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OcrLanguageUnavailable as exc:
+        # Tesseract is installed but the language's data pack is not.
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ImportError as exc:
         raise HTTPException(status_code=501, detail=f"OCR unavailable: {exc}") from exc
     except Exception as exc:
@@ -346,6 +357,20 @@ async def get_note(note_id: int, db: AsyncSession = Depends(get_db)) -> Any:
     """Get a single note by ID."""
     svc = NoteService(db)
     return _to_response(await svc.get(note_id))
+
+
+@router.get("/{note_id}/export/markdown")
+async def export_note_markdown(note_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+    """A single note as a downloadable Markdown file (YAML frontmatter + body)."""
+    res = await NotesExportService(db).export_single_markdown(note_id)
+    if res is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    filename, content = res
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/{note_id}", response_model=NoteResponse)
@@ -420,3 +445,12 @@ async def import_notes_file(
     else:
         raise HTTPException(status_code=400, detail="Unsupported file type. Use .json or .zip.")
     return result
+
+
+@router.post("/import/markdown")
+async def import_note_markdown(
+    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Import a single Markdown (.md) file as a new note (frontmatter-aware)."""
+    content = await file.read()
+    return await NotesExportService(db).import_single_markdown(content)

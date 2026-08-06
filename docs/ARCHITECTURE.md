@@ -4,7 +4,7 @@
 > [API Reference](manual/API_REFERENCE.md). This document explains **how LifeLogr is
 > built and how to work in it**, not how to use it.
 >
-> *Version 0.7.1 · last updated 2026-07-27*
+> *Version 0.8.0 · last updated 2026-08-04*
 
 ---
 
@@ -163,7 +163,7 @@ A Pydantic `BaseSettings` instance loaded from env / `.env`. Highlights:
 
 | Setting | Default | Notes |
 |---|---|---|
-| `APP_VERSION` | `0.7.1` | Keep in sync via `make bump`. API source of truth. |
+| `APP_VERSION` | `0.8.0` | Keep in sync via `make bump`. API source of truth. |
 | `APP_ENV` | `development` | `production` enables rate limiting + disables `/docs`. |
 | `SECRET_KEY` | `change-me-before-production` | AES key for encrypted credentials. **Must** be set for non-launcher runs. |
 | `DATA_DIR` | platform default (`~/.local/share/lifelogr` on Linux) | Overridable — see §8. |
@@ -396,8 +396,8 @@ Feature-grouped folders: `layout/` (AppShell, Sidebar, PanelSplitter, SplashScre
   installed bundle without a backend round-trip.
 - **External links** (`utils/externalLink.ts`): `openExternal()` uses the Tauri shell
   plugin in the desktop app and `window.open()` otherwise; a global **capture-phase**
-  click handler intercepts `http(s):/mailto:/tel:` links. Email/message views use a
-  sandboxed `<iframe>` that `postMessage`s link clicks out to the same handler.
+  click handler intercepts `http(s):/mailto:/tel:` links and routes them through it, so
+  they open in the system browser rather than navigating the app webview.
 
 ### 5.7 Code-splitting
 
@@ -527,6 +527,12 @@ Ctrl+Shift+S ──▶ Tauri emits "snip-requested" ──▶ frontend hides app
                                                           ▼
                           recognized text inserted as collapsible 📷 OCR block (FTS-indexed)
 ```
+
+> The same embed→OCR path runs when you **upload an image** to a journal entry or note
+> (paperclip / drag-and-drop, both builds): the image is inserted inline in the body and
+> OCR'd automatically — not only via the desktop screen-snip. Both OCR endpoints take a
+> `?lang=` query param (`eng` | `tam`, see Settings → Appearance); `services/ocr_service.py`
+> whitelists the code and maps a missing language pack to a clear HTTP 500.
 
 ---
 

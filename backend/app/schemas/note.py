@@ -24,6 +24,12 @@ class NoteFolderUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     color: str | None = Field(default=None, max_length=20)
     sort_order: int | None = Field(default=None, ge=0)
+    parent_id: int | None = Field(
+        default=None, description="Move this folder under the given parent."
+    )
+    clear_parent: bool = Field(
+        default=False, description="Move the folder to the top level (parent_id = null)."
+    )
 
 
 class NoteFolderResponse(BaseModel):

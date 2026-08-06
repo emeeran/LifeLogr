@@ -97,6 +97,8 @@ export interface NoteFolderUpdate {
   name?: string;
   color?: string | null;
   sort_order?: number;
+  parent_id?: number | null;
+  clear_parent?: boolean;
 }
 
 export interface NotePageResponse {

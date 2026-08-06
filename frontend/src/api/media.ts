@@ -14,9 +14,10 @@ export const mediaApi = {
     return request(`/media/${id}`)
   },
 
-  /** Extract text from an image attachment via OCR (tesseract). */
-  extractText(id: number): Promise<{ text: string }> {
-    return request(`/media/${id}/ocr`, { method: 'POST' })
+  /** Extract text from an image attachment via OCR (tesseract).
+   *  `lang` is a tesseract code mirroring Settings → Appearance → "OCR language". */
+  extractText(id: number, lang = 'eng'): Promise<{ text: string }> {
+    return request(`/media/${id}/ocr?lang=${encodeURIComponent(lang)}`, { method: 'POST' })
   },
 
   fileUrl(id: number): string {

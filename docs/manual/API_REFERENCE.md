@@ -111,6 +111,8 @@ and its own **media**.
 | `POST` | `/notes` | Create a note |
 | `GET` | `/notes` | List notes (paginated) |
 | `GET` | `/notes/search` | Full-text search notes |
+| `GET` | `/notes/{note_id}/export/markdown` | Export one note as a `.md` file |
+| `POST` | `/notes/import/markdown` | Import a `.md` file as a new note |
 | `POST` | `/notes/web-clip` | Clip a URL's text into a note (SSRF-hardened) |
 | `GET` | `/notes/{note_id}` | Get a note (with pages) |
 | `PATCH` | `/notes/{note_id}` | Update a note |
@@ -124,7 +126,7 @@ and its own **media**.
 | `GET` | `/notes/{note_id}/media` | List a note's media |
 | `GET` | `/notes/{note_id}/media/{media_id}/file` | Download a note media file |
 | `DELETE` | `/notes/{note_id}/media/{media_id}` | Delete note media |
-| `POST` | `/notes/{note_id}/media/{media_id}/ocr` | OCR a note image |
+| `POST` | `/notes/{note_id}/media/{media_id}/ocr` | OCR a note image (`?lang=eng`) |
 
 ### Web-clip
 ```
@@ -175,7 +177,7 @@ Tags are **shared** across entries and notes.
 | `GET` | `/media/entry/{entry_id}` | List media for an entry |
 | `GET` | `/media/{media_id}` | Media metadata |
 | `GET` | `/media/{media_id}/file` | Download the binary |
-| `POST` | `/media/{media_id}/ocr` | OCR an image (`?language=eng`) |
+| `POST` | `/media/{media_id}/ocr` | OCR an image (`?lang=eng`) |
 | `DELETE` | `/media/{media_id}` | Delete media (cleans up the file) |
 
 ### Upload
@@ -187,12 +189,15 @@ POST /media        (multipart/form-data: file, entry_id, caption?)
 
 ### OCR
 ```
-POST /media/{media_id}/ocr?language=eng
+POST /media/{media_id}/ocr?lang=eng
 ```
-**Response:** `{ "media_id": 1, "extracted_text": "…", "confidence": 0.92, "language": "eng" }`
+**Response:** `{ "text": "recognized text…" }`
 
-> Images are stored as WebP; OCR runs locally via **Tesseract** (never leaves the
-> device). Returns a helpful error if Tesseract is missing.
+`lang` is a Tesseract code — `eng` or `tam` (see Settings → Appearance → OCR
+language). The note-image endpoint `POST /notes/{note_id}/media/{media_id}/ocr` behaves
+identically. Images are stored as WebP; OCR runs locally via **Tesseract** (never leaves
+the device). Returns HTTP 400 for an unsupported language code, or HTTP 500 with an
+install hint if Tesseract or the requested language pack is missing.
 
 ---
 

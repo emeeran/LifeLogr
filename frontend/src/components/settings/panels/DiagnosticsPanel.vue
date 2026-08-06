@@ -37,7 +37,7 @@ async function rebuildIndex() {
     <div class="flex items-center justify-between gap-3">
       <div>
         <h3 class="text-sm font-semibold text-text-primary">Diagnostics</h3>
-        <p class="text-[11px] text-text-muted">
+        <p class="text-xs text-text-muted">
           Startup app-integrity check — last run {{ ranAt }}
         </p>
       </div>
@@ -62,9 +62,9 @@ async function rebuildIndex() {
     </div>
 
     <div class="flex flex-wrap gap-2 text-[11px]">
-      <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-300 border border-green-800">OK {{ health.summary.ok }}</span>
-      <span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-800">Warn {{ health.summary.warn }}</span>
-      <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-800">Error {{ health.summary.error }}</span>
+      <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-green-500/15 text-green-700 dark:bg-green-500/20 dark:text-green-300 border border-green-500/30">OK {{ health.summary.ok }}</span>
+      <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 border border-amber-500/30">Warn {{ health.summary.warn }}</span>
+      <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-red-500/15 text-red-700 dark:bg-red-500/20 dark:text-red-300 border border-red-500/30">Error {{ health.summary.error }}</span>
     </div>
 
     <ul class="space-y-1.5">
@@ -76,13 +76,13 @@ async function rebuildIndex() {
         <component
           :is="c.status === 'ok' ? CheckCircle2 : c.status === 'warn' ? AlertTriangle : AlertCircle"
           :size="15"
-          :class="c.status === 'ok' ? 'text-green-400' : c.status === 'warn' ? 'text-amber-400' : 'text-red-400'"
+          :class="c.status === 'ok' ? 'text-green-500 dark:text-green-400' : c.status === 'warn' ? 'text-amber-500 dark:text-amber-400' : 'text-red-500 dark:text-red-400'"
           class="shrink-0 mt-0.5"
         />
         <div class="min-w-0">
-          <div class="text-[12px] font-medium text-text-primary">{{ c.label }}</div>
-          <div class="text-[11px] text-text-secondary break-words">{{ c.detail }}</div>
-          <div v-if="c.hint" class="text-[11px] text-amber-300/80">→ {{ c.hint }}</div>
+          <div class="text-xs font-medium text-text-primary">{{ c.label }}</div>
+          <div class="text-xs text-text-secondary break-words">{{ c.detail }}</div>
+          <div v-if="c.hint" class="text-xs font-medium text-amber-600 dark:text-amber-400">→ {{ c.hint }}</div>
         </div>
       </li>
     </ul>

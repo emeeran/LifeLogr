@@ -6,7 +6,7 @@ hybrid search, end-to-end encryption, optional cloud backup, and AI assistance t
 runs **locally by default** (Ollama) and can optionally use a cloud model of your
 choice. **Your journal lives on your machine.**
 
-`v0.7.1` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
+`v0.8.0` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
 
 ![LifeLogr](docs/images/lifelogr_01.jpg)
 ![Editor](docs/images/lifelogr_Editor.jpg)
@@ -16,8 +16,8 @@ choice. **Your journal lives on your machine.**
 ## ✨ Highlights
 
 - **Journal & Notes** — date-bound entries (mood, templates, media, voice & video
-  clips) plus a full **Notes** workspace: folders, tabbed pages, markdown, tags,
-  encryption.
+  clips) plus a full **Notes** workspace: **nested folders**, tabbed pages, markdown,
+  **inline `#tags`**, and encryption.
 - **Clip & OCR** — snippet a region of your screen (`Ctrl+Shift+S`, desktop) or clip
   a web page, embed it as a picture, and **OCR the text** straight into the note —
   instantly searchable.
@@ -32,8 +32,8 @@ choice. **Your journal lives on your machine.**
   a disk cache.
 - **Encrypt** individual entries or notes (AES-256-GCM, scrypt-derived keys,
   per-item salt).
-- **Stay organized** — Reminders with desktop notifications, tags, templates, and a
-  daily writing prompt.
+- **Stay organized** — Reminders with desktop notifications, **inline `#tags`** (with
+  autocomplete as you type), templates, and a daily writing prompt.
 - **Backup** — scheduled local backup plus **Google Drive, OneDrive, Dropbox, Box**
   (OAuth) and **WebDAV / Synology NAS**. Cloud credentials are stored encrypted.
 - **Two ways to run** — a native **desktop app** (Tauri) or a lightweight **web app**
@@ -95,7 +95,7 @@ A native window; bundles everything (no install-time network needed). This is th
 **only** build that supports screen-snippet capture.
 
 ```bash
-sudo dpkg -i LifeLogr_0.7.1_amd64.deb
+sudo dpkg -i LifeLogr_0.8.0_amd64.deb
 sudo apt-get install -f        # pulls tesseract-ocr, gstreamer, webkit, etc.
 ```
 Launch **LifeLogr** from your app menu.
@@ -105,7 +105,7 @@ Lighter; the backend serves the SPA and you use it in a browser tab. The Python
 virtualenv is built **on your machine at install time** (needs network).
 
 ```bash
-sudo dpkg -i lifelogr-web_0.7.1_amd64.deb
+sudo dpkg -i lifelogr-web_0.8.0_amd64.deb
 sudo apt-get install -f        # pulls python3 (≥3.11), tesseract-ocr
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`); it opens a browser tab on
@@ -136,7 +136,7 @@ optionally Ollama + Tesseract for AI/OCR.
 | Runtime | Native window + bundled backend | Backend serves SPA; browser tab |
 | Screen-snippet (`Ctrl+Shift+S`) | ✅ | ❌ (browsers can't capture the screen) |
 | Web-clip (text) | ✅ | ✅ |
-| OCR | ✅ (auto after a snip) | endpoint exists; no in-app trigger¹ |
+| OCR | ✅ (screen snip + image upload) | ✅ (image upload) |
 | Deb size | ~63 MB | ~17 MB |
 | Install-time network | Not required | Required (builds the venv) |
 | **Data directory** | `~/.local/share/com.lifelogr.desktop/` | `~/.local/share/lifelogr/` |
@@ -155,6 +155,7 @@ per-build default):
 ```
 <data-dir>/
   lifelogr.db          # SQLite database (entries, notes, reminders, …)
+  lifelogr.db.boot-bak-* # rotating boot snapshots — auto-restored if the DB corrupts
   .secret_key          # do NOT delete — encrypts your data
   media/               # uploaded images/audio/video
   tts/                 # read-aloud audio cache
@@ -169,19 +170,28 @@ per-build default):
 
 ## ✂️ Clipping & OCR
 
-In **Notes** mode:
+**Screen snip (Notes, desktop only):**
 1. Open a (non-encrypted) note and trigger a snip — **`Ctrl+Shift+S`** (global) or
-   the **✂️ scissors** toolbar button (desktop only).
+   the **✂️ scissors** toolbar button.
 2. Drag a rectangle over the region you want. The capture is embedded into the note
    as a picture.
 3. **OCR runs automatically** and the recognized text is inserted beneath the image
    in a collapsible block — and becomes **searchable** (FTS-indexed).
-4. **🌐 Web-clip** (globe button) fetches a URL's text via a server-side,
-   SSRF-hardened extractor and inserts it as markdown (works in both builds).
 
-Requirements: Tesseract for OCR (auto-installed via the deb's `Depends`); the desktop
-build additionally uses PipeWire at runtime for screen capture (present by default on
-Ubuntu).
+**Image uploads (Journal & Notes, both builds):** attach an image (paperclip or
+drag-and-drop) to an entry or note and it's **embedded inline in the body**, then
+**OCR runs automatically** and the text is inserted beneath it — the same flow in the
+desktop and the web app.
+
+**🌐 Web-clip** (globe button, both builds) fetches a URL's text via a server-side,
+SSRF-hardened extractor and inserts it as markdown.
+
+**OCR language:** **English** or **Tamil** — set in **Settings → Appearance → OCR
+language**. OCR runs on-device via Tesseract (auto-installed via the deb's `Depends`);
+the desktop build additionally uses PipeWire at runtime for screen capture (present by
+default on Ubuntu). Tamil needs the `tesseract-ocr-tam` data pack — the desktop deb
+ships English, so install Tamil separately (`sudo apt install tesseract-ocr-tam`) if
+you use it.
 
 ---
 

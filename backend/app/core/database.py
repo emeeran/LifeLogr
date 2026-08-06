@@ -2,7 +2,11 @@
 
 import asyncio
 import logging
+import shutil
+import sqlite3
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, event, func, text
@@ -188,6 +192,166 @@ async def _ensure_incremental_vacuum() -> None:
     await asyncio.to_thread(_vacuum_sync, f"sqlite:///{settings.db_path}")
 
 
+# ── Boot-time DB safety snapshot + integrity recovery ─────────────────────────
+# A rotating in-place copy of lifelogr.db taken before any migration runs, so a
+# botched migration, a crash mid-write, or an external tool is always recoverable
+# from the last good boot. If the live file fails PRAGMA integrity_check at boot,
+# the newest good snapshot is restored automatically instead of aborting to a
+# dead app with no entries. All file work uses throwaway sync sqlite3 connections
+# off the event loop (mirrors _vacuum_sync), so the async engine never observes a
+# corrupt file and recovery is a safe file swap with no open transaction.
+_BOOT_SNAPSHOT_PREFIX = "lifelogr.db.boot-bak-"
+_CORRUPT_PREFIX = "lifelogr.db.corrupt-"
+_BOOT_SNAPSHOT_RETENTION = 5
+
+
+def _integrity_check_sync(db_path: Path) -> str:
+    """Return ``PRAGMA integrity_check`` via a throwaway read-only connection.
+
+    Uses ``sqlite3`` — pysqlite3 in frozen builds (swapped in ``app.main`` at
+    import, before this module loads). pysqlite3's ``cursor.execute()`` returns
+    ``None`` (unlike stdlib sqlite3 which returns the cursor), so ``fetchone()``
+    is called on the cursor directly, never chained — same convention as
+    ``_set_sqlite_pragma``.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            cur = conn.execute("PRAGMA integrity_check")
+            return str(cur.fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        logger.warning("integrity_check could not run on %s: %s", db_path, exc)
+        return f"unreadable: {exc}"
+
+
+def _checkpoint_wal_sync(db_path: Path) -> bool:
+    """Best-effort ``wal_checkpoint(TRUNCATE)`` on a throwaway connection.
+
+    Mirrors ``scheduler_service._checkpoint_wal_robust`` but on a dedicated sync
+    connection, so it is safe to run before ``init_db`` opens any pooled async
+    connection. Returns False if the WAL stayed busy across retries (the snapshot
+    then lags recent commits; the scheduled backup still bundles -wal/-shm).
+    """
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        try:
+            for _ in range(5):
+                cur = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                row = cur.fetchone()
+                if row is None or row[0] == 0:
+                    return True
+            return False
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError:
+        logger.warning("WAL checkpoint (boot) failed for %s", db_path, exc_info=True)
+        return False
+
+
+def _create_boot_snapshot_sync(
+    db_path: Path, data_dir: Path, retention: int = _BOOT_SNAPSHOT_RETENTION, _ts: str | None = None
+) -> Path | None:
+    """Checkpoint then copy the DB to ``data_dir/lifelogr.db.boot-bak-<ts>``; rotate.
+
+    A plain ``.db`` copy (not tar+media): recovery must be bulletproof-simple and
+    the snapshot itself must be directly ``integrity_check``-able. Rotates to the
+    newest ``retention`` copies (mirrors ``scheduler_service._cleanup_old_backups``).
+    ``_ts`` is injectable so tests can force distinct filenames (real boots are
+    ≥1 s apart).
+    """
+    if not db_path.exists() or db_path.stat().st_size == 0:
+        return None
+    if not _checkpoint_wal_sync(db_path):
+        logger.warning("Boot snapshot: WAL checkpoint busy; snapshot may lag recent commits.")
+    ts = _ts or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    snapshot = data_dir / f"{_BOOT_SNAPSHOT_PREFIX}{ts}"
+    try:
+        shutil.copy2(db_path, snapshot)
+    except OSError:
+        logger.warning("Boot snapshot could not be written to %s", snapshot, exc_info=True)
+        return None
+    # Rotate by the timestamp embedded in the filename (not mtime): copy2 carries
+    # the source DB's mtime onto the snapshot, so two boots that share a DB mtime
+    # would otherwise tie and prune in filesystem order. Names sort chronologically.
+    snaps = sorted(data_dir.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"), key=lambda p: p.name)
+    for old in snaps[: max(0, len(snaps) - retention)]:
+        old.unlink(missing_ok=True)
+    logger.info("Boot DB snapshot saved: %s", snapshot.name)
+    return snapshot
+
+
+def _recover_from_snapshot_sync(db_path: Path, data_dir: Path, _ts: str | None = None) -> bool:
+    """Quarantine a corrupt DB and restore the newest good snapshot over it.
+
+    The corrupt file is preserved as ``lifelogr.db.corrupt-<ts>`` for forensics —
+    never silently destroyed. Restores only a snapshot whose own
+    ``integrity_check == "ok"`` and clears stale ``-wal``/``-shm`` sidecars so
+    SQLite starts clean from the restored main file. Returns True on a clean
+    restore, False if no intact snapshot exists.
+    """
+    ts = _ts or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    corrupt = data_dir / f"{_CORRUPT_PREFIX}{ts}"
+    try:
+        shutil.copy2(db_path, corrupt)
+        db_path.unlink(missing_ok=True)
+        logger.error("DB integrity check failed — corrupt file quarantined as %s", corrupt.name)
+    except OSError:
+        logger.error("Could not quarantine corrupt DB %s", db_path, exc_info=True)
+        return False
+
+    snaps = sorted(
+        data_dir.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"), key=lambda p: p.name, reverse=True
+    )
+    for snap in snaps:
+        if _integrity_check_sync(snap) != "ok":
+            continue
+        try:
+            shutil.copy2(snap, db_path)
+        except OSError:
+            logger.warning("Snapshot restore copy failed: %s", snap, exc_info=True)
+            continue
+        # Drop the corrupt DB's stale WAL sidecars so SQLite replays nothing old
+        # onto the restored main file.
+        for sidecar in (Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+            sidecar.unlink(missing_ok=True)
+        logger.info("DB recovered from snapshot %s", snap.name)
+        return True
+    logger.error("No intact boot snapshot available for recovery.")
+    return False
+
+
+def _preflight_db_file_sync(db_path: Path, data_dir: Path) -> None:
+    """Snapshot + integrity-check the DB file before the async engine touches it.
+
+    Snapshot only a healthy file (for next boot's recovery). If the live file is
+    corrupt, recover from the newest good snapshot; if none exists, raise (the
+    corrupt file is still quarantined). Raises ``RuntimeError`` only when the DB
+    cannot be made healthy.
+    """
+    if not db_path.exists() or db_path.stat().st_size == 0:
+        return  # fresh DB — nothing to snapshot; create_all will build it.
+    if _integrity_check_sync(db_path) == "ok":
+        _create_boot_snapshot_sync(db_path, data_dir)
+        return
+    if not _recover_from_snapshot_sync(db_path, data_dir):
+        raise RuntimeError(
+            f"SQLite integrity check failed for {db_path} and no intact boot "
+            f"snapshot was available for recovery. The corrupt file was "
+            f"quarantined in {data_dir}."
+        )
+    if _integrity_check_sync(db_path) != "ok":
+        raise RuntimeError(f"Database at {db_path} is still corrupt after snapshot recovery.")
+    # Snapshot the restored file too so a good copy is always on hand.
+    _create_boot_snapshot_sync(db_path, data_dir)
+
+
+async def _preflight_db_file() -> None:
+    """Preflight the DB file (snapshot + integrity + recover) off the event loop."""
+    await asyncio.to_thread(_preflight_db_file_sync, settings.db_path, settings.DATA_DIR)
+
+
 async def init_db() -> None:
     """Create all tables (for dev/bootstrap; desktop uses inline migrations)."""
     # Enforce the SECRET_KEY guard for any *server* (non-desktop) deployment.
@@ -200,6 +364,14 @@ async def init_db() -> None:
     is_desktop_sidecar = bool(os.environ.get("DATA_DIR"))
     if settings.is_production and not is_desktop_sidecar:
         settings.validate_production()
+
+    # Desktop only: snapshot the DB file and verify its integrity BEFORE the async
+    # engine opens a connection. If the live file is corrupt, recover from the
+    # newest good boot snapshot so the engine never opens a damaged DB (the
+    # documented "entries missing" failure mode). Runs off the event loop on
+    # throwaway sync connections; recovery is a safe file swap with no open txn.
+    if is_desktop_sidecar:
+        await _preflight_db_file()
 
     await validate_db_health()
 

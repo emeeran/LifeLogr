@@ -46,6 +46,18 @@ class NotesExportService:
         )
         return list(res.scalars())
 
+    async def _get_note(self, note_id: int) -> Note | None:
+        res = await self.db.execute(
+            select(Note)
+            .where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
+            .options(
+                selectinload(Note.folder),
+                selectinload(Note.tag_associations).selectinload(NoteTag.tag),
+                selectinload(Note.pages),
+            )
+        )
+        return res.scalar_one_or_none()
+
     @staticmethod
     def _body(note: Note) -> str:
         return _ENCRYPTED_PLACEHOLDER if note.is_encrypted else (note.body or "")
@@ -97,6 +109,19 @@ class NotesExportService:
         buf.seek(0)
         return buf.getvalue()
 
+    async def export_single_markdown(self, note_id: int) -> tuple[str, bytes] | None:
+        """One note as ``(filename, markdown bytes)`` — frontmatter + body.
+
+        Returns ``None`` if the note doesn't exist (caller → 404). Encrypted
+        notes export the placeholder body, mirroring the bulk path.
+        """
+        n = await self._get_note(note_id)
+        if n is None:
+            return None
+        filename = f"{self._slug(n.title, note_id)}.md"
+        content = (self._frontmatter(n) + self._body(n)).encode("utf-8")
+        return filename, content
+
     def _frontmatter(self, n: Note) -> str:
         lines = ["---"]
         if n.title:
@@ -132,12 +157,12 @@ class NotesExportService:
         return "".join(parts)
 
     # ── Import ──
-    async def import_json(self, raw: bytes) -> dict[str, int]:
+    async def import_json(self, raw: bytes) -> dict[str, Any]:
         data = json.loads(raw)
         items = data.get("notes") if isinstance(data, dict) else data
         return await self._import_items(items or [])
 
-    async def import_markdown_zip(self, raw: bytes) -> dict[str, int]:
+    async def import_markdown_zip(self, raw: bytes) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
             for name in zf.namelist():
@@ -145,6 +170,17 @@ class NotesExportService:
                     continue
                 items.append(self._parse_md(zf.read(name).decode("utf-8", "ignore")))
         return await self._import_items(items)
+
+    async def import_single_markdown(self, raw: bytes) -> dict[str, Any]:
+        """Import one Markdown file as one new note; returns its id on success."""
+        item = self._parse_md(raw.decode("utf-8", "ignore"))
+        res = await self._import_items([item])
+        ids = res.get("note_ids") or []
+        return {
+            "imported": res["imported"],
+            "skipped": res["skipped"],
+            "note_id": ids[0] if ids else None,
+        }
 
     @staticmethod
     def _parse_md(raw: str) -> dict[str, Any]:
@@ -171,21 +207,28 @@ class NotesExportService:
             "color": meta.get("color") or None,
         }
 
-    async def _import_items(self, items: list[dict[str, Any]]) -> dict[str, int]:
+    async def _import_items(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         from app.schemas.note import NoteCreate, NotePageCreate
         from app.services.note_service import NoteService
 
         svc = NoteService(self.db)
         imported = 0
         skipped = 0
+        note_ids: list[int] = []
         for it in items:
             try:
                 folder_id = await self._resolve_folder(it.get("folder"))
                 tag_ids = await self._resolve_tags(it.get("tags") or [])
+                # Tags live in the text: write the item's tags as #tokens into the
+                # body so the body-driven sync links them on create.
+                raw_body = it.get("body") or ""
+                tag_names = [t for t in (it.get("tags") or []) if t]
+                if tag_names:
+                    raw_body = raw_body.rstrip() + "\n\n" + " ".join(f"#{t}" for t in tag_names)
                 note = await svc.create(
                     NoteCreate(
                         title=it.get("title"),
-                        body=it.get("body") or "",
+                        body=raw_body,
                         folder_id=folder_id,
                         tag_ids=tag_ids,
                         is_pinned=bool(it.get("is_pinned")),
@@ -197,9 +240,10 @@ class NotesExportService:
                         note.id, NotePageCreate(title=p.get("title"), body=p.get("body") or "")
                     )
                 imported += 1
+                note_ids.append(note.id)
             except Exception:
                 skipped += 1
-        return {"imported": imported, "skipped": skipped}
+        return {"imported": imported, "skipped": skipped, "note_ids": note_ids}
 
     async def _resolve_folder(self, name: str | None) -> int | None:
         if not name:

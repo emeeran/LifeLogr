@@ -25,8 +25,8 @@ class TestEntryCreate:
         assert r.json()["body"] == "dup"
 
     async def test_create_with_tags(self, client: AsyncClient):
-        tag = (await client.post("/api/v1/tags", json={"name": "travel"})).json()
-        entry = await _create_entry(client, tag_ids=[tag["id"]])
+        # Tags live in the text: a #token in the body becomes the entry's tag.
+        entry = await _create_entry(client, body="#travel trip notes")
         assert len(entry["tags"]) == 1
         assert entry["tags"][0]["name"] == "travel"
 
@@ -84,10 +84,8 @@ class TestEntryUpdate:
         assert r.json()["body"] == "Updated"
 
     async def test_update_tags(self, client: AsyncClient):
-        t1 = (await client.post("/api/v1/tags", json={"name": "a"})).json()
-        t2 = (await client.post("/api/v1/tags", json={"name": "b"})).json()
-        entry = await _create_entry(client, tag_ids=[t1["id"]])
-        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"tag_ids": [t2["id"]]})
+        entry = await _create_entry(client, body="#a")
+        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"body": "#b"})
         tags = r.json()["tags"]
         assert len(tags) == 1
         assert tags[0]["name"] == "b"

@@ -9,6 +9,33 @@ offline at any time.
 
 ---
 
+## [0.8.0] — 2026-08-04
+
+A release centered on **tagging that stays out of your way** and **database
+durability**.
+
+### Added
+- **Inline hashtag tagging.** Tags now live in your text: type `#hashtag` anywhere in
+  an entry or note and it becomes a tag, with **autocomplete** as you type `#` in both
+  editors. Tags are derived server-side from the `#tokens` in the body
+  (`services/hashtag.py`) and synced on save — so adding, renaming, or removing a
+  `#tag` in the text is all you ever do (editor-sent tag ids are ignored on save).
+- **Nested note folders.** `NoteFolder` now supports sub-folders (with an acyclic
+  re-parenting guard) for deeper organization in the Notes tree.
+- **Boot-time DB snapshot + integrity auto-recovery.** Before migrations run, the app
+  takes a rotating `lifelogr.db.boot-bak-*` snapshot; if `PRAGMA integrity_check` fails
+  at boot, the newest good snapshot is restored automatically and the corrupt file is
+  quarantined — your journal survives a botched migration or a crash mid-write.
+
+### Changed
+- Diagnostics panel restyled with proper light/dark color tokens.
+
+### Fixed
+- **Version parity:** `APP_VERSION` in `config.py` now tracks the other three version
+  sources (pyproject / Cargo / tauri.conf), so the in-app About version can't drift.
+
+---
+
 ## [0.7.1] — 2026-07-27
 
 A major release focused on **AI choice, privacy transparency, encryption strength,

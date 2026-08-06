@@ -14,11 +14,14 @@ import { useEntriesStore } from '../../stores/entries'
 import { useUpdateChecker } from '../../composables/useUpdateChecker'
 import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import { AlertTriangle, Save, Trash2, X, Sparkles, Paperclip } from 'lucide-vue-next'
+import { useLocalStorage } from '@vueuse/core'
 import type { Component } from 'vue'
 
 const ui = useUiStore()
 const entries = useEntriesStore()
 const editorRef = ref<InstanceType<typeof EntryEditor> | null>(null)
+// OCR language from Settings → Appearance (same key the settings tab writes).
+const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 
 const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && !ui.showEditor)
 const showEditor = computed(() => ui.showEditor)
@@ -96,7 +99,7 @@ function onAttachmentView(index: number) {
 
 async function onExtractText(id: number) {
   try {
-    const { text } = await mediaApi.extractText(id)
+    const { text } = await mediaApi.extractText(id, ocrLang.value)
     if (text.trim() && editorRef.value) {
       editorRef.value.body += `\n\n${text.trim()}`
       editorRef.value.onInput()

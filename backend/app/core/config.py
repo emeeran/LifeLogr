@@ -213,7 +213,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
-    APP_VERSION: str = "0.7.1"  # in-app version; keep in sync with pyproject.toml
+    APP_VERSION: str = "0.8.0"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     # Network bind host. Defaults to loopback — a privacy-first single-user app
     # must not listen on external interfaces. ``validate_production`` rejects a

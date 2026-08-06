@@ -498,13 +498,11 @@ git push origin main --tags
 | `OLLAMA_MODEL` | `llama3.2:3b` | Model to use for AI features |
 | `OLLAMA_TIMEOUT_SECONDS` | `300` | Request timeout |
 
-### OCR / Whisper
+### OCR
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OCR_ENGINE` | `tesseract` | OCR engine |
-| `WHISPER_MODEL` | `base` | Whisper model size |
-| `WHISPER_DEVICE` | `cpu` | `cpu` or `cuda` |
 
 ### Database
 
@@ -599,7 +597,6 @@ git push origin main --tags
 | Blocked Files | Executables, scripts, HTML blocked |
 | Path Traversal | `..` sequences rejected in filenames |
 | Archive Safety | Tar members validated before extraction (path traversal blocked) |
-| Plugin Validation | entry_point restricted to safe dotted paths; stdlib modules blocked |
 | Model Validation | Ollama model names validated before subprocess execution |
 | XSS | DOMPurify sanitization on rendered HTML |
 | Encryption | AES-256-GCM for entry-level encryption |

@@ -1,6 +1,11 @@
 # ADR-006: Whisper for Local Voice Transcription
 
-## Status: Accepted
+## Status: Superseded — removed in 0.7.1
+
+> **Update (0.7.1):** on-device speech-to-text transcription was removed. Voice
+> *recording* remains (entries can attach audio/video clips), but **transcription is
+> no longer included** (see `docs/manual/USER_MANUAL.md` §7). This ADR is retained as
+> a historical record of the original decision.
 
 ## Context
 

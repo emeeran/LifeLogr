@@ -27,19 +27,23 @@ import EncryptionBadge from "./EncryptionBadge.vue";
 import EditorToolbar from "../editor/EditorToolbar.vue";
 import EditorStatusBar from "./EditorStatusBar.vue";
 import EditorContextMenu from "../editor/EditorContextMenu.vue";
-import TagList from "../tags/TagList.vue";
+import TagAutocomplete from "../editor/TagAutocomplete.vue";
 import MediaViewer from "../media/MediaViewer.vue";
 import MediaGrid from "../media/MediaGrid.vue";
 import TemplatePicker from "../templates/TemplatePicker.vue";
 import EmojiPicker from "../common/EmojiPicker.vue";
 import { useTemplatesStore } from "../../stores/templates";
 import { aiStatus, suggestTags } from "../../api/ai";
+import { mediaApi } from "../../api/media";
+import type { MediaResponse } from "../../types";
 import { encryptText, decryptText } from "../../api/encryption";
 import { useTtsStore } from "../../stores/tts";
 import { useDragDrop } from "../../composables/useDragDrop";
 import { useLocalStorage } from "@vueuse/core";
 import { useMarkdownPreview } from "../../composables/useMarkdownPreview";
 import { useRichTextEditor } from "../../composables/useRichTextEditor";
+import { useInlineTags } from "../../composables/useInlineTags";
+import { extractHashtags } from "../../utils/tags";
 import { useAttachments } from "../../composables/useAttachments";
 import { useAutoSave } from "../../composables/useAutoSave";
 import {
@@ -77,6 +81,9 @@ const body = ref("");
 const tagIds = ref<number[]>([]);
 const entryDate = ref("");
 const showPreview = ref(false);
+// OCR language + busy flag for inline image OCR (parity with the Note editor).
+const ocrLang = useLocalStorage<string>("lifelogr-ocr-language", "eng");
+const ocrBusy = ref(false);
 const fullscreen = ref(false);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const showTemplates = ref(false);
@@ -88,7 +95,9 @@ const aiAvailable = ref<boolean | null>(null);
 const suggestedTags = ref<string[]>([]);
 const suggestingTags = ref(false);
 // Read-aloud drives the shared tts store; these mirror it for this screen.
-const ttsText = computed(() => [title.value, body.value].filter(Boolean).join("\n\n"));
+const ttsText = computed(() =>
+  [title.value, body.value].filter(Boolean).join("\n\n"),
+);
 const ttsPlaying = computed(() =>
   hasEntry.value && !isEncrypted.value
     ? tts.isPlayingEntry(ui.editingEntryId!)
@@ -155,6 +164,55 @@ const {
   onChange: markChanged,
   onSave: save,
 });
+
+// ── Inline #tag autocomplete. Tags live in the body: typing `#` opens a popover
+//    of existing tags; picking one writes `#name` into the text and the backend
+//    derives the entry's tags from #tokens on save. ──
+const tagsStore = useTagsStore();
+if (!tagsStore.tags.length) void tagsStore.fetchTree();
+const tagOptions = computed(() => tagsStore.tags);
+const bodyTagNames = computed(() => new Set(extractHashtags(body.value)));
+const canTag = computed(() => !isEncrypted.value);
+const {
+  active: tagAcActive,
+  rows: tagAcRows,
+  activeIndex: tagAcIndex,
+  coords: tagAcCoords,
+  onInput: tagOnInput,
+  onKeydown: tagOnKeydown,
+  pick: tagPick,
+  scheduleClose: tagScheduleClose,
+} = useInlineTags({
+  body,
+  textarea,
+  tags: tagOptions,
+  onChange: markChanged,
+  onPick: onInlinePick,
+});
+function onEditorInput() {
+  onInput();
+  if (canTag.value) tagOnInput();
+}
+function onEditorKeydownCapture(e: KeyboardEvent) {
+  if (canTag.value && tagOnKeydown(e)) return;
+  onShortcutKeydown(e);
+}
+function onEditorBlur() {
+  startSelCache();
+  tagScheduleClose();
+}
+async function onInlinePick(name: string) {
+  if (
+    !tagsStore.tags.some((t) => t.name.toLowerCase() === name.toLowerCase())
+  ) {
+    try {
+      await tagsStore.createTag({ name });
+    } catch {
+      /* tag may already exist */
+    }
+  }
+}
+
 const { attachments, loadAttachments, handleFileUpload, removeAttachment } =
   useAttachments(
     () => hasEntry.value,
@@ -167,7 +225,11 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const { isDragging, handlers: dragHandlers } = useDragDrop();
 
 // Auto-save composable
-const { triggerAutosave, cancelSave, saveState: saveActive } = useAutoSave({
+const {
+  triggerAutosave,
+  cancelSave,
+  saveState: saveActive,
+} = useAutoSave({
   isNew,
   hasEntry,
   body,
@@ -512,18 +574,71 @@ function cutToClipboard() {
   }
 }
 
-async function onDropFiles(e: DragEvent) {
-  const accepted = dragHandlers.onDrop(e);
-  if (!accepted?.length) return;
-  // Auto-save entry first if new
+// ── Inline image embed + OCR (parity with the Note editor) ──
+// Journal image uploads embed inline in the body and auto-OCR, instead of
+// becoming side-panel attachments. Non-image uploads keep the attachment path.
+async function embedImageFile(file: File): Promise<MediaResponse | null> {
+  try {
+    const media = await mediaApi.upload(ui.editingEntryId!, file);
+    const url = mediaApi.fileUrl(media.id);
+    const name = file.name.replace(/\.[^.]+$/, "") || "image";
+    applyToSelection(`![${name}](${url})`);
+    showPreview.value = true;
+    return media;
+  } catch (e: unknown) {
+    alert(`Image upload failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+}
+
+async function runEntryOcr(mediaId: number) {
+  ocrBusy.value = true;
+  try {
+    const { text } = await mediaApi.extractText(mediaId, ocrLang.value);
+    if (text.trim()) {
+      applyToSelection(
+        `\n\n<details><summary>📷 OCR</summary>\n\n${text.trim()}\n\n</details>\n`,
+      );
+    }
+  } catch (e: unknown) {
+    alert(`OCR failed: ${e instanceof Error ? e.message : e}`);
+  } finally {
+    ocrBusy.value = false;
+  }
+}
+
+async function onFilesSelected(files: FileList | null) {
+  if (!files?.length) return;
   if (!hasEntry.value) {
     await save();
     if (!hasEntry.value) return;
   }
-  await handleFileUpload({
+  // Encrypted entries hide the body, so inline embed isn't possible — fall back
+  // to the side-panel attachment flow for everything.
+  if (isEncrypted.value) {
+    await handleFileUpload(files);
+    return;
+  }
+  for (const file of Array.from(files)) {
+    if (file.type.startsWith("image/")) {
+      const media = await embedImageFile(file);
+      if (media) await runEntryOcr(media.id);
+    } else {
+      await handleFileUpload({
+        length: 1,
+        item: () => file,
+      } as unknown as FileList);
+    }
+  }
+}
+
+async function onDropFiles(e: DragEvent) {
+  const accepted = dragHandlers.onDrop(e);
+  if (!accepted?.length) return;
+  await onFilesSelected({
     length: accepted.length,
     item: (i: number) => accepted[i],
-  } as any);
+  } as unknown as FileList);
 }
 
 // ── Attachments ── (extracted to useAttachments composable)
@@ -635,21 +750,20 @@ async function fetchSuggestedTags() {
 }
 
 async function applySuggestedTag(name: string) {
-  const tagsStore = useTagsStore();
-  await tagsStore.fetchTree();
-  const existing = tagsStore.tags.find(
-    (t) => t.name.toLowerCase() === name.toLowerCase(),
-  );
-  if (existing) {
-    if (!tagIds.value.includes(existing.id)) tagIds.value.push(existing.id);
-  } else {
-    const created = await tagsStore.createTag({ name });
-    tagIds.value.push(created.id);
+  // Tags live in the text: insert the suggested tag as a #token at the caret.
+  applyToSelection(` #${name}`);
+  showPreview.value = false;
+  if (
+    !tagsStore.tags.some((t) => t.name.toLowerCase() === name.toLowerCase())
+  ) {
+    try {
+      await tagsStore.createTag({ name });
+    } catch {
+      /* tag may already exist */
+    }
   }
   suggestedTags.value = suggestedTags.value.filter((t) => t !== name);
-  onInput();
 }
-
 </script>
 
 <template>
@@ -852,12 +966,12 @@ async function applySuggestedTag(name: string) {
                 fontSize: 'var(--editor-font-size)',
               }"
               placeholder="Write your thoughts..."
-              @input="onInput"
+              @input="onEditorInput"
               @keydown="onTextareaKeydown"
-              @keydown.capture="onShortcutKeydown"
+              @keydown.capture="onEditorKeydownCapture"
               @contextmenu="onContextMenu"
               @focus="clearSelCache"
-              @blur="startSelCache"
+              @blur="onEditorBlur"
             />
             <div
               v-else
@@ -924,7 +1038,7 @@ async function applySuggestedTag(name: string) {
         <button
           class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors relative"
           :class="
-            tagIds.length
+            bodyTagNames.size
               ? 'bg-accent/20 text-accent'
               : 'text-text-secondary hover:text-text-primary'
           "
@@ -932,8 +1046,8 @@ async function applySuggestedTag(name: string) {
           title="Tags"
         >
           <Tag :size="13" />
-          <span v-if="tagIds.length" class="text-[9px]">{{
-            tagIds.length
+          <span v-if="bodyTagNames.size" class="text-[9px]">{{
+            bodyTagNames.size
           }}</span>
         </button>
 
@@ -942,7 +1056,10 @@ async function applySuggestedTag(name: string) {
           v-if="showTagDropdown && !isEncrypted"
           class="absolute bottom-full left-0 right-0 mb-1 mx-3 bg-surface border border-border rounded-lg shadow-xl p-2 z-50"
         >
-          <TagList v-model="tagIds" />
+          <p class="text-[10px] text-text-muted px-1 pb-1">
+            Type <span class="text-accent font-medium">#</span> in your text to
+            add a tag.
+          </p>
           <!-- AI Tag Suggestions -->
           <div
             v-if="aiAvailable"
@@ -969,6 +1086,15 @@ async function applySuggestedTag(name: string) {
             </div>
           </div>
         </div>
+
+        <!-- Inline #tag autocomplete -->
+        <TagAutocomplete
+          v-if="tagAcActive"
+          :rows="tagAcRows"
+          :active-index="tagAcIndex"
+          :coords="tagAcCoords"
+          @pick="tagPick"
+        />
 
         <button
           class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
@@ -1014,7 +1140,7 @@ async function applySuggestedTag(name: string) {
           multiple
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.json"
           class="hidden"
-          @change="handleFileUpload(($event.target as HTMLInputElement).files)"
+          @change="onFilesSelected(($event.target as HTMLInputElement).files)"
         />
         <EncryptionBadge
           v-if="hasEntry"
@@ -1054,6 +1180,11 @@ async function applySuggestedTag(name: string) {
       v-model:index="viewerIndex"
       @close="viewerOpen = false"
     />
+
+    <!-- OCR running toast -->
+    <div v-if="ocrBusy" class="ocr-toast">
+      <Loader :size="13" class="animate-spin" /> Running OCR…
+    </div>
 
     <EmojiPicker
       v-if="showEmoji"
@@ -1130,5 +1261,23 @@ async function applySuggestedTag(name: string) {
 .md-body :deep(.enc-block:hover) {
   opacity: 0.8;
   transform: translateY(-1px);
+}
+/* ── OCR toast ── */
+.ocr-toast {
+  position: absolute;
+  bottom: 3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 </style>

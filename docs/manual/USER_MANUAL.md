@@ -4,7 +4,7 @@
 > Your data stays on your machine. AI runs locally via Ollama by default; OCR via
 > Tesseract; read-aloud via Edge TTS. Cloud AI and cloud backup are strictly opt-in.
 
-*Version 0.7.1*
+*Version 0.8.0*
 
 ---
 
@@ -49,7 +49,7 @@
 ### Install the desktop app (Tauri)
 A native window with everything bundled. **Required if you want screen-snipping.**
 ```bash
-sudo dpkg -i LifeLogr_0.7.1_amd64.deb
+sudo dpkg -i LifeLogr_0.8.0_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu.
@@ -58,7 +58,7 @@ Launch **LifeLogr** from your app menu.
 Lighter; the backend serves the app and you use it in a browser tab. The Python
 virtualenv is built on your machine during install (needs network).
 ```bash
-sudo dpkg -i lifelogr-web_0.7.1_amd64.deb
+sudo dpkg -i lifelogr-web_0.8.0_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser tab on
@@ -156,9 +156,11 @@ shortcuts.
 Notes are standalone, non-date-bound documents organized into **folders**.
 
 ### Structure
-- **Folders** — create them in the left tree; each can have a color.
+- **Folders** — create them in the left tree; folders can be **nested** (sub-folders),
+  and each can have a color.
 - **Notes** — belong to a folder; can be **pinned** and **color-coded**.
 - **Pages** — each note has tabbed pages (like sections). Add/rename/reorder/delete pages.
+- **Tags** — type `#tags` right in the note body (see [§9](#9-tags)).
 
 ### The editor
 - Full markdown editor (shared with journal entries): formatting toolbar, live
@@ -181,13 +183,19 @@ See [§18](#18-encryption).
 Notes are included in the global search palette (`Ctrl+K`) and have their own FTS5
 search.
 
+### Single-note Markdown import / export
+- **Export** — the editor's **⬇ download** button saves the current note as a
+  standalone `.md` file (YAML frontmatter + body).
+- **Import** — the **Import Markdown** button in the notes toolbar loads a `.md` file
+  as a new note (frontmatter-aware) and opens it.
+
 ---
 
-## 6. Clipping & OCR (Screen-Snip / Web-Clip)
+## 6. Clipping & OCR (Screen-Snip / Web-Clip / Image Upload)
 
-Capture content into a note, embed it as a picture, and read its text with OCR.
+Capture content into an entry or note, embed it as a picture, and read its text with OCR.
 
-### Screen snip (desktop app only)
+### Screen snip (Notes, desktop app only)
 1. Open a **non-encrypted note** in Notes mode.
 2. Trigger a snip:
    - **`Ctrl+Shift+S`** (works from anywhere), or
@@ -204,21 +212,27 @@ Capture content into a note, embed it as a picture, and read its text with OCR.
 > `Ctrl+Shift+S` does nothing, another app may have grabbed that key — use the ✂️
 > toolbar button.
 
+### Image uploads (Journal & Notes, both builds)
+- Attach an image with the **📎 paperclip** button or **drag-and-drop** it onto the
+  editor. The image is **embedded inline in the body** (not parked in a side panel),
+  then **OCR runs automatically** and the recognized text is inserted beneath it in a
+  `📷 OCR` block.
+- Non-image files (audio, video, PDFs, …) are still stored as side-panel attachments.
+
 ### Web-clip (both builds)
 - Click the **🌐 globe** button and enter a URL.
 - LifeLogr fetches the page **server-side** and inserts its main text as markdown.
 - The fetch is **SSRF-hardened** (internal/loopback addresses are blocked on every
   hop, including redirects).
-- OCR applies to images you snip, not to web-clipped text (it's already text).
+- OCR applies to images you snip or upload, not to web-clipped text (it's already text).
 
 ### OCR requirements & language
 - **Tesseract** must be installed (the `.deb` declares it as a dependency; if missing,
   OCR returns a helpful error with install instructions).
-- The **OCR language** is configurable in **Settings → Appearance** (English, French,
-  German, Spanish, Portuguese, Italian, Dutch, Polish, Russian, Japanese, Chinese,
-  Arabic, Hindi, …).
-- OCR works on any embedded image via its **Extract Text** button in the attachments
-  panel; in Notes it's also triggered automatically by a snip.
+- The **OCR language** is configurable in **Settings → Appearance** — **English** or
+  **Tamil**. Tamil needs the `tesseract-ocr-tam` data pack (the desktop `.deb` ships
+  English; install Tamil separately if you use it). If the selected language's data
+  isn't installed, OCR returns a clear error naming the missing pack.
 
 ---
 
@@ -253,14 +267,20 @@ Templates pre-fill new entries with structured markdown.
 
 ## 9. Tags
 
-Tags are shared across journal entries and notes, and support **hierarchy**
-(parent → child).
+**Tags live in your text.** Type a `#hashtag` anywhere in an entry or note body and it
+becomes a tag — there's no separate tag panel to maintain. As you type `#`, an
+**autocomplete** picker suggests your existing tags; pick one or keep typing to create a
+new tag. Tags are extracted from the body on save, so adding, renaming, or removing a
+`#tag` in the text is all it takes.
 
-- **Assign** — open the tag panel in the editor; click tags to toggle, or type to
-  create a new one (optionally under a parent).
-- **Filter** — use tags to narrow the calendar/timeline and the search palette (click
-  tag pills).
-- **Manage** — rename or delete tags; changes propagate to all tagged entries/notes.
+- **Assign** — just write `#tag` in the body, in either the Journal or Notes editor.
+  Matching `#tokens` are turned into tags automatically.
+- **Filter** — click tag pills to narrow the calendar/timeline and the search palette.
+- **Manage** — rename or delete a tag from the tag tree; changes propagate to every
+  entry/note that uses it.
+
+> Tags are derived server-side from the `#tokens` in the body (`hashtag.py`), so the
+> tag ids sent by the editor are ignored on save — edit the text to change tags.
 
 ---
 
@@ -380,13 +400,13 @@ cloud model (see below). Configure everything in **Settings → AI**.
   **Privacy** tab reports it (see [§21](#21-privacy--data-egress)).
 
 ### On-demand tools (select text → AI / right-click menu)
-- **Grammar check**, **Spell check**
-- **Rewrite** (with style options), **Rewrite for clarity**
-- **Change tone**, **Expand**, **Define**, **Voice** (active/passive)
-- **Summarize**, **Key points**, **Action items**
+- **Grammar**
+- **Rewrite** (with style options), **Clarity**
+- **Tone**, **Expand**, **Define**, **Voice** (active/passive)
+- **Summarize**, **Key Points**, **Actions**
 - **Shorten**, **Simplify**, **Polish**
 - **Translate** (pick a language)
-- **Add structure**, **Generate title**
+- **Structure**, **Title**
 
 Each result can be **Replaced**, **Inserted**, or **Copied**.
 
@@ -394,7 +414,7 @@ Each result can be **Replaced**, **Inserted**, or **Copied**.
 - **Summary** — a one-line summary (shown in timeline/search previews).
 - **Sentiment** — primary/secondary emotion + valence.
 - **Reflection prompts** — questions to reflect further (shown on the entry).
-- **Tag suggestions** — suggested tags appear as pills; click to add.
+- **Tag suggestions** — suggested tags appear as pills; click to insert one as a `#tag`.
 - **Themes** — recurring topics detected across your writing (Settings → AI → Themes
   & Insights).
 - **Continue writing** — a writer's-block helper that suggests a continuation.
@@ -591,6 +611,7 @@ Everything is stored locally under one data directory:
 Contents:
 ```
 lifelogr.db       # your database (entries, notes, reminders, …)
+lifelogr.db.boot-bak-* # rotating boot snapshots — auto-restored if the DB corrupts
 .secret_key       # REQUIRED for encryption — never delete
 media/            # uploaded images/audio/video
 tts/              # read-aloud audio cache

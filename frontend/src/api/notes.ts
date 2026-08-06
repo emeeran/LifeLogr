@@ -126,9 +126,12 @@ export const notesApi = {
     return request(`/notes/${noteId}/media/${mediaId}`, { method: 'DELETE' })
   },
 
-  /** OCR a note image; the caller inserts the returned text into the note body. */
-  ocrNoteMedia(noteId: number, mediaId: number): Promise<{ text: string }> {
-    return request(`/notes/${noteId}/media/${mediaId}/ocr`, { method: 'POST' })
+  /** OCR a note image; the caller inserts the returned text into the note body.
+   *  `lang` is a tesseract code mirroring Settings → Appearance → "OCR language". */
+  ocrNoteMedia(noteId: number, mediaId: number, lang = 'eng'): Promise<{ text: string }> {
+    return request(`/notes/${noteId}/media/${mediaId}/ocr?lang=${encodeURIComponent(lang)}`, {
+      method: 'POST',
+    })
   },
 
   /** Clip a web page to markdown (text fallback for the desktop image capture). */
@@ -144,6 +147,9 @@ export const notesApi = {
   exportMarkdownUrl(): string {
     return `${API_ORIGIN}/api/v1/notes/export/markdown`
   },
+  exportSingleMarkdownUrl(id: number): string {
+    return `${API_ORIGIN}/api/v1/notes/${id}/export/markdown`
+  },
   exportJsonUrl(): string {
     return `${API_ORIGIN}/api/v1/notes/export/json`
   },
@@ -154,6 +160,19 @@ export const notesApi = {
     const form = new FormData()
     form.append('file', file)
     const res = await fetch(`${API_ORIGIN}/api/v1/notes/import/file`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!res.ok) throw new Error(`Import failed (${res.status})`)
+    return res.json()
+  },
+  /** Import a single .md file as one new note; returns the created note id. */
+  async importMarkdownFile(
+    file: File,
+  ): Promise<{ imported: number; skipped: number; note_id: number | null }> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${API_ORIGIN}/api/v1/notes/import/markdown`, {
       method: 'POST',
       body: form,
     })

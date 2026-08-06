@@ -1,17 +1,28 @@
 # LifeLogr — Agent Context
 
 ## Project Purpose
-> LifeLogr is a privacy-first, offline-first daily journaling application for Linux. It provides a rich writing experience with markdown support, media attachments, voice recording with local transcription, AI-assisted grammar checking via Ollama, end-to-end encrypted cloud sync, and a plugin architecture — all while keeping user data local and private.
+> LifeLogr is a privacy-first, local-first **journaling + notes** app for Linux
+> (Ubuntu 24.04). It provides a rich markdown writing experience with media
+> attachments and voice/video clips, on-device OCR (Tesseract), read-aloud (Edge
+> TTS), hybrid full-text + semantic search, per-item AES-256-GCM encryption,
+> optional encrypted cloud backup (Google Drive, OneDrive, Dropbox, Box,
+> WebDAV/Synology), and an AI writing assistant that runs **locally via Ollama by
+> default** (optionally any OpenAI-compatible cloud provider). Two builds ship: a
+> Tauri desktop app and a browser web app — both single-user, backend bound to
+> `127.0.0.1`, all data on disk.
 
 ## Tech Stack
-| Layer     | Technology                          |
-|-----------|-------------------------------------|
-| Backend   | Python 3.11+, FastAPI, Pydantic v2  |
-| Database  | SQLite (WAL mode, FK enforced)      |
-| Packaging | `uv` (never use pip directly)       |
-| Testing   | pytest, httpx, pytest-asyncio       |
-| Linting   | ruff, mypy (strict)                 |
-| OS        | Ubuntu 24.x                         |
+| Layer      | Technology                                                          |
+|------------|---------------------------------------------------------------------|
+| Backend    | Python 3.11+, FastAPI (async), Pydantic v2, SQLAlchemy 2.x          |
+| Database   | SQLite (WAL mode, FK enforced) + FTS5 + local embeddings           |
+| Frontend   | Vue 3 SPA · Vite · TypeScript · Pinia · TailwindCSS v4              |
+| Desktop    | Tauri v2 (Rust) shell + PyInstaller-bundled backend sidecar         |
+| AI / OCR   | Ollama (local default; optional cloud), Tesseract OCR, Edge TTS     |
+| Packaging  | `uv` for Python (never pip); npm for frontend; cargo for Tauri      |
+| Testing    | pytest, httpx, pytest-asyncio; Vitest; Playwright                   |
+| Linting    | ruff, mypy (strict); vue-tsc                                        |
+| OS         | Ubuntu 24.04 LTS                                                    |
 
 ## SDD Pipeline
 ```
@@ -51,7 +62,7 @@ diary/
 │   │   └── integration/
 │   ├── .env                 # Local secrets (never commit)
 │   └── pyproject.toml
-├── docs/                    # SDD artefacts + planning (prompts/, conductor/, raw_idea.txt)
+├── docs/                    # SDD artefacts (00-domain…04-design) + ARCHITECTURE/BUILD_GUIDE + manual/
 ├── AGENTS.md                # ← You are here
 └── Makefile
 ```
@@ -65,7 +76,9 @@ diary/
 - **Schema migrations are inline**, not Alembic: `database.py:_migrate_schema` (`_COLUMN_MIGRATIONS` + `_INDEX_MIGRATIONS`) is the canonical, idempotent desktop migration path. Add new columns/indexes there. (Alembic was removed to avoid drift between two competing systems.)
 - **Reminders are APScheduler-driven:** `SchedulerService.sync_reminders()` reconciles per-reminder cron jobs with the DB on startup and after every reminder CRUD op; `schedule_catchup` fires any reminder whose time passed while offline. Never schedule reminders manually — always go through `ReminderService` so jobs stay in sync.
 - **FTS5 setup runs in all builds** (including PyInstaller): the `pysqlite3` swap in `app/main.py` fixes the qualified-column bug that previously forced skipping FTS in frozen builds.
-- Plugin `entry_point` must be validated (regex + stdlib blocklist in `schemas/plugin.py`).
+- **Tags live in the text:** an entry/note's tags are the `#hashtags` in its body, extracted by `services/hashtag.py` (`extract_hashtags` + `resolve_tag_ids`) and synced on save — client-sent tag ids are **ignored**. The editors expose this with inline `#` autocomplete (`composables/useInlineTags.ts`, `components/editor/TagAutocomplete.vue`).
+- **Notes are hierarchical:** `NoteFolder` supports nesting (sub-folders) with an acyclic guard; pages are tabbed sections within a note.
+- **DB boot safety:** `core/database` takes a rotating `lifelogr.db.boot-bak-*` snapshot before migrations; if `PRAGMA integrity_check` fails at boot, the newest good snapshot is restored and the corrupt file is quarantined (`_CORRUPT_PREFIX`).
 - Never use silent `except: pass` — always log with context (`logger.warning`).
 - Backup import validates tar members for path traversal before extraction.
 - Soft delete must clean up associated media files (see `entry_service.py`).

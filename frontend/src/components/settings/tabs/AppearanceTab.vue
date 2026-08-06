@@ -67,13 +67,8 @@ const fontOptions = [
 const autosaveInterval = useLocalStorage<number>('lifelogr-autosave-interval', 2)
 const ocrLanguage = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 const ocrLanguages = [
-  { value: 'eng', label: 'English' }, { value: 'fra', label: 'French' },
-  { value: 'deu', label: 'German' }, { value: 'spa', label: 'Spanish' },
-  { value: 'por', label: 'Portuguese' }, { value: 'ita', label: 'Italian' },
-  { value: 'nld', label: 'Dutch' }, { value: 'pol', label: 'Polish' },
-  { value: 'rus', label: 'Russian' }, { value: 'jpn', label: 'Japanese' },
-  { value: 'chi_sim', label: 'Chinese (Simplified)' }, { value: 'ara', label: 'Arabic' },
-  { value: 'hin', label: 'Hindi' },
+  { value: 'eng', label: 'English' },
+  { value: 'tam', label: 'Tamil' },
 ]
 
 // ── Read aloud (TTS) ──

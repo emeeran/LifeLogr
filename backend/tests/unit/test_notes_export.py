@@ -43,3 +43,44 @@ async def test_encrypted_note_body_not_exported(db_session):
     raw = await NotesExportService(db_session).export_json()
     assert b"super-secret-ciphertext" not in raw
     assert b"[encrypted" in raw
+
+
+@pytest.mark.asyncio
+async def test_export_single_markdown_round_trip(db_session):
+    svc = NoteService(db_session)
+    note = await svc.create(NoteCreate(title="My Note", body="hello **world**"))
+    exp = NotesExportService(db_session)
+
+    res = await exp.export_single_markdown(note.id)
+    assert res is not None
+    filename, content = res
+    assert filename.endswith(".md")
+    text = content.decode()
+    assert "My Note" in text  # title in frontmatter
+    assert "hello **world**" in text  # body verbatim — markdown is lossless
+
+    # Re-importing the exported bytes creates a NEW note with the body restored.
+    out = await exp.import_single_markdown(content)
+    assert out["imported"] == 1 and out["skipped"] == 0
+    assert out["note_id"] is not None and out["note_id"] != note.id
+    imported = await svc.get(out["note_id"])
+    assert imported.body == "hello **world**"
+
+
+@pytest.mark.asyncio
+async def test_export_single_markdown_missing_note(db_session):
+    res = await NotesExportService(db_session).export_single_markdown(999999)
+    assert res is None
+
+
+@pytest.mark.asyncio
+async def test_import_single_markdown_returns_note_id(db_session):
+    md = b"---\ntitle: Imported\ntags: [a, b]\npinned: true\n---\nbody text"
+    out = await NotesExportService(db_session).import_single_markdown(md)
+    assert out["imported"] == 1 and out["note_id"] is not None
+    note = await NoteService(db_session).get(out["note_id"])
+    assert note.title == "Imported"
+    assert note.is_pinned is True
+    # Frontmatter tags are embedded as #tokens (tags live in the text).
+    assert note.body.startswith("body text")
+    assert "#a" in note.body and "#b" in note.body
