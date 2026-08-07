@@ -7,7 +7,7 @@ import { useTemplatesStore } from '../../../stores/templates'
 import { API_ORIGIN } from '../../../api/client'
 import { ttsApi } from '../../../api/tts'
 import {
-  Sun, Moon, Type, Sliders, Clock, Eye, Search, LayoutTemplate, Keyboard,
+  Sun, Moon, Type, Sliders, Clock, Eye, ScanText, Search, LayoutTemplate, Keyboard,
   Volume2, Play, X,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
@@ -70,6 +70,9 @@ const ocrLanguages = [
   { value: 'eng', label: 'English' },
   { value: 'tam', label: 'Tamil' },
 ]
+// Whether image attachments are OCR'd automatically on add (entry inline-embed +
+// note paste/drop/snip). Off = keep images as-is; manual "Extract text" still works.
+const autoOcrImages = useLocalStorage<boolean>('lifelogr-auto-ocr-images', true)
 
 // ── Read aloud (TTS) ──
 const ttsSpeed = useLocalStorage<number>('lifelogr-tts-speed', 1.0)
@@ -170,6 +173,10 @@ onMounted(() => { templatesStore.fetchAll(); loadVoices() })
         <select v-model="ocrLanguage" class="settings-select w-36">
           <option v-for="l in ocrLanguages" :key="l.value" :value="l.value">{{ l.label }}</option>
         </select>
+      </SettingRow>
+      <SettingRow :icon="ScanText" label="Auto-OCR images"
+        description="Extract text from images automatically when you add them. Off keeps images as-is — you can still OCR any image manually.">
+        <ToggleSwitch v-model="autoOcrImages" />
       </SettingRow>
       <SettingRow :icon="Type" label="Default title">
         <input v-model="ui.defaultTitle" placeholder="e.g. Daily Journal" class="settings-input w-44" />

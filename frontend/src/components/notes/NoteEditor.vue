@@ -344,6 +344,7 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
     if (t.startsWith('image/')) {
       applyText(`![${name}](${url})`)
       showPreview.value = true
+      if (autoOcr.value) await runOcr(media.id)
     } else if (t.startsWith('audio/')) {
       applyText(`\n<audio controls preload="metadata" src="${url}"></audio>\n`)
     } else if (t.startsWith('video/')) {
@@ -373,7 +374,10 @@ async function handleDroppedPaths(paths: string[]) {
       const media = await notesApi.uploadMediaFromPath(props.note.id, path)
       const url = notesApi.mediaFileUrl(props.note.id, media.id)
       const base = name.replace(/\.[^.]+$/, '') || 'media'
-      if (IMAGE_EXTS.includes(ext)) applyText(`![${base}](${url})`)
+      if (IMAGE_EXTS.includes(ext)) {
+        applyText(`![${base}](${url})`)
+        if (autoOcr.value) await runOcr(media.id)
+      }
       else if (AUDIO_EXTS.includes(ext)) applyText(`\n<audio controls src="${url}"></audio>\n`)
       else if (VIDEO_EXTS.includes(ext)) applyText(`\n<video controls src="${url}" style="max-width:100%"></video>\n`)
     } catch (e: unknown) {
@@ -534,6 +538,8 @@ const snipSrc = ref('')
 const ocrBusy = ref(false)
 // OCR language from Settings → Appearance (same key the settings tab writes).
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
+// Auto-OCR images on attach (Settings → Appearance). Off = embed image only.
+const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', true)
 let unlistenSnip: (() => void) | null = null
 
 async function startSnip() {
@@ -568,8 +574,8 @@ function endSnip() {
 async function onSnipCropped(file: File) {
   endSnip()
   textarea.value?.focus()
-  const media = await embedFile(file)
-  if (media) await runOcr(media.id)
+  // embedFile runs gated auto-OCR for the captured image (see autoOcr).
+  await embedFile(file)
 }
 
 async function runOcr(mediaId: number) {

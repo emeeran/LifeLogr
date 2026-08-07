@@ -51,13 +51,18 @@ watch(() => [cal.year.value, cal.month.value], loadMonth)
 watch(() => entries.lastUpdated, loadMonth)
 
 function selectDate(dateStr: string) {
+  // Single-click only highlights the date; opening happens on double-click.
   selectedDate.value = dateStr
-  ui.requestEdit(-1, dateStr)
 }
 
 function openEntry(entryId: number) {
   selectedDate.value = null // entry selected, not date
   ui.requestEdit(entryId)
+}
+
+function openNewEntry(dateStr: string) {
+  selectedDate.value = dateStr
+  ui.requestEdit(-1, dateStr)
 }
 
 function onGoToDate(dateStr: string) {
@@ -147,6 +152,7 @@ function onGoToDate(dateStr: string) {
           :is-selected="day.dateStr === selectedDate"
           @select-date="selectDate"
           @open-entry="openEntry"
+          @open-new-entry="openNewEntry"
         />
       </div>
     </div>

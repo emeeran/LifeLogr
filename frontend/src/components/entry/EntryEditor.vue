@@ -83,6 +83,8 @@ const entryDate = ref("");
 const showPreview = ref(false);
 // OCR language + busy flag for inline image OCR (parity with the Note editor).
 const ocrLang = useLocalStorage<string>("lifelogr-ocr-language", "eng");
+// Auto-OCR images on attach (Settings → Appearance). Off = embed image only.
+const autoOcr = useLocalStorage<boolean>("lifelogr-auto-ocr-images", true);
 const ocrBusy = ref(false);
 const fullscreen = ref(false);
 const textarea = ref<HTMLTextAreaElement | null>(null);
@@ -622,7 +624,7 @@ async function onFilesSelected(files: FileList | null) {
   for (const file of Array.from(files)) {
     if (file.type.startsWith("image/")) {
       const media = await embedImageFile(file);
-      if (media) await runEntryOcr(media.id);
+      if (media && autoOcr.value) await runEntryOcr(media.id);
     } else {
       await handleFileUpload({
         length: 1,

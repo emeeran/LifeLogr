@@ -9,6 +9,44 @@ offline at any time.
 
 ---
 
+## [0.10.1] — 2026-08-07
+
+### Changed
+- **Calendar: double-click to open.** Single-clicking a date now just selects
+  (highlights) it; double-click opens the journal for that date — one entry
+  opens it, several show the picker, and an empty date opens a new-entry editor.
+  (Previously a single click opened immediately.)
+
+---
+
+## [0.10.0] — 2026-08-06
+
+### Added
+- **Auto-OCR toggle.** A new **Settings → Appearance → "Auto-OCR images"** switch
+  controls whether images you add (attach, paste, drag-drop, or screen-snip) are
+  OCR'd automatically. **On** (default) extracts the text and inserts it alongside
+  the image, as before; **Off** embeds images as-is with no OCR — useful when you
+  want to keep an image as a picture rather than text. The manual "Extract text"
+  action on any image still works in either state.
+
+---
+
+## [0.9.0] — 2026-08-06
+
+### Added
+- **OCR language selection.** Image text extraction (Tesseract) now runs in the
+  language you pick under **Settings → Appearance → "OCR language"**. English
+  (`eng`) and Tamil (`tam`) ship with their data packs; the code is whitelisted,
+  so an unknown/garbage value is rejected cleanly instead of being passed to the
+  binary.
+
+### Fixed
+- **OCR error reporting.** When tesseract runs but a language's trained data
+  isn't installed, you now get a clear, language-specific message naming the pack
+  to install (e.g. `tesseract-ocr-tam`) — not a generic failure.
+
+---
+
 ## [0.8.0] — 2026-08-04
 
 A release centered on **tagging that stays out of your way** and **database
