@@ -26,6 +26,7 @@ import TagAutocomplete from '../editor/TagAutocomplete.vue'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
+import { insertOcrBelowImage } from '../../utils/markdownMedia'
 import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse, NoteMediaResponse } from '../../types'
 
 const props = defineProps<{
@@ -347,7 +348,7 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
     if (t.startsWith('image/')) {
       applyText(`![${name}](${url})`)
       showPreview.value = true
-      if (autoOcr.value) await runOcr(media.id)
+      if (autoOcr.value) await runOcr(media.id, url)
     } else if (t.startsWith('audio/')) {
       applyText(`\n<audio controls preload="metadata" src="${url}"></audio>\n`)
     } else if (t.startsWith('video/')) {
@@ -381,7 +382,7 @@ async function handleDroppedPaths(paths: string[]) {
       const base = name.replace(/\.[^.]+$/, '') || 'media'
       if (IMAGE_EXTS.includes(ext)) {
         applyText(`![${base}](${url})`)
-        if (autoOcr.value) await runOcr(media.id)
+        if (autoOcr.value) await runOcr(media.id, url)
       }
       else if (AUDIO_EXTS.includes(ext)) applyText(`\n<audio controls src="${url}"></audio>\n`)
       else if (VIDEO_EXTS.includes(ext)) applyText(`\n<video controls src="${url}" style="max-width:100%"></video>\n`)
@@ -491,12 +492,21 @@ async function onSnipCropped(file: File) {
   await embedFile(file)
 }
 
-async function runOcr(mediaId: number) {
+/** OCR a note image and insert the text directly below its embedded markdown
+ *  (plain-text blockquote — same standard as the journal). Shared by auto-OCR
+ *  on upload/embed and the per-image hover OCR pill. */
+async function runOcr(mediaId: number, url?: string) {
   ocrBusy.value = true
   try {
     const { text } = await notesApi.ocrNoteMedia(props.note.id, mediaId, ocrLang.value)
     if (text.trim()) {
-      applyText(`\n\n<details><summary>📷 OCR</summary>\n\n${text.trim()}\n\n</details>\n`)
+      const target = url ?? body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
+      if (target) {
+        body.value = insertOcrBelowImage(body.value, target, text)
+      } else {
+        applyText(`\n\n> ${text.trim().replace(/\n/g, '\n> ')}\n`)
+      }
+      if (!showPreview.value) showPreview.value = true
     }
   } catch (e: unknown) {
     alert(`OCR failed: ${e instanceof Error ? e.message : e}`)
@@ -639,13 +649,21 @@ async function createAndAssignTag() {
   }
 }
 
-// ── Resizable embedded media (preview) ───────────────────────────────────────
+// ── Resizable embedded media (preview) + per-image OCR pill ─────────────────
 // Wrap each <img>/<video> in a drag-resizable span; the chosen size is remembered
-// per src so it survives re-renders while editing (useResizableMedia).
+// per src so it survives re-renders while editing. Images also get a hover
+// "OCR" pill (delegated click) that inserts extracted text below the image.
 const previewEl = ref<HTMLElement | null>(null)
-const { wrapResizableMedia, disconnect: disconnectMedia } = useResizableMedia(
-  'lifelogr-note-media-sizes',
-)
+const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, disconnect: disconnectMedia } =
+  useResizableMedia({
+    storageKey: 'lifelogr-note-media-sizes',
+    ocrButton: true,
+    onOcr: (src) => {
+      // Note media URLs: /api/v1/notes/{noteId}/media/{mediaId}/file
+      const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
+      if (mediaId) void runOcr(mediaId, src)
+    },
+  })
 
 // ── Right-click → shared AI context menu (selection + AI driven by the core) ──
 const showContextMenu = ref(false)
@@ -841,6 +859,7 @@ defineExpose({ isDirty })
           ref="previewEl"
           class="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 md-body text-sm text-text-primary"
           v-html="renderedPreview"
+          @click="onMediaPreviewClick"
         />
       </template>
     </div>

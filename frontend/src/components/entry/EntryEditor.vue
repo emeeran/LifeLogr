@@ -370,45 +370,23 @@ const { renderedPreview } = useMarkdownPreview(
 
 // ── Resizable preview media + per-image OCR button ──
 // Every re-render wraps <img>/<video> in .rmedia resize spans (sizes persist
-// per src) and adds a hover "OCR" pill to each image. The pill is handled by
-// event delegation (preview re-renders on every keystroke — per-element
-// listeners wouldn't survive).
+// per src) and adds a hover "OCR" pill to each image (pill clicks are handled
+// by delegation inside the composable).
 const previewEl = ref<HTMLElement | null>(null);
-const { wrapResizableMedia } = useResizableMedia("lifelogr-entry-media-sizes");
-
-function decoratePreviewMedia() {
-  wrapResizableMedia(previewEl.value);
-  const root = previewEl.value;
-  if (!root) return;
-  root.querySelectorAll(".rmedia > img").forEach((img) => {
-    const wrap = img.parentElement;
-    if (!wrap || wrap.querySelector(".ocr-btn")) return;
-    const btn = document.createElement("button");
-    btn.className = "ocr-btn";
-    btn.textContent = "OCR";
-    btn.title = "Extract text from this image (inserted below it)";
-    wrap.appendChild(btn);
+const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick } =
+  useResizableMedia({
+    storageKey: "lifelogr-entry-media-sizes",
+    ocrButton: true,
+    onOcr: (src) => {
+      const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0);
+      if (mediaId) void runEntryOcr(mediaId, src);
+    },
   });
-}
-
-/** Delegated click: the OCR pill on an image runs OCR for that media and
- *  inserts the text directly below the image's markdown token. */
-async function onPreviewClick(e: MouseEvent) {
-  const btn = (e.target as HTMLElement).closest(".ocr-btn");
-  if (!btn) return;
-  e.preventDefault();
-  const wrap = btn.closest(".rmedia") as HTMLElement | null;
-  const img = wrap?.querySelector("img");
-  const src = img?.getAttribute("src") || "";
-  const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0);
-  if (!mediaId) return;
-  await runEntryOcr(mediaId, src);
-}
 
 watch(
   [renderedPreview, showPreview],
   () => {
-    if (showPreview.value) nextTick(decoratePreviewMedia);
+    if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value));
   },
   { immediate: true },
 );
@@ -1192,7 +1170,7 @@ async function applySuggestedTag(name: string) {
                 fontSize: 'var(--editor-font-size)',
               }"
               v-html="renderedPreview"
-              @click="onPreviewClick"
+              @click="onMediaPreviewClick"
             />
           </template>
         </div>

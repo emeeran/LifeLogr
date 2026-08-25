@@ -1,6 +1,7 @@
 /**
  * useResizableMedia — wrap preview-rendered <img>/<video> elements in
- * drag-resizable spans, persisting the chosen size per src.
+ * drag-resizable spans, persisting the chosen size per src, and (optionally)
+ * attach a hover "OCR" pill to each image.
  *
  * The markdown body stays untouched (sizes live in localStorage keyed by the
  * media URL, which is unique per upload); this only manipulates the rendered
@@ -15,13 +16,36 @@ export interface MediaSizes {
   [src: string]: { w: number; h: number }
 }
 
-export function useResizableMedia(storageKey: string) {
+export interface ResizableMediaOptions {
+  storageKey: string
+  /** Show the hover OCR pill on images (editors with an OCR flow). */
+  ocrButton?: boolean
+  /** Called with the image's src when its OCR pill is clicked. */
+  onOcr?: (src: string, mediaEl: HTMLImageElement) => void
+}
+
+export function useResizableMedia(opts: ResizableMediaOptions) {
+  const { storageKey, ocrButton = false, onOcr } = opts
   const mediaSizes = useLocalStorage<MediaSizes>(storageKey, {})
   let observers: ResizeObserver[] = []
 
   function disconnect() {
     observers.forEach((o) => o.disconnect())
     observers = []
+  }
+
+  /** Delegated click handler for the OCR pills — bind once on the preview
+   *  container; pills are re-created on every re-render so per-element
+   *  listeners wouldn't survive. */
+  function onPreviewClick(e: MouseEvent) {
+    if (!onOcr) return
+    const btn = (e.target as HTMLElement).closest('.ocr-btn')
+    if (!btn) return
+    e.preventDefault()
+    const wrap = btn.closest('.rmedia') as HTMLElement | null
+    const img = wrap?.querySelector('img')
+    const src = img?.getAttribute('src') || ''
+    if (src) onOcr(src, img as HTMLImageElement)
   }
 
   function wrapResizableMedia(root: HTMLElement | null) {
@@ -44,6 +68,13 @@ export function useResizableMedia(storageKey: string) {
         wrap.style.width = stored.w + 'px'
         wrap.style.height = stored.h + 'px'
       }
+      if (ocrButton && media.tagName === 'IMG' && !wrap.querySelector('.ocr-btn')) {
+        const btn = document.createElement('button')
+        btn.className = 'ocr-btn'
+        btn.textContent = 'OCR'
+        btn.title = 'Extract text from this image (inserted below it)'
+        wrap.appendChild(btn)
+      }
       const ro = new ResizeObserver((entries) => {
         for (const e of entries) {
           const cr = e.contentRect
@@ -62,5 +93,10 @@ export function useResizableMedia(storageKey: string) {
 
   onUnmounted(disconnect)
 
-  return { mediaSizes: mediaSizes as RemovableRef<MediaSizes>, wrapResizableMedia, disconnect }
+  return {
+    mediaSizes: mediaSizes as RemovableRef<MediaSizes>,
+    wrapResizableMedia,
+    onPreviewClick,
+    disconnect,
+  }
 }
