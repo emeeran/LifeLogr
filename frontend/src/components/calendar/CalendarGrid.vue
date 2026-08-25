@@ -62,13 +62,29 @@ function openEntry(entryId: number) {
 
 function openNewEntry(dateStr: string) {
   selectedDate.value = dateStr
-  ui.requestEdit(-1, dateStr)
+  ui.requestNewEntry(dateStr)
 }
 
-function onGoToDate(dateStr: string) {
+// Go-to-Date both navigates the grid AND opens the picked date — same
+// resolution as clicking a cell: its entry, the picker if several, or a
+// new-entry editor if none.
+async function onGoToDate(dateStr: string) {
   const [y, m] = dateStr.split('-').map(Number)
   cal.year.value = y
   cal.month.value = m
+  await entries.fetchCalendarMonth(y, m)
+  const dayEntries = entries.calendarEntries.filter(
+    (e) => e.entry_date === dateStr,
+  )
+  if (dayEntries.length === 1) {
+    ui.requestEdit(dayEntries[0].id)
+  } else if (dayEntries.length > 1) {
+    // Multi-entry date: highlight it and let the user click once to get the
+    // picker (the cell knows the entries for that date).
+    selectedDate.value = dateStr
+  } else {
+    ui.requestNewEntry(dateStr)
+  }
 }
 </script>
 

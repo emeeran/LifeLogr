@@ -2,6 +2,7 @@
 
 import io
 import logging
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import MediaSizeError, NotFoundError
+from app.core.exceptions import MediaSizeError, NotFoundError, ValidationError
 from app.models.media import Media
 from app.models.entry import Entry
 
@@ -40,6 +41,43 @@ _CONVERTIBLE_IMAGE_TYPES = {
 
 # Max dimension for image resizing
 _MAX_IMAGE_DIMENSION = 2048
+
+
+def _is_under(path: Path, root: Path) -> bool:
+    """True if ``path`` is ``root`` itself or somewhere beneath it."""
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+# Extension → MIME mapping for path-based imports (Tauri native drag-drop gives
+# a path, not a browser MIME type). Mirrors note_media_service; unknown
+# extensions fall through to octet-stream, which upload() rejects.
+_EXT_TO_MIME = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "bmp": "image/bmp",
+    "tiff": "image/tiff",
+    "tif": "image/tiff",
+    "svg": "image/svg+xml",
+    "pdf": "application/pdf",
+    "mp4": "video/mp4",
+    "webm": "video/webm",
+    "mov": "video/quicktime",
+    "mkv": "video/x-matroska",
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "ogg": "audio/ogg",
+    "m4a": "audio/mp4",
+    "txt": "text/plain",
+    "csv": "text/csv",
+    "md": "text/markdown",
+}
 
 
 class MediaService:
@@ -106,6 +144,44 @@ class MediaService:
         await self.db.commit()
         await self.db.refresh(media)
         return media
+
+    async def upload_from_path(
+        self, entry_id: int, path: str, caption: str | None = None
+    ) -> Media:
+        """Read a local file by absolute path and import it as entry media.
+
+        Used by the Tauri native drag-drop handler (WebKitGTK doesn't deliver
+        HTML5 file drops, so the frontend receives a path, not a File object).
+
+        Sandboxed exactly like the notes variant (see
+        ``note_media_service.NoteMediaService.upload_from_path``): home dir +
+        system temp only, sensitive locations denied, so the unauthenticated
+        endpoint can't be used to read arbitrary files.
+        """
+        p = Path(path).expanduser()
+        try:
+            p = p.resolve(strict=True)
+        except (FileNotFoundError, RuntimeError):
+            raise NotFoundError(f"File not found: {path}") from None
+
+        allowed_roots = [Path.home().resolve(), Path(tempfile.gettempdir()).resolve()]
+        if not any(_is_under(p, root) for root in allowed_roots):
+            raise ValidationError(
+                "Imports are restricted to files under your home directory"
+            ) from None
+        for sensitive in (
+            Path(settings.DATA_DIR).resolve(),
+            Path.home().resolve() / ".ssh",
+            Path.home().resolve() / ".gnupg",
+            Path.home().resolve() / ".config",
+        ):
+            if _is_under(p, sensitive):
+                raise ValidationError("Imports from this location are not allowed") from None
+
+        data = p.read_bytes()
+        ext = p.suffix.lower().lstrip(".")
+        content_type = _EXT_TO_MIME.get(ext, "application/octet-stream")
+        return await self.upload(entry_id, p.name, content_type, data, caption)
 
     @staticmethod
     def _compress_to_webp(file_data: bytes) -> tuple[bytes, bool]:

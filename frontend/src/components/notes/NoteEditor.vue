@@ -6,6 +6,9 @@ import {
 } from 'lucide-vue-next'
 import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
 import { useDragDrop } from '../../composables/useDragDrop'
+import { usePasteMedia } from '../../composables/usePasteMedia'
+import { useResizableMedia } from '../../composables/useResizableMedia'
+import { useTauriDragDrop } from '../../composables/useTauriDragDrop'
 import { useRichTextEditor } from '../../composables/useRichTextEditor'
 import { useLocalStorage } from '@vueuse/core'
 import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
@@ -20,9 +23,11 @@ import { saveFile } from '../../utils/fileDialog'
 import { isTauri } from '../../api/client'
 import { useTtsStore } from '../../stores/tts'
 import TagAutocomplete from '../editor/TagAutocomplete.vue'
+import MediaViewer from '../media/MediaViewer.vue'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
+import { insertOcrBelowImage } from '../../utils/markdownMedia'
 import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse, NoteMediaResponse } from '../../types'
 
 const props = defineProps<{
@@ -344,7 +349,7 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
     if (t.startsWith('image/')) {
       applyText(`![${name}](${url})`)
       showPreview.value = true
-      if (autoOcr.value) await runOcr(media.id)
+      if (autoOcr.value) await runOcr(media.id, url)
     } else if (t.startsWith('audio/')) {
       applyText(`\n<audio controls preload="metadata" src="${url}"></audio>\n`)
     } else if (t.startsWith('video/')) {
@@ -363,7 +368,9 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'svg']
 const AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus']
 const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi']
-let unlistenDrag: (() => void) | null = null
+const { isDragging: tauriDragging, register: registerTauriDrop } = useTauriDragDrop()
+// The overlay flag unifies both drag sources (HTML5 + Tauri).
+const dragActive = computed(() => isDragging.value || tauriDragging.value)
 
 async function handleDroppedPaths(paths: string[]) {
   textarea.value?.focus()
@@ -376,7 +383,7 @@ async function handleDroppedPaths(paths: string[]) {
       const base = name.replace(/\.[^.]+$/, '') || 'media'
       if (IMAGE_EXTS.includes(ext)) {
         applyText(`![${base}](${url})`)
-        if (autoOcr.value) await runOcr(media.id)
+        if (autoOcr.value) await runOcr(media.id, url)
       }
       else if (AUDIO_EXTS.includes(ext)) applyText(`\n<audio controls src="${url}"></audio>\n`)
       else if (VIDEO_EXTS.includes(ext)) applyText(`\n<video controls src="${url}" style="max-width:100%"></video>\n`)
@@ -397,32 +404,20 @@ function beforeUnloadGuard(e: BeforeUnloadEvent) {
 
 onMounted(async () => {
   window.addEventListener('beforeunload', beforeUnloadGuard)
+  void registerTauriDrop(handleDroppedPaths)
   if (!isTauri) return
   try {
-    const { getCurrentWebview } = await import('@tauri-apps/api/webview')
-    unlistenDrag = await getCurrentWebview().onDragDropEvent((event: any) => {
-      const p = event?.payload
-      if (!p) return
-      if (p.type === 'enter' || p.type === 'over') isDragging.value = true
-      else if (p.type === 'leave') isDragging.value = false
-      else if (p.type === 'drop') {
-        isDragging.value = false
-        void handleDroppedPaths((p.paths as string[]) ?? [])
-      }
-    })
     const { listen } = await import('@tauri-apps/api/event')
     unlistenSnip = await listen('snip-requested', () => {
       void startSnip()
     })
   } catch (e) {
-    console.warn('Tauri drag-drop/snip unavailable', e)
+    console.warn('Tauri snip unavailable', e)
   }
 })
 onUnmounted(() => {
   // Autosave disabled: closing the editor does NOT persist unsaved edits.
   window.removeEventListener('beforeunload', beforeUnloadGuard)
-  unlistenDrag?.()
-  unlistenDrag = null
   unlistenSnip?.()
   unlistenSnip = null
   // Stop read-aloud only if this note is what's currently playing (single global stream).
@@ -443,94 +438,14 @@ async function onDropFiles(e: DragEvent) {
   }
 }
 
-async function onPaste(e: ClipboardEvent) {
-  if (isTauri) {
-    await onPasteTauri(e)
-    return
-  }
-  const cd = e.clipboardData
-  if (!cd) return
-  const media: File[] = []
-  for (const it of cd.items) {
-    if (it.kind === 'file' && (it.type.startsWith('image/') || it.type.startsWith('audio/') || it.type.startsWith('video/'))) {
-      const f = it.getAsFile()
-      if (f) media.push(f)
-    }
-  }
-  if (media.length) {
-    e.preventDefault()
-    for (const f of media) await embedFile(f)
-    return
-  }
-  const html = cd.getData('text/html')
-  if (html && /<table[\s>]/i.test(html)) {
-    const md = htmlTableToMarkdown(html)
-    if (md) {
-      e.preventDefault()
-      applyText('\n' + md + '\n')
-      return
-    }
-  }
-  const text = cd.getData('text/plain')
-  if (text && text.includes('\n') && (text.includes('\t') || /^[^\n]*,[^\n]*\n/m.test(text))) {
-    const md = delimitedToMarkdown(text)
-    if (md) {
-      e.preventDefault()
-      applyText('\n' + md + '\n')
-    }
-  }
-}
-
-async function onPasteTauri(e: ClipboardEvent) {
-  const cd = e.clipboardData
-  const cdImage = cd
-    ? Array.from(cd.items).find((it) => it.kind === 'file' && it.type.startsWith('image/'))
-    : null
-  if (cdImage) {
-    e.preventDefault()
-    const f = cdImage.getAsFile()
-    if (f) await embedFile(f)
-    return
-  }
-  // Read text synchronously — the paste event's clipboardData is only reliable
-  // before any `await` (WebKitGTK drops it once the handler goes async), so the
-  // common text-paste path must not depend on the async image read below.
-  const text = cd?.getData('text/plain') ?? ''
-  if (text) {
-    e.preventDefault()
-    applyText(text)
-    return
-  }
-  // No text in the event — the system clipboard may hold an image WebKitGTK
-  // didn't surface as a file. Fall back to the Tauri clipboard plugin.
-  e.preventDefault()
-  try {
-    const { readImage } = await import('@tauri-apps/plugin-clipboard-manager')
-    const img = await readImage()
-    if (img) await uploadClipImage(img)
-  } catch {
-    /* clipboard has no image */
-  }
-}
-
-async function uploadClipImage(img: {
-  rgba: () => Promise<Uint8Array>
-  size: () => Promise<{ width: number; height: number }>
-}) {
-  const rgba = await img.rgba()
-  const { width, height } = await img.size()
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  const imgData = ctx.createImageData(width, height)
-  imgData.data.set(rgba)
-  ctx.putImageData(imgData, 0, 0)
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
-  if (!blob) return
-  await embedFile(new File([blob], 'pasted.png', { type: 'image/png' }))
-}
+// Paste handling lives in usePasteMedia (media upload → embedFile; HTML/CSV
+// tables → markdown table via applyText).
+const { onPaste: pasteMediaHandler } = usePasteMedia({
+  uploadMedia: async (file) => {
+    await embedFile(file)
+  },
+  applyText,
+})
 
 // ── Screen snip (desktop only) — capture → crop → embed → OCR ────────────────
 const snipping = ref(false)
@@ -539,7 +454,7 @@ const ocrBusy = ref(false)
 // OCR language from Settings → Appearance (same key the settings tab writes).
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 // Auto-OCR images on attach (Settings → Appearance). Off = embed image only.
-const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', true)
+const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', false)
 let unlistenSnip: (() => void) | null = null
 
 async function startSnip() {
@@ -578,12 +493,21 @@ async function onSnipCropped(file: File) {
   await embedFile(file)
 }
 
-async function runOcr(mediaId: number) {
+/** OCR a note image and insert the text directly below its embedded markdown
+ *  (plain-text blockquote — same standard as the journal). Shared by auto-OCR
+ *  on upload/embed and the per-image hover OCR pill. */
+async function runOcr(mediaId: number, url?: string) {
   ocrBusy.value = true
   try {
     const { text } = await notesApi.ocrNoteMedia(props.note.id, mediaId, ocrLang.value)
     if (text.trim()) {
-      applyText(`\n\n<details><summary>📷 OCR</summary>\n\n${text.trim()}\n\n</details>\n`)
+      const target = url ?? body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
+      if (target) {
+        body.value = insertOcrBelowImage(body.value, target, text)
+      } else {
+        applyText(`\n\n> ${text.trim().replace(/\n/g, '\n> ')}\n`)
+      }
+      if (!showPreview.value) showPreview.value = true
     }
   } catch (e: unknown) {
     alert(`OCR failed: ${e instanceof Error ? e.message : e}`)
@@ -612,25 +536,13 @@ async function startWebClip(url: string) {
   }
 }
 
-// ── Paste-to-table helpers (table button itself comes from the shared toolbar) ─
-function htmlTableToMarkdown(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const table = doc.querySelector('table')
-  if (!table) return ''
-  const grid = Array.from(table.querySelectorAll('tr')).map((tr) =>
-    Array.from(tr.querySelectorAll('td,th')).map(
-      (c) => (c.textContent || '').trim().replace(/\|/g, '\\|').replace(/\n/g, ' '),
-    ),
-  )
-  return gridToMarkdown(grid)
-}
+// ── Paste-to-table helper (drop-CSV path; HTML/clipboard tables are handled
+//    by usePasteMedia) ──
 function delimitedToMarkdown(text: string): string {
   const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.length > 0)
   if (lines.length < 2) return ''
   const delim = lines[0].includes('\t') ? '\t' : ','
-  return gridToMarkdown(lines.map((l) => l.split(delim)))
-}
-function gridToMarkdown(grid: string[][]): string {
+  const grid = lines.map((l) => l.split(delim))
   if (!grid.length || !grid[0]?.length) return ''
   const cols = Math.max(...grid.map((r) => r.length))
   const norm = grid.map((r) => {
@@ -738,55 +650,31 @@ async function createAndAssignTag() {
   }
 }
 
-// ── Resizable embedded media (preview) ───────────────────────────────────────
+// ── Resizable embedded media (preview) + per-image OCR pill ─────────────────
 // Wrap each <img>/<video> in a drag-resizable span; the chosen size is remembered
-// per src so it survives re-renders while editing.
+// per src so it survives re-renders while editing. Images also get a hover
+// "OCR" pill (delegated click) that inserts extracted text below the image.
 const previewEl = ref<HTMLElement | null>(null)
-const mediaSizes = useLocalStorage<Record<string, { w: number; h: number }>>(
-  'lifelogr-note-media-sizes',
-  {},
-)
-let mediaObservers: ResizeObserver[] = []
-function disconnectMedia() {
-  mediaObservers.forEach((o) => o.disconnect())
-  mediaObservers = []
-}
-function wrapResizableMedia() {
-  disconnectMedia()
-  const root = previewEl.value
-  if (!root) return
-  root.querySelectorAll('img, video').forEach((node) => {
-    const media = node as HTMLImageElement | HTMLVideoElement
-    const parent = media.parentElement
-    if (!parent) return
-    const src = media.getAttribute('src') || ''
-    const wrap = document.createElement('span')
-    wrap.className = 'rmedia'
-    parent.insertBefore(wrap, media)
-    wrap.appendChild(media)
-    media.style.width = '100%'
-    media.style.height = '100%'
-    media.style.display = 'block'
-    const stored = mediaSizes.value[src]
-    if (stored && stored.w) {
-      wrap.style.width = stored.w + 'px'
-      wrap.style.height = stored.h + 'px'
-    }
-    const ro = new ResizeObserver((entries) => {
-      for (const e of entries) {
-        const cr = e.contentRect
-        if (cr.width > 40 && cr.height > 40) {
-          mediaSizes.value = {
-            ...mediaSizes.value,
-            [src]: { w: Math.round(cr.width), h: Math.round(cr.height) },
-          }
-        }
+const inlineViewer = ref<{ src: string; mediaType: string; filename?: string } | null>(null)
+const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, onPreviewDblClick, disconnect: disconnectMedia } =
+  useResizableMedia({
+    storageKey: 'lifelogr-note-media-sizes',
+    ocrButton: true,
+    onOcr: (src) => {
+      // Note media URLs: /api/v1/notes/{noteId}/media/{mediaId}/file
+      const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
+      if (mediaId) void runOcr(mediaId, src)
+    },
+    onMediaDblClick: (el) => {
+      const src = el.getAttribute('src') || ''
+      const isVideo = el.tagName === 'VIDEO'
+      inlineViewer.value = {
+        src,
+        mediaType: isVideo ? 'video' : 'image',
+        filename: src.split('/').pop(),
       }
-    })
-    ro.observe(wrap)
-    mediaObservers.push(ro)
+    },
   })
-}
 
 // ── Right-click → shared AI context menu (selection + AI driven by the core) ──
 const showContextMenu = ref(false)
@@ -831,7 +719,7 @@ function onToolbarAction(name: string) {
 watch(
   [renderedPreview, showPreview],
   () => {
-    if (showPreview.value) nextTick(wrapResizableMedia)
+    if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value))
   },
 )
 onUnmounted(() => {
@@ -854,7 +742,7 @@ defineExpose({ isDirty })
 
     <!-- Drop overlay -->
     <div
-      v-if="isDragging"
+      v-if="dragActive"
       class="absolute inset-0 z-50 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded pointer-events-none"
     >
       <span class="text-accent text-sm font-medium">Drop image / audio / video to embed</span>
@@ -971,7 +859,7 @@ defineExpose({ isDirty })
           @select="core.cacheSelection"
           @focus="core.clearSelCache"
           @blur="onEditorBlur"
-          @paste="onPaste"
+          @paste="pasteMediaHandler"
           @contextmenu="onContextMenu"
           class="flex-1 w-full resize-none bg-transparent px-4 py-3 text-sm text-text-primary outline-none custom-scrollbar"
           style="font-family: var(--editor-font); font-size: var(--editor-font-size)"
@@ -982,6 +870,8 @@ defineExpose({ isDirty })
           ref="previewEl"
           class="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 md-body text-sm text-text-primary"
           v-html="renderedPreview"
+          @click="onMediaPreviewClick"
+          @dblclick="onPreviewDblClick"
         />
       </template>
     </div>
@@ -1142,6 +1032,9 @@ defineExpose({ isDirty })
 
     <!-- Web-page clip URL prompt -->
     <WebClipModal v-if="showWebClip" @clip="startWebClip" @cancel="showWebClip = false" />
+
+    <!-- Single inline media opened by double-click from the preview -->
+    <MediaViewer v-if="inlineViewer" :items="[]" :single="inlineViewer" @close="inlineViewer = null" />
 
     <!-- Inline #tag autocomplete -->
     <TagAutocomplete

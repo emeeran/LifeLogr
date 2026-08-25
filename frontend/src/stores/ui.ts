@@ -73,6 +73,12 @@ export const useUiStore = defineStore('ui', () => {
     return true
   }
 
+  /** Like requestEdit, but for a brand-new entry on a given date (the editor
+   *  pre-fills that date via newEntryDate). Same dirty-editor guard. */
+  function requestNewEntry(date?: string) {
+    return requestEdit(-1, date)
+  }
+
   function confirmSwitchSave() {
     showSavePrompt.value = false
     // Caller (AppShell) handles save then calls startEditing
@@ -149,7 +155,7 @@ export const useUiStore = defineStore('ui', () => {
     darkMode, fontFamily, fontSize, rightPanelWidth, defaultTitle, showEditor,
     showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, activeDrawer,
     scribbleOpen, zenMode,
-    setView, startEditing, requestEdit, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
+    setView, startEditing, requestEdit, requestNewEntry, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
     toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
     openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer, toggleScribble, toggleZenMode,
     requestedSettingsTab, requestSettingsTab,

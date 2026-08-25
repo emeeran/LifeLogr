@@ -6,6 +6,7 @@ import { useUiStore } from '../../stores/ui'
 import { useNotesStore } from '../../stores/notes'
 import { Search as SearchIcon, Calendar, ArrowRight, Clock, NotebookPen, Bell } from 'lucide-vue-next'
 import DOMPurify from 'dompurify'
+import { formatDDMMYYYY } from '../../composables/useFormat'
 import type { SearchResultEntry } from '../../types'
 
 const searchStore = useSearchStore()
@@ -65,10 +66,8 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && results.value.length) { openResult(results.value[selectedIndex.value]); return }
 }
 
-const shortDateOpts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
-
 function formatDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString(undefined, shortDateOpts)
+  return formatDDMMYYYY(d)
 }
 
 function sanitize(html: string) {

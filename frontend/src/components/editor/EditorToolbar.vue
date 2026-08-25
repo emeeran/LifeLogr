@@ -168,7 +168,6 @@ const journalEmojis = ["📝", "💭", "✨", "🙏", "🩺", "💡"];
         title="Inline code (Ctrl+K)" @click="fire('code')"
       ><Code :size="13" /></button>
       <button
-        v-if="mode === 'journal'"
         class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
         title="Code block" @click="fire('codeBlock')"
       ><Type :size="13" /></button>
