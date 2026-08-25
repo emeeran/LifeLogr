@@ -85,7 +85,9 @@ class SemanticSearchCache:
         self.entry_ids = ids
         self.vectors = matrix / norms
         self._pos = {int(eid): i for i, eid in enumerate(ids)}
-        logger.info("SemanticSearchCache loaded %d vectors (%d dims)", self.size, self.vectors.shape[1])
+        logger.info(
+            "SemanticSearchCache loaded %d vectors (%d dims)", self.size, self.vectors.shape[1]
+        )
 
     async def ensure_fresh(self, db: AsyncSession) -> None:
         """Reload if empty or if the live embedding count has diverged.

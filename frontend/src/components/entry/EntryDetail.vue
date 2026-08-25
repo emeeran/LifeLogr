@@ -9,7 +9,14 @@ marked.use({ gfm: true, breaks: true })
 import DOMPurify from 'dompurify'
 import EntryHeader from './EntryHeader.vue'
 import MediaGrid from '../media/MediaGrid.vue'
-import { Pencil, Play, Pause, FileAudio, Volume2, Loader } from 'lucide-vue-next'
+import {
+  Pencil,
+  Play,
+  Pause,
+  FileAudio,
+  Volume2,
+  Loader,
+} from 'lucide-vue-next'
 import { recordingsApi } from '../../api/recordings'
 import type { VoiceRecordingResponse } from '../../types'
 
@@ -36,7 +43,9 @@ async function loadRecordings() {
   if (!entry.value?.has_recording) return
   try {
     recordings.value = await recordingsApi.listByEntry(entry.value.id)
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function togglePlayback(rec: VoiceRecordingResponse) {
@@ -47,7 +56,9 @@ function togglePlayback(rec: VoiceRecordingResponse) {
   stopPlayback()
   const url = `/api/v1/media/${rec.media_id}/file`
   const audio = new Audio(url)
-  audio.addEventListener('ended', () => { playingId.value = null })
+  audio.addEventListener('ended', () => {
+    playingId.value = null
+  })
   currentAudio = audio
   playingId.value = rec.id
   audio.play()
@@ -70,7 +81,11 @@ const ttsLoading = computed(() => tts.isLoadingEntry(ttsEntryId.value))
 async function toggleTTS() {
   if (!entry.value) return
   // Stop any recording playback before starting read-aloud (separate audio element).
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; playingId.value = null }
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
+    playingId.value = null
+  }
   try {
     await tts.toggleEntry(entry.value.id)
   } catch (e) {
@@ -80,9 +95,13 @@ async function toggleTTS() {
 
 // Pre-warm audio when an entry opens so read-aloud is instant (skip encrypted —
 // its body is ciphertext here and can't be synthesized server-side).
-watch(ttsEntryId, (id) => {
-  if (id > 0 && entry.value && !entry.value.is_encrypted) tts.prewarmEntry(id)
-}, { immediate: true })
+watch(
+  ttsEntryId,
+  (id) => {
+    if (id > 0 && entry.value && !entry.value.is_encrypted) tts.prewarmEntry(id)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -102,7 +121,10 @@ watch(ttsEntryId, (id) => {
       <!-- Body (rendered markdown) -->
       <div
         class="md-body max-w-none text-text-primary leading-relaxed"
-        :style="{ fontFamily: 'var(--editor-font)', fontSize: 'var(--editor-font-size)' }"
+        :style="{
+          fontFamily: 'var(--editor-font)',
+          fontSize: 'var(--editor-font-size)',
+        }"
         v-html="renderedBody"
       />
 
@@ -115,21 +137,27 @@ watch(ttsEntryId, (id) => {
         >
           <button
             class="p-1 rounded-full cursor-pointer transition-colors"
-            :class="playingId === rec.id ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-accent hover:bg-accent/10'"
+            :class="
+              playingId === rec.id
+                ? 'bg-accent/20 text-accent'
+                : 'text-text-secondary hover:text-accent hover:bg-accent/10'
+            "
             @click="togglePlayback(rec)"
           >
             <Pause v-if="playingId === rec.id" :size="16" />
             <Play v-else :size="16" />
           </button>
           <FileAudio :size="14" class="text-accent shrink-0" />
-          <span class="text-xs text-text-secondary flex-1">
-            Voice memo
-          </span>
+          <span class="text-xs text-text-secondary flex-1"> Voice memo </span>
         </div>
       </div>
 
       <!-- Media grid -->
-      <MediaGrid v-if="entry.media_count > 0" :entry-id="entry.id" :media-count="entry.media_count" />
+      <MediaGrid
+        v-if="entry.media_count > 0"
+        :entry-id="entry.id"
+        :media-count="entry.media_count"
+      />
 
       <!-- Tags -->
       <div v-if="entry.tags.length" class="flex flex-wrap gap-1.5 pt-2">
@@ -154,7 +182,11 @@ watch(ttsEntryId, (id) => {
       </button>
       <button
         class="flex items-center gap-1.5 px-3 py-2 rounded text-sm transition-colors cursor-pointer"
-        :class="ttsPlaying ? 'bg-accent/20 text-accent' : 'bg-surface-hover text-text-secondary hover:text-accent'"
+        :class="
+          ttsPlaying
+            ? 'bg-accent/20 text-accent'
+            : 'bg-surface-hover text-text-secondary hover:text-accent'
+        "
         :disabled="ttsLoading || entry.is_encrypted"
         @click="toggleTTS"
         :title="ttsPlaying ? 'Stop reading' : 'Read aloud'"

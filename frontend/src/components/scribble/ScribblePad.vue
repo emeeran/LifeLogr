@@ -37,8 +37,12 @@ const emit = defineEmits<{ close: [] }>()
 <template>
   <div class="h-full flex flex-col bg-surface border-r border-border">
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-      <div class="flex items-center gap-1.5 text-xs font-medium text-text-primary">
+    <div
+      class="flex items-center justify-between px-3 py-2 border-b border-border"
+    >
+      <div
+        class="flex items-center gap-1.5 text-xs font-medium text-text-primary"
+      >
         <StickyNote :size="14" class="text-accent" />
         Scribble Pad
       </div>

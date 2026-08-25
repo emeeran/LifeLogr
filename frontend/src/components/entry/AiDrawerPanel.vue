@@ -5,9 +5,13 @@ import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
 import { getEgressReport } from '../../api/system'
 import type { GrammarSuggestion } from '../../types'
 import {
-  CheckCircle, AlertCircle, Loader,
-  Sparkles, Eraser,
-  Copy, Check,
+  CheckCircle,
+  AlertCircle,
+  Loader,
+  Sparkles,
+  Eraser,
+  Copy,
+  Check,
   Cloud,
 } from 'lucide-vue-next'
 
@@ -74,7 +78,11 @@ async function runTool(toolId: string) {
   originalText.value = text
 
   try {
-    const { text: out, suggestions: sugg } = await callAiTool(def, text, selectedParam.value)
+    const { text: out, suggestions: sugg } = await callAiTool(
+      def,
+      text,
+      selectedParam.value,
+    )
     result.value = out
     suggestions.value = sugg
   } catch (e: unknown) {
@@ -103,7 +111,9 @@ function copyResult() {
   if (!result.value) return
   navigator.clipboard.writeText(result.value).then(() => {
     copied.value = true
-    setTimeout(() => { copied.value = false }, 1500)
+    setTimeout(() => {
+      copied.value = false
+    }, 1500)
   })
 }
 </script>
@@ -113,13 +123,21 @@ function copyResult() {
     <!-- Status -->
     <div class="px-3 py-2 border-b border-border space-y-1.5">
       <div class="flex items-center justify-between">
-        <span v-if="available === false" class="text-[10px] text-red-400 flex items-center gap-1">
+        <span
+          v-if="available === false"
+          class="text-[10px] text-red-400 flex items-center gap-1"
+        >
           <AlertCircle :size="11" /> Offline
         </span>
-        <span v-else-if="available === true" class="text-[10px] text-green-400 flex items-center gap-1">
+        <span
+          v-else-if="available === true"
+          class="text-[10px] text-green-400 flex items-center gap-1"
+        >
           <CheckCircle :size="11" /> Ready
         </span>
-        <span v-else class="text-[10px] text-text-muted animate-pulse">...</span>
+        <span v-else class="text-[10px] text-text-muted animate-pulse"
+          >...</span
+        >
         <span
           v-if="leavesDevice"
           class="text-[9px] text-amber-300 flex items-center gap-1"
@@ -148,42 +166,77 @@ function copyResult() {
 
         <!-- Parameter pills for the active tool (tone / voice / language) -->
         <div v-if="showParamPills" class="flex gap-1 flex-wrap">
-          <button v-for="opt in paramOptions" :key="opt" @click="selectedParam = opt"
+          <button
+            v-for="opt in paramOptions"
+            :key="opt"
+            @click="selectedParam = opt"
             class="px-1.5 py-0.5 rounded text-[9px] cursor-pointer transition-colors capitalize"
-            :class="selectedParam === opt ? 'bg-accent text-white' : 'bg-surface-hover text-text-muted hover:text-text-primary'"
-          >{{ opt }}</button>
+            :class="
+              selectedParam === opt
+                ? 'bg-accent text-white'
+                : 'bg-surface-hover text-text-muted hover:text-text-primary'
+            "
+          >
+            {{ opt }}
+          </button>
         </div>
 
         <!-- Processing State -->
-        <div v-if="loading" class="flex flex-col items-center justify-center py-4 space-y-2">
+        <div
+          v-if="loading"
+          class="flex flex-col items-center justify-center py-4 space-y-2"
+        >
           <Loader :size="20" class="text-accent animate-spin" />
           <span class="text-[10px] text-text-muted">Thinking...</span>
         </div>
 
         <!-- Error State -->
-        <div v-if="error" class="p-2 bg-red-400/10 border border-red-400/20 rounded flex items-start gap-1.5">
+        <div
+          v-if="error"
+          class="p-2 bg-red-400/10 border border-red-400/20 rounded flex items-start gap-1.5"
+        >
           <AlertCircle :size="12" class="text-red-400 shrink-0 mt-0.5" />
-          <span class="text-[10px] text-red-400 leading-tight">{{ error }}</span>
+          <span class="text-[10px] text-red-400 leading-tight">{{
+            error
+          }}</span>
         </div>
 
         <!-- Result -->
         <div v-if="result" class="space-y-2">
           <div class="flex items-center justify-between">
-            <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">Result</span>
-            <button @click="clearResult" class="p-0.5 hover:bg-surface-hover rounded transition-colors text-text-muted">
+            <span
+              class="text-[10px] font-bold text-text-muted uppercase tracking-wider"
+              >Result</span
+            >
+            <button
+              @click="clearResult"
+              class="p-0.5 hover:bg-surface-hover rounded transition-colors text-text-muted"
+            >
               <Eraser :size="11" />
             </button>
           </div>
 
           <div class="space-y-1.5">
             <div class="p-2 rounded bg-surface-hover border border-border">
-              <div class="text-[9px] text-text-muted uppercase font-bold mb-0.5 opacity-50">Original</div>
-              <div class="text-[10px] text-text-secondary line-through opacity-60 italic whitespace-pre-wrap">{{ originalText }}</div>
+              <div
+                class="text-[9px] text-text-muted uppercase font-bold mb-0.5 opacity-50"
+              >
+                Original
+              </div>
+              <div
+                class="text-[10px] text-text-secondary line-through opacity-60 italic whitespace-pre-wrap"
+              >
+                {{ originalText }}
+              </div>
             </div>
 
             <div class="p-2 rounded bg-accent/5 border border-accent/20">
-              <div class="text-[9px] text-accent uppercase font-bold mb-0.5">AI Result</div>
-              <div class="text-[10px] text-text-primary whitespace-pre-wrap">{{ result }}</div>
+              <div class="text-[9px] text-accent uppercase font-bold mb-0.5">
+                AI Result
+              </div>
+              <div class="text-[10px] text-text-primary whitespace-pre-wrap">
+                {{ result }}
+              </div>
             </div>
           </div>
 
@@ -191,7 +244,9 @@ function copyResult() {
             <button
               @click="applyResult"
               class="flex-1 py-1.5 bg-accent text-white rounded text-[10px] font-medium hover:bg-accent-hover transition-colors"
-            >Replace</button>
+            >
+              Replace
+            </button>
             <button
               @click="copyResult"
               class="px-2.5 py-1.5 bg-surface-hover text-text-secondary rounded text-[10px] font-medium hover:text-text-primary transition-colors flex items-center gap-0.5"
@@ -203,12 +258,17 @@ function copyResult() {
             <button
               @click="clearResult"
               class="px-2.5 py-1.5 bg-surface-hover text-text-secondary rounded text-[10px] font-medium hover:text-text-primary transition-colors"
-            >Discard</button>
+            >
+              Discard
+            </button>
           </div>
         </div>
 
         <!-- Empty State -->
-        <div v-if="!loading && !result && !error" class="flex flex-col items-center justify-center py-8 text-center space-y-2 opacity-40">
+        <div
+          v-if="!loading && !result && !error"
+          class="flex flex-col items-center justify-center py-8 text-center space-y-2 opacity-40"
+        >
           <Sparkles :size="24" class="text-text-muted" />
           <div class="text-[10px] text-text-muted leading-tight">
             Select text and choose a tool.

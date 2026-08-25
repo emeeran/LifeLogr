@@ -5,7 +5,9 @@ describe('insertOcrBelowImage', () => {
   it('inserts the OCR text as a blockquote directly below the image token', () => {
     const body = 'before\n\n![pic](http://x/f.png)\n\nafter'
     const out = insertOcrBelowImage(body, 'http://x/f.png', 'hello world')
-    expect(out).toBe('before\n\n![pic](http://x/f.png)\n\n> hello world\n\nafter')
+    expect(out).toBe(
+      'before\n\n![pic](http://x/f.png)\n\n> hello world\n\nafter',
+    )
   })
 
   it('escapes regex metacharacters in the url', () => {

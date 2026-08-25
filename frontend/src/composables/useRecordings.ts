@@ -1,7 +1,18 @@
-import { ref, computed, watch, onUnmounted, inject, provide, type InjectionKey, type ComputedRef, type Ref } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  onUnmounted,
+  inject,
+  provide,
+  type InjectionKey,
+  type ComputedRef,
+  type Ref,
+} from 'vue'
 import { recordingsApi } from '../api/recordings'
 import { API_ORIGIN } from '../api/client'
 import type { VoiceRecordingResponse } from '../types'
+import { errMsg } from '../utils/errMsg.ts'
 
 export interface RecordingsApi {
   /** Persisted recordings for the active entry. */
@@ -54,7 +65,10 @@ export function useRecordings(
 
   let timer: ReturnType<typeof setInterval> | null = null
   function clearTimer() {
-    if (timer) { clearInterval(timer); timer = null }
+    if (timer) {
+      clearInterval(timer)
+      timer = null
+    }
   }
 
   const hasEntry = computed(() => {
@@ -68,10 +82,15 @@ export function useRecordings(
 
   async function loadRecordings() {
     const id = entryIdRef()
-    if (!id || id <= 0) { recordings.value = []; return }
+    if (!id || id <= 0) {
+      recordings.value = []
+      return
+    }
     try {
       recordings.value = await recordingsApi.listByEntry(id)
-    } catch { /* entry may have no recordings yet */ }
+    } catch {
+      /* entry may have no recordings yet */
+    }
   }
 
   async function toggleRecord() {
@@ -89,14 +108,18 @@ export function useRecordings(
     }
     recording.value = true
     elapsed.value = 0
-    timer = setInterval(() => { elapsed.value++ }, 1000)
+    timer = setInterval(() => {
+      elapsed.value++
+    }, 1000)
     try {
       await recordingsApi.start(entryIdRef()!)
     } catch (e: unknown) {
       clearTimer()
       recording.value = false
-      const msg = e instanceof Error ? e.message : String(e)
-      alert(`Could not start recording: ${msg}\n\nCheck that a microphone is connected.`)
+      const msg = errMsg(e)
+      alert(
+        `Could not start recording: ${msg}\n\nCheck that a microphone is connected.`,
+      )
     }
   }
 
@@ -110,7 +133,7 @@ export function useRecordings(
       const rec = await recordingsApi.stop()
       recordings.value.push(rec)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = errMsg(e)
       alert(`Recording failed: ${msg}`)
     } finally {
       uploading.value = false
@@ -118,7 +141,11 @@ export function useRecordings(
   }
 
   function closePlayback() {
-    if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl = null }
+    if (audioEl) {
+      audioEl.pause()
+      audioEl.src = ''
+      audioEl = null
+    }
     activeId.value = null
     isPlaying.value = false
     current.value = 0
@@ -126,20 +153,26 @@ export function useRecordings(
   }
 
   function bindAudio(a: HTMLAudioElement) {
-    a.addEventListener('timeupdate', () => { current.value = a.currentTime })
+    a.addEventListener('timeupdate', () => {
+      current.value = a.currentTime
+    })
     a.addEventListener('loadedmetadata', () => {
       if (Number.isFinite(a.duration)) duration.value = a.duration
     })
     a.addEventListener('durationchange', () => {
       if (Number.isFinite(a.duration)) duration.value = a.duration
     })
-    a.addEventListener('ended', () => { isPlaying.value = false; current.value = 0 })
+    a.addEventListener('ended', () => {
+      isPlaying.value = false
+      current.value = 0
+    })
     a.addEventListener('error', () => {
       const err = a.error
       // Network error (code 2) usually means the file is missing on disk.
-      const msg = err && err.code === 2
-        ? 'This recording file is missing from disk.'
-        : 'Playback failed for this recording.'
+      const msg =
+        err && err.code === 2
+          ? 'This recording file is missing from disk.'
+          : 'Playback failed for this recording.'
       closePlayback()
       alert(msg)
     })
@@ -148,12 +181,23 @@ export function useRecordings(
   function togglePlay(rec: VoiceRecordingResponse) {
     // Same memo → toggle pause/play.
     if (activeId.value === rec.id && audioEl) {
-      if (isPlaying.value) { audioEl.pause(); isPlaying.value = false }
-      else { void audioEl.play().catch(() => { isPlaying.value = false }); isPlaying.value = true }
+      if (isPlaying.value) {
+        audioEl.pause()
+        isPlaying.value = false
+      } else {
+        void audioEl.play().catch(() => {
+          isPlaying.value = false
+        })
+        isPlaying.value = true
+      }
       return
     }
     // New memo — tear down any prior audio first.
-    if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl = null }
+    if (audioEl) {
+      audioEl.pause()
+      audioEl.src = ''
+      audioEl = null
+    }
     activeId.value = rec.id
     current.value = 0
     duration.value = rec.duration_seconds || 0
@@ -167,14 +211,17 @@ export function useRecordings(
       isPlaying.value = false
       const name = e instanceof Error ? e.name : ''
       if (name && name !== 'AbortError') {
-        const msg = e instanceof Error ? e.message : String(e)
+        const msg = errMsg(e)
         alert(`Couldn't start playback: ${msg}`)
       }
     })
   }
 
   function seek(t: number) {
-    if (audioEl) { audioEl.currentTime = t; current.value = t }
+    if (audioEl) {
+      audioEl.currentTime = t
+      current.value = t
+    }
   }
 
   async function remove(rec: VoiceRecordingResponse) {
@@ -184,7 +231,7 @@ export function useRecordings(
       await recordingsApi.delete(rec.id)
       recordings.value = recordings.value.filter((r) => r.id !== rec.id)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = errMsg(e)
       alert(`Delete failed: ${msg}`)
     }
   }
@@ -196,26 +243,46 @@ export function useRecordings(
     if (recording.value) {
       recording.value = false
       clearTimer()
-      void recordingsApi.stop().catch(() => { /* entry switching */ })
+      void recordingsApi.stop().catch(() => {
+        /* entry switching */
+      })
     }
     void loadRecordings()
   })
 
   onUnmounted(() => {
     clearTimer()
-    if (audioEl) { audioEl.pause(); audioEl = null }
+    if (audioEl) {
+      audioEl.pause()
+      audioEl = null
+    }
     if (recording.value) {
       recording.value = false
-      void recordingsApi.stop().catch(() => { /* editor unmounted */ })
+      void recordingsApi.stop().catch(() => {
+        /* editor unmounted */
+      })
     }
   })
 
   void loadRecordings()
 
   return {
-    recordings, loadRecordings,
-    recording, elapsed, uploading, hasEntry, toggleRecord,
-    activeId, active, isPlaying, current, duration, togglePlay, seek, closePlayback, remove,
+    recordings,
+    loadRecordings,
+    recording,
+    elapsed,
+    uploading,
+    hasEntry,
+    toggleRecord,
+    activeId,
+    active,
+    isPlaying,
+    current,
+    duration,
+    togglePlay,
+    seek,
+    closePlayback,
+    remove,
   }
 }
 
@@ -224,7 +291,10 @@ export const RecordingsKey: InjectionKey<RecordingsApi> = Symbol('recordings')
 
 export function useRecordingsInjected(): RecordingsApi {
   const api = inject(RecordingsKey)
-  if (!api) throw new Error('useRecordingsInjected() must be used within a component that provides RecordingsKey')
+  if (!api)
+    throw new Error(
+      'useRecordingsInjected() must be used within a component that provides RecordingsKey',
+    )
   return api
 }
 

@@ -22,8 +22,14 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
-  if (editingTemplate.value) { editingTemplate.value = null; return }
-  if (showCreateModal.value) { showCreateModal.value = false; return }
+  if (editingTemplate.value) {
+    editingTemplate.value = null
+    return
+  }
+  if (showCreateModal.value) {
+    showCreateModal.value = false
+    return
+  }
   emit('close')
 }
 
@@ -48,10 +54,17 @@ function onModalSaved() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40" @click.self="emit('close')">
-    <div class="bg-surface border border-border rounded-lg w-[420px] max-h-[70vh] flex flex-col shadow-xl">
+  <div
+    class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40"
+    @click.self="emit('close')"
+  >
+    <div
+      class="bg-surface border border-border rounded-lg w-[420px] max-h-[70vh] flex flex-col shadow-xl"
+    >
       <!-- Header -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+      <div
+        class="flex items-center justify-between px-4 py-3 border-b border-border"
+      >
         <span class="text-sm font-semibold text-text-primary">Templates</span>
         <div class="flex items-center gap-1">
           <button
@@ -60,7 +73,10 @@ function onModalSaved() {
           >
             <Plus :size="12" /> New
           </button>
-          <button class="p-1 rounded hover:bg-surface-hover text-text-secondary cursor-pointer" @click="emit('close')">
+          <button
+            class="p-1 rounded hover:bg-surface-hover text-text-secondary cursor-pointer"
+            @click="emit('close')"
+          >
             <X :size="14" />
           </button>
         </div>
@@ -76,12 +92,23 @@ function onModalSaved() {
         >
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5">
-              <Lock v-if="t.is_builtin" :size="11" class="text-text-muted shrink-0" />
-              <span class="text-sm text-text-primary truncate">{{ t.name }}</span>
+              <Lock
+                v-if="t.is_builtin"
+                :size="11"
+                class="text-text-muted shrink-0"
+              />
+              <span class="text-sm text-text-primary truncate">{{
+                t.name
+              }}</span>
             </div>
-            <div class="text-[10px] text-text-muted truncate">{{ t.body.slice(0, 80).replace(/\n/g, ' ') }}</div>
+            <div class="text-[10px] text-text-muted truncate">
+              {{ t.body.slice(0, 80).replace(/\n/g, ' ') }}
+            </div>
           </div>
-          <div v-if="!t.is_builtin" class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div
+            v-if="!t.is_builtin"
+            class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
             <button
               class="p-1 rounded hover:bg-accent/15 text-text-secondary hover:text-accent cursor-pointer"
               title="Edit"
@@ -99,7 +126,10 @@ function onModalSaved() {
           </div>
         </div>
 
-        <div v-if="!store.templates.length" class="text-center py-8 text-xs text-text-muted">
+        <div
+          v-if="!store.templates.length"
+          class="text-center py-8 text-xs text-text-muted"
+        >
           No templates yet. Click "New" to create one.
         </div>
       </div>

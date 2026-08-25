@@ -7,9 +7,9 @@ Backward-compatible with v1 (null-padded key) for existing encrypted tokens.
 import base64
 import os
 
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
 
 from app.core.config import settings
 

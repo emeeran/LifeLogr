@@ -137,10 +137,15 @@ export const useNotesStore = defineStore('notes', () => {
   // Pages belong to the active note; CRUD updates currentNote.pages in place.
   function _patchPages(fn: (pages: NotePageResponse[]) => NotePageResponse[]) {
     if (!currentNote.value) return
-    currentNote.value = { ...currentNote.value, pages: fn(currentNote.value.pages) }
+    currentNote.value = {
+      ...currentNote.value,
+      pages: fn(currentNote.value.pages),
+    }
   }
 
-  async function createPage(data: NotePageCreate): Promise<NotePageResponse | null> {
+  async function createPage(
+    data: NotePageCreate,
+  ): Promise<NotePageResponse | null> {
     if (!currentNote.value) return null
     error.value = null
     try {
@@ -153,7 +158,10 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
-  async function updatePage(pageId: number, data: NotePageUpdate): Promise<void> {
+  async function updatePage(
+    pageId: number,
+    data: NotePageUpdate,
+  ): Promise<void> {
     if (!currentNote.value) return
     error.value = null
     try {
@@ -184,7 +192,9 @@ export const useNotesStore = defineStore('notes', () => {
       await notesApi.reorderPages(currentNote.value.id, items)
       const order = new Map(items.map((i) => [i.id, i.sort_order]))
       _patchPages((pages) =>
-        [...pages].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)),
+        [...pages].sort(
+          (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+        ),
       )
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to reorder pages'

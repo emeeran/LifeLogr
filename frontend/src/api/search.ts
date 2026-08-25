@@ -3,7 +3,17 @@ import type { GlobalSearchResponse } from '../types'
 
 export type SearchMode = 'keyword' | 'semantic' | 'hybrid'
 
-export const globalSearch = (query: string, params?: { tag_ids?: string; date_from?: string; date_to?: string; offset?: number; limit?: number; mode?: SearchMode }) => {
+export const globalSearch = (
+  query: string,
+  params?: {
+    tag_ids?: string
+    date_from?: string
+    date_to?: string
+    offset?: number
+    limit?: number
+    mode?: SearchMode
+  },
+) => {
   const sp = new URLSearchParams({ q: query })
   if (params?.tag_ids) sp.set('tag_ids', params.tag_ids)
   if (params?.date_from) sp.set('date_from', params.date_from)

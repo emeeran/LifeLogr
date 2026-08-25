@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import MediaSizeError, NotFoundError, ValidationError
-from app.models.media import Media
 from app.models.entry import Entry
+from app.models.media import Media
 
 logger = logging.getLogger(__name__)
 
@@ -145,9 +145,7 @@ class MediaService:
         await self.db.refresh(media)
         return media
 
-    async def upload_from_path(
-        self, entry_id: int, path: str, caption: str | None = None
-    ) -> Media:
+    async def upload_from_path(self, entry_id: int, path: str, caption: str | None = None) -> Media:
         """Read a local file by absolute path and import it as entry media.
 
         Used by the Tauri native drag-drop handler (WebKitGTK doesn't deliver

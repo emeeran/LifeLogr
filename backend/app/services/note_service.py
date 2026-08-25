@@ -5,13 +5,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
 from app.models.note import Note, NoteFolder, NotePage, NoteTag
-from app.services.hashtag import extract_hashtags, resolve_tag_ids
 from app.schemas.note import (
     NoteCreate,
     NoteFolderCreate,
@@ -21,6 +20,7 @@ from app.schemas.note import (
     NotePageUpdate,
     NoteUpdate,
 )
+from app.services.hashtag import extract_hashtags, resolve_tag_ids
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,8 @@ class NoteService:
             return {}
         rows = await self.db.execute(
             select(Note.id, func.substr(Note.body, 1, 300)).where(
-                Note.id.in_(note_ids), Note.is_encrypted == False  # noqa: E712
+                Note.id.in_(note_ids),
+                Note.is_encrypted == False,  # noqa: E712
             )
         )
         return {row[0]: (row[1] or "") for row in rows.all()}
@@ -286,9 +287,13 @@ class NoteService:
             logger.warning("Note FTS search failed, falling back to ILIKE", exc_info=True)
 
         pattern = f"%{query}%"
-        base = select(Note).options(*_note_list_options()).where(
-            Note.is_deleted == False,  # noqa: E712
-            (Note.body.ilike(pattern)) | (Note.title.ilike(pattern)),
+        base = (
+            select(Note)
+            .options(*_note_list_options())
+            .where(
+                Note.is_deleted == False,  # noqa: E712
+                (Note.body.ilike(pattern)) | (Note.title.ilike(pattern)),
+            )
         )
         total = (
             await self.db.execute(select(func.count()).select_from(base.subquery()))
@@ -388,9 +393,7 @@ class NoteService:
                 return True
             seen.add(cur)
             cur = (
-                await self.db.execute(
-                    select(NoteFolder.parent_id).where(NoteFolder.id == cur)
-                )
+                await self.db.execute(select(NoteFolder.parent_id).where(NoteFolder.id == cur))
             ).scalar_one_or_none()
         return False
 

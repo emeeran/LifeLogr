@@ -41,7 +41,8 @@ export function getCaretCoordinates(
   const kRect = marker.getBoundingClientRect()
   const taRect = el.getBoundingClientRect()
   const x = taRect.left + (kRect.left - mRect.left)
-  const y = taRect.top + (kRect.top - mRect.top) + parseFloat(style.lineHeight || '16')
+  const y =
+    taRect.top + (kRect.top - mRect.top) + parseFloat(style.lineHeight || '16')
   mirror.remove()
   return { x, y }
 }

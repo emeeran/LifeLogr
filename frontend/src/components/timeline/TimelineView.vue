@@ -8,7 +8,14 @@ import { useTagsStore } from '../../stores/tags'
 import { useTemplatesStore } from '../../stores/templates'
 import { usePagination } from '../../composables/usePagination'
 import { formatDDMMYYYY } from '../../composables/useFormat'
-import { ChevronLeft, ChevronRight, Tag, X, Calendar, LayoutTemplate } from 'lucide-vue-next'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Tag,
+  X,
+  Calendar,
+  LayoutTemplate,
+} from 'lucide-vue-next'
 import GoToDateModal from '../common/GoToDateModal.vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { EntryListItem } from '../../types'
@@ -26,7 +33,11 @@ const showTemplateMenu = ref(false)
 const showGoToDate = ref(false)
 
 const filteredEntries = computed(() =>
-  entries.value.filter(e => filterTagId.value === null || e.tags.some(t => t.id === filterTagId.value))
+  entries.value.filter(
+    (e) =>
+      filterTagId.value === null ||
+      e.tags.some((t) => t.id === filterTagId.value),
+  ),
 )
 
 // Virtual scrolling
@@ -47,7 +58,9 @@ async function load() {
   const res = await entriesApi.list({
     offset: pagination.offset.value,
     limit: pagination.limit.value,
-    ...(filterTemplateId.value != null ? { template_id: filterTemplateId.value } : {}),
+    ...(filterTemplateId.value != null
+      ? { template_id: filterTemplateId.value }
+      : {}),
   })
   entries.value = res.items
   pagination.total.value = res.total
@@ -62,12 +75,20 @@ async function load() {
 async function loadThumbnail(entryId: number) {
   try {
     const media = await mediaApi.listByEntry(entryId)
-    const img = media.find(m => m.media_type === 'image' || m.media_type.startsWith('image/'))
+    const img = media.find(
+      (m) => m.media_type === 'image' || m.media_type.startsWith('image/'),
+    )
     if (img) thumbnailMap[entryId] = mediaApi.fileUrl(img.id)
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
-onMounted(() => { load(); tagsStore.fetchTree(); templatesStore.fetchAll() })
+onMounted(() => {
+  load()
+  tagsStore.fetchTree()
+  templatesStore.fetchAll()
+})
 watch(() => store.lastUpdated, load)
 
 function openEntry(entry: EntryListItem) {
@@ -78,12 +99,15 @@ function openEntry(entry: EntryListItem) {
 
 const activeTagName = () => {
   if (filterTagId.value === null) return null
-  return tagsStore.tags.find(t => t.id === filterTagId.value)?.name ?? null
+  return tagsStore.tags.find((t) => t.id === filterTagId.value)?.name ?? null
 }
 
 const activeTemplateName = () => {
   if (filterTemplateId.value === null) return null
-  return templatesStore.templates.find(t => t.id === filterTemplateId.value)?.name ?? null
+  return (
+    templatesStore.templates.find((t) => t.id === filterTemplateId.value)
+      ?.name ?? null
+  )
 }
 
 // Template filter is server-side: re-query and reset to the first page so the
@@ -95,7 +119,7 @@ function applyTemplateFilter(id: number | null) {
 }
 
 function bodyPreview(body: string): string {
-  const lines = body.split('\n').filter(l => l.trim())
+  const lines = body.split('\n').filter((l) => l.trim())
   const first2 = lines.slice(0, 2).join(' / ')
   return first2.length > 140 ? first2.slice(0, 140) + '...' : first2
 }
@@ -108,7 +132,9 @@ async function onGoToDate(dateStr: string) {
     limit: pagination.limit.value,
     year: y,
     month: m,
-    ...(filterTemplateId.value != null ? { template_id: filterTemplateId.value } : {}),
+    ...(filterTemplateId.value != null
+      ? { template_id: filterTemplateId.value }
+      : {}),
   })
   entries.value = res.items
   pagination.total.value = res.total
@@ -127,12 +153,22 @@ async function onGoToDate(dateStr: string) {
         <Calendar :size="11" /> Go to
       </button>
       <!-- Filters -->
-      <div v-if="tagsStore.tags.length || templatesStore.templates.length" class="flex items-center gap-1.5 ml-auto">
+      <div
+        v-if="tagsStore.tags.length || templatesStore.templates.length"
+        class="flex items-center gap-1.5 ml-auto"
+      >
         <!-- Template filter (server-side) -->
-        <div v-if="templatesStore.templates.length" class="relative flex items-center gap-1.5">
+        <div
+          v-if="templatesStore.templates.length"
+          class="relative flex items-center gap-1.5"
+        >
           <button
             class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
-            :class="filterTemplateId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
+            :class="
+              filterTemplateId !== null
+                ? 'bg-accent text-white'
+                : 'bg-surface-hover text-text-secondary hover:text-text-primary'
+            "
             @click="showTemplateMenu = !showTemplateMenu"
           >
             <LayoutTemplate :size="11" />
@@ -155,7 +191,11 @@ async function onGoToDate(dateStr: string) {
               v-for="t in templatesStore.templates"
               :key="t.id"
               class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
-              :class="filterTemplateId === t.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
+              :class="
+                filterTemplateId === t.id
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+              "
               @click="applyTemplateFilter(t.id); showTemplateMenu = false"
             >
               {{ t.name }}
@@ -171,10 +211,17 @@ async function onGoToDate(dateStr: string) {
         </div>
 
         <!-- Tag filter (client-side, current page) -->
-        <div v-if="tagsStore.tags.length" class="relative flex items-center gap-1.5">
+        <div
+          v-if="tagsStore.tags.length"
+          class="relative flex items-center gap-1.5"
+        >
           <button
             class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
-            :class="filterTagId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
+            :class="
+              filterTagId !== null
+                ? 'bg-accent text-white'
+                : 'bg-surface-hover text-text-secondary hover:text-text-primary'
+            "
             @click="showTagMenu = !showTagMenu"
           >
             <Tag :size="11" />
@@ -198,7 +245,11 @@ async function onGoToDate(dateStr: string) {
               v-for="tag in tagsStore.tags"
               :key="tag.id"
               class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
-              :class="filterTagId === tag.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
+              :class="
+                filterTagId === tag.id
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+              "
               @click="filterTagId = tag.id; showTagMenu = false"
             >
               #{{ tag.name }}
@@ -217,12 +268,23 @@ async function onGoToDate(dateStr: string) {
 
     <div ref="scrollEl" class="flex-1 overflow-y-auto">
       <div
-        :style="{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }"
+        :style="{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }"
       >
         <div
           v-for="virtualRow in virtualizer.getVirtualItems()"
           :key="String(virtualRow.key)"
-          :style="{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }"
+          :style="{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: `${virtualRow.size}px`,
+            transform: `translateY(${virtualRow.start}px)`,
+          }"
           class="px-4 py-3 border-b border-border/50 hover:bg-surface-hover cursor-pointer transition-colors"
           @click="openEntry(filteredEntries[virtualRow.index])"
         >
@@ -230,18 +292,46 @@ async function onGoToDate(dateStr: string) {
             <!-- Entry content (left) -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
-                <span class="text-sm font-bold text-text-primary">{{ formatDDMMYYYY(filteredEntries[virtualRow.index].entry_date, { weekday: 'short' }) }}</span>
+                <span class="text-sm font-bold text-text-primary">{{
+                  formatDDMMYYYY(filteredEntries[virtualRow.index].entry_date, {
+                    weekday: 'short',
+                  })
+                }}</span>
               </div>
-              <p v-if="filteredEntries[virtualRow.index].title" class="text-xs font-medium text-text-primary mb-0.5">{{ filteredEntries[virtualRow.index].title }}</p>
-              <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">
-                {{ filteredEntries[virtualRow.index].is_encrypted ? 'Encrypted' : bodyPreview(filteredEntries[virtualRow.index].body_snippet) }}
+              <p
+                v-if="filteredEntries[virtualRow.index].title"
+                class="text-xs font-medium text-text-primary mb-0.5"
+              >
+                {{ filteredEntries[virtualRow.index].title }}
               </p>
-              <div v-if="filteredEntries[virtualRow.index].tags.length" class="flex flex-wrap gap-1 mt-1">
-                <span v-for="tag in filteredEntries[virtualRow.index].tags" :key="tag.id" class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent">#{{ tag.name }}</span>
+              <p
+                class="text-xs text-text-secondary leading-relaxed whitespace-pre-line"
+              >
+                {{
+                  filteredEntries[virtualRow.index].is_encrypted
+                    ? 'Encrypted'
+                    : bodyPreview(
+                        filteredEntries[virtualRow.index].body_snippet,
+                      )
+                }}
+              </p>
+              <div
+                v-if="filteredEntries[virtualRow.index].tags.length"
+                class="flex flex-wrap gap-1 mt-1"
+              >
+                <span
+                  v-for="tag in filteredEntries[virtualRow.index].tags"
+                  :key="tag.id"
+                  class="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent"
+                  >#{{ tag.name }}</span
+                >
               </div>
             </div>
             <!-- Media thumbnail (right) -->
-            <div v-if="thumbnailMap[filteredEntries[virtualRow.index].id]" class="shrink-0 self-center">
+            <div
+              v-if="thumbnailMap[filteredEntries[virtualRow.index].id]"
+              class="shrink-0 self-center"
+            >
               <img
                 :src="thumbnailMap[filteredEntries[virtualRow.index].id]"
                 class="w-14 h-14 rounded object-cover border border-border/50"
@@ -252,14 +342,23 @@ async function onGoToDate(dateStr: string) {
         </div>
       </div>
 
-      <div v-if="entries.length === 0" class="p-8 text-center text-text-muted text-sm">
+      <div
+        v-if="entries.length === 0"
+        class="p-8 text-center text-text-muted text-sm"
+      >
         No entries yet.
       </div>
     </div>
 
     <!-- Pagination -->
-    <div v-if="pagination.totalPages.value > 1" class="flex items-center justify-between px-4 py-2 border-t border-border">
-      <span class="text-xs text-text-muted">Page {{ pagination.page.value }} of {{ pagination.totalPages.value }}</span>
+    <div
+      v-if="pagination.totalPages.value > 1"
+      class="flex items-center justify-between px-4 py-2 border-t border-border"
+    >
+      <span class="text-xs text-text-muted"
+        >Page {{ pagination.page.value }} of
+        {{ pagination.totalPages.value }}</span
+      >
       <div class="flex gap-1">
         <button
           :disabled="!pagination.hasPrev.value"

@@ -14,7 +14,6 @@ from sqlalchemy.orm import selectinload
 from app.models.entry import Entry
 from app.models.tag import EntryTag
 
-
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -213,7 +212,9 @@ class ExportService:
         """Export entries as an Obsidian-compatible Markdown vault bundled inside a ZIP file."""
         import io
         import zipfile
+
         from sqlalchemy.orm import selectinload
+
         from app.core.config import settings
 
         q = (

@@ -1,6 +1,10 @@
 import { ref, computed, nextTick, type Ref } from 'vue'
 
-export function useFindReplace(body: Ref<string>, textarea: Ref<HTMLTextAreaElement | null>, pushHistory: () => void) {
+export function useFindReplace(
+  body: Ref<string>,
+  textarea: Ref<HTMLTextAreaElement | null>,
+  pushHistory: () => void,
+) {
   const showFind = ref(false)
   const findQuery = ref('')
   const replaceQuery = ref('')
@@ -8,7 +12,11 @@ export function useFindReplace(body: Ref<string>, textarea: Ref<HTMLTextAreaElem
   const findCount = ref(0)
 
   const findMatches = computed(() => {
-    if (!findQuery.value) { findIndex.value = -1; findCount.value = 0; return [] }
+    if (!findQuery.value) {
+      findIndex.value = -1
+      findCount.value = 0
+      return []
+    }
     const matches: number[] = []
     const q = findQuery.value.toLowerCase()
     const txt = body.value.toLowerCase()
@@ -19,9 +27,17 @@ export function useFindReplace(body: Ref<string>, textarea: Ref<HTMLTextAreaElem
   })
 
   function jumpToMatch(dir: 1 | -1 = 1) {
-    if (!findMatches.value.length) { findIndex.value = -1; return }
-    if (findIndex.value === -1) { findIndex.value = 0 }
-    else { findIndex.value = (findIndex.value + dir + findMatches.value.length) % findMatches.value.length }
+    if (!findMatches.value.length) {
+      findIndex.value = -1
+      return
+    }
+    if (findIndex.value === -1) {
+      findIndex.value = 0
+    } else {
+      findIndex.value =
+        (findIndex.value + dir + findMatches.value.length) %
+        findMatches.value.length
+    }
     const pos = findMatches.value[findIndex.value]
     nextTick(() => {
       if (!textarea.value) return
@@ -34,7 +50,10 @@ export function useFindReplace(body: Ref<string>, textarea: Ref<HTMLTextAreaElem
   function replaceOne() {
     if (findIndex.value < 0 || !findMatches.value.length) return
     const pos = findMatches.value[findIndex.value]
-    body.value = body.value.slice(0, pos) + replaceQuery.value + body.value.slice(pos + findQuery.value.length)
+    body.value =
+      body.value.slice(0, pos) +
+      replaceQuery.value +
+      body.value.slice(pos + findQuery.value.length)
     pushHistory()
     nextTick(() => jumpToMatch(1))
   }
@@ -46,5 +65,15 @@ export function useFindReplace(body: Ref<string>, textarea: Ref<HTMLTextAreaElem
     findIndex.value = -1
   }
 
-  return { showFind, findQuery, replaceQuery, findIndex, findCount, findMatches, jumpToMatch, replaceOne, replaceAll }
+  return {
+    showFind,
+    findQuery,
+    replaceQuery,
+    findIndex,
+    findCount,
+    findMatches,
+    jumpToMatch,
+    replaceOne,
+    replaceAll,
+  }
 }

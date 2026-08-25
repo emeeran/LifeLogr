@@ -18,7 +18,12 @@ let meterCtx: AudioContext | null = null
 let meterStream: MediaStream | null = null
 let fauxPhase = 0
 
-function renderBars(ctx: CanvasRenderingContext2D, cv: HTMLCanvasElement, values: number[], max: number) {
+function renderBars(
+  ctx: CanvasRenderingContext2D,
+  cv: HTMLCanvasElement,
+  values: number[],
+  max: number,
+) {
   const w = cv.width
   const h = cv.height
   ctx.clearRect(0, 0, w, h)
@@ -65,8 +70,13 @@ async function startMeter() {
   const draw = () => {
     raf = requestAnimationFrame(draw)
     fauxPhase += 0.16
-    const bars = Array.from({ length: 16 }, (_, i) =>
-      110 + 90 * Math.abs(Math.sin(fauxPhase + i * 0.55)) * (0.55 + 0.45 * Math.sin(fauxPhase * 0.35 + i)),
+    const bars = Array.from(
+      { length: 16 },
+      (_, i) =>
+        110 +
+        90 *
+          Math.abs(Math.sin(fauxPhase + i * 0.55)) *
+          (0.55 + 0.45 * Math.sin(fauxPhase * 0.35 + i)),
     )
     renderBars(ctx, cv, bars, 255)
   }
@@ -87,10 +97,13 @@ function stopMeter() {
   }
 }
 
-watch(() => recs.recording.value, (rec) => {
-  if (rec) void startMeter()
-  else stopMeter()
-})
+watch(
+  () => recs.recording.value,
+  (rec) => {
+    if (rec) void startMeter()
+    else stopMeter()
+  },
+)
 onUnmounted(stopMeter)
 </script>
 
@@ -103,11 +116,17 @@ onUnmounted(stopMeter)
         class="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-full bg-surface border border-danger/40 shadow-lg"
       >
         <span class="relative flex h-2.5 w-2.5 shrink-0">
-          <span class="absolute inline-flex h-full w-full rounded-full bg-danger opacity-60 animate-ping" />
-          <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger" />
+          <span
+            class="absolute inline-flex h-full w-full rounded-full bg-danger opacity-60 animate-ping"
+          />
+          <span
+            class="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger"
+          />
         </span>
         <canvas ref="canvas" width="96" height="28" class="shrink-0" />
-        <span class="text-xs font-mono text-text-primary tabular-nums">{{ fmtTime(recs.elapsed.value) }}</span>
+        <span class="text-xs font-mono text-text-primary tabular-nums">{{
+          fmtTime(recs.elapsed.value)
+        }}</span>
         <button
           class="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium bg-danger/20 text-danger hover:bg-danger/30 cursor-pointer transition-colors"
           title="Stop recording"
@@ -132,14 +151,24 @@ onUnmounted(stopMeter)
     <!-- Floating action button: starts / stops capture -->
     <button
       class="flex items-center justify-center h-10 w-10 rounded-full shadow-lg cursor-pointer transition-all hover:scale-105"
-      :class="recs.recording.value
-        ? 'bg-danger text-white'
-        : 'bg-accent text-white hover:bg-accent-hover'"
-      :title="recs.hasEntry.value ? 'Record voice memo' : 'Save the entry, then record'"
+      :class="
+        recs.recording.value
+          ? 'bg-danger text-white'
+          : 'bg-accent text-white hover:bg-accent-hover'
+      "
+      :title="
+        recs.hasEntry.value
+          ? 'Record voice memo'
+          : 'Save the entry, then record'
+      "
       @click="recs.toggleRecord()"
     >
       <Square v-if="recs.recording.value" :size="16" />
-      <Loader v-else-if="recs.uploading.value" :size="16" class="animate-spin" />
+      <Loader
+        v-else-if="recs.uploading.value"
+        :size="16"
+        class="animate-spin"
+      />
       <Mic v-else :size="18" />
     </button>
   </div>

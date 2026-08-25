@@ -19,10 +19,10 @@ from app.core.exceptions import MediaSizeError, NotFoundError, ValidationError
 from app.models.note import Note
 from app.models.note_media import NoteMedia
 from app.services.media_service import (
-    MediaService,
     _ALLOWED_MIME_PREFIXES,
     _BLOCKED_SIGNATURES,
     _CONVERTIBLE_IMAGE_TYPES,
+    MediaService,
 )
 
 logger = logging.getLogger(__name__)

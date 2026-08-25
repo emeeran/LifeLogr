@@ -8,7 +8,9 @@ const ui = useUiStore()
 
 const errors = computed(() => health.summary.error)
 const warns = computed(() => health.summary.warn)
-const tone = computed<'error' | 'warn'>(() => (errors.value > 0 ? 'error' : 'warn'))
+const tone = computed<'error' | 'warn'>(() =>
+  errors.value > 0 ? 'error' : 'warn',
+)
 
 function view() {
   ui.requestSettingsTab('data')
@@ -30,10 +32,26 @@ function view() {
       <span class="w-2 h-2 rounded-full bg-current shrink-0" />
       <span>
         Health check found
-        <strong v-if="errors">{{ errors }} error{{ errors > 1 ? 's' : '' }}</strong><span v-if="errors && warns"> and </span><strong v-if="warns">{{ warns }} warning{{ warns > 1 ? 's' : '' }}</strong>.
+        <strong v-if="errors"
+          >{{ errors }} error{{ errors > 1 ? 's' : '' }}</strong
+        ><span v-if="errors && warns"> and </span
+        ><strong v-if="warns"
+          >{{ warns }} warning{{ warns > 1 ? 's' : '' }}</strong
+        >.
       </span>
-      <button class="font-semibold underline cursor-pointer bg-transparent border-0 text-inherit px-1" @click="view">View</button>
-      <button title="Dismiss" class="cursor-pointer bg-transparent border-0 text-inherit text-[15px] leading-none px-0.5" @click="health.dismiss()">×</button>
+      <button
+        class="font-semibold underline cursor-pointer bg-transparent border-0 text-inherit px-1"
+        @click="view"
+      >
+        View
+      </button>
+      <button
+        title="Dismiss"
+        class="cursor-pointer bg-transparent border-0 text-inherit text-[15px] leading-none px-0.5"
+        @click="health.dismiss()"
+      >
+        ×
+      </button>
     </div>
   </Transition>
 </template>
@@ -48,7 +66,9 @@ function view() {
 }
 .banner-slide-enter-active,
 .banner-slide-leave-active {
-  transition: transform 0.25s ease, opacity 0.25s ease;
+  transition:
+    transform 0.25s ease,
+    opacity 0.25s ease;
 }
 .banner-slide-enter-from,
 .banner-slide-leave-to {

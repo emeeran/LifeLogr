@@ -6,7 +6,9 @@ const emit = defineEmits<{ prev: []; next: []; today: []; goto: [] }>()
 </script>
 
 <template>
-  <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+  <div
+    class="flex items-center justify-between px-4 py-3 border-b border-border"
+  >
     <h2 class="text-lg font-semibold text-text-primary">{{ label }}</h2>
     <div class="flex items-center gap-1">
       <button

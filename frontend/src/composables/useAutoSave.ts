@@ -29,11 +29,14 @@ export function useAutoSave(options: {
     tag_ids?: number[]
     template_id?: number | null
   }) => Promise<{ id: number }>
-  updateEntry: (id: number, data: {
-    title: string | null
-    body: string
-    tag_ids: number[]
-  }) => Promise<unknown>
+  updateEntry: (
+    id: number,
+    data: {
+      title: string | null
+      body: string
+      tag_ids: number[]
+    },
+  ) => Promise<unknown>
   setEditingEntryId: (id: number) => void
 }) {
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -47,14 +50,18 @@ export function useAutoSave(options: {
   const saveError = ref<string | null>(null)
 
   const autosaveMs = computed(() => {
-    const secs = parseInt(localStorage.getItem('lifelogr-autosave-interval') || '2')
+    const secs = parseInt(
+      localStorage.getItem('lifelogr-autosave-interval') || '2',
+    )
     return (isNaN(secs) ? 2 : secs) * 1000
   })
 
   function _setSaved() {
     saveState.value = 'saved'
     if (savedTimer) clearTimeout(savedTimer)
-    savedTimer = setTimeout(() => { saveState.value = 'idle' }, 3000)
+    savedTimer = setTimeout(() => {
+      saveState.value = 'idle'
+    }, 3000)
   }
 
   function cancelSave() {

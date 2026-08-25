@@ -46,7 +46,15 @@ export const useBackupStore = defineStore('backup', () => {
   }
 
   return {
-    configs, snapshots, loading, lastBackupResult, lastRestoreResult,
-    fetchConfigs, fetchSnapshots, runBackup, restore, deleteConfig,
+    configs,
+    snapshots,
+    loading,
+    lastBackupResult,
+    lastRestoreResult,
+    fetchConfigs,
+    fetchSnapshots,
+    runBackup,
+    restore,
+    deleteConfig,
   }
 })

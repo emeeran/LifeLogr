@@ -173,9 +173,7 @@ _WAL_SIZE_THRESHOLD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 # (table, column) holding AES-encrypted credentials — the encryption-key canary
 # decrypts one row of each to verify the active SECRET_KEY matches.
-_CREDENTIAL_PROBES = (
-    ("backup_config", "credentials_encrypted"),
-)
+_CREDENTIAL_PROBES = (("backup_config", "credentials_encrypted"),)
 
 _app_integrity_result: dict[str, Any] = {
     "ran": False,
@@ -207,11 +205,16 @@ async def _check_structure(session: AsyncSession) -> dict[str, Any]:
     try:
         res = (await session.execute(text("PRAGMA quick_check"))).scalar()
     except Exception as e:
-        return _check("database_structure", "Database structure", "error", f"Could not run quick_check: {e}")
+        return _check(
+            "database_structure", "Database structure", "error", f"Could not run quick_check: {e}"
+        )
     if res == "ok":
         return _check("database_structure", "Database structure", "ok", "No corruption detected.")
     return _check(
-        "database_structure", "Database structure", "error", f"Corruption detected: {res}",
+        "database_structure",
+        "Database structure",
+        "error",
+        f"Corruption detected: {res}",
         "Restore the database from a recent backup.",
     )
 
@@ -225,8 +228,11 @@ async def _check_foreign_keys(session: AsyncSession) -> dict[str, Any]:
         return _check("foreign_keys", "Referential integrity", "ok", "No orphaned rows.")
     shown = ", ".join(f"{r[0]}:rowid={r[1]}" for r in rows[:5])
     return _check(
-        "foreign_keys", "Referential integrity", "warn",
-        f"{len(rows)} orphaned row(s): {shown}", "Re-link or remove orphaned records.",
+        "foreign_keys",
+        "Referential integrity",
+        "warn",
+        f"{len(rows)} orphaned row(s): {shown}",
+        "Re-link or remove orphaned records.",
     )
 
 
@@ -254,7 +260,10 @@ async def _check_schema_tables(session: AsyncSession) -> dict[str, Any]:
     missing = sorted(expected - actual)
     if missing:
         return _check(
-            "schema_tables", "Schema", "error", f"Missing table(s): {', '.join(missing)}",
+            "schema_tables",
+            "Schema",
+            "error",
+            f"Missing table(s): {', '.join(missing)}",
             "Database may be from an incompatible version — back it up and reinitialize.",
         )
     return _check("schema_tables", "Schema", "ok", f"All {len(expected)} expected tables present.")
@@ -284,7 +293,9 @@ async def _check_unexpected_tables(session: AsyncSession) -> dict[str, Any]:
     )
     if unexpected:
         return _check(
-            "unexpected_tables", "Unexpected tables", "warn",
+            "unexpected_tables",
+            "Unexpected tables",
+            "warn",
             f"{len(unexpected)} table(s) not in the current schema: {', '.join(unexpected)}",
             "Leftover from an older version — safe to ignore; no active data is stored there.",
         )
@@ -308,7 +319,10 @@ async def _check_fts_sync(session: AsyncSession) -> dict[str, Any]:
             drift.append(f"{fts}: {fts_n} indexed (expected {base_n})")
     if drift:
         return _check(
-            "fts_sync", "Search index", "warn", "Out of sync: " + "; ".join(drift),
+            "fts_sync",
+            "Search index",
+            "warn",
+            "Out of sync: " + "; ".join(drift),
             "Rebuild the search index from Settings → Diagnostics.",
         )
     return _check("fts_sync", "Search index", "ok", "Index in sync.")
@@ -344,12 +358,16 @@ async def _check_fragmentation_wal(session: AsyncSession) -> dict[str, Any]:
         issues.append(f"WAL is {wal_kb // 1024} MB (checkpoint may be stalled)")
     if issues:
         return _check(
-            "db_fragmentation", "DB fragmentation & WAL", "warn",
+            "db_fragmentation",
+            "DB fragmentation & WAL",
+            "warn",
             "; ".join(issues),
             "Run Vacuum from Settings → Data & Backup → Maintenance.",
         )
     return _check(
-        "db_fragmentation", "DB fragmentation & WAL", "ok",
+        "db_fragmentation",
+        "DB fragmentation & WAL",
+        "ok",
         f"{pct:.0f}% free pages; WAL {wal_kb} KB",
     )
 
@@ -360,9 +378,10 @@ async def _check_encryption_key(session: AsyncSession) -> dict[str, Any]:
 
     if settings.SECRET_KEY == "change-me-before-production":
         return _check(
-            "encryption_key", "Encryption key", "error",
-            "Using the default SECRET_KEY — stored cloud credentials cannot be "
-            "decrypted safely.",
+            "encryption_key",
+            "Encryption key",
+            "error",
+            "Using the default SECRET_KEY — stored cloud credentials cannot be decrypted safely.",
             "Set a SECRET_KEY (the packaged app manages this via .secret_key).",
         )
     mismatches: list[str] = []
@@ -381,30 +400,42 @@ async def _check_encryption_key(session: AsyncSession) -> dict[str, Any]:
             mismatches.append(table)
     if mismatches:
         return _check(
-            "encryption_key", "Encryption key", "error",
+            "encryption_key",
+            "Encryption key",
+            "error",
             f"Credential decryption failed for: {', '.join(mismatches)}. The active key does "
             "not match the one that encrypted them.",
             "Re-enter the password / reconnect the account, or restore .secret_key.",
         )
     if checked == 0:
         return _check("encryption_key", "Encryption key", "ok", "No stored credentials to verify.")
-    return _check("encryption_key", "Encryption key", "ok", f"Verified {checked} stored credential(s) decrypt.")
+    return _check(
+        "encryption_key",
+        "Encryption key",
+        "ok",
+        f"Verified {checked} stored credential(s) decrypt.",
+    )
 
 
 def _check_connection_pool() -> dict[str, Any]:
     from app.core.config import settings
+
     detail = f"pool_size={settings.DB_POOL_SIZE}, max_overflow={settings.DB_MAX_OVERFLOW}"
     if settings.DB_POOL_SIZE <= 1:
         return _check(
-            "connection_pool", "Connection pool", "warn",
+            "connection_pool",
+            "Connection pool",
+            "warn",
             f"{detail} — a single connection can be saturated by long background jobs "
-            "(entries may freeze during backup).", "Increase DB_POOL_SIZE.",
+            "(entries may freeze during backup).",
+            "Increase DB_POOL_SIZE.",
         )
     return _check("connection_pool", "Connection pool", "ok", detail)
 
 
 def _check_data_dir() -> dict[str, Any]:
     from app.core.config import settings
+
     issues: list[str] = []
     dd = settings.DATA_DIR
     if not (dd.exists() and os.access(dd, os.W_OK)):
@@ -427,7 +458,9 @@ def _check_backup_status_folded() -> dict[str, Any]:
     if not b.get("ran"):
         return _check("backup", "Backups", "warn", "Not checked yet at boot.")
     if b.get("stale"):
-        return _check("backup", "Backups", "warn", "No successful backup in >48h.", "Run a backup now.")
+        return _check(
+            "backup", "Backups", "warn", "No successful backup in >48h.", "Run a backup now."
+        )
     if b.get("scheduled"):
         return _check("backup", "Backups", "ok", "Scheduled and recent.")
     return _check("backup", "Backups", "warn", "No backup schedule configured.")
@@ -436,9 +469,12 @@ def _check_backup_status_folded() -> dict[str, Any]:
 def _check_scheduler() -> dict[str, Any]:
     try:
         from app.services.scheduler_service import SchedulerService
+
         sched = SchedulerService.get_scheduler()
         if getattr(sched, "running", False):
-            return _check("scheduler", "Scheduler", "ok", f"{len(sched.get_jobs())} job(s) registered.")
+            return _check(
+                "scheduler", "Scheduler", "ok", f"{len(sched.get_jobs())} job(s) registered."
+            )
         return _check("scheduler", "Scheduler", "warn", "Scheduler is not running.")
     except Exception as e:
         return _check("scheduler", "Scheduler", "warn", f"Could not inspect scheduler: {e}")
@@ -466,7 +502,9 @@ async def check_app_integrity() -> dict[str, Any]:
             checks.append(await _check_fragmentation_wal(session))
     except Exception as e:
         logger.warning("App-integrity battery could not complete DB checks", exc_info=True)
-        checks.append(_check("database", "Database access", "error", f"Could not run DB checks: {e}"))
+        checks.append(
+            _check("database", "Database access", "error", f"Could not run DB checks: {e}")
+        )
 
     # Self-heal fixable problems. Each heal runs on its own committing
     # transaction *after* the read session above has closed — the engine pool

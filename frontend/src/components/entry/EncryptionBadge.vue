@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { encryptEntry, decryptEntry, encryptionStatus } from '../../api/encryption'
+import {
+  encryptEntry,
+  decryptEntry,
+  encryptionStatus,
+} from '../../api/encryption'
 import { Lock, Unlock, Loader } from 'lucide-vue-next'
 
 const props = defineProps<{ entryId: number; isEncrypted: boolean }>()
@@ -18,7 +22,9 @@ onMounted(async () => {
     if (status.is_encrypted !== props.isEncrypted) {
       emit('change', status.is_encrypted)
     }
-  } catch { /* ignore if endpoint unavailable */ }
+  } catch {
+    /* ignore if endpoint unavailable */
+  }
 })
 
 function startEncrypt() {
@@ -55,29 +61,54 @@ async function submit() {
 
 <template>
   <div class="relative">
-    <button @click="isEncrypted ? startDecrypt() : startEncrypt()"
+    <button
+      @click="isEncrypted ? startDecrypt() : startEncrypt()"
       class="p-1.5 rounded hover:bg-surface-hover transition-colors"
       :class="isEncrypted ? 'text-accent' : 'text-text-secondary'"
-      :title="isEncrypted ? 'Decrypt entry' : 'Encrypt entry'">
+      :title="isEncrypted ? 'Decrypt entry' : 'Encrypt entry'"
+    >
       <Lock v-if="isEncrypted" :size="16" />
       <Unlock v-else :size="16" />
     </button>
 
     <!-- Passphrase modal -->
-    <div v-if="showPrompt" class="absolute right-0 top-8 bg-surface border border-border rounded-lg p-4 w-64 shadow-xl z-50 space-y-3">
+    <div
+      v-if="showPrompt"
+      class="absolute right-0 top-8 bg-surface border border-border rounded-lg p-4 w-64 shadow-xl z-50 space-y-3"
+    >
       <div class="text-sm font-medium text-text-primary">
-        {{ mode === 'encrypt' ? 'Set encryption passphrase' : 'Enter passphrase to decrypt' }}
+        {{
+          mode === 'encrypt'
+            ? 'Set encryption passphrase'
+            : 'Enter passphrase to decrypt'
+        }}
       </div>
-      <p v-if="mode === 'encrypt'" class="text-[10px] leading-snug text-text-muted">
-        Encrypts the entry's text and mood only — attached media stays as-is on disk.
+      <p
+        v-if="mode === 'encrypt'"
+        class="text-[10px] leading-snug text-text-muted"
+      >
+        Encrypts the entry's text and mood only — attached media stays as-is on
+        disk.
       </p>
-      <input v-model="passphrase" type="password" placeholder="Passphrase"
+      <input
+        v-model="passphrase"
+        type="password"
+        placeholder="Passphrase"
         class="w-full px-3 py-2 bg-surface-hover border border-border rounded text-sm text-text-primary"
-        @keydown.enter="submit" />
+        @keydown.enter="submit"
+      />
       <div class="flex gap-2 justify-end">
-        <button @click="showPrompt = false" class="px-3 py-1 text-sm bg-surface-hover text-text-secondary rounded hover:bg-border">Cancel</button>
-        <button @click="submit" :disabled="loading || !passphrase"
-          class="px-3 py-1 text-sm bg-accent text-white rounded hover:bg-accent/90 disabled:opacity-50 flex items-center gap-1">
+        <button
+          @click="showPrompt = false"
+          class="px-3 py-1 text-sm bg-surface-hover text-text-secondary rounded hover:bg-border"
+        >
+          Cancel
+        </button>
+        <button
+          @click="submit"
+          :disabled="loading || !passphrase"
+          class="px-3 py-1 text-sm bg-accent text-white rounded hover:bg-accent/90 disabled:opacity-50 flex items-center gap-1"
+        >
           <Loader v-if="loading" :size="12" class="animate-spin" />
           {{ mode === 'encrypt' ? 'Encrypt' : 'Decrypt' }}
         </button>

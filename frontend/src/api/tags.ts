@@ -15,7 +15,10 @@ export const tagsApi = {
   },
 
   update(id: number, data: TagUpdate): Promise<TagResponse> {
-    return request(`/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+    return request(`/tags/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
 
   delete(id: number): Promise<void> {

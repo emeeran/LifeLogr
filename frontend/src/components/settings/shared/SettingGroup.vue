@@ -9,8 +9,8 @@
  */
 defineProps<{
   /** Optional uppercase eyebrow label above the group. */
-  label?: string;
-}>();
+  label?: string
+}>()
 </script>
 
 <template>

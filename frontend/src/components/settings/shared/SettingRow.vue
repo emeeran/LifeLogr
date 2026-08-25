@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Component } from "vue";
+import type { Component } from 'vue'
 /**
  * SettingRow — a label (with optional description + icon) on the left, and a
  * control slot on the right. The control area is flex-1 and right-aligned so
@@ -8,11 +8,11 @@ import type { Component } from "vue";
  *   - growing controls (`flex-1` inputs in forms) fill the remaining space.
  */
 defineProps<{
-  icon?: Component;
-  label: string;
-  description?: string;
-  indent?: boolean;
-}>();
+  icon?: Component
+  label: string
+  description?: string
+  indent?: boolean
+}>()
 </script>
 
 <template>

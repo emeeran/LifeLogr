@@ -68,10 +68,12 @@ async def flush_sync(
 async def _get_provider(db: AsyncSession, provider_name: str) -> Any:
     """Load and configure the sync provider dynamically from the database."""
     import json
+
     from sqlalchemy import select
-    from app.models.backup import BackupConfig
-    from app.core.security import decrypt, encrypt
+
     from app.core.exceptions import NotFoundError
+    from app.core.security import decrypt, encrypt
+    from app.models.backup import BackupConfig
 
     if provider_name in ("local", "local_file"):
         return LocalFileProvider()
@@ -145,4 +147,3 @@ async def cloud_pull(data: CloudSyncRequest, db: AsyncSession = Depends(get_db))
     # Ensure any updated credentials from provider are saved
     await db.commit()
     return CloudSyncResponse(pulled=result["pulled"], provider=data.provider)
-

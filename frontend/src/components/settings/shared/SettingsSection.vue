@@ -1,30 +1,30 @@
 <script setup lang="ts">
-import type { Component, Ref } from "vue";
-import { inject, computed } from "vue";
+import type { Component, Ref } from 'vue'
+import { inject, computed } from 'vue'
 
 const props = defineProps<{
-  title: string;
-  icon?: Component;
-  description?: string;
-  resetLabel?: string;
-  cardClass?: string;
+  title: string
+  icon?: Component
+  description?: string
+  resetLabel?: string
+  cardClass?: string
   /** Optional key matched against the settings-search highlight. When it
    *  equals the active highlight, the section card briefly pulses. */
-  settingKey?: string;
-}>();
+  settingKey?: string
+}>()
 
 const emit = defineEmits<{
-  reset: [];
-}>();
+  reset: []
+}>()
 
 const highlight = inject<Ref<string | null> | undefined>(
-  "settings-highlight",
+  'settings-highlight',
   undefined,
-);
+)
 const isHighlighted = computed(
   () =>
     !!highlight && !!props.settingKey && highlight.value === props.settingKey,
-);
+)
 </script>
 
 <template>

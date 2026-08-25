@@ -15,7 +15,11 @@ function escapeRe(s: string): string {
  * can't be found (hand-edited markdown, wrapped links), appends the blockquote
  * at the end of the body rather than dropping the text — with a console warn.
  */
-export function insertOcrBelowImage(body: string, url: string, text: string): string {
+export function insertOcrBelowImage(
+  body: string,
+  url: string,
+  text: string,
+): string {
   const quoted = text
     .trim()
     .split('\n')

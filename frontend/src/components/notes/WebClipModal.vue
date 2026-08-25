@@ -26,7 +26,10 @@ defineExpose({
   <div class="wc-mask" @click.self="emit('cancel')">
     <div class="wc-modal">
       <div class="wc-title">Clip web page</div>
-      <p class="wc-sub">On desktop the page is captured as a picture and OCR'd; otherwise its text is extracted.</p>
+      <p class="wc-sub">
+        On desktop the page is captured as a picture and OCR'd; otherwise its
+        text is extracted.
+      </p>
       <input
         ref="inputEl"
         v-model="url"
@@ -38,7 +41,9 @@ defineExpose({
       />
       <div class="wc-actions">
         <button class="wc-btn wc-cancel" @click="emit('cancel')">Cancel</button>
-        <button class="wc-btn wc-go" :disabled="!url.trim()" @click="submit">Clip</button>
+        <button class="wc-btn wc-go" :disabled="!url.trim()" @click="submit">
+          Clip
+        </button>
       </div>
     </div>
   </div>
@@ -86,7 +91,9 @@ defineExpose({
   color: var(--color-text-primary);
   outline: none;
 }
-.wc-input:focus { border-color: var(--color-accent); }
+.wc-input:focus {
+  border-color: var(--color-accent);
+}
 .wc-actions {
   display: flex;
   justify-content: flex-end;
@@ -103,10 +110,15 @@ defineExpose({
   color: var(--color-text-secondary);
   background: var(--color-surface-hover);
 }
-.wc-cancel:hover { color: var(--color-text-primary); }
+.wc-cancel:hover {
+  color: var(--color-text-primary);
+}
 .wc-go {
   color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
-.wc-go:disabled { opacity: 0.5; cursor: default; }
+.wc-go:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 </style>

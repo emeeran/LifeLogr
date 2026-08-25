@@ -1,10 +1,15 @@
 import { ref } from 'vue'
 
 const ACCEPTED_TYPES = [
-  'image/', 'video/', 'audio/',
-  'application/pdf', 'application/msword',
+  'image/',
+  'video/',
+  'audio/',
+  'application/pdf',
+  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'text/plain', 'text/markdown', 'text/csv',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
   'application/json',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ]
@@ -16,7 +21,9 @@ function isAcceptedType(file: File): boolean {
   }
   // Check extension fallback
   const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-  return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'json'].includes(ext)
+  return ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xlsx', 'json'].includes(
+    ext,
+  )
 }
 
 export function useDragDrop() {

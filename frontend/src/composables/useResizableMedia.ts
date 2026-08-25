@@ -54,7 +54,9 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
    *  (zoom/resize there). Bind on the preview container. */
   function onPreviewDblClick(e: MouseEvent) {
     if (!onMediaDblClick) return
-    const media = (e.target as HTMLElement).closest<HTMLElement>('.rmedia img, .rmedia video')
+    const media = (e.target as HTMLElement).closest<HTMLElement>(
+      '.rmedia img, .rmedia video',
+    )
     if (media) onMediaDblClick(media as HTMLImageElement | HTMLVideoElement)
   }
 
@@ -78,7 +80,11 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
         wrap.style.width = stored.w + 'px'
         wrap.style.height = stored.h + 'px'
       }
-      if (ocrButton && media.tagName === 'IMG' && !wrap.querySelector('.ocr-btn')) {
+      if (
+        ocrButton &&
+        media.tagName === 'IMG' &&
+        !wrap.querySelector('.ocr-btn')
+      ) {
         const btn = document.createElement('button')
         btn.className = 'ocr-btn'
         btn.textContent = 'OCR'

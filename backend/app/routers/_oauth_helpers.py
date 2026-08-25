@@ -60,9 +60,7 @@ def error_page(detail: str) -> HTMLResponse:
     )
 
 
-def load_stored_credentials(
-    config: BackupConfig | None, provider_label: str
-) -> dict[str, str]:
+def load_stored_credentials(config: BackupConfig | None, provider_label: str) -> dict[str, str]:
     """Decrypt a provider's stored credentials; ``{}`` when unreadable.
 
     A corrupt/undecryptable blob must not block the flow — the caller falls
@@ -75,9 +73,7 @@ def load_stored_credentials(
         stored = json.loads(decrypt(config.credentials_encrypted))
         return stored if isinstance(stored, dict) else {}
     except Exception:
-        logger.warning(
-            "Failed to decrypt stored %s credentials", provider_label, exc_info=True
-        )
+        logger.warning("Failed to decrypt stored %s credentials", provider_label, exc_info=True)
         return {}
 
 

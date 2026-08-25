@@ -2,7 +2,10 @@
  * Format an ISO date string (YYYY-MM-DD) as a locale string.
  * Appends T00:00:00 to avoid UTC offset issues.
  */
-export function formatEntryDate(iso: string, options?: Intl.DateTimeFormatOptions): string {
+export function formatEntryDate(
+  iso: string,
+  options?: Intl.DateTimeFormatOptions,
+): string {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('en-US', options)
 }
@@ -32,7 +35,15 @@ export function formatDDMMYYYY(
   }
   const weekdays =
     opts?.weekday === 'long'
-      ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      ? [
+          'Sunday',
+          'Monday',
+          'Tuesday',
+          'Wednesday',
+          'Thursday',
+          'Friday',
+          'Saturday',
+        ]
       : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const prefix = opts?.weekday ? `${weekdays[date.getDay()]} ` : ''
   return `${prefix}${d}-${mo}-${y}`

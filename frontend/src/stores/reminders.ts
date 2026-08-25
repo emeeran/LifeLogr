@@ -9,11 +9,19 @@ export const useRemindersStore = defineStore('reminders', () => {
 
   async function fetchAll() {
     loading.value = true
-    try { reminders.value = await remindersApi.listReminders() }
-    finally { loading.value = false }
+    try {
+      reminders.value = await remindersApi.listReminders()
+    } finally {
+      loading.value = false
+    }
   }
 
-  async function create(data: { title: string; message?: string; reminder_time: string; days_of_week?: string }) {
+  async function create(data: {
+    title: string
+    message?: string
+    reminder_time: string
+    days_of_week?: string
+  }) {
     await remindersApi.createReminder(data)
     await fetchAll()
   }
@@ -32,5 +40,13 @@ export const useRemindersStore = defineStore('reminders', () => {
     return await remindersApi.testNotification(id)
   }
 
-  return { reminders, loading, fetchAll, create, update, remove, testNotification }
+  return {
+    reminders,
+    loading,
+    fetchAll,
+    create,
+    update,
+    remove,
+    testNotification,
+  }
 })

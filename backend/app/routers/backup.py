@@ -347,9 +347,10 @@ async def migrate_credential_encryption(
     Idempotent: v2 tokens pass through unchanged. Returns the number of tokens
     upgraded so the v1 fallback path can be retired once this reports zero.
     """
+    from sqlalchemy import select
+
     from app.core.security import reencrypt, token_version
     from app.models.backup import BackupConfig
-    from sqlalchemy import select
 
     result = await db.execute(select(BackupConfig))
     configs = result.scalars().all()

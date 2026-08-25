@@ -119,9 +119,7 @@ async def extract_markdown_from_url(url: str) -> str:
                 "GET", str(parsed), headers={"User-Agent": "LifeLogr/1.0 (+web clip)"}
             ) as resp:
                 resp.raise_for_status()
-                content_type = (
-                    resp.headers.get("content-type", "").split(";")[0].strip().lower()
-                )
+                content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
                 if not content_type.startswith(_HTML_CONTENT_TYPES):
                     raise ValidationError("Only HTML pages can be clipped.")
                 async for chunk in resp.aiter_bytes():

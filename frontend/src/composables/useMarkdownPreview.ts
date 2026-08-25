@@ -33,10 +33,14 @@ export function useMarkdownPreview(
     renderedPreview.value = DOMPurify.sanitize(html, { ADD_ATTR: ['data-enc'] })
   }
 
-  watch(body, () => {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(render, debounceMs)
-  }, { immediate: true })
+  watch(
+    body,
+    () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(render, debounceMs)
+    },
+    { immediate: true },
+  )
 
   // Re-render immediately when the preview pane opens so the user doesn't
   // see stale content from the last time it was visible.

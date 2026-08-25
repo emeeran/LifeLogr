@@ -74,9 +74,7 @@ _DEPRECATED_MODEL_FIXUPS: dict[str, str] = {
 async def apply_deprecated_model_fixups(db: AsyncSession) -> None:
     """Rewrite stored provider rows still naming a retired model."""
     for old, new in _DEPRECATED_MODEL_FIXUPS.items():
-        await db.execute(
-            update(AIProvider).where(AIProvider.model == old).values(model=new)
-        )
+        await db.execute(update(AIProvider).where(AIProvider.model == old).values(model=new))
     await db.commit()
 
 
@@ -222,9 +220,7 @@ async def list_models(base_url: str, api_key: str | None) -> list[dict[str, str]
         resp.raise_for_status()
     data = resp.json().get("data") or []
     models = [
-        {"id": str(m["id"]), "owned_by": str(m.get("owned_by", ""))}
-        for m in data
-        if m.get("id")
+        {"id": str(m["id"]), "owned_by": str(m.get("owned_by", ""))} for m in data if m.get("id")
     ]
     models.sort(key=lambda m: m["id"])
     return models

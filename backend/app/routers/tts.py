@@ -184,8 +184,7 @@ async def _synthesize_to_file(
         import edge_tts
     except ImportError as exc:
         raise ImportError(
-            "Text-to-speech requires the 'tts' extra. Install it with: "
-            'uv pip install -e ".[tts]"'
+            "Text-to-speech requires the 'tts' extra. Install it with: uv pip install -e \".[tts]\""
         ) from exc
 
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -251,9 +250,7 @@ async def _get_or_synthesize(
         return key, path
 
 
-async def _bg_prewarm(
-    clean_text: str, voice: str, rate: float, volume: int, pitch: int
-) -> None:
+async def _bg_prewarm(clean_text: str, voice: str, rate: float, volume: int, pitch: int) -> None:
     """Detached background synthesis — swallows errors (prewarm is best-effort)."""
     try:
         await _get_or_synthesize(clean_text, voice, rate, volume, pitch)
@@ -273,14 +270,12 @@ async def list_voices() -> Any:
         import edge_tts
     except ImportError as exc:
         raise ImportError(
-            "Text-to-speech requires the 'tts' extra. Install it with: "
-            'uv pip install -e ".[tts]"'
+            "Text-to-speech requires the 'tts' extra. Install it with: uv pip install -e \".[tts]\""
         ) from exc
 
     voices = await edge_tts.list_voices()
     return [
-        {"short_name": v["ShortName"], "locale": v["Locale"], "gender": v["Gender"]}
-        for v in voices
+        {"short_name": v["ShortName"], "locale": v["Locale"], "gender": v["Gender"]} for v in voices
     ]
 
 
@@ -376,9 +371,7 @@ class PrewarmRequest(BaseModel):
 
 
 @router.post("/prewarm")
-async def prewarm(
-    req: PrewarmRequest, db: AsyncSession = Depends(get_db)
-) -> dict[str, Any]:
+async def prewarm(req: PrewarmRequest, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Background-synthesize content so read-aloud is instant when requested.
 
     Returns ``{"cached": true}`` (200) if already cached, else schedules a

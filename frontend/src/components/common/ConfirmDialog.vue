@@ -12,7 +12,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="emit('cancel')">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+    @click.self="emit('cancel')"
+  >
     <div class="bg-surface rounded-lg shadow-xl w-80 border border-border p-4">
       <h3 class="text-sm font-semibold text-text-primary mb-2">{{ title }}</h3>
       <p class="text-xs text-text-secondary mb-4">{{ message }}</p>

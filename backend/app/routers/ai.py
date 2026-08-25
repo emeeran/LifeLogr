@@ -8,11 +8,13 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import security
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.ai_provider import AIProvider
 from app.models.entry import Entry
 from app.models.tag import Tag
 from app.schemas.ai import (
@@ -31,22 +33,19 @@ from app.schemas.ai import (
     GenericToolResponse,
     GrammarCheckRequest,
     GrammarCheckResponse,
-    RewriteRequest,
-    RewriteResponse,
     RewriteForClarityRequest,
     RewriteForClarityResponse,
+    RewriteRequest,
+    RewriteResponse,
     SpellCheckRequest,
     SpellCheckResponse,
     TagSuggestionRequest,
     TagSuggestionResponse,
-    ThemesResponse,
     ThemeInsight,
+    ThemesResponse,
     VoiceChangeRequest,
     VoiceChangeResponse,
 )
-from app.services.ollama_service import OllamaService
-from app.core import security
-from app.models.ai_provider import AIProvider
 from app.schemas.ai_provider import (
     AIProviderCreate,
     AIProviderResponse,
@@ -54,11 +53,12 @@ from app.schemas.ai_provider import (
     ProviderModelsRequest,
 )
 from app.services.ai_provider_service import (
-    AIProviderService,
     PROVIDER_PRESETS,
+    AIProviderService,
     list_models,
     test_connection,
 )
+from app.services.ollama_service import OllamaService
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 logger = logging.getLogger(__name__)

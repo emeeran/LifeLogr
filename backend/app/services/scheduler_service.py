@@ -109,9 +109,7 @@ async def _save_schedule(entry: ScheduleEntry) -> None:
 
     async with async_session() as session:
         row = (
-            await session.execute(
-                select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
-            )
+            await session.execute(select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID))
         ).scalar_one_or_none()
         if row is None:
             row = BackupSchedule(id=_SCHEDULE_ID, cron=entry["cron"])
@@ -132,9 +130,7 @@ async def _get_active_schedule() -> ActiveSchedule | None:
 
     async with async_session() as session:
         row = (
-            await session.execute(
-                select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
-            )
+            await session.execute(select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID))
         ).scalar_one_or_none()
         if row is None:
             return None
@@ -155,9 +151,7 @@ async def _delete_schedule() -> None:
     from app.models.backup import BackupSchedule
 
     async with async_session() as session:
-        await session.execute(
-            delete(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
-        )
+        await session.execute(delete(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID))
         await session.commit()
 
 
@@ -174,9 +168,7 @@ async def _mark_backup_run() -> None:
 
     async with async_session() as session:
         row = (
-            await session.execute(
-                select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID)
-            )
+            await session.execute(select(BackupSchedule).where(BackupSchedule.id == _SCHEDULE_ID))
         ).scalar_one_or_none()
         if row is not None:
             row.last_run_at = datetime.now(timezone.utc)
@@ -440,9 +432,7 @@ class SchedulerService:
             active = await _get_active_schedule()
             if active is None:
                 return
-            logger.info(
-                "Migrated backup schedule from legacy file (cron=%s)", legacy["cron"]
-            )
+            logger.info("Migrated backup schedule from legacy file (cron=%s)", legacy["cron"])
 
         cron = active.cron
         config_id = active.config_id
@@ -550,8 +540,9 @@ class SchedulerService:
         if not sched.running:
             return 0
 
-        from app.core.database import async_session
         from sqlalchemy import select
+
+        from app.core.database import async_session
 
         async with async_session() as session:
             reminders = (await session.execute(select(Reminder))).scalars().all()
@@ -628,10 +619,10 @@ class SchedulerService:
         ``reminder_time`` is earlier than now and which did not already fire
         today (``last_fired_at``), fire it immediately.
         """
-        from app.models.reminder import Reminder
         from sqlalchemy import select
 
         from app.core.database import async_session
+        from app.models.reminder import Reminder
 
         try:
             async with async_session() as session:
@@ -818,10 +809,10 @@ async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:
     Records ``last_fired_at`` so the catch-up sweep won't re-fire the same
     day. Never raises — a scheduler job must not crash the loop.
     """
-    from app.models.reminder import Reminder
     from sqlalchemy import select
 
     from app.core.database import async_session
+    from app.models.reminder import Reminder
     from app.services.reminder_service import ReminderService
 
     try:

@@ -15,9 +15,13 @@ function isActive(id: number): boolean {
     v-if="recs.recordings.value.length"
     class="border-t border-border bg-surface/60 px-3 py-1.5 space-y-0.5"
   >
-    <div class="flex items-center gap-1 text-[10px] uppercase tracking-wide text-text-muted mb-0.5">
+    <div
+      class="flex items-center gap-1 text-[10px] uppercase tracking-wide text-text-muted mb-0.5"
+    >
       <FileAudio :size="10" /> Voice memos
-      <span class="normal-case text-text-muted/70">· {{ recs.recordings.value.length }}</span>
+      <span class="normal-case text-text-muted/70"
+        >· {{ recs.recordings.value.length }}</span
+      >
     </div>
     <div
       v-for="rec in recs.recordings.value"
@@ -27,15 +31,27 @@ function isActive(id: number): boolean {
     >
       <button
         class="p-1 rounded-full cursor-pointer transition-colors shrink-0"
-        :class="isActive(rec.id) ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:text-accent hover:bg-accent/10'"
-        :title="isActive(rec.id) ? (recs.isPlaying.value ? 'Pause' : 'Resume') : 'Play'"
+        :class="
+          isActive(rec.id)
+            ? 'bg-accent/20 text-accent'
+            : 'text-text-secondary hover:text-accent hover:bg-accent/10'
+        "
+        :title="
+          isActive(rec.id)
+            ? recs.isPlaying.value
+              ? 'Pause'
+              : 'Resume'
+            : 'Play'
+        "
         @click="recs.togglePlay(rec)"
       >
         <Pause v-if="isActive(rec.id) && recs.isPlaying.value" :size="12" />
         <Play v-else :size="12" />
       </button>
       <FileAudio :size="12" class="text-accent shrink-0" />
-      <span class="text-xs text-text-secondary flex-1 truncate">Voice memo</span>
+      <span class="text-xs text-text-secondary flex-1 truncate"
+        >Voice memo</span
+      >
       <span class="text-[10px] font-mono text-text-muted tabular-nums">
         {{ fmtTime(rec.duration_seconds) }}
       </span>

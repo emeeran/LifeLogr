@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ttsApi } from '../api/tts'
+import { errMsg } from '../utils/errMsg.ts'
 
 /**
  * App-wide read-aloud player.
@@ -49,11 +50,24 @@ export const useTtsStore = defineStore('tts', () => {
   function wireEvents(a: HTMLAudioElement) {
     if (wired) return
     wired = true
-    a.addEventListener('playing', () => { isPlaying.value = true; isLoading.value = false })
-    a.addEventListener('pause', () => { isPlaying.value = false })
-    a.addEventListener('ended', () => { isPlaying.value = false; current.value = null; currentTime.value = 0 })
-    a.addEventListener('timeupdate', () => { currentTime.value = a.currentTime })
-    a.addEventListener('durationchange', () => { duration.value = isFinite(a.duration) ? a.duration : 0 })
+    a.addEventListener('playing', () => {
+      isPlaying.value = true
+      isLoading.value = false
+    })
+    a.addEventListener('pause', () => {
+      isPlaying.value = false
+    })
+    a.addEventListener('ended', () => {
+      isPlaying.value = false
+      current.value = null
+      currentTime.value = 0
+    })
+    a.addEventListener('timeupdate', () => {
+      currentTime.value = a.currentTime
+    })
+    a.addEventListener('durationchange', () => {
+      duration.value = isFinite(a.duration) ? a.duration : 0
+    })
     a.addEventListener('error', () => {
       isPlaying.value = false
       isLoading.value = false
@@ -92,7 +106,7 @@ export const useTtsStore = defineStore('tts', () => {
       isPlaying.value = false
       isLoading.value = false
       current.value = null
-      lastError.value = e instanceof Error ? e.message : String(e)
+      lastError.value = errMsg(e)
       throw e
     } finally {
       isLoading.value = false
@@ -100,7 +114,9 @@ export const useTtsStore = defineStore('tts', () => {
   }
 
   async function playEntry(entryId: number) {
-    await playSource({ kind: 'entry', entryId }, async () => ttsApi.entryUrl(entryId))
+    await playSource({ kind: 'entry', entryId }, async () =>
+      ttsApi.entryUrl(entryId),
+    )
   }
 
   async function playText(text: string) {
@@ -120,14 +136,20 @@ export const useTtsStore = defineStore('tts', () => {
 
   /** Toggle an entry's audio: stop if it's currently active, else play. Rethrows on error. */
   async function toggleEntry(entryId: number) {
-    if (isActiveEntry(entryId)) { stop(); return }
+    if (isActiveEntry(entryId)) {
+      stop()
+      return
+    }
     await playEntry(entryId)
   }
 
   /** Toggle arbitrary text's audio: stop if active, else play. Rethrows on error. */
   async function toggleText(text: string) {
     const k = hashStr(text)
-    if (isActiveTextKey(k)) { stop(); return }
+    if (isActiveTextKey(k)) {
+      stop()
+      return
+    }
     await playText(text)
   }
 
@@ -137,14 +159,24 @@ export const useTtsStore = defineStore('tts', () => {
 
   function isActiveEntry(entryId: number): boolean {
     const c = current.value
-    return !!c && c.kind === 'entry' && c.entryId === entryId && (isPlaying.value || isLoading.value)
+    return (
+      !!c &&
+      c.kind === 'entry' &&
+      c.entryId === entryId &&
+      (isPlaying.value || isLoading.value)
+    )
   }
   function isActiveText(text: string): boolean {
     return isActiveTextKey(hashStr(text))
   }
   function isActiveTextKey(k: string): boolean {
     const c = current.value
-    return !!c && c.kind === 'text' && c.textKey === k && (isPlaying.value || isLoading.value)
+    return (
+      !!c &&
+      c.kind === 'text' &&
+      c.textKey === k &&
+      (isPlaying.value || isLoading.value)
+    )
   }
 
   function isPlayingEntry(entryId: number): boolean {
@@ -157,26 +189,54 @@ export const useTtsStore = defineStore('tts', () => {
   }
   function isPlayingText(text: string): boolean {
     const c = current.value
-    return !!c && c.kind === 'text' && c.textKey === hashStr(text) && isPlaying.value
+    return (
+      !!c && c.kind === 'text' && c.textKey === hashStr(text) && isPlaying.value
+    )
   }
   function isLoadingText(text: string): boolean {
     const c = current.value
-    return !!c && c.kind === 'text' && c.textKey === hashStr(text) && isLoading.value
+    return (
+      !!c && c.kind === 'text' && c.textKey === hashStr(text) && isLoading.value
+    )
   }
 
   /** Background pre-generation — best-effort, swallows network errors (offline = silent). */
   async function prewarmEntry(entryId: number) {
-    try { await ttsApi.prewarmEntry(entryId) } catch { /* offline / network — silent */ }
+    try {
+      await ttsApi.prewarmEntry(entryId)
+    } catch {
+      /* offline / network — silent */
+    }
   }
   async function prewarmText(text: string) {
     if (!text.trim()) return
-    try { await ttsApi.prewarmText(text) } catch { /* silent */ }
+    try {
+      await ttsApi.prewarmText(text)
+    } catch {
+      /* silent */
+    }
   }
 
   return {
-    isPlaying, isLoading, lastError, current, currentTime, duration,
-    playEntry, playText, stop, toggleEntry, toggleText, seek,
-    isActiveEntry, isActiveText, isPlayingEntry, isLoadingEntry, isPlayingText, isLoadingText,
-    prewarmEntry, prewarmText,
+    isPlaying,
+    isLoading,
+    lastError,
+    current,
+    currentTime,
+    duration,
+    playEntry,
+    playText,
+    stop,
+    toggleEntry,
+    toggleText,
+    seek,
+    isActiveEntry,
+    isActiveText,
+    isPlayingEntry,
+    isLoadingEntry,
+    isPlayingText,
+    isLoadingText,
+    prewarmEntry,
+    prewarmText,
   }
 })

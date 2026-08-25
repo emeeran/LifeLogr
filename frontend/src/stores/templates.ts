@@ -19,14 +19,14 @@ export const useTemplatesStore = defineStore('templates', () => {
 
   async function update(id: number, data: TemplateUpdate) {
     const t = await templatesApi.update(id, data)
-    const idx = templates.value.findIndex(x => x.id === id)
+    const idx = templates.value.findIndex((x) => x.id === id)
     if (idx >= 0) templates.value[idx] = t
     return t
   }
 
   async function remove(id: number) {
     await templatesApi.remove(id)
-    templates.value = templates.value.filter(x => x.id !== id)
+    templates.value = templates.value.filter((x) => x.id !== id)
   }
 
   return { templates, fetchAll, create, update, remove }

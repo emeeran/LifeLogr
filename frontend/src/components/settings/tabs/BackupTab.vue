@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { useBackupStore } from "../../../stores/backup";
-import { backupApi } from "../../../api/backup";
-import { useEntriesStore } from "../../../stores/entries";
-import { isTauri } from "../../../api/client";
-import { saveFile, pickFile, pickFolder } from "../../../utils/fileDialog";
-import { useLocalStorage } from "@vueuse/core";
-import { providerLabel } from "../../../utils/settings";
+import { ref, computed, onMounted } from 'vue'
+import { useBackupStore } from '../../../stores/backup'
+import { backupApi } from '../../../api/backup'
+import { useEntriesStore } from '../../../stores/entries'
+import { isTauri } from '../../../api/client'
+import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
+import { useLocalStorage } from '@vueuse/core'
+import { providerLabel } from '../../../utils/settings'
 import {
   Cloud,
   RefreshCw,
@@ -20,344 +20,342 @@ import {
   HardDrive,
   FolderOpen,
   Database,
-} from "lucide-vue-next";
-import ConfirmDialog from "../../common/ConfirmDialog.vue";
-import SettingsSection from "../shared/SettingsSection.vue";
-import SettingRow from "../shared/SettingRow.vue";
-import ToggleSwitch from "../shared/ToggleSwitch.vue";
-import SButton from "../shared/SButton.vue";
-import SettingGroup from "../shared/SettingGroup.vue";
+} from 'lucide-vue-next'
+import ConfirmDialog from '../../common/ConfirmDialog.vue'
+import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
+import ToggleSwitch from '../shared/ToggleSwitch.vue'
+import SButton from '../shared/SButton.vue'
+import SettingGroup from '../shared/SettingGroup.vue'
+import { errMsg } from '../../../utils/errMsg.ts'
 
 const emit = defineEmits<{
-  toast: [type: "success" | "error" | "info", message: string];
-}>();
+  toast: [type: 'success' | 'error' | 'info', message: string]
+}>()
 
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
-const backup = useBackupStore();
-const entriesStore = useEntriesStore();
+const backup = useBackupStore()
+const entriesStore = useEntriesStore()
 
 // ── Local archive ──
-const importing = ref(false);
+const importing = ref(false)
 
 async function handleBackupDownload() {
-  const resp = await fetch(backupApi.exportLocal());
-  const blob = await resp.blob();
-  const defaultName = `lifelogr-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.tar.gz`;
+  const resp = await fetch(backupApi.exportLocal())
+  const blob = await resp.blob()
+  const defaultName = `lifelogr-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.tar.gz`
   const saved = await saveFile({
     data: blob,
     defaultName,
-    filters: [{ name: "Tar Archive", extensions: ["tar.gz"] }],
-  });
-  if (saved) emit("toast", "success", "Backup saved");
+    filters: [{ name: 'Tar Archive', extensions: ['tar.gz'] }],
+  })
+  if (saved) emit('toast', 'success', 'Backup saved')
 }
 
 async function handleBackupRestore() {
-  const file = await pickFile({ accept: ".tar.gz,.tgz" });
-  if (!file) return;
-  importing.value = true;
+  const file = await pickFile({ accept: '.tar.gz,.tgz' })
+  if (!file) return
+  importing.value = true
   try {
-    const r = await backupApi.importLocal(file);
-    entriesStore.refreshAll();
-    emit("toast", "success", `Restored — ${r.restored.join(", ")}`);
+    const r = await backupApi.importLocal(file)
+    entriesStore.refreshAll()
+    emit('toast', 'success', `Restored — ${r.restored.join(', ')}`)
   } catch (e: unknown) {
-    emit("toast", "error", `Import failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Import failed: ${errMsg(e)}`)
   } finally {
-    importing.value = false;
+    importing.value = false
   }
 }
 
 // ── Cloud Backup ──
-const showCreate = ref(false);
-const newProvider = ref("webdav");
-const newCredentials = ref<Record<string, string>>({});
-const newSchedule = ref("");
-const newFreqType = ref<"daily" | "weekly" | "monthly">("daily");
-const newTime = ref("03:00");
-const newLabel = ref("");
+const showCreate = ref(false)
+const newProvider = ref('webdav')
+const newCredentials = ref<Record<string, string>>({})
+const newSchedule = ref('')
+const newFreqType = ref<'daily' | 'weekly' | 'monthly'>('daily')
+const newTime = ref('03:00')
+const newLabel = ref('')
 const testResult = ref<{
-  configId: number;
-  success: boolean;
-  message: string;
-} | null>(null);
-const backingUp = ref<number | null>(null);
-const restoring = ref<number | null>(null);
-const deleteConfirm = ref<number | null>(null);
-const restoreConfirm = ref<{ configId: number; provider: string } | null>(null);
+  configId: number
+  success: boolean
+  message: string
+} | null>(null)
+const backingUp = ref<number | null>(null)
+const restoring = ref<number | null>(null)
+const deleteConfirm = ref<number | null>(null)
+const restoreConfirm = ref<{ configId: number; provider: string } | null>(null)
 
 const providerFields: Record<string, { label: string; placeholder: string }[]> =
   {
     webdav: [
       {
-        label: "URL",
-        placeholder: "https://dav.example.com/remote.php/dav/files/",
+        label: 'URL',
+        placeholder: 'https://dav.example.com/remote.php/dav/files/',
       },
-      { label: "Username", placeholder: "user" },
-      { label: "Password", placeholder: "password or app token" },
+      { label: 'Username', placeholder: 'user' },
+      { label: 'Password', placeholder: 'password or app token' },
     ],
     google_drive: [
-      { label: "Client ID", placeholder: "xxxx.apps.googleusercontent.com" },
-      { label: "Client Secret", placeholder: "GOCSPX-xxxx" },
-      { label: "Refresh Token", placeholder: "1//xxxx" },
+      { label: 'Client ID', placeholder: 'xxxx.apps.googleusercontent.com' },
+      { label: 'Client Secret', placeholder: 'GOCSPX-xxxx' },
+      { label: 'Refresh Token', placeholder: '1//xxxx' },
     ],
     box: [
-      { label: "Client ID", placeholder: "your Box client ID" },
-      { label: "Client Secret", placeholder: "your Box client secret" },
-      { label: "Refresh Token", placeholder: 'set via "Sign in with Box"' },
+      { label: 'Client ID', placeholder: 'your Box client ID' },
+      { label: 'Client Secret', placeholder: 'your Box client secret' },
+      { label: 'Refresh Token', placeholder: 'set via "Sign in with Box"' },
     ],
     onedrive: [
-      { label: "Client ID", placeholder: "xxxx-xxxx-xxxx" },
-      { label: "Client Secret", placeholder: "xxxx~xxxx" },
-      { label: "Refresh Token", placeholder: "0.ARoxxxx" },
+      { label: 'Client ID', placeholder: 'xxxx-xxxx-xxxx' },
+      { label: 'Client Secret', placeholder: 'xxxx~xxxx' },
+      { label: 'Refresh Token', placeholder: '0.ARoxxxx' },
     ],
-    dropbox: [{ label: "Access Token", placeholder: "sl.xxxxx" }],
+    dropbox: [{ label: 'Access Token', placeholder: 'sl.xxxxx' }],
     synology: [
-      { label: "URL", placeholder: "https://nas.local:5006/path" },
-      { label: "Username", placeholder: "admin" },
-      { label: "Password", placeholder: "app password" },
+      { label: 'URL', placeholder: 'https://nas.local:5006/path' },
+      { label: 'Username', placeholder: 'admin' },
+      { label: 'Password', placeholder: 'app password' },
     ],
-  };
-const currentFields = computed(() => providerFields[newProvider.value] ?? []);
+  }
+const currentFields = computed(() => providerFields[newProvider.value] ?? [])
 
 function resetNewCredentials() {
-  const creds: Record<string, string> = {};
+  const creds: Record<string, string> = {}
   for (const f of currentFields.value)
-    creds[f.label.toLowerCase().replace(/\s+/g, "_")] = "";
-  newCredentials.value = creds;
+    creds[f.label.toLowerCase().replace(/\s+/g, '_')] = ''
+  newCredentials.value = creds
 }
 
-const showManualGoogleFields = ref(false);
+const showManualGoogleFields = ref(false)
 
 async function startGoogleDriveAuth() {
   try {
-    const res = await backupApi.getGoogleDriveAuthUrl();
-    window.open(res.auth_url, "_blank");
-    emit("toast", "info", "Opening Google Authentication in browser...");
-    showCreate.value = false;
+    const res = await backupApi.getGoogleDriveAuthUrl()
+    window.open(res.auth_url, '_blank')
+    emit('toast', 'info', 'Opening Google Authentication in browser...')
+    showCreate.value = false
     setTimeout(async () => {
-      await backup.fetchConfigs();
-    }, 6000);
+      await backup.fetchConfigs()
+    }, 6000)
   } catch (e: unknown) {
-    emit("toast", "error", `Google auth initiation failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Google auth initiation failed: ${errMsg(e)}`)
   }
 }
 
 async function startBoxAuth() {
   try {
-    const res = await backupApi.getBoxAuthUrl();
-    window.open(res.auth_url, "_blank");
-    emit("toast", "info", "Opening Box Authentication in browser...");
-    showCreate.value = false;
+    const res = await backupApi.getBoxAuthUrl()
+    window.open(res.auth_url, '_blank')
+    emit('toast', 'info', 'Opening Box Authentication in browser...')
+    showCreate.value = false
     setTimeout(async () => {
-      await backup.fetchConfigs();
-    }, 6000);
+      await backup.fetchConfigs()
+    }, 6000)
   } catch (e: unknown) {
-    emit("toast", "error", `Box auth initiation failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Box auth initiation failed: ${errMsg(e)}`)
   }
 }
 
 function openCreateForm() {
-  newProvider.value = "webdav";
-  showManualGoogleFields.value = false;
-  resetNewCredentials();
-  newSchedule.value = "";
-  newFreqType.value = "daily";
-  newTime.value = "03:00";
-  newLabel.value = "";
-  showCreate.value = true;
+  newProvider.value = 'webdav'
+  showManualGoogleFields.value = false
+  resetNewCredentials()
+  newSchedule.value = ''
+  newFreqType.value = 'daily'
+  newTime.value = '03:00'
+  newLabel.value = ''
+  showCreate.value = true
 }
 
 function timeToCron(time: string, freq: string): string {
-  const [h, m] = time.split(":").map(Number);
-  const hh = isNaN(h) ? 3 : h;
-  const mm = isNaN(m) ? 0 : m;
-  if (freq === "weekly") return `${mm} ${hh} * * 0`;
-  if (freq === "monthly") return `${mm} ${hh} 1 * *`;
-  return `${mm} ${hh} * * *`;
+  const [h, m] = time.split(':').map(Number)
+  const hh = isNaN(h) ? 3 : h
+  const mm = isNaN(m) ? 0 : m
+  if (freq === 'weekly') return `${mm} ${hh} * * 0`
+  if (freq === 'monthly') return `${mm} ${hh} 1 * *`
+  return `${mm} ${hh} * * *`
 }
 
 async function createConfig() {
-  const filtered: Record<string, string> = {};
+  const filtered: Record<string, string> = {}
   for (const [k, v] of Object.entries(newCredentials.value))
-    if (v.trim()) filtered[k] = v;
+    if (v.trim()) filtered[k] = v
   // Synology NAS is a WebDAV preset — store as webdav so the existing provider handles it.
   const provider =
-    newProvider.value === "synology" ? "webdav" : newProvider.value;
+    newProvider.value === 'synology' ? 'webdav' : newProvider.value
   const label =
     newLabel.value.trim() ||
-    (newProvider.value === "synology" ? "Synology NAS" : undefined);
+    (newProvider.value === 'synology' ? 'Synology NAS' : undefined)
   await backupApi.createConfig({
     provider,
     label,
     credentials: filtered,
     schedule_cron: timeToCron(newTime.value, newFreqType.value),
-  });
-  showCreate.value = false;
-  await backup.fetchConfigs();
-  emit("toast", "success", `${providerLabel(newProvider.value)} added`);
+  })
+  showCreate.value = false
+  await backup.fetchConfigs()
+  emit('toast', 'success', `${providerLabel(newProvider.value)} added`)
 }
 
 async function testConn(id: number) {
-  testResult.value = null;
+  testResult.value = null
   try {
     testResult.value = {
       configId: id,
       ...(await backupApi.testConnection(id)),
-    };
+    }
   } catch (e: unknown) {
-    testResult.value = { configId: id, success: false, message: errMsg(e) };
+    testResult.value = { configId: id, success: false, message: errMsg(e) }
   }
 }
 
 async function runBackup(configId: number) {
-  backingUp.value = configId;
-  testResult.value = null;
+  backingUp.value = configId
+  testResult.value = null
   try {
-    const snap = await backup.runBackup(configId);
+    const snap = await backup.runBackup(configId)
     emit(
-      "toast",
-      snap.status === "completed" ? "success" : "error",
-      snap.status === "completed"
-        ? `Backup done — ${snap.entries_synced}e ${snap.media_synced}m${snap.error_message ? " (App Data — hidden)" : ""}`
-        : `Backup failed: ${snap.error_message ?? "unknown"}`,
-    );
-    await backup.fetchSnapshots();
+      'toast',
+      snap.status === 'completed' ? 'success' : 'error',
+      snap.status === 'completed'
+        ? `Backup done — ${snap.entries_synced}e ${snap.media_synced}m${snap.error_message ? ' (App Data — hidden)' : ''}`
+        : `Backup failed: ${snap.error_message ?? 'unknown'}`,
+    )
+    await backup.fetchSnapshots()
   } catch (e: unknown) {
-    emit("toast", "error", `Backup failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Backup failed: ${errMsg(e)}`)
   } finally {
-    backingUp.value = null;
+    backingUp.value = null
   }
 }
 
 async function confirmRestore() {
-  if (!restoreConfirm.value) return;
-  const { configId, provider } = restoreConfirm.value;
-  restoreConfirm.value = null;
-  restoring.value = configId;
+  if (!restoreConfirm.value) return
+  const { configId, provider } = restoreConfirm.value
+  restoreConfirm.value = null
+  restoring.value = configId
   try {
-    const r = await backup.restore(configId);
+    const r = await backup.restore(configId)
     emit(
-      "toast",
-      "success",
+      'toast',
+      'success',
       `Restored from ${providerLabel(provider)} — ${(r as any).entries_restored ?? 0}e ${(r as any).media_restored ?? 0}m`,
-    );
+    )
   } catch (e: unknown) {
-    emit("toast", "error", `Restore failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Restore failed: ${errMsg(e)}`)
   } finally {
-    restoring.value = null;
+    restoring.value = null
   }
 }
 
 async function confirmDelete() {
-  if (!deleteConfirm.value) return;
+  if (!deleteConfirm.value) return
   try {
-    await backup.deleteConfig(deleteConfirm.value);
-    emit("toast", "info", "Config deleted");
+    await backup.deleteConfig(deleteConfirm.value)
+    emit('toast', 'info', 'Config deleted')
   } catch (e: unknown) {
-    emit("toast", "error", `Delete failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Delete failed: ${errMsg(e)}`)
   } finally {
-    deleteConfirm.value = null;
+    deleteConfirm.value = null
   }
 }
 
-const deleteSnapConfirm = ref<number | null>(null);
+const deleteSnapConfirm = ref<number | null>(null)
 
 async function confirmDeleteSnap() {
-  if (deleteSnapConfirm.value === null) return;
-  const id = deleteSnapConfirm.value;
-  deleteSnapConfirm.value = null;
+  if (deleteSnapConfirm.value === null) return
+  const id = deleteSnapConfirm.value
+  deleteSnapConfirm.value = null
   try {
-    const r = await backupApi.deleteSnapshot(id);
+    const r = await backupApi.deleteSnapshot(id)
     emit(
-      "toast",
-      "success",
+      'toast',
+      'success',
       r.remote_file_deleted
-        ? "Backup deleted from cloud"
-        : "Backup record removed",
-    );
-    await backup.fetchSnapshots();
+        ? 'Backup deleted from cloud'
+        : 'Backup record removed',
+    )
+    await backup.fetchSnapshots()
   } catch (e: unknown) {
-    emit("toast", "error", `Delete failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Delete failed: ${errMsg(e)}`)
   }
 }
 
 // ── Auto Backup ──
 const autoBackupEnabled = useLocalStorage<boolean>(
-  "lifelogr-auto-backup-enabled",
+  'lifelogr-auto-backup-enabled',
   false,
-);
+)
 const autoBackupPath = useLocalStorage<string>(
-  "lifelogr-auto-backup-path",
-  "~/Backups/lifelogr",
-);
+  'lifelogr-auto-backup-path',
+  '~/Backups/lifelogr',
+)
 const autoBackupFrequency = useLocalStorage<string>(
-  "lifelogr-auto-backup-freq",
-  "0 2 * * *",
-);
+  'lifelogr-auto-backup-freq',
+  '0 2 * * *',
+)
 const autoBackupRetention = useLocalStorage<number>(
-  "lifelogr-auto-backup-retention",
+  'lifelogr-auto-backup-retention',
   10,
-);
+)
 const autoBackupConfigId = useLocalStorage<number | null>(
-  "lifelogr-auto-backup-config-id",
+  'lifelogr-auto-backup-config-id',
   null,
-);
+)
 
 const autoBackupTime = computed({
   get: () => {
-    const parts = autoBackupFrequency.value.split(" ");
+    const parts = autoBackupFrequency.value.split(' ')
     if (parts.length >= 2)
-      return `${parts[1].padStart(2, "0")}:${parts[0].padStart(2, "0")}`;
-    return "02:00";
+      return `${parts[1].padStart(2, '0')}:${parts[0].padStart(2, '0')}`
+    return '02:00'
   },
   set: (val: string) => {
-    autoBackupFrequency.value = timeToCron(val, autoBackupFreqType.value);
+    autoBackupFrequency.value = timeToCron(val, autoBackupFreqType.value)
   },
-});
+})
 const autoBackupFreqType = computed({
   get: (): string => {
-    const p = autoBackupFrequency.value.split(" ");
+    const p = autoBackupFrequency.value.split(' ')
     if (p.length >= 5) {
-      if (p[4] !== "*") return "weekly";
-      if (p[2] !== "*") return "monthly";
+      if (p[4] !== '*') return 'weekly'
+      if (p[2] !== '*') return 'monthly'
     }
-    return "daily";
+    return 'daily'
   },
   set: (val: string) => {
-    autoBackupFrequency.value = timeToCron(autoBackupTime.value, val);
+    autoBackupFrequency.value = timeToCron(autoBackupTime.value, val)
   },
-});
+})
 
 const autoBackupHumanPreview = computed(() => {
-  const time = autoBackupTime.value;
-  const [h, m] = time.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  const timeStr = `${displayH}:${String(m).padStart(2, "0")} ${ampm}`;
-  const freq = autoBackupFreqType.value;
-  if (freq === "weekly") return `Runs weekly on Sunday at ${timeStr}`;
-  if (freq === "monthly") return `Runs monthly on the 1st at ${timeStr}`;
-  return `Runs daily at ${timeStr}`;
-});
+  const time = autoBackupTime.value
+  const [h, m] = time.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h
+  const timeStr = `${displayH}:${String(m).padStart(2, '0')} ${ampm}`
+  const freq = autoBackupFreqType.value
+  if (freq === 'weekly') return `Runs weekly on Sunday at ${timeStr}`
+  if (freq === 'monthly') return `Runs monthly on the 1st at ${timeStr}`
+  return `Runs daily at ${timeStr}`
+})
 const autoBackupStatus = ref<{
-  running: boolean;
-  backup_scheduled: boolean;
-  next_run: string | null;
-} | null>(null);
-const autoBackupSaving = ref(false);
+  running: boolean
+  backup_scheduled: boolean
+  next_run: string | null
+} | null>(null)
+const autoBackupSaving = ref(false)
 
 async function toggleAutoBackup() {
   if (!autoBackupEnabled.value) {
     try {
-      const { request } = await import("../../../api/client");
-      await request("/backup/schedule", { method: "DELETE" });
+      const { request } = await import('../../../api/client')
+      await request('/backup/schedule', { method: 'DELETE' })
       autoBackupStatus.value = {
         running: false,
         backup_scheduled: false,
         next_run: null,
-      };
+      }
     } catch {
       /* ignore */
     }
@@ -365,7 +363,7 @@ async function toggleAutoBackup() {
 }
 
 async function saveAutoBackup() {
-  autoBackupSaving.value = true;
+  autoBackupSaving.value = true
   try {
     await backupApi.scheduleBackup(autoBackupFrequency.value, {
       configId: autoBackupConfigId.value ?? undefined,
@@ -373,14 +371,14 @@ async function saveAutoBackup() {
       retention: autoBackupConfigId.value
         ? undefined
         : autoBackupRetention.value,
-    });
-    await loadAutoBackupStatus();
-    autoBackupEnabled.value = true;
-    emit("toast", "success", "Backup schedule saved");
+    })
+    await loadAutoBackupStatus()
+    autoBackupEnabled.value = true
+    emit('toast', 'success', 'Backup schedule saved')
   } catch (e: any) {
-    emit("toast", "error", `Failed to save schedule: ${errMsg(e)}`);
+    emit('toast', 'error', `Failed to save schedule: ${errMsg(e)}`)
   } finally {
-    autoBackupSaving.value = false;
+    autoBackupSaving.value = false
   }
 }
 
@@ -390,57 +388,57 @@ async function runBackupNow() {
     // /backup/run path. A one-off run needs no persisted schedule, so "Run now"
     // works immediately after linking a provider instead of 404'ing.
     if (autoBackupConfigId.value) {
-      const snap = await backup.runBackup(autoBackupConfigId.value);
+      const snap = await backup.runBackup(autoBackupConfigId.value)
       emit(
-        "toast",
-        snap.status === "completed" ? "success" : "error",
-        snap.status === "completed"
+        'toast',
+        snap.status === 'completed' ? 'success' : 'error',
+        snap.status === 'completed'
           ? snap.error_message
-            ? "Cloud backup completed (App Data — hidden)"
-            : "Cloud backup completed"
-          : `Backup failed: ${snap.error_message ?? "unknown"}`,
-      );
-      backup.fetchSnapshots();
-      return;
+            ? 'Cloud backup completed (App Data — hidden)'
+            : 'Cloud backup completed'
+          : `Backup failed: ${snap.error_message ?? 'unknown'}`,
+      )
+      backup.fetchSnapshots()
+      return
     }
     // Local mode: back up to the configured folder now (no saved schedule
     // needed — /run-now accepts the path directly).
-    const { request } = await import("../../../api/client");
+    const { request } = await import('../../../api/client')
     const r = await request<{
-      mode: string;
-      path?: string;
-      status?: string;
-      error?: string;
+      mode: string
+      path?: string
+      status?: string
+      error?: string
     }>(
       `/backup/run-now?backup_path=${encodeURIComponent(autoBackupPath.value)}&retention=${autoBackupRetention.value}`,
-      { method: "POST" },
-    );
-    emit("toast", "success", `Backup saved to ${r.path}`);
-    backup.fetchSnapshots();
+      { method: 'POST' },
+    )
+    emit('toast', 'success', `Backup saved to ${r.path}`)
+    backup.fetchSnapshots()
   } catch (e: unknown) {
-    emit("toast", "error", `Backup failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Backup failed: ${errMsg(e)}`)
   }
 }
 
 async function loadAutoBackupStatus() {
   try {
-    const { request } = await import("../../../api/client");
-    autoBackupStatus.value = await request("/backup/schedule/status");
+    const { request } = await import('../../../api/client')
+    autoBackupStatus.value = await request('/backup/schedule/status')
   } catch {
     /* ignore */
   }
 }
 
 async function browseBackupFolder() {
-  const folder = await pickFolder();
-  if (folder) autoBackupPath.value = folder;
+  const folder = await pickFolder()
+  if (folder) autoBackupPath.value = folder
 }
 
 onMounted(() => {
-  backup.fetchConfigs();
-  backup.fetchSnapshots();
-  loadAutoBackupStatus();
-});
+  backup.fetchConfigs()
+  backup.fetchSnapshots()
+  loadAutoBackupStatus()
+})
 </script>
 
 <template>
@@ -605,8 +603,8 @@ onMounted(() => {
           >
             {{
               showManualGoogleFields
-                ? "Hide manual settings"
-                : "Or configure manually (Advanced)"
+                ? 'Hide manual settings'
+                : 'Or configure manually (Advanced)'
             }}
           </a>
         </div>
@@ -686,7 +684,7 @@ onMounted(() => {
             v-if="backingUp === config.id"
             :size="11"
             class="animate-spin"
-          />{{ backingUp === config.id ? "…" : "Backup" }}
+          />{{ backingUp === config.id ? '…' : 'Backup' }}
         </SButton>
         <SButton
           variant="danger-soft"
@@ -700,7 +698,7 @@ onMounted(() => {
             v-if="restoring === config.id"
             :size="11"
             class="animate-spin"
-          />{{ restoring === config.id ? "…" : "Restore" }}
+          />{{ restoring === config.id ? '…' : 'Restore' }}
         </SButton>
       </div>
       <div

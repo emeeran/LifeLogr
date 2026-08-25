@@ -31,9 +31,9 @@ from app.services.entry_service import EntryService
 from app.services.export_service import build_diarium_database
 from app.services.importers import (
     parse_csv,
+    parse_dayone_zip,
     parse_diarium_json_entry,
     parse_diarium_sqlite,
-    parse_dayone_zip,
     parse_markdown_entry,
 )
 
@@ -406,8 +406,9 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
 
     if ids_to_delete:
         await db.execute(
-            text("UPDATE entries SET is_deleted = 1, deleted_at = :now WHERE id IN :ids")
-            .bindparams(bindparam("ids", expanding=True)),
+            text(
+                "UPDATE entries SET is_deleted = 1, deleted_at = :now WHERE id IN :ids"
+            ).bindparams(bindparam("ids", expanding=True)),
             {"now": datetime.now(timezone.utc), "ids": ids_to_delete},
         )
 
@@ -542,7 +543,6 @@ async def import_file(
         if filename.endswith(".zip"):
             import zipfile as zf
 
-
             buf = io.BytesIO(content)
             # Day One exports carry Journal.json — detect and handle first.
             is_dayone = False
@@ -587,7 +587,6 @@ async def import_file(
                             entries_data.append(entry)
 
         elif filename.endswith(".csv"):
-
             entries_data.extend(parse_csv(content.decode("utf-8", errors="replace")))
 
         elif filename.endswith(".json"):
@@ -667,5 +666,3 @@ async def import_file(
             skipped += 1
 
     return {"imported": imported, "skipped": skipped}
-
-

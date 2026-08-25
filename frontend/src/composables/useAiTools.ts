@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue'
 import { callAiTool } from '../api/ai'
 import { AI_TOOL_BY_ID } from './aiToolRegistry'
+import { errMsg } from '../utils/errMsg.ts'
 
 // Re-exported so existing imports from this module keep resolving.
 export type { AiToolMode, AiToneStyle } from './aiToolRegistry'
@@ -26,9 +27,6 @@ export function useAiTools(
   /** Current parameter value for the active tool (tone / voice / language…). */
   const aiParamValue = ref<string>('formal')
 
-  function errMsg(e: unknown) {
-    return e instanceof Error ? e.message : String(e)
-  }
 
   async function runAiTool(mode: string, paramOverride?: string) {
     const def = AI_TOOL_BY_ID[mode]
@@ -93,7 +91,8 @@ export function useAiTools(
   function aiResultInsert() {
     if (!aiResult.value) return
     const end = aiOriginalEnd.value
-    body.value = body.value.slice(0, end) + '\n' + aiResult.value + body.value.slice(end)
+    body.value =
+      body.value.slice(0, end) + '\n' + aiResult.value + body.value.slice(end)
     pushHistory()
     markDirty()
     clearAiResult()

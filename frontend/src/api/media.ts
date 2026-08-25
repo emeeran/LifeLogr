@@ -2,7 +2,11 @@ import { request, formDataRequest, API_ORIGIN } from './client'
 import type { MediaResponse, MediaTimelineResponse } from '../types'
 
 export const mediaApi = {
-  upload(entryId: number, file: File, caption?: string): Promise<MediaResponse> {
+  upload(
+    entryId: number,
+    file: File,
+    caption?: string,
+  ): Promise<MediaResponse> {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('entry_id', String(entryId))
@@ -16,7 +20,11 @@ export const mediaApi = {
 
   /** Import a local file by absolute path as entry media (Tauri native
    *  drag-drop gives a path, not a File object). Sandboxed to home+temp. */
-  uploadFromPath(entryId: number, path: string, caption?: string): Promise<MediaResponse> {
+  uploadFromPath(
+    entryId: number,
+    path: string,
+    caption?: string,
+  ): Promise<MediaResponse> {
     return request('/media/from-path', {
       method: 'POST',
       body: JSON.stringify({ entry_id: entryId, path, caption }),
@@ -26,7 +34,9 @@ export const mediaApi = {
   /** Extract text from an image attachment via OCR (tesseract).
    *  `lang` is a tesseract code mirroring Settings → Appearance → "OCR language". */
   extractText(id: number, lang = 'eng'): Promise<{ text: string }> {
-    return request(`/media/${id}/ocr?lang=${encodeURIComponent(lang)}`, { method: 'POST' })
+    return request(`/media/${id}/ocr?lang=${encodeURIComponent(lang)}`, {
+      method: 'POST',
+    })
   },
 
   fileUrl(id: number): string {
@@ -41,7 +51,11 @@ export const mediaApi = {
     return request(`/media/entry/${entryId}`)
   },
 
-  listAll(params: { offset?: number; limit?: number; media_type?: string }): Promise<MediaTimelineResponse> {
+  listAll(params: {
+    offset?: number
+    limit?: number
+    media_type?: string
+  }): Promise<MediaTimelineResponse> {
     const qs = new URLSearchParams()
     if (params.offset !== undefined) qs.set('offset', String(params.offset))
     if (params.limit !== undefined) qs.set('limit', String(params.limit))

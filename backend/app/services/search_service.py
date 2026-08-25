@@ -13,7 +13,7 @@ from app.models.embedding import EntryEmbedding
 from app.models.entry import Entry
 from app.models.note import Note, NoteTag
 from app.models.reminder import Reminder
-from app.schemas.search import SearchResultEntry, SearchMode
+from app.schemas.search import SearchMode, SearchResultEntry
 
 logger = logging.getLogger(__name__)
 
@@ -174,12 +174,9 @@ class SearchService:
         ``updated_at``).
         """
         pattern = f"%{query}%"
-        base = (
-            select(Reminder.id, Reminder.title, Reminder.message, Reminder.updated_at)
-            .where(
-                Reminder.is_active == True,  # noqa: E712
-                (Reminder.title.ilike(pattern)) | (Reminder.message.ilike(pattern)),
-            )
+        base = select(Reminder.id, Reminder.title, Reminder.message, Reminder.updated_at).where(
+            Reminder.is_active == True,  # noqa: E712
+            (Reminder.title.ilike(pattern)) | (Reminder.message.ilike(pattern)),
         )
         total = (
             await self.db.execute(select(func.count()).select_from(base.subquery()))
