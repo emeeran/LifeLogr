@@ -71,8 +71,9 @@ const ocrLanguages = [
   { value: 'tam', label: 'Tamil' },
 ]
 // Whether image attachments are OCR'd automatically on add (entry inline-embed +
-// note paste/drop/snip). Off = keep images as-is; manual "Extract text" still works.
-const autoOcrImages = useLocalStorage<boolean>('lifelogr-auto-ocr-images', true)
+// note paste/drop/snip). Default OFF — OCR is opt-in; manual per-image OCR
+// (the hover pill) always works regardless.
+const autoOcrImages = useLocalStorage<boolean>('lifelogr-auto-ocr-images', false)
 
 // ── Read aloud (TTS) ──
 const ttsSpeed = useLocalStorage<number>('lifelogr-tts-speed', 1.0)

@@ -453,7 +453,7 @@ const ocrBusy = ref(false)
 // OCR language from Settings → Appearance (same key the settings tab writes).
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 // Auto-OCR images on attach (Settings → Appearance). Off = embed image only.
-const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', true)
+const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', false)
 let unlistenSnip: (() => void) | null = null
 
 async function startSnip() {
