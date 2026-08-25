@@ -5,7 +5,6 @@ Exchange/upsert/render plumbing is shared via ``app.routers._oauth_helpers``.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from urllib.parse import urlencode
@@ -18,11 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oauth_state import OAuthStateStore
-from app.core.security import decrypt
 from app.models.backup import BackupConfig
 from app.routers._oauth_helpers import (
     error_page,
     exchange_authorization_code,
+    load_stored_credentials,
     success_page,
     upsert_backup_config,
 )
@@ -44,13 +43,9 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "dropbox"))
     config = result.scalar_one_or_none()
     client_id = settings.DROPBOX_CLIENT_ID
-    if config:
-        try:
-            client_id = json.loads(decrypt(config.credentials_encrypted)).get(
-                "client_id", client_id
-            )
-        except Exception:
-            logger.warning("Failed to decrypt stored Dropbox credentials", exc_info=True)
+    stored = load_stored_credentials(config, "Dropbox")
+    if stored.get("client_id"):
+        client_id = stored["client_id"]
     if not client_id:
         raise HTTPException(status_code=400, detail="Dropbox OAuth client_id is not configured")
 
@@ -79,14 +74,9 @@ async def oauth_callback(
 
     client_id = settings.DROPBOX_CLIENT_ID
     client_secret = settings.DROPBOX_CLIENT_SECRET
-    stored: dict[str, str] = {}
-    if config:
-        try:
-            stored = json.loads(decrypt(config.credentials_encrypted))
-            client_id = stored.get("client_id", client_id)
-            client_secret = stored.get("client_secret", client_secret)
-        except Exception:
-            logger.warning("Failed to decrypt Dropbox credentials for token exchange", exc_info=True)
+    stored = load_stored_credentials(config, "Dropbox")
+    client_id = stored.get("client_id", client_id)
+    client_secret = stored.get("client_secret", client_secret)
     if not client_id or not client_secret:
         return error_page("Dropbox client_id/client_secret are not configured")
 

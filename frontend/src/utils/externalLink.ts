@@ -22,7 +22,7 @@ export function isExternalHref(href: string): boolean {
  * new tab. Only http(s)/mailto/tel are ever dispatched — anything else is a
  * no-op, so internal/relative links are never hijacked.
  */
-export async function openExternal(href: string): Promise<void> {
+async function openExternal(href: string): Promise<void> {
   if (!isExternalHref(href)) return
   if (isTauri) {
     try {
