@@ -230,7 +230,7 @@ async function onGoToDate(dateStr: string) {
             <!-- Entry content (left) -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
-                <span class="text-sm font-medium text-text-primary">{{ formatDDMMYYYY(filteredEntries[virtualRow.index].entry_date, { weekday: 'short' }) }}</span>
+                <span class="text-sm font-bold text-text-primary">{{ formatDDMMYYYY(filteredEntries[virtualRow.index].entry_date, { weekday: 'short' }) }}</span>
               </div>
               <p v-if="filteredEntries[virtualRow.index].title" class="text-xs font-medium text-text-primary mb-0.5">{{ filteredEntries[virtualRow.index].title }}</p>
               <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">

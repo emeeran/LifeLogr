@@ -1008,7 +1008,7 @@ async function applySuggestedTag(name: string) {
         inputmode="numeric"
         placeholder="dd-mm-yyyy"
         maxlength="10"
-        class="bg-surface border rounded px-1.5 py-0.5 text-[11px] shrink-0 tabular-nums"
+        class="bg-surface border rounded px-1.5 py-0.5 text-[11px] font-semibold shrink-0 tabular-nums"
         :class="dateInvalid ? 'border-danger text-danger' : 'border-border text-text-primary'"
         title="Entry date (dd-mm-yyyy)"
         @input="onDateInput"

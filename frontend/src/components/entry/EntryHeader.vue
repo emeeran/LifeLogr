@@ -15,7 +15,7 @@ const emit = defineEmits<{ close: []; edit: [] }>()
       >
         <ChevronLeft :size="18" />
       </button>
-      <h3 class="text-sm font-medium text-text-primary">{{ formatDDMMYYYY(dateStr, { weekday: 'long' }) }}</h3>
+      <h3 class="text-sm font-bold text-text-primary">{{ formatDDMMYYYY(dateStr, { weekday: 'long' }) }}</h3>
     </div>
     <div class="flex items-center gap-1">
       <button
