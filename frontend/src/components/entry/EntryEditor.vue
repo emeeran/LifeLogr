@@ -37,6 +37,11 @@ import { aiStatus, suggestTags } from "../../api/ai";
 import { mediaApi } from "../../api/media";
 import type { MediaResponse } from "../../types";
 import { encryptText, decryptText } from "../../api/encryption";
+import {
+  isoToDDMMYYYYInput,
+  maskDDMMYYYY,
+  parseDDMMYYYY,
+} from "../../composables/useFormat";
 import { useTtsStore } from "../../stores/tts";
 import { useDragDrop } from "../../composables/useDragDrop";
 import { useLocalStorage } from "@vueuse/core";
@@ -45,6 +50,10 @@ import { useRichTextEditor } from "../../composables/useRichTextEditor";
 import { useInlineTags } from "../../composables/useInlineTags";
 import { extractHashtags } from "../../utils/tags";
 import { useAttachments } from "../../composables/useAttachments";
+import { usePasteMedia } from "../../composables/usePasteMedia";
+import { useResizableMedia } from "../../composables/useResizableMedia";
+import { useTauriDragDrop } from "../../composables/useTauriDragDrop";
+import { insertOcrBelowImage } from "../../utils/markdownMedia";
 import { useAutoSave } from "../../composables/useAutoSave";
 import {
   useRecordings,
@@ -80,6 +89,48 @@ const title = ref("");
 const body = ref("");
 const tagIds = ref<number[]>([]);
 const entryDate = ref("");
+// Masked dd-mm-yyyy mirror of entryDate — the journal's date display standard.
+// entryDate stays ISO (API contract); dateDisplay is what the user edits.
+const dateDisplay = ref("");
+const dateInvalid = ref(false);
+
+/** Keep the dd-mm-yyyy mask while typing (maskDDMMYYYY) and mirror to ISO. */
+function onDateInput(e: Event) {
+  const el = e.target as HTMLInputElement;
+  const masked = maskDDMMYYYY(el.value);
+  dateDisplay.value = masked;
+  // Preserve caret at the end of typed content (simplest correct behavior).
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = masked.length;
+  });
+  const iso = parseDDMMYYYY(masked);
+  if (iso) {
+    entryDate.value = iso;
+    dateInvalid.value = false;
+  } else if (masked.replace(/\D/g, "").length === 8) {
+    dateInvalid.value = true; // complete but not a real calendar date
+  }
+}
+
+function onDateBlur() {
+  const iso = parseDDMMYYYY(dateDisplay.value);
+  if (iso) {
+    entryDate.value = iso;
+    dateInvalid.value = false;
+    dateDisplay.value = isoToDDMMYYYYInput(iso);
+  } else if (dateDisplay.value.trim()) {
+    dateInvalid.value = true;
+  } else {
+    dateInvalid.value = false;
+  }
+}
+
+/** Programmatic entryDate setter (load paths): keep the mask in sync. */
+function setEntryDate(iso: string) {
+  entryDate.value = iso;
+  dateDisplay.value = isoToDDMMYYYYInput(iso);
+  dateInvalid.value = false;
+}
 const showPreview = ref(false);
 // OCR language + busy flag for inline image OCR (parity with the Note editor).
 const ocrLang = useLocalStorage<string>("lifelogr-ocr-language", "eng");
@@ -317,19 +368,67 @@ const { renderedPreview } = useMarkdownPreview(
   () => showPreview.value,
 );
 
+// ── Resizable preview media + per-image OCR button ──
+// Every re-render wraps <img>/<video> in .rmedia resize spans (sizes persist
+// per src) and adds a hover "OCR" pill to each image. The pill is handled by
+// event delegation (preview re-renders on every keystroke — per-element
+// listeners wouldn't survive).
+const previewEl = ref<HTMLElement | null>(null);
+const { wrapResizableMedia } = useResizableMedia("lifelogr-entry-media-sizes");
+
+function decoratePreviewMedia() {
+  wrapResizableMedia(previewEl.value);
+  const root = previewEl.value;
+  if (!root) return;
+  root.querySelectorAll(".rmedia > img").forEach((img) => {
+    const wrap = img.parentElement;
+    if (!wrap || wrap.querySelector(".ocr-btn")) return;
+    const btn = document.createElement("button");
+    btn.className = "ocr-btn";
+    btn.textContent = "OCR";
+    btn.title = "Extract text from this image (inserted below it)";
+    wrap.appendChild(btn);
+  });
+}
+
+/** Delegated click: the OCR pill on an image runs OCR for that media and
+ *  inserts the text directly below the image's markdown token. */
+async function onPreviewClick(e: MouseEvent) {
+  const btn = (e.target as HTMLElement).closest(".ocr-btn");
+  if (!btn) return;
+  e.preventDefault();
+  const wrap = btn.closest(".rmedia") as HTMLElement | null;
+  const img = wrap?.querySelector("img");
+  const src = img?.getAttribute("src") || "";
+  const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0);
+  if (!mediaId) return;
+  await runEntryOcr(mediaId, src);
+}
+
+watch(
+  [renderedPreview, showPreview],
+  () => {
+    if (showPreview.value) nextTick(decoratePreviewMedia);
+  },
+  { immediate: true },
+);
+
 // ── Load entry data ──
 async function loadEntry() {
   body.value = "";
   title.value = "";
   tagIds.value = [];
   selectedTemplateId.value = null;
+  dateInvalid.value = false;
 
   if (isNew.value) {
     if (ui.newEntryDate) {
-      entryDate.value = ui.newEntryDate;
+      setEntryDate(ui.newEntryDate);
     } else {
       const d = new Date();
-      entryDate.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      setEntryDate(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+      );
     }
     // Auto-apply default template
     try {
@@ -370,7 +469,7 @@ async function loadEntry() {
         tts.prewarmEntry(entry.id);
       }
       tagIds.value = entry.tags.map((t) => t.id);
-      entryDate.value = entry.entry_date;
+      setEntryDate(entry.entry_date);
       selectedTemplateId.value = entry.template_id;
     }
   }
@@ -381,6 +480,7 @@ async function loadEntry() {
 
 onMounted(() => {
   loadEntry();
+  void registerTauriDrop(handleDroppedPaths);
   window.addEventListener("click", async (e) => {
     // Don't dismiss while AI is running
     if (aiLoading.value) return;
@@ -508,6 +608,10 @@ async function save() {
   // Cancel any pending debounced autosave so it can't race this manual save
   // (two concurrent updateEntry calls with different snapshots lose data).
   cancelSave();
+  if (dateInvalid.value) {
+    alert("Fix the entry date — it must be a valid date in dd-mm-yyyy form.");
+    return;
+  }
   try {
     if (isNew.value) {
       if (!body.value.trim() && !title.value.trim()) {
@@ -576,31 +680,58 @@ function cutToClipboard() {
   }
 }
 
-// ── Inline image embed + OCR (parity with the Note editor) ──
-// Journal image uploads embed inline in the body and auto-OCR, instead of
-// becoming side-panel attachments. Non-image uploads keep the attachment path.
-async function embedImageFile(file: File): Promise<MediaResponse | null> {
+// ── Inline media embed (image / video / audio) + OCR ──
+// Journal media uploads embed inline in the body (images as markdown, video/
+// audio as HTML tags — the preview allowlist renders both), instead of becoming
+// side-panel attachments. Encrypted entries fall back to attachments.
+async function embedMediaFile(file: File): Promise<MediaResponse | null> {
   try {
     const media = await mediaApi.upload(ui.editingEntryId!, file);
     const url = mediaApi.fileUrl(media.id);
-    const name = file.name.replace(/\.[^.]+$/, "") || "image";
-    applyToSelection(`![${name}](${url})`);
-    showPreview.value = true;
+    embedMarkdownFor(file.name, file.type, url);
     return media;
   } catch (e: unknown) {
-    alert(`Image upload failed: ${e instanceof Error ? e.message : e}`);
+    alert(`Media upload failed: ${e instanceof Error ? e.message : e}`);
     return null;
   }
 }
 
-async function runEntryOcr(mediaId: number) {
+/** Insert the right markdown for a media type at the cursor. */
+function embedMarkdownFor(filename: string, mime: string, url: string) {
+  const name = filename.replace(/\.[^.]+$/, "") || "media";
+  if (mime.startsWith("image/")) {
+    applyToSelection(`![${name}](${url})`);
+  } else if (mime.startsWith("video/")) {
+    applyToSelection(
+      `\n<video controls preload="metadata" src="${url}" style="max-width:100%"></video>\n`,
+    );
+  } else if (mime.startsWith("audio/")) {
+    applyToSelection(`\n<audio controls preload="metadata" src="${url}"></audio>\n`);
+  } else {
+    applyToSelection(`[${name}](${url})`);
+  }
+  showPreview.value = true;
+}
+
+/** OCR a media file and insert the text directly below its embedded markdown
+ *  (plain-text blockquote — journal OCR standard). Shared by auto-OCR on
+ *  upload and the per-image hover button. */
+async function runEntryOcr(mediaId: number, url?: string) {
   ocrBusy.value = true;
   try {
     const { text } = await mediaApi.extractText(mediaId, ocrLang.value);
     if (text.trim()) {
-      applyToSelection(
-        `\n\n<details><summary>📷 OCR</summary>\n\n${text.trim()}\n\n</details>\n`,
-      );
+      const target =
+        url ?? body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1];
+      if (target) {
+        body.value = insertOcrBelowImage(body.value, target, text);
+      } else {
+        // No token to anchor under (e.g. side-panel attachment) — insert at
+        // the cursor as before.
+        applyToSelection(`\n\n> ${text.trim().replace(/\n/g, "\n> ")}\n`);
+      }
+      onInput();
+      if (!showPreview.value) showPreview.value = true;
     }
   } catch (e: unknown) {
     alert(`OCR failed: ${e instanceof Error ? e.message : e}`);
@@ -622,9 +753,15 @@ async function onFilesSelected(files: FileList | null) {
     return;
   }
   for (const file of Array.from(files)) {
-    if (file.type.startsWith("image/")) {
-      const media = await embedImageFile(file);
-      if (media && autoOcr.value) await runEntryOcr(media.id);
+    if (
+      file.type.startsWith("image/") ||
+      file.type.startsWith("video/") ||
+      file.type.startsWith("audio/")
+    ) {
+      const media = await embedMediaFile(file);
+      if (media && file.type.startsWith("image/") && autoOcr.value) {
+        await runEntryOcr(media.id, mediaApi.fileUrl(media.id));
+      }
     } else {
       await handleFileUpload({
         length: 1,
@@ -642,6 +779,67 @@ async function onDropFiles(e: DragEvent) {
     item: (i: number) => accepted[i],
   } as unknown as FileList);
 }
+
+// ── Tauri native drag-drop (paths) + clipboard paste ──
+// WebKitGTK doesn't deliver HTML5 file drops, so the desktop build receives
+// paths via Tauri's onDragDropEvent (useTauriDragDrop) and imports them via
+// POST /media/from-path. Paste (screenshots etc.) routes through usePasteMedia.
+const { isDragging: tauriDragging, register: registerTauriDrop } = useTauriDragDrop();
+const dragActive = computed(() => isDragging.value || tauriDragging.value);
+const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg"];
+const AUDIO_EXTS = ["mp3", "wav", "ogg", "m4a", "flac", "aac", "opus"];
+const VIDEO_EXTS = ["mp4", "webm", "mov", "mkv", "avi"];
+
+async function handleDroppedPaths(paths: string[]) {
+  if (!paths.length) return;
+  if (!hasEntry.value) {
+    await save();
+    if (!hasEntry.value) return;
+  }
+  if (isEncrypted.value) {
+    alert(
+      "This entry is encrypted — decrypt it before dropping media so it can be embedded inline.",
+    );
+    return;
+  }
+  textarea.value?.focus();
+  for (const path of paths) {
+    const name = path.split(/[\\/]/).pop() || path;
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    try {
+      const media = await mediaApi.uploadFromPath(ui.editingEntryId!, path);
+      const url = mediaApi.fileUrl(media.id);
+      const mime = IMAGE_EXTS.includes(ext)
+        ? "image/"
+        : AUDIO_EXTS.includes(ext)
+          ? "audio/"
+          : VIDEO_EXTS.includes(ext)
+            ? "video/"
+            : "application/octet-stream";
+      embedMarkdownFor(name, mime, url);
+      if (mime === "image/" && autoOcr.value) {
+        await runEntryOcr(media.id, url);
+      }
+    } catch (e: unknown) {
+      alert(`Media import failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+}
+
+const { onPaste: pasteMediaHandler } = usePasteMedia({
+  uploadMedia: async (file) => {
+    if (!hasEntry.value) {
+      await save();
+      if (!hasEntry.value) return;
+    }
+    if (isEncrypted.value) return false; // keep default paste
+    const media = await embedMediaFile(file);
+    if (media && file.type.startsWith("image/") && autoOcr.value) {
+      await runEntryOcr(media.id, mediaApi.fileUrl(media.id));
+    }
+  },
+  applyText: (text) => applyToSelection(text),
+});
 
 // ── Attachments ── (extracted to useAttachments composable)
 
@@ -783,14 +981,14 @@ async function applySuggestedTag(name: string) {
     <!-- Drag overlay -->
     <Transition name="drag">
       <div
-        v-if="isDragging"
+        v-if="dragActive"
         class="absolute inset-0 z-[150] bg-accent/5 border-2 border-dashed border-accent/40 rounded-lg flex items-center justify-center pointer-events-none"
       >
         <div
           class="text-sm font-medium text-accent/80 flex flex-col items-center gap-1"
         >
           <Paperclip :size="24" />
-          Drop files here
+          Drop image / video / audio to embed
         </div>
       </div>
     </Transition>
@@ -806,9 +1004,15 @@ async function applySuggestedTag(name: string) {
         @input="onInput"
       />
       <input
-        v-model="entryDate"
-        type="date"
-        class="bg-surface border border-border rounded px-1.5 py-0.5 text-[11px] text-text-primary shrink-0"
+        :value="dateDisplay"
+        inputmode="numeric"
+        placeholder="dd-mm-yyyy"
+        maxlength="10"
+        class="bg-surface border rounded px-1.5 py-0.5 text-[11px] shrink-0 tabular-nums"
+        :class="dateInvalid ? 'border-danger text-danger' : 'border-border text-text-primary'"
+        title="Entry date (dd-mm-yyyy)"
+        @input="onDateInput"
+        @blur="onDateBlur"
       />
       <button
         class="p-1 rounded hover:bg-accent/15 text-accent cursor-pointer transition-colors shrink-0"
@@ -971,18 +1175,21 @@ async function applySuggestedTag(name: string) {
               @input="onEditorInput"
               @keydown="onTextareaKeydown"
               @keydown.capture="onEditorKeydownCapture"
+              @paste="pasteMediaHandler"
               @contextmenu="onContextMenu"
               @focus="clearSelCache"
               @blur="onEditorBlur"
             />
             <div
               v-else
-              class="p-4 md-body max-w-none text-text-primary"
+              ref="previewEl"
+              class="p-4 md-body max-w-none text-text-primary overflow-y-auto h-full"
               :style="{
                 fontFamily: 'var(--editor-font)',
                 fontSize: 'var(--editor-font-size)',
               }"
               v-html="renderedPreview"
+              @click="onPreviewClick"
             />
           </template>
         </div>

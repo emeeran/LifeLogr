@@ -66,8 +66,6 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && results.value.length) { openResult(results.value[selectedIndex.value]); return }
 }
 
-const shortDateOpts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
-
 function formatDate(d: string) {
   return formatDDMMYYYY(d)
 }

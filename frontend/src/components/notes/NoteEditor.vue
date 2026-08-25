@@ -690,7 +690,7 @@ function onToolbarAction(name: string) {
 watch(
   [renderedPreview, showPreview],
   () => {
-    if (showPreview.value) nextTick(wrapResizableMedia)
+    if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value))
   },
 )
 onUnmounted(() => {

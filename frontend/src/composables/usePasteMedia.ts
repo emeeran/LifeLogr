@@ -125,6 +125,8 @@ export function usePasteMedia(opts: PasteMediaOptions) {
     if (!blob) return
     await uploadMedia(new File([blob], 'pasted.png', { type: 'image/png' }))
   }
+
+  return { onPaste, onPasteTauri }
 }
 
 // ── Paste-to-table helpers ───────────────────────────────────────────────────
