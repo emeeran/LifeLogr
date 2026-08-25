@@ -14,6 +14,15 @@ export const mediaApi = {
     return request(`/media/${id}`)
   },
 
+  /** Import a local file by absolute path as entry media (Tauri native
+   *  drag-drop gives a path, not a File object). Sandboxed to home+temp. */
+  uploadFromPath(entryId: number, path: string, caption?: string): Promise<MediaResponse> {
+    return request('/media/from-path', {
+      method: 'POST',
+      body: JSON.stringify({ entry_id: entryId, path, caption }),
+    })
+  },
+
   /** Extract text from an image attachment via OCR (tesseract).
    *  `lang` is a tesseract code mirroring Settings → Appearance → "OCR language". */
   extractText(id: number, lang = 'eng'): Promise<{ text: string }> {

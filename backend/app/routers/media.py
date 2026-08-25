@@ -11,7 +11,12 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.schemas.media import MediaResponse, MediaTimelineItem, MediaTimelineResponse
+from app.schemas.media import (
+    MediaFromPath,
+    MediaResponse,
+    MediaTimelineItem,
+    MediaTimelineResponse,
+)
 from app.services.media_service import MediaService
 from app.services.ocr_service import OcrLanguageUnavailable, ocr_image_bytes
 
@@ -39,6 +44,21 @@ async def upload_media(
 
 
 # ── Batch upload & listing ─────────────────────────────────────────────────────
+
+
+@router.post("/from-path", response_model=MediaResponse, status_code=201)
+async def upload_media_from_path(
+    data: MediaFromPath, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Import a local file by absolute path as entry media.
+
+    Used by the Tauri native drag-drop handler in the journal editor, which
+    receives a file path (WebKitGTK doesn't deliver HTML5 file drops).
+    Sandboxed like the notes variant: home dir + temp only, sensitive
+    locations denied.
+    """
+    svc = MediaService(db)
+    return await svc.upload_from_path(data.entry_id, data.path, data.caption)
 
 
 @router.post("/batch", response_model=list[MediaResponse], status_code=201)
