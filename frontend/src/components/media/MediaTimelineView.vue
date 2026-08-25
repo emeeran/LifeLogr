@@ -12,7 +12,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { mediaApi } from '../../api/media'
 import { usePagination } from '../../composables/usePagination'
-import { formatEntryDate, formatFileSize } from '../../composables/useFormat'
+import { formatDDMMYYYY, formatFileSize } from '../../composables/useFormat'
 import { useUiStore } from '../../stores/ui'
 import {
   ChevronLeft, ChevronRight, Film, Music, FileText, Play, ImageIcon, FolderOpen,
@@ -52,7 +52,6 @@ const dateGroups = computed(() => {
   return Object.values(groups)
 })
 
-const dateOpts: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }
 
 async function load() {
   loading.value = true
@@ -134,7 +133,7 @@ watch(() => filter.value, load)
           <!-- Date header -->
           <div class="mb-2.5 flex items-baseline gap-2">
             <h3 class="text-[13px] font-semibold text-text-primary">
-              {{ formatEntryDate(group.date, dateOpts) }}
+              {{ formatDDMMYYYY(group.date, { weekday: 'long' }) }}
             </h3>
             <span class="text-[10px] text-text-muted">{{ group.items.length }} item{{ group.items.length === 1 ? '' : 's' }}</span>
           </div>

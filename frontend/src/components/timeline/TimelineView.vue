@@ -7,7 +7,7 @@ import { useEntriesStore } from '../../stores/entries'
 import { useTagsStore } from '../../stores/tags'
 import { useTemplatesStore } from '../../stores/templates'
 import { usePagination } from '../../composables/usePagination'
-import { formatEntryDate } from '../../composables/useFormat'
+import { formatDDMMYYYY } from '../../composables/useFormat'
 import { ChevronLeft, ChevronRight, Tag, X, Calendar, LayoutTemplate } from 'lucide-vue-next'
 import GoToDateModal from '../common/GoToDateModal.vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
@@ -93,8 +93,6 @@ function applyTemplateFilter(id: number | null) {
   pagination.offset.value = 0
   load()
 }
-
-const shortDateOpts: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
 
 function bodyPreview(body: string): string {
   const lines = body.split('\n').filter(l => l.trim())
@@ -232,7 +230,7 @@ async function onGoToDate(dateStr: string) {
             <!-- Entry content (left) -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
-                <span class="text-sm font-medium text-text-primary">{{ formatEntryDate(filteredEntries[virtualRow.index].entry_date, shortDateOpts) }}</span>
+                <span class="text-sm font-medium text-text-primary">{{ formatDDMMYYYY(filteredEntries[virtualRow.index].entry_date, { weekday: 'short' }) }}</span>
               </div>
               <p v-if="filteredEntries[virtualRow.index].title" class="text-xs font-medium text-text-primary mb-0.5">{{ filteredEntries[virtualRow.index].title }}</p>
               <p class="text-xs text-text-secondary leading-relaxed whitespace-pre-line">

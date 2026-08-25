@@ -4,6 +4,7 @@ import type { CalendarEntryResponse } from '../../types'
 import { useEntriesStore } from '../../stores/entries'
 import { useUiStore } from '../../stores/ui'
 import { useCalendar } from '../../composables/useCalendar'
+import { formatDDMMYYYY } from '../../composables/useFormat'
 import { Pencil, Plus, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -54,7 +55,7 @@ async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
     style="top: 100%; right: 0;"
     @click.stop
   >
-    <div class="text-[10px] font-semibold text-text-muted mb-1 px-1">{{ dateStr }}</div>
+    <div class="text-[10px] font-semibold text-text-muted mb-1 px-1">{{ formatDDMMYYYY(dateStr) }}</div>
 
     <div
       v-for="entry in entries"
