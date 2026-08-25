@@ -47,9 +47,7 @@ async def upload_media(
 
 
 @router.post("/from-path", response_model=MediaResponse, status_code=201)
-async def upload_media_from_path(
-    data: MediaFromPath, db: AsyncSession = Depends(get_db)
-) -> Any:
+async def upload_media_from_path(data: MediaFromPath, db: AsyncSession = Depends(get_db)) -> Any:
     """Import a local file by absolute path as entry media.
 
     Used by the Tauri native drag-drop handler in the journal editor, which

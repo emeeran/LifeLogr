@@ -49,10 +49,16 @@ function handleNewEntry(dateStr: string) {
   <div
     class="relative min-h-[60px] border border-border/50 rounded-sm p-1.5 cursor-pointer transition-colors duration-150"
     :class="[
-      isCurrentMonth ? (entries.length ? 'bg-accent/5' : 'bg-surface') : (entries.length ? 'bg-accent/5' : 'bg-sidebar/50'),
+      isCurrentMonth
+        ? entries.length
+          ? 'bg-accent/5'
+          : 'bg-surface'
+        : entries.length
+          ? 'bg-accent/5'
+          : 'bg-sidebar/50',
       isToday && !isSelected ? 'ring-2 ring-green-500 bg-green-500/10' : '',
       isSelected ? 'ring-2 ring-red-500 bg-red-500/10' : '',
-      'hover:bg-surface-hover'
+      'hover:bg-surface-hover',
     ]"
     @click="handleClick"
   >
@@ -60,7 +66,7 @@ function handleNewEntry(dateStr: string) {
       class="text-[11px] font-semibold"
       :class="[
         isCurrentMonth ? 'text-text-primary' : 'text-text-muted',
-        isToday ? 'text-green-600' : ''
+        isToday ? 'text-green-600' : '',
       ]"
     >
       {{ date }}
@@ -72,7 +78,10 @@ function handleNewEntry(dateStr: string) {
       class="mt-0.5 w-full rounded-sm overflow-hidden"
     >
       <p class="text-[10px] text-text-secondary/90 leading-snug line-clamp-2">
-        {{ entries[0].title || (entries[0].is_encrypted ? 'Encrypted' : 'Journal entry') }}
+        {{
+          entries[0].title ||
+          (entries[0].is_encrypted ? 'Encrypted' : 'Journal entry')
+        }}
       </p>
     </div>
 

@@ -33,5 +33,13 @@ export const useTagsStore = defineStore('tags', () => {
     await fetchTree()
   }
 
-  return { tags, loading, fetchAll: fetchTree, fetchTree, createTag, updateTag, deleteTag }
+  return {
+    tags,
+    loading,
+    fetchAll: fetchTree,
+    fetchTree,
+    createTag,
+    updateTag,
+    deleteTag,
+  }
 })

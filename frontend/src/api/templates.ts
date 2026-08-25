@@ -9,7 +9,10 @@ export const templatesApi = {
     return request('/templates', { method: 'POST', body: JSON.stringify(data) })
   },
   update(id: number, data: TemplateUpdate): Promise<TemplateResponse> {
-    return request(`/templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+    return request(`/templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
   remove(id: number): Promise<void> {
     return request(`/templates/${id}`, { method: 'DELETE' })

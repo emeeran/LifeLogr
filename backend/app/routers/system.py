@@ -82,11 +82,9 @@ async def egress_report(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
         "configured": configured,
         "scheduled": scheduled,
         "note": (
-            "A scheduled cloud backup uploads an encrypted archive of your "
-            "journal to the provider."
+            "A scheduled cloud backup uploads an encrypted archive of your journal to the provider."
             if scheduled
-            else "No cloud backup is scheduled. (Configured providers only run "
-            "when you back up.)"
+            else "No cloud backup is scheduled. (Configured providers only run when you back up.)"
         ),
     }
 

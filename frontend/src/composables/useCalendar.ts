@@ -6,12 +6,24 @@ export function useCalendar() {
   const month = ref(today.getMonth() + 1) // 1-based
 
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ]
   const dayNames = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 
-  const monthLabel = computed(() => `${monthNames[month.value - 1]} ${year.value}`)
+  const monthLabel = computed(
+    () => `${monthNames[month.value - 1]} ${year.value}`,
+  )
 
   interface CalendarDay {
     date: number
@@ -34,12 +46,20 @@ export function useCalendar() {
       const d = daysInPrevMonth - i
       const m = month.value === 1 ? 12 : month.value - 1
       const y = month.value === 1 ? year.value - 1 : year.value
-      days.push({ date: d, dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false })
+      days.push({
+        date: d,
+        dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        isCurrentMonth: false,
+      })
     }
 
     // Current month
     for (let d = 1; d <= daysInMonth; d++) {
-      days.push({ date: d, dateStr: `${year.value}-${String(month.value).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: true })
+      days.push({
+        date: d,
+        dateStr: `${year.value}-${String(month.value).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        isCurrentMonth: true,
+      })
     }
 
     // Next month's leading days
@@ -47,20 +67,28 @@ export function useCalendar() {
     for (let d = 1; d <= remaining; d++) {
       const m = month.value === 12 ? 1 : month.value + 1
       const y = month.value === 12 ? year.value + 1 : year.value
-      days.push({ date: d, dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false })
+      days.push({
+        date: d,
+        dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        isCurrentMonth: false,
+      })
     }
 
     return days
   })
 
   function prevMonth() {
-    if (month.value === 1) { month.value = 12; year.value-- }
-    else month.value--
+    if (month.value === 1) {
+      month.value = 12
+      year.value--
+    } else month.value--
   }
 
   function nextMonth() {
-    if (month.value === 12) { month.value = 1; year.value++ }
-    else month.value++
+    if (month.value === 12) {
+      month.value = 1
+      year.value++
+    } else month.value++
   }
 
   function goToday() {
@@ -69,5 +97,14 @@ export function useCalendar() {
     month.value = now.getMonth() + 1
   }
 
-  return { year, month, grid, dayNames, monthLabel, prevMonth, nextMonth, goToday }
+  return {
+    year,
+    month,
+    grid,
+    dayNames,
+    monthLabel,
+    prevMonth,
+    nextMonth,
+    goToday,
+  }
 }

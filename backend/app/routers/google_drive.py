@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from urllib.parse import urlencode
@@ -15,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.oauth_state import OAuthStateStore
-from app.core.security import decrypt
 from app.models.backup import BackupConfig
 from app.routers._oauth_helpers import (
     error_page,
     exchange_authorization_code,
+    load_stored_credentials,
     success_page,
     upsert_backup_config,
 )
@@ -45,13 +44,9 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
     default_id, _ = get_default_credentials()
     client_id = default_id
-    if config:
-        try:
-            creds = json.loads(decrypt(config.credentials_encrypted))
-            if creds.get("client_id"):
-                client_id = creds["client_id"]
-        except Exception:
-            logger.warning("Failed to decrypt stored Google credentials", exc_info=True)
+    stored = load_stored_credentials(config, "Google")
+    if stored.get("client_id"):
+        client_id = stored["client_id"]
 
     if not client_id:
         raise HTTPException(
@@ -98,14 +93,9 @@ async def oauth_callback(
     client_id = default_id
     client_secret = default_secret
 
-    stored_creds: dict[str, str] = {}
-    if config:
-        try:
-            stored_creds = json.loads(decrypt(config.credentials_encrypted))
-            client_id = stored_creds.get("client_id") or client_id
-            client_secret = stored_creds.get("client_secret") or client_secret
-        except Exception:
-            logger.warning("Failed to decrypt Google credentials for token exchange", exc_info=True)
+    stored = load_stored_credentials(config, "Google")
+    client_id = stored.get("client_id") or client_id
+    client_secret = stored.get("client_secret") or client_secret
 
     if not client_id or not client_secret:
         return error_page("Google OAuth client_id/client_secret are not configured")
@@ -128,7 +118,7 @@ async def oauth_callback(
 
     # 3. Encrypt and save configuration in DB (shared helper).
     refresh_token = token_data.get("refresh_token") or (
-        stored_creds.get("refresh_token") if config else None
+        stored.get("refresh_token") if config else None
     )
     if not refresh_token:
         # prompt=consent didn't fire / first-time sync — ask the user to retry.

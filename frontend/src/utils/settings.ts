@@ -18,7 +18,10 @@ const PROVIDER_LABELS: Record<string, string> = {
 }
 
 export function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return (
+    PROVIDER_LABELS[provider] ??
+    provider.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  )
 }
 
 let migrated = false

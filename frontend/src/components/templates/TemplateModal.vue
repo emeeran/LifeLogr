@@ -27,7 +27,10 @@ onMounted(() => {
 async function handleSave() {
   if (!name.value.trim() || !body.value.trim()) return
   if (props.template) {
-    await store.update(props.template.id, { name: name.value, body: body.value })
+    await store.update(props.template.id, {
+      name: name.value,
+      body: body.value,
+    })
   } else {
     await store.create({ name: name.value, body: body.value })
   }
@@ -37,14 +40,24 @@ async function handleSave() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40" @click.self="emit('close')">
-    <div class="bg-surface border border-border rounded-lg w-[480px] max-h-[80vh] flex flex-col shadow-xl">
+  <div
+    class="fixed inset-0 z-[200] flex items-center justify-center bg-black/40"
+    @click.self="emit('close')"
+  >
+    <div
+      class="bg-surface border border-border rounded-lg w-[480px] max-h-[80vh] flex flex-col shadow-xl"
+    >
       <!-- Header -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+      <div
+        class="flex items-center justify-between px-4 py-3 border-b border-border"
+      >
         <span class="text-sm font-semibold text-text-primary">
           {{ template ? 'Edit Template' : 'New Template' }}
         </span>
-        <button class="p-1 rounded hover:bg-surface-hover text-text-secondary cursor-pointer" @click="emit('close')">
+        <button
+          class="p-1 rounded hover:bg-surface-hover text-text-secondary cursor-pointer"
+          @click="emit('close')"
+        >
           <X :size="14" />
         </button>
       </div>
@@ -52,7 +65,9 @@ async function handleSave() {
       <!-- Form -->
       <div class="flex-1 overflow-y-auto p-4 space-y-3">
         <div>
-          <label class="block text-xs font-medium text-text-secondary mb-1">Name</label>
+          <label class="block text-xs font-medium text-text-secondary mb-1"
+            >Name</label
+          >
           <input
             v-model="name"
             class="w-full bg-surface border border-border rounded px-3 py-1.5 text-sm text-text-primary outline-none focus:border-accent"
@@ -60,7 +75,9 @@ async function handleSave() {
           />
         </div>
         <div>
-          <label class="block text-xs font-medium text-text-secondary mb-1">Template content (Markdown)</label>
+          <label class="block text-xs font-medium text-text-secondary mb-1"
+            >Template content (Markdown)</label
+          >
           <textarea
             v-model="body"
             class="w-full bg-surface border border-border rounded px-3 py-1.5 text-sm text-text-primary outline-none focus:border-accent min-h-[200px] resize-y"

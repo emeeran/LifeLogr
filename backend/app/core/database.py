@@ -67,7 +67,9 @@ def _set_sqlite_pragma(dbapi_conn: Any, connection_record: Any) -> None:
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA busy_timeout=10000")
-    cursor.execute("PRAGMA cache_size=-4000")  # ~4 MiB page cache (tuned for single-user desktop reads)
+    cursor.execute(
+        "PRAGMA cache_size=-4000"
+    )  # ~4 MiB page cache (tuned for single-user desktop reads)
     cursor.execute("PRAGMA temp_store=MEMORY")
     cursor.execute("PRAGMA wal_autocheckpoint=1000")  # flush WAL every ~4 MiB so -wal stays bounded
     cursor.close()
@@ -301,9 +303,7 @@ def _recover_from_snapshot_sync(db_path: Path, data_dir: Path, _ts: str | None =
         logger.error("Could not quarantine corrupt DB %s", db_path, exc_info=True)
         return False
 
-    snaps = sorted(
-        data_dir.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"), key=lambda p: p.name, reverse=True
-    )
+    snaps = sorted(data_dir.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"), key=lambda p: p.name, reverse=True)
     for snap in snaps:
         if _integrity_check_sync(snap) != "ok":
             continue
@@ -497,12 +497,25 @@ async def _drop_removed_feature_tables(conn: Any) -> None:
     """
     for table in (
         # Email / Contacts / Tasks / Schedule / Google sync (recently removed)
-        "email_attachments", "email_messages", "email_folders", "email_accounts",
-        "spam_blocklist", "contact_group_members", "contact_groups", "contacts",
-        "tasks", "task_lists", "schedule_events", "google_sync_account",
+        "email_attachments",
+        "email_messages",
+        "email_folders",
+        "email_accounts",
+        "spam_blocklist",
+        "contact_group_members",
+        "contact_groups",
+        "contacts",
+        "tasks",
+        "task_lists",
+        "schedule_events",
+        "google_sync_account",
         # Older legacy tables — no ORM model, no active code path (verified unused)
-        "alembic_version", "digests", "entry_revisions",
-        "ocr_results", "plugin_hooks", "plugins",
+        "alembic_version",
+        "digests",
+        "entry_revisions",
+        "ocr_results",
+        "plugin_hooks",
+        "plugins",
     ):
         await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
@@ -913,7 +926,9 @@ async def _setup_fts() -> None:
                         ):
                             await conn.execute(text(f"DROP TRIGGER IF EXISTS {name}"))
                         await conn.execute(text("DROP TABLE IF EXISTS notes_fts"))
-                        await conn.execute(text("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body)"))
+                        await conn.execute(
+                            text("CREATE VIRTUAL TABLE notes_fts USING fts5(title, body)")
+                        )
                         await conn.execute(
                             text("""
                                 INSERT INTO notes_fts(rowid, title, body)

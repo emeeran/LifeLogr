@@ -9,8 +9,22 @@
  */
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
-  Plus, Search, NotebookPen, Folder, FolderOpen, FileText, FolderPlus,
-  Check, Trash2, X, ChevronRight, Pin, Lock, Inbox, Upload, Pencil,
+  Plus,
+  Search,
+  NotebookPen,
+  Folder,
+  FolderOpen,
+  FileText,
+  FolderPlus,
+  Check,
+  Trash2,
+  X,
+  ChevronRight,
+  Pin,
+  Lock,
+  Inbox,
+  Upload,
+  Pencil,
 } from 'lucide-vue-next'
 import { useLocalStorage } from '@vueuse/core'
 import { useVirtualizer } from '@tanstack/vue-virtual'
@@ -50,7 +64,10 @@ function onRailMousedown(e: MouseEvent) {
   const startX = e.clientX
   const startW = railWidth.value
   function move(ev: MouseEvent) {
-    railWidth.value = Math.min(560, Math.max(200, startW + (ev.clientX - startX)))
+    railWidth.value = Math.min(
+      560,
+      Math.max(200, startW + (ev.clientX - startX)),
+    )
   }
   function up() {
     railDragging.value = false
@@ -79,7 +96,9 @@ function sortedNotes(arr: NoteListItem[]): NoteListItem[] {
   })
 }
 
-const unfiledNotes = computed(() => sortedNotes(store.notes.filter((n) => n.folder_id == null)))
+const unfiledNotes = computed(() =>
+  sortedNotes(store.notes.filter((n) => n.folder_id == null)),
+)
 const allNotes = computed(() => sortedNotes(store.notes))
 function notesIn(folderId: number): NoteListItem[] {
   return sortedNotes(store.notes.filter((n) => n.folder_id === folderId))
@@ -92,7 +111,14 @@ function leafLabel(n: NoteListItem): string {
 // virtualizable array so only the visible slice renders — keeps the DOM flat
 // even with "All Notes" expanded over thousands of notes.
 interface TreeItem {
-  kind: 'header' | 'tree-row' | 'section' | 'newfolder' | 'empty' | 'empty-folder' | 'leaf'
+  kind:
+    | 'header'
+    | 'tree-row'
+    | 'section'
+    | 'newfolder'
+    | 'empty'
+    | 'empty-folder'
+    | 'leaf'
   text?: string
   key?: string
   label?: string
@@ -126,10 +152,15 @@ function rowIndent(depth = 0) {
 function emitFolder(out: TreeItem[], f: NoteFolderResponse, depth: number) {
   const k = String(f.id)
   out.push({
-    kind: 'tree-row', key: k, label: f.name,
+    kind: 'tree-row',
+    key: k,
+    label: f.name,
     icon: isExpanded(k) ? 'folderopen' : 'folder',
-    count: f.note_count, expanded: isExpanded(k),
-    folderId: f.id, folderName: f.name, depth,
+    count: f.note_count,
+    expanded: isExpanded(k),
+    folderId: f.id,
+    folderName: f.name,
+    depth,
   })
   if (!isExpanded(k)) return
   const kids = foldersByParent.value.get(f.id) ?? []
@@ -138,32 +169,67 @@ function emitFolder(out: TreeItem[], f: NoteFolderResponse, depth: number) {
     out.push({ kind: 'newfolder', depth: depth + 1 })
   }
   const here = notesIn(f.id)
-  if (!kids.length && !here.length) out.push({ kind: 'empty-folder', depth: depth + 1 })
-  else for (const n of here) out.push({ kind: 'leaf', note: n, depth: depth + 1 })
+  if (!kids.length && !here.length)
+    out.push({ kind: 'empty-folder', depth: depth + 1 })
+  else
+    for (const n of here) out.push({ kind: 'leaf', note: n, depth: depth + 1 })
 }
 
 const flatTree = computed<TreeItem[]>(() => {
   if (searchResults.value) {
-    const out: TreeItem[] = [{ kind: 'header', text: `Results · ${searchResults.value.length}` }]
-    if (!searchResults.value.length) out.push({ kind: 'empty', text: `No notes match “${searchQuery.value}”.`, depth: 1 })
-    else for (const n of searchResults.value) out.push({ kind: 'leaf', note: n, depth: 1 })
+    const out: TreeItem[] = [
+      { kind: 'header', text: `Results · ${searchResults.value.length}` },
+    ]
+    if (!searchResults.value.length)
+      out.push({
+        kind: 'empty',
+        text: `No notes match “${searchQuery.value}”.`,
+        depth: 1,
+      })
+    else
+      for (const n of searchResults.value)
+        out.push({ kind: 'leaf', note: n, depth: 1 })
     return out
   }
   const out: TreeItem[] = []
-  out.push({ kind: 'tree-row', key: 'all', label: 'All Notes', icon: 'inbox', count: allNotes.value.length, expanded: isExpanded('all'), depth: 0 })
+  out.push({
+    kind: 'tree-row',
+    key: 'all',
+    label: 'All Notes',
+    icon: 'inbox',
+    count: allNotes.value.length,
+    expanded: isExpanded('all'),
+    depth: 0,
+  })
   if (isExpanded('all')) {
-    if (!allNotes.value.length) out.push({ kind: 'empty', text: 'No notes yet.', depth: 1 })
-    else for (const n of allNotes.value) out.push({ kind: 'leaf', note: n, depth: 1 })
+    if (!allNotes.value.length)
+      out.push({ kind: 'empty', text: 'No notes yet.', depth: 1 })
+    else
+      for (const n of allNotes.value)
+        out.push({ kind: 'leaf', note: n, depth: 1 })
   }
-  out.push({ kind: 'tree-row', key: 'unfiled', label: 'Unfiled', icon: 'file', count: unfiledNotes.value.length, expanded: isExpanded('unfiled'), depth: 0 })
+  out.push({
+    kind: 'tree-row',
+    key: 'unfiled',
+    label: 'Unfiled',
+    icon: 'file',
+    count: unfiledNotes.value.length,
+    expanded: isExpanded('unfiled'),
+    depth: 0,
+  })
   if (isExpanded('unfiled')) {
-    if (!unfiledNotes.value.length) out.push({ kind: 'empty', text: 'Nothing unfiled.', depth: 1 })
-    else for (const n of unfiledNotes.value) out.push({ kind: 'leaf', note: n, depth: 1 })
+    if (!unfiledNotes.value.length)
+      out.push({ kind: 'empty', text: 'Nothing unfiled.', depth: 1 })
+    else
+      for (const n of unfiledNotes.value)
+        out.push({ kind: 'leaf', note: n, depth: 1 })
   }
   out.push({ kind: 'section' })
-  if (showNewFolder.value && newFolderParent.value === null) out.push({ kind: 'newfolder', depth: 0 })
+  if (showNewFolder.value && newFolderParent.value === null)
+    out.push({ kind: 'newfolder', depth: 0 })
   const roots = foldersByParent.value.get(null) ?? []
-  if (!roots.length && !showNewFolder.value) out.push({ kind: 'empty', text: 'No notebooks — click + to create one.' })
+  if (!roots.length && !showNewFolder.value)
+    out.push({ kind: 'empty', text: 'No notebooks — click + to create one.' })
   for (const f of roots) emitFolder(out, f, 0)
   return out
 })
@@ -173,7 +239,11 @@ const treeVirtualizer = useVirtualizer(
     count: flatTree.value.length,
     getScrollElement: () => treeScrollEl.value,
     estimateSize: (i: number) =>
-      flatTree.value[i].kind === 'leaf' ? 24 : flatTree.value[i].kind === 'newfolder' ? 34 : 26,
+      flatTree.value[i].kind === 'leaf'
+        ? 24
+        : flatTree.value[i].kind === 'newfolder'
+          ? 34
+          : 26,
     overscan: 10,
   })),
 )
@@ -203,14 +273,16 @@ watch(
     const n = store.currentNote
     if (!n) return
     const key = n.folder_id == null ? 'unfiled' : String(n.folder_id)
-    if (!expanded.value.has(key)) expanded.value = new Set([...expanded.value, key])
+    if (!expanded.value.has(key))
+      expanded.value = new Set([...expanded.value, key])
   },
 )
 
 async function newNote() {
   // Default to the selected note's notebook, else the first available.
   let folderId: number | undefined
-  if (store.currentNote?.folder_id != null) folderId = store.currentNote.folder_id
+  if (store.currentNote?.folder_id != null)
+    folderId = store.currentNote.folder_id
   else if (store.folders.length) folderId = store.folders[0].id
   if (folderId == null) {
     alert('Please create a notebook first — every note belongs to a notebook.')
@@ -259,7 +331,8 @@ function startNewFolder(parentId: number | null = null) {
   // Make sure the target parent is expanded so the inline input is visible.
   if (parentId != null) {
     const key = String(parentId)
-    if (!expanded.value.has(key)) expanded.value = new Set([...expanded.value, key])
+    if (!expanded.value.has(key))
+      expanded.value = new Set([...expanded.value, key])
   }
   nextTick(() => folderInputRef.value?.focus())
 }
@@ -315,7 +388,12 @@ async function deleteNoteInline(n: NoteListItem) {
 }
 
 async function removeFolder(id: number, name: string) {
-  if (!confirm(`Delete notebook "${name}"? Its notes will be un-filed, not deleted.`)) return
+  if (
+    !confirm(
+      `Delete notebook "${name}"? Its notes will be un-filed, not deleted.`,
+    )
+  )
+    return
   await store.deleteFolder(id)
   await store.fetchNotes({ limit: 100 })
 }
@@ -341,7 +419,11 @@ watch(searchQuery, (q) => {
 
 onMounted(async () => {
   ui.setView('notes')
-  await Promise.all([store.fetchNotes({ limit: 100 }), store.fetchFolders(), loadTags()])
+  await Promise.all([
+    store.fetchNotes({ limit: 100 }),
+    store.fetchFolders(),
+    loadTags(),
+  ])
   // Land on the most-recently-edited note (pinned first) instead of creating
   // an empty note every time Notes opens — that littered the DB with untitled
   // notes. If there are none yet, the empty-state panel (with its "New note"
@@ -377,7 +459,10 @@ onMounted(async () => {
       <!-- Search -->
       <div class="border-b border-border px-2 py-2">
         <div class="relative">
-          <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" />
+          <Search
+            :size="12"
+            class="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted"
+          />
           <input
             v-model="searchQuery"
             placeholder="Search notes…"
@@ -395,23 +480,53 @@ onMounted(async () => {
       </div>
 
       <!-- Tree body -->
-      <div ref="treeScrollEl" class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
-        <div :style="{ height: `${treeVirtualizer.getTotalSize()}px`, position: 'relative' }">
+      <div
+        ref="treeScrollEl"
+        class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 py-2"
+      >
+        <div
+          :style="{
+            height: `${treeVirtualizer.getTotalSize()}px`,
+            position: 'relative',
+          }"
+        >
           <div
             v-for="vr in treeVirtualizer.getVirtualItems()"
             :key="String(vr.key)"
-            :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vr.start}px)` }"
+            :style="{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${vr.start}px)`,
+            }"
           >
             <!-- header (search results count) -->
             <div v-if="flatTree[vr.index].kind === 'header'" class="px-1 pb-1">
-              <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">{{ flatTree[vr.index].text }}</span>
+              <span
+                class="text-[9px] font-bold uppercase tracking-wider text-text-muted"
+                >{{ flatTree[vr.index].text }}</span
+              >
             </div>
             <!-- tree-row (expandable group) -->
-            <div v-else-if="flatTree[vr.index].kind === 'tree-row'" class="group flex items-center gap-0.5" :style="rowIndent(flatTree[vr.index].depth)">
-              <button class="tree-row flex-1" @click="toggleExpand(flatTree[vr.index].key!)">
-                <ChevronRight :size="13" class="chevron shrink-0" :class="{ open: flatTree[vr.index].expanded }" />
+            <div
+              v-else-if="flatTree[vr.index].kind === 'tree-row'"
+              class="group flex items-center gap-0.5"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
+              <button
+                class="tree-row flex-1"
+                @click="toggleExpand(flatTree[vr.index].key!)"
+              >
+                <ChevronRight
+                  :size="13"
+                  class="chevron shrink-0"
+                  :class="{ open: flatTree[vr.index].expanded }"
+                />
                 <component :is="iconFor(flatTree[vr.index].icon!)" :size="12" />
-                <span class="flex-1 truncate text-left">{{ flatTree[vr.index].label }}</span>
+                <span class="flex-1 truncate text-left">{{
+                  flatTree[vr.index].label
+                }}</span>
                 <span class="count">{{ flatTree[vr.index].count }}</span>
               </button>
               <button
@@ -424,7 +539,12 @@ onMounted(async () => {
               </button>
               <button
                 v-if="flatTree[vr.index].folderId != null"
-                @click="removeFolder(flatTree[vr.index].folderId!, flatTree[vr.index].folderName!)"
+                @click="
+                  removeFolder(
+                    flatTree[vr.index].folderId!,
+                    flatTree[vr.index].folderName!,
+                  )
+                "
                 class="rounded p-1 text-text-muted opacity-0 transition-all hover:bg-surface-hover hover:text-red-400 group-hover:opacity-100"
                 title="Delete notebook"
               >
@@ -432,14 +552,28 @@ onMounted(async () => {
               </button>
             </div>
             <!-- section (Notebooks label + new-folder button) -->
-            <div v-else-if="flatTree[vr.index].kind === 'section'" class="flex items-center justify-between px-1 pb-1 pt-3">
-              <span class="text-[9px] font-bold uppercase tracking-wider text-text-muted">Notebooks</span>
-              <button @click="startNewFolder(null)" class="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-accent" title="New notebook">
+            <div
+              v-else-if="flatTree[vr.index].kind === 'section'"
+              class="flex items-center justify-between px-1 pb-1 pt-3"
+            >
+              <span
+                class="text-[9px] font-bold uppercase tracking-wider text-text-muted"
+                >Notebooks</span
+              >
+              <button
+                @click="startNewFolder(null)"
+                class="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-accent"
+                title="New notebook"
+              >
                 <FolderPlus :size="12" />
               </button>
             </div>
             <!-- inline new-notebook / sub-notebook input -->
-            <div v-else-if="flatTree[vr.index].kind === 'newfolder'" class="flex items-center gap-1 px-1 pb-1" :style="rowIndent(flatTree[vr.index].depth)">
+            <div
+              v-else-if="flatTree[vr.index].kind === 'newfolder'"
+              class="flex items-center gap-1 px-1 pb-1"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
               <input
                 ref="folderInputRef"
                 v-model="newFolderName"
@@ -448,26 +582,47 @@ onMounted(async () => {
                 @keydown.enter="createFolder"
                 @keydown.esc="cancelNewFolder"
               />
-              <button @click="createFolder" class="rounded bg-accent p-1 text-white transition-colors hover:bg-accent/90" title="Create">
+              <button
+                @click="createFolder"
+                class="rounded bg-accent p-1 text-white transition-colors hover:bg-accent/90"
+                title="Create"
+              >
                 <Check :size="11" />
               </button>
-              <button @click="cancelNewFolder" class="rounded p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary" title="Cancel">
+              <button
+                @click="cancelNewFolder"
+                class="rounded p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+                title="Cancel"
+              >
                 <X :size="11" />
               </button>
             </div>
             <!-- empty state -->
-            <div v-else-if="flatTree[vr.index].kind === 'empty'" class="px-2 py-1.5 text-[10px] italic text-text-muted" :style="rowIndent(flatTree[vr.index].depth)">
+            <div
+              v-else-if="flatTree[vr.index].kind === 'empty'"
+              class="px-2 py-1.5 text-[10px] italic text-text-muted"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
               {{ flatTree[vr.index].text }}
             </div>
             <!-- empty folder (with add-note action) -->
-            <div v-else-if="flatTree[vr.index].kind === 'empty-folder'" class="px-2 py-1.5 text-[10px] italic text-text-muted" :style="rowIndent(flatTree[vr.index].depth)">
-              Empty — <button class="text-accent hover:underline" @click="newNote">add a note</button>
+            <div
+              v-else-if="flatTree[vr.index].kind === 'empty-folder'"
+              class="px-2 py-1.5 text-[10px] italic text-text-muted"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
+              Empty —
+              <button class="text-accent hover:underline" @click="newNote">
+                add a note
+              </button>
             </div>
             <!-- note leaf: click to open · double-click to rename · hover for edit/delete -->
             <div
               v-else
               class="note-leaf group"
-              :class="{ active: store.currentNote?.id === flatTree[vr.index].note!.id }"
+              :class="{
+                active: store.currentNote?.id === flatTree[vr.index].note!.id,
+              }"
               :style="rowIndent(flatTree[vr.index].depth)"
             >
               <input
@@ -486,15 +641,41 @@ onMounted(async () => {
                   @click="selectNote(flatTree[vr.index].note!.id)"
                   @dblclick="startRenameNote(flatTree[vr.index].note!)"
                 >
-                  <FileText :size="12" class="shrink-0" :class="flatTree[vr.index].note!.is_pinned ? 'text-accent' : 'text-text-muted'" />
-                  <span class="flex-1 truncate">{{ leafLabel(flatTree[vr.index].note!) }}</span>
-                  <Pin v-if="flatTree[vr.index].note!.is_pinned" :size="9" class="shrink-0 text-accent" />
-                  <Lock v-if="flatTree[vr.index].note!.is_encrypted" :size="9" class="shrink-0 text-text-muted" />
+                  <FileText
+                    :size="12"
+                    class="shrink-0"
+                    :class="
+                      flatTree[vr.index].note!.is_pinned
+                        ? 'text-accent'
+                        : 'text-text-muted'
+                    "
+                  />
+                  <span class="flex-1 truncate">{{
+                    leafLabel(flatTree[vr.index].note!)
+                  }}</span>
+                  <Pin
+                    v-if="flatTree[vr.index].note!.is_pinned"
+                    :size="9"
+                    class="shrink-0 text-accent"
+                  />
+                  <Lock
+                    v-if="flatTree[vr.index].note!.is_encrypted"
+                    :size="9"
+                    class="shrink-0 text-text-muted"
+                  />
                 </button>
-                <button class="note-leaf-action" title="Rename" @click.stop="startRenameNote(flatTree[vr.index].note!)">
+                <button
+                  class="note-leaf-action"
+                  title="Rename"
+                  @click.stop="startRenameNote(flatTree[vr.index].note!)"
+                >
                   <Pencil :size="11" />
                 </button>
-                <button class="note-leaf-action" title="Delete note" @click.stop="deleteNoteInline(flatTree[vr.index].note!)">
+                <button
+                  class="note-leaf-action"
+                  title="Delete note"
+                  @click.stop="deleteNoteInline(flatTree[vr.index].note!)"
+                >
                   <Trash2 :size="11" />
                 </button>
               </template>
@@ -526,13 +707,22 @@ onMounted(async () => {
         @tag-created="onTagCreated"
         @new-note="newNote"
       />
-      <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 text-text-muted">
-        <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10">
+      <div
+        v-else
+        class="flex flex-1 flex-col items-center justify-center gap-3 text-text-muted"
+      >
+        <div
+          class="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10"
+        >
           <NotebookPen :size="28" class="text-accent/60" />
         </div>
         <div class="text-center">
-          <p class="text-sm font-medium text-text-secondary">No note selected</p>
-          <p class="mt-0.5 text-xs">Pick a note from the tree or create a new one.</p>
+          <p class="text-sm font-medium text-text-secondary">
+            No note selected
+          </p>
+          <p class="mt-0.5 text-xs">
+            Pick a note from the tree or create a new one.
+          </p>
         </div>
         <button
           @click="newNote"
@@ -556,7 +746,9 @@ onMounted(async () => {
   font-size: 11.5px;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 .tree-row:hover {
   background: var(--color-surface-hover);
@@ -581,7 +773,9 @@ onMounted(async () => {
   padding: 0.22rem 0.4rem;
   border-radius: 0.375rem;
   color: var(--color-text-secondary);
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 .note-leaf:hover {
   background: var(--color-surface-hover);
@@ -618,11 +812,19 @@ onMounted(async () => {
   border: none;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background-color 0.15s;
 }
 .note-leaf:hover .note-leaf-action,
-.note-leaf.active .note-leaf-action { opacity: 1; }
-.note-leaf-action:hover { color: var(--color-text-primary); background: var(--color-surface-hover); }
+.note-leaf.active .note-leaf-action {
+  opacity: 1;
+}
+.note-leaf-action:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
 .rename-note-input {
   flex: 1 1 auto;
   min-width: 0;

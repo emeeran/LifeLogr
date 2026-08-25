@@ -22,7 +22,7 @@ onMounted(() => tagsStore.fetchTree())
 
 const activeTagName = computed(() => {
   if (filterTagId.value === null) return null
-  return tagsStore.tags.find(t => t.id === filterTagId.value)?.name ?? null
+  return tagsStore.tags.find((t) => t.id === filterTagId.value)?.name ?? null
 })
 
 const todayStr = computed(() => {
@@ -34,7 +34,7 @@ const entryMap = computed(() => {
   const map: Record<string, typeof entries.calendarEntries> = {}
   for (const e of entries.calendarEntries) {
     if (filterTagId.value !== null) {
-      if (!e.tags.some(t => t.id === filterTagId.value)) continue
+      if (!e.tags.some((t) => t.id === filterTagId.value)) continue
     }
     const key = e.entry_date
     ;(map[key] ??= []).push(e)
@@ -99,10 +99,17 @@ async function onGoToDate(dateStr: string) {
     />
 
     <!-- Tag filter -->
-    <div v-if="tagsStore.tags.length" class="px-3 py-1 flex items-center gap-1.5 border-b border-border/50 relative">
+    <div
+      v-if="tagsStore.tags.length"
+      class="px-3 py-1 flex items-center gap-1.5 border-b border-border/50 relative"
+    >
       <button
         class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors"
-        :class="filterTagId !== null ? 'bg-accent text-white' : 'bg-surface-hover text-text-secondary hover:text-text-primary'"
+        :class="
+          filterTagId !== null
+            ? 'bg-accent text-white'
+            : 'bg-surface-hover text-text-secondary hover:text-text-primary'
+        "
         @click="showTagMenu = !showTagMenu"
       >
         <Tag :size="11" />
@@ -128,7 +135,11 @@ async function onGoToDate(dateStr: string) {
           v-for="tag in tagsStore.tags"
           :key="tag.id"
           class="w-full text-left px-3 py-1 text-[11px] cursor-pointer transition-colors"
-          :class="filterTagId === tag.id ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'"
+          :class="
+            filterTagId === tag.id
+              ? 'bg-accent/15 text-accent'
+              : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+          "
           @click="filterTagId = tag.id; showTagMenu = false"
         >
           #{{ tag.name }}

@@ -8,50 +8,50 @@
  *  • Hover overlay reveals filename + size + type.
  *  • Delete button always reachable (was hover-only, hard on touch).
  */
-import { ref, onMounted, watch } from "vue";
-import { mediaApi } from "../../api/media";
-import { FileText, Music, Trash2, Play } from "lucide-vue-next";
-import MediaViewer from "./MediaViewer.vue";
-import { formatFileSize } from "../../composables/useFormat";
-import type { MediaResponse } from "../../types";
+import { ref, onMounted, watch } from 'vue'
+import { mediaApi } from '../../api/media'
+import { FileText, Music, Trash2, Play } from 'lucide-vue-next'
+import MediaViewer from './MediaViewer.vue'
+import { formatFileSize } from '../../composables/useFormat'
+import type { MediaResponse } from '../../types'
 
-const props = defineProps<{ entryId: number; mediaCount: number }>();
-const emit = defineEmits<{ deleted: [] }>();
+const props = defineProps<{ entryId: number; mediaCount: number }>()
+const emit = defineEmits<{ deleted: [] }>()
 
-const items = ref<MediaResponse[]>([]);
-const viewerOpen = ref(false);
-const viewerIndex = ref(0);
+const items = ref<MediaResponse[]>([])
+const viewerOpen = ref(false)
+const viewerIndex = ref(0)
 
-const isImage = (t: string) => t === "image" || t.startsWith("image/");
-const isVideo = (t: string) => t === "video" || t.startsWith("video/");
-const isAudio = (t: string) => t === "audio" || t.startsWith("audio/");
+const isImage = (t: string) => t === 'image' || t.startsWith('image/')
+const isVideo = (t: string) => t === 'video' || t.startsWith('video/')
+const isAudio = (t: string) => t === 'audio' || t.startsWith('audio/')
 
 async function load() {
-  if (!props.entryId || props.entryId < 0) return;
+  if (!props.entryId || props.entryId < 0) return
   try {
     // Images are embedded inline in the entry body; the grid shows only
     // non-image attachments (audio/video/docs).
-    const all = await mediaApi.listByEntry(props.entryId);
-    items.value = all.filter((m) => !isImage(m.media_type));
+    const all = await mediaApi.listByEntry(props.entryId)
+    items.value = all.filter((m) => !isImage(m.media_type))
   } catch {
     /* ignore */
   }
 }
 
-onMounted(load);
-watch(() => props.entryId, load);
-watch(() => props.mediaCount, load);
+onMounted(load)
+watch(() => props.entryId, load)
+watch(() => props.mediaCount, load)
 
 async function remove(id: number) {
-  if (!confirm("Remove this attachment?")) return;
-  await mediaApi.delete(id);
-  items.value = items.value.filter((m) => m.id !== id);
-  emit("deleted");
+  if (!confirm('Remove this attachment?')) return
+  await mediaApi.delete(id)
+  items.value = items.value.filter((m) => m.id !== id)
+  emit('deleted')
 }
 
 function openViewer(idx: number) {
-  viewerIndex.value = idx;
-  viewerOpen.value = true;
+  viewerIndex.value = idx
+  viewerOpen.value = true
 }
 </script>
 

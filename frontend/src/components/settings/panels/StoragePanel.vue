@@ -1,86 +1,84 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted } from 'vue'
 import {
   getSettings,
   getStoragePath,
   updateStoragePath,
-} from "../../../api/settings";
-import type { AppSettings, StoragePathInfo } from "../../../api/settings";
-import { isTauri } from "../../../api/client";
-import { pickFolder } from "../../../utils/fileDialog";
-import { HardDrive, FolderOpen, Loader, MapPin } from "lucide-vue-next";
-import SettingsSection from "../shared/SettingsSection.vue";
-import SettingRow from "../shared/SettingRow.vue";
-import SkeletonCard from "../shared/SkeletonCard.vue";
-import SButton from "../shared/SButton.vue";
-import ConfirmDialog from "../../common/ConfirmDialog.vue";
+} from '../../../api/settings'
+import type { AppSettings, StoragePathInfo } from '../../../api/settings'
+import { isTauri } from '../../../api/client'
+import { pickFolder } from '../../../utils/fileDialog'
+import { HardDrive, FolderOpen, Loader, MapPin } from 'lucide-vue-next'
+import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
+import SkeletonCard from '../shared/SkeletonCard.vue'
+import SButton from '../shared/SButton.vue'
+import ConfirmDialog from '../../common/ConfirmDialog.vue'
+import { errMsg } from '../../../utils/errMsg.ts'
 
 const emit = defineEmits<{
-  toast: [type: "success" | "error" | "info", message: string];
-}>();
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+  toast: [type: 'success' | 'error' | 'info', message: string]
+}>()
 
-const appSettings = ref<AppSettings | null>(null);
-const storagePath = ref<StoragePathInfo | null>(null);
-const relocating = ref(false);
-const editingPath = ref(false);
-const pathInput = ref("");
-const relocateConfirm = ref(false);
+const appSettings = ref<AppSettings | null>(null)
+const storagePath = ref<StoragePathInfo | null>(null)
+const relocating = ref(false)
+const editingPath = ref(false)
+const pathInput = ref('')
+const relocateConfirm = ref(false)
 
 async function load() {
   try {
-    appSettings.value = await getSettings();
-    storagePath.value = await getStoragePath();
-    pathInput.value = storagePath.value.data_dir;
+    appSettings.value = await getSettings()
+    storagePath.value = await getStoragePath()
+    pathInput.value = storagePath.value.data_dir
   } catch {
     /* ignore */
   }
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
 async function chooseFolder() {
-  const folder = await pickFolder();
+  const folder = await pickFolder()
   if (folder) {
-    pathInput.value = folder;
-    relocateConfirm.value = true;
+    pathInput.value = folder
+    relocateConfirm.value = true
   }
 }
 
 function submitManual() {
-  editingPath.value = false;
+  editingPath.value = false
   if (pathInput.value && pathInput.value !== storagePath.value?.data_dir) {
-    relocateConfirm.value = true;
+    relocateConfirm.value = true
   }
 }
 
 async function confirmRelocate() {
   if (!pathInput.value) {
-    relocateConfirm.value = false;
-    return;
+    relocateConfirm.value = false
+    return
   }
-  relocating.value = true;
+  relocating.value = true
   try {
-    const r = await updateStoragePath(pathInput.value);
-    emit("toast", "success", `Data moved to ${r.new_path}`);
-    await load();
+    const r = await updateStoragePath(pathInput.value)
+    emit('toast', 'success', `Data moved to ${r.new_path}`)
+    await load()
   } catch (e: unknown) {
-    emit("toast", "error", `Move failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Move failed: ${errMsg(e)}`)
   } finally {
-    relocating.value = false;
-    relocateConfirm.value = false;
+    relocating.value = false
+    relocateConfirm.value = false
   }
 }
 
-onMounted(load);
+onMounted(load)
 </script>
 
 <template>
@@ -140,7 +138,7 @@ onMounted(load);
         class="text-[12px] text-text-secondary truncate max-w-[36ch]"
         :title="storagePath?.data_dir"
       >
-        {{ storagePath?.data_dir ?? "—" }}
+        {{ storagePath?.data_dir ?? '—' }}
       </span>
     </SettingRow>
     <SettingRow

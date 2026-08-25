@@ -118,7 +118,12 @@ class OllamaService:
                 security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
             )
             return await self._generate_openai(
-                provider.base_url, api_key, model or provider.model, prompt, num_predict, temperature
+                provider.base_url,
+                api_key,
+                model or provider.model,
+                prompt,
+                num_predict,
+                temperature,
             )
         if provider is not None:  # ollama preset
             base_url = provider.base_url or self.base_url
@@ -126,9 +131,7 @@ class OllamaService:
         else:
             base_url = self.base_url
             used_model = model or self.model
-        return await self._generate_ollama(
-            base_url, used_model, prompt, num_predict, temperature
-        )
+        return await self._generate_ollama(base_url, used_model, prompt, num_predict, temperature)
 
     async def _generate_ollama(
         self,
@@ -187,9 +190,7 @@ class OllamaService:
             body["temperature"] = temperature
         client = _get_client()
         try:
-            response = await client.post(
-                f"{base_url}/chat/completions", json=body, headers=headers
-            )
+            response = await client.post(f"{base_url}/chat/completions", json=body, headers=headers)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise OllamaServiceError(

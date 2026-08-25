@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
-  Eye, Pencil, Sparkles, Pin, Trash2, Loader, Volume2, Plus, X,
-  ChevronUp, ChevronDown, Download,
+  Eye,
+  Pencil,
+  Sparkles,
+  Pin,
+  Trash2,
+  Loader,
+  Volume2,
+  Plus,
+  X,
+  ChevronUp,
+  ChevronDown,
+  Download,
 } from 'lucide-vue-next'
 import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
 import { useDragDrop } from '../../composables/useDragDrop'
@@ -28,7 +38,14 @@ import { useInlineTags } from '../../composables/useInlineTags'
 import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
 import { insertOcrBelowImage } from '../../utils/markdownMedia'
-import type { NoteResponse, NoteFolderResponse, TagResponse, NotePageResponse, NoteMediaResponse } from '../../types'
+import { errMsg } from '../../utils/errMsg.ts'
+import type {
+  NoteResponse,
+  NoteFolderResponse,
+  TagResponse,
+  NotePageResponse,
+  NoteMediaResponse,
+} from '../../types'
 
 const props = defineProps<{
   note: NoteResponse
@@ -152,7 +169,8 @@ watch(
     }
     syncFromActive()
     // Pre-warm read-aloud for the opened source (skip encrypted main — body is ciphertext).
-    if (!(isMain.value && props.note.is_encrypted)) tts.prewarmText(ttsText.value)
+    if (!(isMain.value && props.note.is_encrypted))
+      tts.prewarmText(ttsText.value)
     if (saveTimer) {
       clearTimeout(saveTimer)
       saveTimer = null
@@ -167,12 +185,19 @@ watch(
 
 async function doSave() {
   if (isMain.value) {
-    if (title.value === (props.note.title ?? '') && body.value === props.note.body) return
+    if (
+      title.value === (props.note.title ?? '') &&
+      body.value === props.note.body
+    )
+      return
     saving.value = true
     try {
       // Tags live in the text: the backend derives the note's tags from #tokens
       // in the body, so we just persist title + body.
-      await store.updateNote(props.note.id, { title: title.value, body: body.value })
+      await store.updateNote(props.note.id, {
+        title: title.value,
+        body: body.value,
+      })
       savedAt.value = Date.now()
       loadedTitle.value = title.value
       loadedBody.value = body.value
@@ -296,7 +321,10 @@ async function toggleSpeak() {
 }
 
 // ── Notes toolbar state (font/size drive inline <span> injection) ──
-const ribbonExpanded = useLocalStorage<boolean>('lifelogr-notes-ribbon-expanded', true)
+const ribbonExpanded = useLocalStorage<boolean>(
+  'lifelogr-notes-ribbon-expanded',
+  true,
+)
 const selFont = ref('')
 const selSize = ref<number | ''>('')
 
@@ -313,12 +341,68 @@ function onSizeChange(v: number | '') {
 // ── Emoji picker ─────────────────────────────────────────────────────────────
 const showEmoji = ref(false)
 const EMOJI = [
-  '😀','😁','😂','🤣','😊','😍','😘','😎','🤔','😴','🙄','😱',
-  '👍','👎','👏','🙏','💪','✌️','🤝','👋','👌','✋',
-  '❤️','🔥','✨','⭐','💯','🎉','🎊','🎁','💡','⚡',
-  '✅','❌','⚠️','❓','❗','📌','📍','📎','🔗','🎯',
-  '☀️','🌙','☕','🍕','🍔','🍰','🍺','⚽','🏀','🎵',
-  '🚀','💻','📱','📷','🏠','✈️','🌱','🌈','🏆','💎',
+  '😀',
+  '😁',
+  '😂',
+  '🤣',
+  '😊',
+  '😍',
+  '😘',
+  '😎',
+  '🤔',
+  '😴',
+  '🙄',
+  '😱',
+  '👍',
+  '👎',
+  '👏',
+  '🙏',
+  '💪',
+  '✌️',
+  '🤝',
+  '👋',
+  '👌',
+  '✋',
+  '❤️',
+  '🔥',
+  '✨',
+  '⭐',
+  '💯',
+  '🎉',
+  '🎊',
+  '🎁',
+  '💡',
+  '⚡',
+  '✅',
+  '❌',
+  '⚠️',
+  '❓',
+  '❗',
+  '📌',
+  '📍',
+  '📎',
+  '🔗',
+  '🎯',
+  '☀️',
+  '🌙',
+  '☕',
+  '🍕',
+  '🍔',
+  '🍰',
+  '🍺',
+  '⚽',
+  '🏀',
+  '🎵',
+  '🚀',
+  '💻',
+  '📱',
+  '📷',
+  '🏠',
+  '✈️',
+  '🌱',
+  '🌈',
+  '🏆',
+  '💎',
 ]
 function insertEmoji(e: string) {
   applyText(e)
@@ -353,7 +437,9 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
     } else if (t.startsWith('audio/')) {
       applyText(`\n<audio controls preload="metadata" src="${url}"></audio>\n`)
     } else if (t.startsWith('video/')) {
-      applyText(`\n<video controls preload="metadata" src="${url}" style="max-width:100%"></video>\n`)
+      applyText(
+        `\n<video controls preload="metadata" src="${url}" style="max-width:100%"></video>\n`,
+      )
     } else {
       applyText(`[${name}](${url})`)
     }
@@ -365,10 +451,21 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
 }
 
 // ── Tauri native drag-drop (image import from file paths) ────────────────────
-const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'svg']
+const IMAGE_EXTS = [
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'tiff',
+  'tif',
+  'svg',
+]
 const AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus']
 const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi']
-const { isDragging: tauriDragging, register: registerTauriDrop } = useTauriDragDrop()
+const { isDragging: tauriDragging, register: registerTauriDrop } =
+  useTauriDragDrop()
 // The overlay flag unifies both drag sources (HTML5 + Tauri).
 const dragActive = computed(() => isDragging.value || tauriDragging.value)
 
@@ -384,9 +481,12 @@ async function handleDroppedPaths(paths: string[]) {
       if (IMAGE_EXTS.includes(ext)) {
         applyText(`![${base}](${url})`)
         if (autoOcr.value) await runOcr(media.id, url)
-      }
-      else if (AUDIO_EXTS.includes(ext)) applyText(`\n<audio controls src="${url}"></audio>\n`)
-      else if (VIDEO_EXTS.includes(ext)) applyText(`\n<video controls src="${url}" style="max-width:100%"></video>\n`)
+      } else if (AUDIO_EXTS.includes(ext))
+        applyText(`\n<audio controls src="${url}"></audio>\n`)
+      else if (VIDEO_EXTS.includes(ext))
+        applyText(
+          `\n<video controls src="${url}" style="max-width:100%"></video>\n`,
+        )
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Media import failed')
     }
@@ -429,7 +529,11 @@ async function onDropFiles(e: DragEvent) {
   if (!accepted?.length) return
   textarea.value?.focus()
   for (const f of accepted) {
-    if (f.type.startsWith('image/') || f.type.startsWith('audio/') || f.type.startsWith('video/')) {
+    if (
+      f.type.startsWith('image/') ||
+      f.type.startsWith('audio/') ||
+      f.type.startsWith('video/')
+    ) {
       await embedFile(f)
     } else if (/\.csv$/i.test(f.name) || f.type === 'text/csv') {
       const md = delimitedToMarkdown(await f.text())
@@ -473,8 +577,10 @@ async function startSnip() {
     snipSrc.value = URL.createObjectURL(blob)
     snipping.value = true
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    alert(`Screen capture failed: ${msg}\nOn Wayland, approve the portal request or run under X11.`)
+    const msg = errMsg(e)
+    alert(
+      `Screen capture failed: ${msg}\nOn Wayland, approve the portal request or run under X11.`,
+    )
   }
 }
 
@@ -499,9 +605,15 @@ async function onSnipCropped(file: File) {
 async function runOcr(mediaId: number, url?: string) {
   ocrBusy.value = true
   try {
-    const { text } = await notesApi.ocrNoteMedia(props.note.id, mediaId, ocrLang.value)
+    const { text } = await notesApi.ocrNoteMedia(
+      props.note.id,
+      mediaId,
+      ocrLang.value,
+    )
     if (text.trim()) {
-      const target = url ?? body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
+      const target =
+        url ??
+        body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
       if (target) {
         body.value = insertOcrBelowImage(body.value, target, text)
       } else {
@@ -539,7 +651,10 @@ async function startWebClip(url: string) {
 // ── Paste-to-table helper (drop-CSV path; HTML/clipboard tables are handled
 //    by usePasteMedia) ──
 function delimitedToMarkdown(text: string): string {
-  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.length > 0)
+  const lines = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((l) => l.length > 0)
   if (lines.length < 2) return ''
   const delim = lines[0].includes('\t') ? '\t' : ','
   const grid = lines.map((l) => l.split(delim))
@@ -551,7 +666,11 @@ function delimitedToMarkdown(text: string): string {
     return row.map((c) => c.trim().replace(/\|/g, '\\|'))
   })
   const line = (cells: string[]) => `| ${cells.join(' | ')} |`
-  return [line(norm[0]), `| ${norm[0].map(() => '---').join(' | ')} |`, ...norm.slice(1).map(line)].join('\n')
+  return [
+    line(norm[0]),
+    `| ${norm[0].map(() => '---').join(' | ')} |`,
+    ...norm.slice(1).map(line),
+  ].join('\n')
 }
 
 // ── Note-level actions ───────────────────────────────────────────────────────
@@ -598,8 +717,11 @@ async function exportMarkdown() {
     const blob = await resp.blob()
     const raw = (title.value || props.note.title || 'note').trim() || 'note'
     const slug =
-      raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) ||
-      'note'
+      raw
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'note'
     await saveFile({
       data: blob,
       defaultName: `${slug}.md`,
@@ -613,7 +735,10 @@ async function exportMarkdown() {
 }
 
 // ── Tags ─────────────────────────────────────────────────────────────────────
-const { renderedPreview } = useMarkdownPreview(() => body.value, () => showPreview.value)
+const { renderedPreview } = useMarkdownPreview(
+  () => body.value,
+  () => showPreview.value,
+)
 const wordCount = computed(() => {
   const t = body.value.trim()
   return t ? t.split(/\s+/).length : 0
@@ -655,26 +780,34 @@ async function createAndAssignTag() {
 // per src so it survives re-renders while editing. Images also get a hover
 // "OCR" pill (delegated click) that inserts extracted text below the image.
 const previewEl = ref<HTMLElement | null>(null)
-const inlineViewer = ref<{ src: string; mediaType: string; filename?: string } | null>(null)
-const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, onPreviewDblClick, disconnect: disconnectMedia } =
-  useResizableMedia({
-    storageKey: 'lifelogr-note-media-sizes',
-    ocrButton: true,
-    onOcr: (src) => {
-      // Note media URLs: /api/v1/notes/{noteId}/media/{mediaId}/file
-      const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
-      if (mediaId) void runOcr(mediaId, src)
-    },
-    onMediaDblClick: (el) => {
-      const src = el.getAttribute('src') || ''
-      const isVideo = el.tagName === 'VIDEO'
-      inlineViewer.value = {
-        src,
-        mediaType: isVideo ? 'video' : 'image',
-        filename: src.split('/').pop(),
-      }
-    },
-  })
+const inlineViewer = ref<{
+  src: string
+  mediaType: string
+  filename?: string
+} | null>(null)
+const {
+  wrapResizableMedia,
+  onPreviewClick: onMediaPreviewClick,
+  onPreviewDblClick,
+  disconnect: disconnectMedia,
+} = useResizableMedia({
+  storageKey: 'lifelogr-note-media-sizes',
+  ocrButton: true,
+  onOcr: (src) => {
+    // Note media URLs: /api/v1/notes/{noteId}/media/{mediaId}/file
+    const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
+    if (mediaId) void runOcr(mediaId, src)
+  },
+  onMediaDblClick: (el) => {
+    const src = el.getAttribute('src') || ''
+    const isVideo = el.tagName === 'VIDEO'
+    inlineViewer.value = {
+      src,
+      mediaType: isVideo ? 'video' : 'image',
+      filename: src.split('/').pop(),
+    }
+  },
+})
 
 // ── Right-click → shared AI context menu (selection + AI driven by the core) ──
 const showContextMenu = ref(false)
@@ -683,8 +816,12 @@ function onContextMenu(e: MouseEvent) {
   if (!core.getSelection().trim()) return // no selection → let the native menu show
   e.preventDefault()
   core.cacheSelection()
-  const maxLeft = (typeof window !== 'undefined' ? window.innerWidth : 9999) - 240
-  contextMenuPos.value = { x: Math.min(e.clientX, Math.max(0, maxLeft)), y: e.clientY }
+  const maxLeft =
+    (typeof window !== 'undefined' ? window.innerWidth : 9999) - 240
+  contextMenuPos.value = {
+    x: Math.min(e.clientX, Math.max(0, maxLeft)),
+    y: e.clientY,
+  }
   showContextMenu.value = true
 }
 function copySelection() {
@@ -716,12 +853,9 @@ function onToolbarAction(name: string) {
 }
 
 // Re-wrap embedded media as resizable nodes whenever the preview renders.
-watch(
-  [renderedPreview, showPreview],
-  () => {
-    if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value))
-  },
-)
+watch([renderedPreview, showPreview], () => {
+  if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value))
+})
 onUnmounted(() => {
   disconnectMedia()
 })
@@ -745,12 +879,16 @@ defineExpose({ isDirty })
       v-if="dragActive"
       class="absolute inset-0 z-50 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded pointer-events-none"
     >
-      <span class="text-accent text-sm font-medium">Drop image / audio / video to embed</span>
+      <span class="text-accent text-sm font-medium"
+        >Drop image / audio / video to embed</span
+      >
     </div>
 
     <!-- Title row -->
     <div class="flex items-center gap-1.5 px-3 py-2 border-b border-border">
-      <span class="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+      <span
+        class="shrink-0 text-[10px] font-bold uppercase tracking-wider text-text-muted"
+      >
         {{ isMain ? 'Note' : 'Page' }}
       </span>
       <input
@@ -788,23 +926,58 @@ defineExpose({ isDirty })
           @change-font="(v: string) => onFontChange(v)"
           @change-size="(v: number | '') => onSizeChange(v)"
         />
-        <div class="flex items-center justify-end px-2 py-0.5 border-t border-border/50">
-          <button class="rbtn" title="Hide toolbar" @click="ribbonExpanded = false"><ChevronUp :size="13" /></button>
+        <div
+          class="flex items-center justify-end px-2 py-0.5 border-t border-border/50"
+        >
+          <button
+            class="rbtn"
+            title="Hide toolbar"
+            @click="ribbonExpanded = false"
+          >
+            <ChevronUp :size="13" />
+          </button>
         </div>
         <!-- Emoji picker (notes-local popover) -->
-        <div v-if="showEmoji" class="fixed inset-0 z-30" @click="showEmoji = false" />
-        <div v-if="showEmoji" class="absolute right-2 top-full z-40 emoji-pop" @click.stop>
-          <button v-for="e in EMOJI" :key="e" class="emoji-item" @click="insertEmoji(e)">{{ e }}</button>
+        <div
+          v-if="showEmoji"
+          class="fixed inset-0 z-30"
+          @click="showEmoji = false"
+        />
+        <div
+          v-if="showEmoji"
+          class="absolute right-2 top-full z-40 emoji-pop"
+          @click.stop
+        >
+          <button
+            v-for="e in EMOJI"
+            :key="e"
+            class="emoji-item"
+            @click="insertEmoji(e)"
+          >
+            {{ e }}
+          </button>
         </div>
       </div>
-      <button v-else class="ribbon-collapsed" title="Show formatting toolbar" @click="ribbonExpanded = true">
-        <ChevronDown :size="13" /><span class="ml-1 text-[11px] text-text-muted">Formatting</span>
+      <button
+        v-else
+        class="ribbon-collapsed"
+        title="Show formatting toolbar"
+        @click="ribbonExpanded = true"
+      >
+        <ChevronDown :size="13" /><span class="ml-1 text-[11px] text-text-muted"
+          >Formatting</span
+        >
       </button>
     </div>
 
     <!-- Page tabs (EPIM-style leaves with CRUD) -->
     <div class="page-tabs">
-      <button class="ptab" :class="{ active: isMain }" title="Main page" @click="selectPage(null)">
+      <button
+        class="ptab"
+        :class="{ active: isMain }"
+        title="Main page"
+        @click="selectPage(null)"
+      >
         <span class="truncate">{{ note.title?.trim() || 'Main' }}</span>
       </button>
       <div
@@ -832,10 +1005,18 @@ defineExpose({ isDirty })
         />
         <template v-else>
           <span class="truncate">{{ p.title?.trim() || 'Untitled' }}</span>
-          <button class="ptab-x" title="Delete page" @click.stop="removePage(p.id)"><X :size="11" /></button>
+          <button
+            class="ptab-x"
+            title="Delete page"
+            @click.stop="removePage(p.id)"
+          >
+            <X :size="11" />
+          </button>
         </template>
       </div>
-      <button class="ptab ptab-add" title="Add page" @click="addPage"><Plus :size="13" /></button>
+      <button class="ptab ptab-add" title="Add page" @click="addPage">
+        <Plus :size="13" />
+      </button>
     </div>
 
     <!-- Body -->
@@ -844,7 +1025,8 @@ defineExpose({ isDirty })
         v-if="isMain && note.is_encrypted"
         class="flex-1 flex items-center justify-center px-3 text-center text-xs text-text-muted"
       >
-        🔒 This note is encrypted. Decrypt it (lock icon below) to read and edit.
+        🔒 This note is encrypted. Decrypt it (lock icon below) to read and
+        edit.
       </div>
       <template v-else>
         <textarea
@@ -862,7 +1044,10 @@ defineExpose({ isDirty })
           @paste="pasteMediaHandler"
           @contextmenu="onContextMenu"
           class="flex-1 w-full resize-none bg-transparent px-4 py-3 text-sm text-text-primary outline-none custom-scrollbar"
-          style="font-family: var(--editor-font); font-size: var(--editor-font-size)"
+          style="
+            font-family: var(--editor-font);
+            font-size: var(--editor-font-size);
+          "
           placeholder="Start writing…"
         />
         <div
@@ -879,8 +1064,14 @@ defineExpose({ isDirty })
     <!-- Bottom action bar -->
     <div class="action-bar">
       <!-- Primary: Save + New (next to the tag selector on the right) -->
-      <button class="actbtn save" :disabled="saving" title="Save now" @click="saveNow">
-        <span>💾</span><span class="hidden sm:inline">{{ saving ? 'Saving' : 'Save' }}</span>
+      <button
+        class="actbtn save"
+        :disabled="saving"
+        title="Save now"
+        @click="saveNow"
+      >
+        <span>💾</span
+        ><span class="hidden sm:inline">{{ saving ? 'Saving' : 'Save' }}</span>
       </button>
       <button class="actbtn" title="New note" @click="emit('new-note')">
         <Plus :size="13" /><span class="hidden sm:inline">New</span>
@@ -889,16 +1080,26 @@ defineExpose({ isDirty })
         class="actbtn"
         :class="{ 'text-accent': speaking }"
         :disabled="ttsLoading"
-        :title="speaking ? 'Stop reading' : ttsLoading ? 'Generating audio…' : 'Read aloud (set voice in Settings → Features → Read Aloud)'"
+        :title="
+          speaking
+            ? 'Stop reading'
+            : ttsLoading
+              ? 'Generating audio…'
+              : 'Read aloud (set voice in Settings → Features → Read Aloud)'
+        "
         @click="toggleSpeak"
       >
         <Loader v-if="ttsLoading" :size="13" class="animate-spin" />
-        <Volume2 v-else :size="13" /><span class="hidden md:inline">{{ speaking ? 'Stop' : 'Read' }}</span>
+        <Volume2 v-else :size="13" /><span class="hidden md:inline">{{
+          speaking ? 'Stop' : 'Read'
+        }}</span>
       </button>
 
       <span class="act-sep" />
 
-      <button class="iconbtn" title="Delete note" @click="deleteNote"><Trash2 :size="13" /></button>
+      <button class="iconbtn" title="Delete note" @click="deleteNote">
+        <Trash2 :size="13" />
+      </button>
       <NoteEncryptionBadge
         :note-id="note.id"
         :is-encrypted="note.is_encrypted"
@@ -912,7 +1113,12 @@ defineExpose({ isDirty })
       >
         <Eye v-if="!showPreview" :size="13" /><Pencil v-else :size="13" />
       </button>
-      <button class="iconbtn" :class="{ 'text-accent': showAi }" title="AI tools" @click="showAi = !showAi">
+      <button
+        class="iconbtn"
+        :class="{ 'text-accent': showAi }"
+        title="AI tools"
+        @click="showAi = !showAi"
+      >
         <Sparkles :size="13" />
       </button>
       <button
@@ -935,7 +1141,9 @@ defineExpose({ isDirty })
         title="Folder"
       >
         <option value="" disabled>Folder…</option>
-        <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+        <option v-for="f in folders" :key="f.id" :value="f.id">
+          {{ f.name }}
+        </option>
       </select>
 
       <!-- Tags -->
@@ -944,9 +1152,16 @@ defineExpose({ isDirty })
           <span>#</span>{{ bodyTagNames.size ? bodyTagNames.size : 'Tags' }}
         </button>
         <div v-if="showTags" class="fixed inset-0 z-30" @click="closeTags" />
-        <div v-if="showTags" class="absolute bottom-full right-0 mb-1 w-56 bg-surface border border-border rounded-lg shadow-xl z-40 overflow-hidden">
+        <div
+          v-if="showTags"
+          class="absolute bottom-full right-0 mb-1 w-56 bg-surface border border-border rounded-lg shadow-xl z-40 overflow-hidden"
+        >
           <div class="p-1.5 border-b border-border">
-            <input v-model="tagQuery" placeholder="Filter or create tag…" class="tag-filter" />
+            <input
+              v-model="tagQuery"
+              placeholder="Filter or create tag…"
+              class="tag-filter"
+            />
           </div>
           <div class="max-h-52 overflow-y-auto custom-scrollbar p-1">
             <button
@@ -958,10 +1173,20 @@ defineExpose({ isDirty })
             >
               <span class="truncate">#{{ t.name }}</span>
             </button>
-            <div v-if="!filteredTags.length && !canCreateTag" class="px-2 py-3 text-center text-[10px] text-text-muted">No matching tags</div>
+            <div
+              v-if="!filteredTags.length && !canCreateTag"
+              class="px-2 py-3 text-center text-[10px] text-text-muted"
+            >
+              No matching tags
+            </div>
           </div>
-          <button v-if="canCreateTag" class="tag-create" @click="createAndAssignTag">
-            <Plus :size="11" /> Create <span class="font-medium truncate">{{ tagQuery.trim() }}</span>
+          <button
+            v-if="canCreateTag"
+            class="tag-create"
+            @click="createAndAssignTag"
+          >
+            <Plus :size="11" /> Create
+            <span class="font-medium truncate">{{ tagQuery.trim() }}</span>
           </button>
         </div>
       </div>
@@ -1002,9 +1227,19 @@ defineExpose({ isDirty })
       v-if="showAi"
       class="absolute right-2 top-24 bottom-16 w-72 z-40 rounded-lg border border-border bg-surface shadow-xl overflow-hidden flex flex-col"
     >
-      <div class="flex items-center justify-between px-2 py-1 border-b border-border">
-        <span class="text-[10px] font-bold uppercase tracking-wider text-text-muted">AI Tools</span>
-        <button class="text-text-muted hover:text-text-primary text-xs" @click="showAi = false">✕</button>
+      <div
+        class="flex items-center justify-between px-2 py-1 border-b border-border"
+      >
+        <span
+          class="text-[10px] font-bold uppercase tracking-wider text-text-muted"
+          >AI Tools</span
+        >
+        <button
+          class="text-text-muted hover:text-text-primary text-xs"
+          @click="showAi = false"
+        >
+          ✕
+        </button>
       </div>
       <div class="flex-1 overflow-hidden">
         <AiDrawerPanel
@@ -1031,10 +1266,19 @@ defineExpose({ isDirty })
     </div>
 
     <!-- Web-page clip URL prompt -->
-    <WebClipModal v-if="showWebClip" @clip="startWebClip" @cancel="showWebClip = false" />
+    <WebClipModal
+      v-if="showWebClip"
+      @clip="startWebClip"
+      @cancel="showWebClip = false"
+    />
 
     <!-- Single inline media opened by double-click from the preview -->
-    <MediaViewer v-if="inlineViewer" :items="[]" :single="inlineViewer" @close="inlineViewer = null" />
+    <MediaViewer
+      v-if="inlineViewer"
+      :items="[]"
+      :single="inlineViewer"
+      @close="inlineViewer = null"
+    />
 
     <!-- Inline #tag autocomplete -->
     <TagAutocomplete
@@ -1058,7 +1302,9 @@ defineExpose({ isDirty })
   background: color-mix(in srgb, var(--color-accent) 5%, var(--color-editor));
   flex-wrap: wrap;
 }
-.ribbon-wrap { border-bottom: 1px solid var(--color-border); }
+.ribbon-wrap {
+  border-bottom: 1px solid var(--color-border);
+}
 .ribbon-collapsed {
   display: inline-flex;
   align-items: center;
@@ -1070,7 +1316,9 @@ defineExpose({ isDirty })
   background: color-mix(in srgb, var(--color-accent) 4%, var(--color-editor));
   transition: color 0.15s;
 }
-.ribbon-collapsed:hover { color: var(--color-accent); }
+.ribbon-collapsed:hover {
+  color: var(--color-accent);
+}
 .ribbon-sel {
   height: 24px;
   background: var(--color-surface-hover);
@@ -1082,8 +1330,12 @@ defineExpose({ isDirty })
   outline: none;
   cursor: pointer;
 }
-.ribbon-sel:focus { border-color: var(--color-accent); }
-.ribbon-sel-size { width: 3.2rem; }
+.ribbon-sel:focus {
+  border-color: var(--color-accent);
+}
+.ribbon-sel-size {
+  width: 3.2rem;
+}
 .emoji-pop {
   position: absolute;
   top: 30px;
@@ -1109,8 +1361,14 @@ defineExpose({ isDirty })
   line-height: 1;
   transition: background-color 0.12s;
 }
-.emoji-item:hover { background: var(--color-surface-hover); }
-.rgroup { display: flex; align-items: center; gap: 0.125rem; }
+.emoji-item:hover {
+  background: var(--color-surface-hover);
+}
+.rgroup {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
 .rsep {
   width: 1px;
   height: 18px;
@@ -1126,9 +1384,14 @@ defineExpose({ isDirty })
   border-radius: 0.35rem;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
-.rbtn:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+.rbtn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
 
 /* ── Page tabs ──────────────────────────────────────────────────────────────── */
 .page-tabs {
@@ -1154,9 +1417,14 @@ defineExpose({ isDirty })
   border-bottom: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
-.ptab:hover { background: var(--color-surface-hover); color: var(--color-text-secondary); }
+.ptab:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+}
 .ptab.active {
   color: var(--color-accent);
   background: var(--color-surface);
@@ -1166,15 +1434,25 @@ defineExpose({ isDirty })
   position: relative;
   top: 1px;
 }
-.ptab-add { color: var(--color-text-muted); padding: 0.25rem 0.4rem; }
+.ptab-add {
+  color: var(--color-text-muted);
+  padding: 0.25rem 0.4rem;
+}
 .ptab-x {
   display: inline-flex;
   opacity: 0;
   color: var(--color-text-muted);
-  transition: opacity 0.15s, color 0.15s;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
 }
-.ptab:hover .ptab-x { opacity: 0.7; }
-.ptab-x:hover { opacity: 1; color: var(--color-danger, #ef4444); }
+.ptab:hover .ptab-x {
+  opacity: 0.7;
+}
+.ptab-x:hover {
+  opacity: 1;
+  color: var(--color-danger, #ef4444);
+}
 .rename-input {
   width: 90px;
   padding: 0.05rem 0.25rem;
@@ -1207,13 +1485,29 @@ defineExpose({ isDirty })
   color: var(--color-text-secondary);
   background: var(--color-surface-hover);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
-.actbtn:hover { color: var(--color-text-primary); }
-.actbtn.save { color: var(--color-accent); }
-.actbtn.save:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); }
-.actbtn:disabled { opacity: 0.6; cursor: default; }
-.act-sep { width: 1px; height: 18px; background: var(--color-border); margin: 0 0.15rem; }
+.actbtn:hover {
+  color: var(--color-text-primary);
+}
+.actbtn.save {
+  color: var(--color-accent);
+}
+.actbtn.save:hover {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.actbtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.act-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--color-border);
+  margin: 0 0.15rem;
+}
 .iconbtn {
   display: inline-flex;
   align-items: center;
@@ -1223,9 +1517,14 @@ defineExpose({ isDirty })
   border-radius: 0.35rem;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
-.iconbtn:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+.iconbtn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
 .folder-sel {
   max-width: 8rem;
   background: var(--color-surface-hover);
@@ -1248,7 +1547,9 @@ defineExpose({ isDirty })
   cursor: pointer;
   transition: color 0.15s;
 }
-.tagbtn:hover { color: var(--color-accent); }
+.tagbtn:hover {
+  color: var(--color-accent);
+}
 .tag-filter {
   width: 100%;
   padding: 0.3rem 0.45rem;
@@ -1259,7 +1560,9 @@ defineExpose({ isDirty })
   color: var(--color-text-primary);
   outline: none;
 }
-.tag-filter:focus { border-color: var(--color-accent); }
+.tag-filter:focus {
+  border-color: var(--color-accent);
+}
 .tag-item {
   width: 100%;
   text-align: left;
@@ -1270,8 +1573,13 @@ defineExpose({ isDirty })
   cursor: pointer;
   transition: background-color 0.15s;
 }
-.tag-item:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
-.tag-item.sel { color: var(--color-accent); }
+.tag-item:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+.tag-item.sel {
+  color: var(--color-accent);
+}
 .tag-create {
   width: 100%;
   display: flex;
@@ -1283,7 +1591,9 @@ defineExpose({ isDirty })
   color: var(--color-accent);
   cursor: pointer;
 }
-.tag-create:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.tag-create:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
 .wc {
   font-size: 10px;
   color: var(--color-text-muted);

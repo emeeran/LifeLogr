@@ -47,9 +47,7 @@ def extract_tar_safely(tar: tarfile.TarFile, dest: str | Path) -> None:
         raise ValueError(f"Invalid archive: {exc}") from exc
 
 
-def add_backup_members(
-    tar: tarfile.TarFile, db_file: str | Path, media_dir: str | Path
-) -> None:
+def add_backup_members(tar: tarfile.TarFile, db_file: str | Path, media_dir: str | Path) -> None:
     """Add the DB (+ WAL/SHM) and media dir to *tar* under standard arcnames.
 
     ``diarium.diarium`` (+ ``-wal``/``-shm``) is the on-disk name external tools

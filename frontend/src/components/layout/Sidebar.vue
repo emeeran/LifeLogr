@@ -3,9 +3,17 @@ import { computed, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { useUiStore, type ViewType } from '../../stores/ui'
 import {
-  Calendar, Clock, Search, Settings,
-  Bell, ImageIcon,
-  ChevronsLeft, ChevronsRight, StickyNote, NotebookPen, GripVertical
+  Calendar,
+  Clock,
+  Search,
+  Settings,
+  Bell,
+  ImageIcon,
+  ChevronsLeft,
+  ChevronsRight,
+  StickyNote,
+  NotebookPen,
+  GripVertical,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
@@ -76,19 +84,51 @@ function navigate(view: ViewType) {
 </script>
 
 <template>
-  <nav class="h-full bg-sidebar flex flex-col border-r border-sidebar-hover transition-all duration-200 overflow-hidden"
-    :style="{ width: ui.sidebarCollapsed ? '48px' : '200px' }">
+  <nav
+    class="h-full bg-sidebar flex flex-col border-r border-sidebar-hover transition-all duration-200 overflow-hidden"
+    :style="{ width: ui.sidebarCollapsed ? '48px' : '200px' }"
+  >
     <!-- Brand -->
-    <div class="border-b border-sidebar-hover shrink-0"
-      :class="ui.sidebarCollapsed ? 'flex justify-center px-1 py-2.5' : 'flex items-center gap-1.5 px-3 py-2.5'">
-      <div v-if="ui.sidebarCollapsed" class="flex flex-col items-center gap-0.5">
-        <img src="/logo.png" alt="LifeLogr" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-7 h-7" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
+    <div
+      class="border-b border-sidebar-hover shrink-0"
+      :class="
+        ui.sidebarCollapsed
+          ? 'flex justify-center px-1 py-2.5'
+          : 'flex items-center gap-1.5 px-3 py-2.5'
+      "
+    >
+      <div
+        v-if="ui.sidebarCollapsed"
+        class="flex flex-col items-center gap-0.5"
+      >
+        <img
+          src="/logo.png"
+          alt="LifeLogr"
+          role="button"
+          tabindex="0"
+          class="shrink-0 cursor-pointer logo-icon w-7 h-7"
+          @click="ui.toggleSidebar()"
+          @keydown.enter="ui.toggleSidebar()"
+        />
       </div>
       <template v-else>
-        <img src="/logo.png" alt="LifeLogr" role="button" tabindex="0" class="shrink-0 cursor-pointer logo-icon w-5 h-5" @click="ui.toggleSidebar()" @keydown.enter="ui.toggleSidebar()" />
+        <img
+          src="/logo.png"
+          alt="LifeLogr"
+          role="button"
+          tabindex="0"
+          class="shrink-0 cursor-pointer logo-icon w-5 h-5"
+          @click="ui.toggleSidebar()"
+          @keydown.enter="ui.toggleSidebar()"
+        />
         <div class="flex flex-col min-w-0">
-          <span class="text-sm font-bold text-sidebar-text tracking-tight leading-tight">LifeLogr</span>
-          <span class="text-[8px] text-sidebar-text-secondary leading-tight">Your Day in Media & Minutes</span>
+          <span
+            class="text-sm font-bold text-sidebar-text tracking-tight leading-tight"
+            >LifeLogr</span
+          >
+          <span class="text-[8px] text-sidebar-text-secondary leading-tight"
+            >Your Day in Media & Minutes</span
+          >
         </div>
       </template>
     </div>
@@ -97,7 +137,9 @@ function navigate(view: ViewType) {
     <div class="shrink-0 px-2 pb-1 pt-2">
       <button
         class="flex w-full items-center gap-2 rounded-md text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
-        :class="ui.sidebarCollapsed ? 'justify-center px-0 py-2' : 'px-2 py-1.5'"
+        :class="
+          ui.sidebarCollapsed ? 'justify-center px-0 py-2' : 'px-2 py-1.5'
+        "
         :title="ui.sidebarCollapsed ? 'Search (Ctrl+K)' : undefined"
         aria-label="Search"
         @click="ui.openSearchPalette()"
@@ -127,7 +169,9 @@ function navigate(view: ViewType) {
             ? 'bg-sidebar-hover text-sidebar-text border-r-2 border-white/60'
             : 'text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text',
           dragIndex === index ? 'opacity-40' : '',
-          dropIndex === index ? 'shadow-[inset_0_2px_0_0_var(--color-accent)]' : '',
+          dropIndex === index
+            ? 'shadow-[inset_0_2px_0_0_var(--color-accent)]'
+            : '',
         ]"
         :title="ui.sidebarCollapsed ? item.label : undefined"
         :aria-label="item.label"
@@ -155,7 +199,7 @@ function navigate(view: ViewType) {
         class="flex items-center gap-2 w-full text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
         :class="[
           ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5',
-          ui.scribbleOpen ? 'bg-sidebar-hover text-sidebar-text' : ''
+          ui.scribbleOpen ? 'bg-sidebar-hover text-sidebar-text' : '',
         ]"
         :title="ui.sidebarCollapsed ? 'Scribble Pad' : undefined"
         aria-label="Toggle Scribble Pad"
@@ -171,9 +215,11 @@ function navigate(view: ViewType) {
       <button
         v-if="!ui.sidebarCollapsed"
         class="flex items-center gap-2 w-full text-xs cursor-pointer transition-colors duration-150"
-        :class="editMode
-          ? 'bg-sidebar-hover text-sidebar-text'
-          : 'text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text'"
+        :class="
+          editMode
+            ? 'bg-sidebar-hover text-sidebar-text'
+            : 'text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text'
+        "
         aria-label="Edit navigation layout"
         @click="editMode = !editMode"
       >
@@ -183,7 +229,9 @@ function navigate(view: ViewType) {
       <router-link
         to="/settings"
         class="flex items-center gap-2 text-xs text-sidebar-text-secondary hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
-        :class="ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5'"
+        :class="
+          ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5'
+        "
         :title="ui.sidebarCollapsed ? 'Settings' : undefined"
         aria-label="Settings"
         @click="navigate('settings')"
@@ -193,9 +241,13 @@ function navigate(view: ViewType) {
       </router-link>
       <button
         class="flex items-center gap-2 w-full text-xs text-sidebar-text-muted hover:bg-sidebar-hover hover:text-sidebar-text cursor-pointer transition-colors duration-150"
-        :class="ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5'"
+        :class="
+          ui.sidebarCollapsed ? 'justify-center px-1 py-2' : 'px-3 py-1.5'
+        "
         :title="ui.sidebarCollapsed ? 'Expand' : 'Collapse'"
-        :aria-label="ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        :aria-label="
+          ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'
+        "
         @click="ui.toggleSidebar()"
       >
         <ChevronsRight v-if="ui.sidebarCollapsed" :size="14" />

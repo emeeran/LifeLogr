@@ -111,9 +111,7 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
             mood_val = None
             rating = row["Rating"]
             if rating and isinstance(rating, (int, float)) and 1 <= int(rating) <= 5:
-                mood_val = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}.get(
-                    int(rating)
-                )
+                mood_val = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}.get(int(rating))
 
             entries.append(
                 {

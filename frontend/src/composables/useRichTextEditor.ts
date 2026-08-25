@@ -111,7 +111,8 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     const end = el.selectionEnd
     const selected = body.value.slice(start, end) || placeholder
     const replacement = before + selected + after
-    body.value = body.value.slice(0, start) + replacement + body.value.slice(end)
+    body.value =
+      body.value.slice(0, start) + replacement + body.value.slice(end)
     pushHistory()
     onChange()
     nextTick(() => {
@@ -125,7 +126,8 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     if (!el) return
     const start = el.selectionStart
     const lineStart = body.value.lastIndexOf('\n', start - 1) + 1
-    body.value = body.value.slice(0, lineStart) + prefix + body.value.slice(lineStart)
+    body.value =
+      body.value.slice(0, lineStart) + prefix + body.value.slice(lineStart)
     pushHistory()
     onChange()
     nextTick(() => {
@@ -137,7 +139,8 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     const el = textarea.value
     if (!el) return
     const start = el.selectionStart
-    body.value = body.value.slice(0, start) + text + body.value.slice(el.selectionEnd)
+    body.value =
+      body.value.slice(0, start) + text + body.value.slice(el.selectionEnd)
     pushHistory()
     onChange()
     nextTick(() => {
@@ -150,7 +153,14 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     const header = '| ' + Array(cols).fill('Header').join(' | ') + ' |'
     const sep = '|' + Array(cols).fill('--------').join('|') + '|'
     const row = '| ' + Array(cols).fill('Cell').join('   | ') + '   |'
-    insertAtCursor('\n' + header + '\n' + sep + '\n' + (row + '\n').repeat(Math.max(1, rows)))
+    insertAtCursor(
+      '\n' +
+        header +
+        '\n' +
+        sep +
+        '\n' +
+        (row + '\n').repeat(Math.max(1, rows)),
+    )
   }
   /** Horizontal rule sized to the textarea's rendered content width. */
   function makeDivider(char = '*'): string {
@@ -169,9 +179,13 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     const SAMPLE = 40
     ruler.textContent = char.repeat(SAMPLE)
     document.body.appendChild(ruler)
-    const unit = ruler.getBoundingClientRect().width / SAMPLE || parseFloat(style.fontSize) || 8
+    const unit =
+      ruler.getBoundingClientRect().width / SAMPLE ||
+      parseFloat(style.fontSize) ||
+      8
     ruler.remove()
-    const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+    const padding =
+      parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
     const usable = el.clientWidth - padding
     const count = Math.max(8, Math.floor((usable - 1) / unit))
     return char.repeat(count)
@@ -205,9 +219,16 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     hr: () => insertAtCursor('\n\n' + makeDivider() + '\n\n'),
     table: () => insertTable(),
     highlight: () => wrap('<mark>', '</mark>', 'highlighted text'),
-    alignLeft: () => wrap('<div style="text-align: left">\n', '\n</div>', 'left aligned text'),
-    alignCenter: () => wrap('<div style="text-align: center">\n', '\n</div>', 'centered text'),
-    alignRight: () => wrap('<div style="text-align: right">\n', '\n</div>', 'right aligned text'),
+    alignLeft: () =>
+      wrap('<div style="text-align: left">\n', '\n</div>', 'left aligned text'),
+    alignCenter: () =>
+      wrap('<div style="text-align: center">\n', '\n</div>', 'centered text'),
+    alignRight: () =>
+      wrap(
+        '<div style="text-align: right">\n',
+        '\n</div>',
+        'right aligned text',
+      ),
     alignJustify: () =>
       wrap('<div style="text-align: justify">\n', '\n</div>', 'justified text'),
     undo: doUndo,
@@ -237,7 +258,8 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
       s.add('ul')
     if (/^\d+\.\s/.test(currentLine)) s.add('ol')
     if (currentLine.startsWith('> ')) s.add('quote')
-    if (currentLine.startsWith('- [ ] ') || currentLine.startsWith('- [x] ')) s.add('checklist')
+    if (currentLine.startsWith('- [ ] ') || currentLine.startsWith('- [x] '))
+      s.add('checklist')
 
     const before = body.value.slice(Math.max(0, pos - 20), pos)
     const after = body.value.slice(pos, pos + 20)
@@ -248,7 +270,9 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
     )
       s.add('bold')
     if (
-      (before.endsWith('*') && !before.endsWith('**') && after.startsWith('*')) ||
+      (before.endsWith('*') &&
+        !before.endsWith('**') &&
+        after.startsWith('*')) ||
       (before.endsWith('*') &&
         !before.endsWith('**') &&
         body.value.slice(pos).startsWith('*'))
@@ -275,7 +299,9 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
       const checkboxMatch = currentLine.match(/^(\s*)- \[[ x]\]\s/)
       if (listMatch || checkboxMatch) {
         e.preventDefault()
-        const prefix = checkboxMatch ? checkboxMatch[1] + '- [ ] ' : listMatch![0]
+        const prefix = checkboxMatch
+          ? checkboxMatch[1] + '- [ ] '
+          : listMatch![0]
         if (
           currentLine.trim() === listMatch?.[0]?.trim() ||
           currentLine.trim() === checkboxMatch?.[0]?.trim()
@@ -288,8 +314,10 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
         }
         let newPrefix = prefix
         const numMatch = prefix.match(/^(\s*)(\d+)\.\s/)
-        if (numMatch) newPrefix = numMatch[1] + (parseInt(numMatch[2]) + 1) + '. '
-        body.value = body.value.slice(0, pos) + '\n' + newPrefix + body.value.slice(pos)
+        if (numMatch)
+          newPrefix = numMatch[1] + (parseInt(numMatch[2]) + 1) + '. '
+        body.value =
+          body.value.slice(0, pos) + '\n' + newPrefix + body.value.slice(pos)
         pushHistory()
         onChange()
         nextTick(() => {
@@ -325,7 +353,10 @@ export function useRichTextEditor(opts: RichTextEditorOptions) {
       doUndo()
       return
     }
-    if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey) || e.key === 'Z')) {
+    if (
+      mod &&
+      (e.key === 'y' || (e.key === 'z' && e.shiftKey) || e.key === 'Z')
+    ) {
       e.preventDefault()
       doRedo()
       return

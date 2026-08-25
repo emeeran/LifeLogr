@@ -136,15 +136,18 @@ function htmlTableToMarkdown(html: string): string {
   const table = doc.querySelector('table')
   if (!table) return ''
   const grid = Array.from(table.querySelectorAll('tr')).map((tr) =>
-    Array.from(tr.querySelectorAll('td,th')).map(
-      (c) => (c.textContent || '').trim().replace(/\|/g, '\\|').replace(/\n/g, ' '),
+    Array.from(tr.querySelectorAll('td,th')).map((c) =>
+      (c.textContent || '').trim().replace(/\|/g, '\\|').replace(/\n/g, ' '),
     ),
   )
   return gridToMarkdown(grid)
 }
 
 function delimitedToMarkdown(text: string): string {
-  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.length > 0)
+  const lines = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((l) => l.length > 0)
   if (lines.length < 2) return ''
   const delim = lines[0].includes('\t') ? '\t' : ','
   return gridToMarkdown(lines.map((l) => l.split(delim)))

@@ -125,9 +125,7 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
             from fastapi import HTTPException
 
             if urlparse(data.ai.ollama_base_url).scheme.lower() not in ("http", "https"):
-                raise HTTPException(
-                    status_code=400, detail="Ollama URL must use http or https"
-                )
+                raise HTTPException(status_code=400, detail="Ollama URL must use http or https")
         mapping = {
             "ollama_model": "OLLAMA_MODEL",
             "ollama_base_url": "OLLAMA_BASE_URL",

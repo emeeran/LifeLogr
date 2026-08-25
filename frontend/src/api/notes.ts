@@ -30,18 +30,24 @@ export const notesApi = {
     if (params?.offset != null) sp.set('offset', String(params.offset))
     if (params?.limit != null) sp.set('limit', String(params.limit))
     if (params?.folder_id != null) sp.set('folder_id', String(params.folder_id))
-    if (params?.tag_ids?.length) params.tag_ids.forEach((t) => sp.append('tag_ids', String(t)))
+    if (params?.tag_ids?.length)
+      params.tag_ids.forEach((t) => sp.append('tag_ids', String(t)))
     if (params?.is_pinned != null) sp.set('is_pinned', String(params.is_pinned))
     const qs = sp.toString()
     return request(`/notes${qs ? `?${qs}` : ''}`)
   },
 
   search(query: string, offset = 0, limit = 20): Promise<NoteListResponse> {
-    return request(`/notes/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`)
+    return request(
+      `/notes/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`,
+    )
   },
 
   update(id: number, data: NoteUpdate): Promise<NoteResponse> {
-    return request(`/notes/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+    return request(`/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
 
   delete(id: number): Promise<void> {
@@ -53,21 +59,40 @@ export const notesApi = {
   },
 
   setPinned(id: number, is_pinned: boolean): Promise<NoteResponse> {
-    return request(`/notes/${id}/pin`, { method: 'PATCH', body: JSON.stringify({ is_pinned }) })
+    return request(`/notes/${id}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_pinned }),
+    })
   },
 
   // ── Sub-pages (EPIM-style page tabs) ──
   createPage(noteId: number, data: NotePageCreate): Promise<NotePageResponse> {
-    return request(`/notes/${noteId}/pages`, { method: 'POST', body: JSON.stringify(data) })
+    return request(`/notes/${noteId}/pages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   },
-  updatePage(noteId: number, pageId: number, data: NotePageUpdate): Promise<NotePageResponse> {
-    return request(`/notes/${noteId}/pages/${pageId}`, { method: 'PATCH', body: JSON.stringify(data) })
+  updatePage(
+    noteId: number,
+    pageId: number,
+    data: NotePageUpdate,
+  ): Promise<NotePageResponse> {
+    return request(`/notes/${noteId}/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
   deletePage(noteId: number, pageId: number): Promise<void> {
     return request(`/notes/${noteId}/pages/${pageId}`, { method: 'DELETE' })
   },
-  reorderPages(noteId: number, items: NotePageReorderItem[]): Promise<{ reordered: number }> {
-    return request(`/notes/${noteId}/pages/reorder`, { method: 'POST', body: JSON.stringify({ items }) })
+  reorderPages(
+    noteId: number,
+    items: NotePageReorderItem[],
+  ): Promise<{ reordered: number }> {
+    return request(`/notes/${noteId}/pages/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
   },
 
   listFolders(): Promise<NoteFolderResponse[]> {
@@ -75,25 +100,40 @@ export const notesApi = {
   },
 
   createFolder(data: NoteFolderCreate): Promise<NoteFolderResponse> {
-    return request('/notes/folders', { method: 'POST', body: JSON.stringify(data) })
+    return request('/notes/folders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   },
 
-  updateFolder(id: number, data: NoteFolderUpdate): Promise<NoteFolderResponse> {
-    return request(`/notes/folders/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  updateFolder(
+    id: number,
+    data: NoteFolderUpdate,
+  ): Promise<NoteFolderResponse> {
+    return request(`/notes/folders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
 
   deleteFolder(id: number): Promise<void> {
     return request(`/notes/folders/${id}`, { method: 'DELETE' })
   },
 
-  encrypt(id: number, passphrase: string): Promise<NoteEncryptionStatusResponse> {
+  encrypt(
+    id: number,
+    passphrase: string,
+  ): Promise<NoteEncryptionStatusResponse> {
     return request(`/notes/${id}/encryption/encrypt`, {
       method: 'POST',
       body: JSON.stringify({ passphrase }),
     })
   },
 
-  decrypt(id: number, passphrase: string): Promise<NoteEncryptionStatusResponse> {
+  decrypt(
+    id: number,
+    passphrase: string,
+  ): Promise<NoteEncryptionStatusResponse> {
     return request(`/notes/${id}/encryption/decrypt`, {
       method: 'POST',
       body: JSON.stringify({ passphrase }),
@@ -104,14 +144,22 @@ export const notesApi = {
     return request(`/notes/${id}/encryption/status`)
   },
 
-  uploadMedia(noteId: number, file: File, caption?: string): Promise<NoteMediaResponse> {
+  uploadMedia(
+    noteId: number,
+    file: File,
+    caption?: string,
+  ): Promise<NoteMediaResponse> {
     const form = new FormData()
     form.append('file', file)
     if (caption) form.append('caption', caption)
     return request(`/notes/${noteId}/media`, { method: 'POST', body: form })
   },
 
-  uploadMediaFromPath(noteId: number, path: string, caption?: string): Promise<NoteMediaResponse> {
+  uploadMediaFromPath(
+    noteId: number,
+    path: string,
+    caption?: string,
+  ): Promise<NoteMediaResponse> {
     return request(`/notes/${noteId}/media/from-path`, {
       method: 'POST',
       body: JSON.stringify({ path, caption }),
@@ -128,15 +176,25 @@ export const notesApi = {
 
   /** OCR a note image; the caller inserts the returned text into the note body.
    *  `lang` is a tesseract code mirroring Settings → Appearance → "OCR language". */
-  ocrNoteMedia(noteId: number, mediaId: number, lang = 'eng'): Promise<{ text: string }> {
-    return request(`/notes/${noteId}/media/${mediaId}/ocr?lang=${encodeURIComponent(lang)}`, {
-      method: 'POST',
-    })
+  ocrNoteMedia(
+    noteId: number,
+    mediaId: number,
+    lang = 'eng',
+  ): Promise<{ text: string }> {
+    return request(
+      `/notes/${noteId}/media/${mediaId}/ocr?lang=${encodeURIComponent(lang)}`,
+      {
+        method: 'POST',
+      },
+    )
   },
 
   /** Clip a web page to markdown (text fallback for the desktop image capture). */
   webClip(url: string): Promise<{ markdown: string }> {
-    return request('/notes/web-clip', { method: 'POST', body: JSON.stringify({ url }) })
+    return request('/notes/web-clip', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    })
   },
 
   mediaFileUrl(noteId: number, mediaId: number): string {

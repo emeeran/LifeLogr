@@ -5,15 +5,34 @@ import Sidebar from './Sidebar.vue'
 import PanelSplitter from './PanelSplitter.vue'
 import EntryDetail from '../entry/EntryDetail.vue'
 import EntryEditor from '../entry/EntryEditor.vue'
-const AiDrawerPanel = defineAsyncComponent(() => import('../entry/AiDrawerPanel.vue'))
-const AttachmentsPanel = defineAsyncComponent(() => import('../entry/AttachmentsPanel.vue'))
+const AiDrawerPanel = defineAsyncComponent(
+  () => import('../entry/AiDrawerPanel.vue'),
+)
+const AttachmentsPanel = defineAsyncComponent(
+  () => import('../entry/AttachmentsPanel.vue'),
+)
 import SearchPalette from '../search/SearchPalette.vue'
 import ScribblePad from '../scribble/ScribblePad.vue'
-const WhatsNewDialog = defineAsyncComponent(() => import('../settings/dialogs/WhatsNewDialog.vue'))
+const WhatsNewDialog = defineAsyncComponent(
+  () => import('../settings/dialogs/WhatsNewDialog.vue'),
+)
 import { useEntriesStore } from '../../stores/entries'
 import { useUpdateChecker } from '../../composables/useUpdateChecker'
-import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
-import { AlertTriangle, Save, Trash2, X, Sparkles, Paperclip } from 'lucide-vue-next'
+import {
+  computed,
+  ref,
+  onMounted,
+  onUnmounted,
+  defineAsyncComponent,
+} from 'vue'
+import {
+  AlertTriangle,
+  Save,
+  Trash2,
+  X,
+  Sparkles,
+  Paperclip,
+} from 'lucide-vue-next'
 import { useLocalStorage } from '@vueuse/core'
 import type { Component } from 'vue'
 
@@ -23,7 +42,9 @@ const editorRef = ref<InstanceType<typeof EntryEditor> | null>(null)
 // OCR language from Settings → Appearance (same key the settings tab writes).
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 
-const showDetail = computed(() => ui.detailPanelOpen && entries.currentEntry && !ui.showEditor)
+const showDetail = computed(
+  () => ui.detailPanelOpen && entries.currentEntry && !ui.showEditor,
+)
 const showEditor = computed(() => ui.showEditor)
 const showDrawer = computed(() => ui.activeDrawer !== null && showEditor.value)
 
@@ -34,17 +55,23 @@ const isJournalView = computed(() => ui.activeView === 'calendar')
 
 const drawerTitle = computed(() => {
   switch (ui.activeDrawer) {
-    case 'ai': return 'AI Assistant'
-    case 'attachments': return 'Attachments'
-    default: return ''
+    case 'ai':
+      return 'AI Assistant'
+    case 'attachments':
+      return 'Attachments'
+    default:
+      return ''
   }
 })
 
 const drawerIcon = computed<Component>(() => {
   switch (ui.activeDrawer) {
-    case 'ai': return Sparkles
-    case 'attachments': return Paperclip
-    default: return Sparkles
+    case 'ai':
+      return Sparkles
+    case 'attachments':
+      return Paperclip
+    default:
+      return Sparkles
   }
 })
 
@@ -69,7 +96,9 @@ onMounted(() => {
   // Show the changelog dialog once per version upgrade (or on fresh install).
   if (hasUnseenVersion) {
     // Defer a tick so the app shell renders first.
-    setTimeout(() => { showWhatsNew.value = true }, 300)
+    setTimeout(() => {
+      showWhatsNew.value = true
+    }, 300)
   }
   // Best-effort weekly background check (opt-in via General settings).
   // Fire-and-forget — must never interrupt startup or the user.
@@ -119,13 +148,19 @@ async function onExtractText(id: number) {
 
     <!-- Scribble Pad (slide-in panel) -->
     <Transition name="scribble-slide">
-      <div v-if="ui.scribbleOpen && !ui.zenMode" class="shrink-0 w-[280px] overflow-hidden">
+      <div
+        v-if="ui.scribbleOpen && !ui.zenMode"
+        class="shrink-0 w-[280px] overflow-hidden"
+      >
         <ScribblePad @close="ui.scribbleOpen = false" />
       </div>
     </Transition>
 
     <!-- Center panel (kept mounted even when drawer is open; just narrows) -->
-    <main v-show="!showDrawer && !ui.zenMode" class="flex-1 flex flex-col min-w-0 bg-surface relative">
+    <main
+      v-show="!showDrawer && !ui.zenMode"
+      class="flex-1 flex flex-col min-w-0 bg-surface relative"
+    >
       <router-view v-slot="{ Component }">
         <Transition name="route-fade" mode="out-in">
           <component :is="Component" />
@@ -139,11 +174,15 @@ async function onExtractText(id: number) {
           class="absolute inset-0 bg-black/30 flex items-center justify-center z-50"
         >
           <div class="glass-panel rounded-lg p-4 w-72 space-y-3">
-            <div class="flex items-center gap-2 text-sm font-medium text-text-primary">
+            <div
+              class="flex items-center gap-2 text-sm font-medium text-text-primary"
+            >
               <AlertTriangle :size="16" class="text-amber-400" />
               Unsaved changes
             </div>
-            <p class="text-xs text-text-secondary">You have unsaved content. Save before switching?</p>
+            <p class="text-xs text-text-secondary">
+              You have unsaved content. Save before switching?
+            </p>
             <div class="flex gap-2 justify-end">
               <button
                 class="flex items-center gap-1 px-2.5 py-1 text-xs bg-danger/15 text-danger hover:bg-danger/25 rounded cursor-pointer transition-colors"
@@ -175,11 +214,18 @@ async function onExtractText(id: number) {
         v-if="showDrawer"
         class="shrink-0 w-80 bg-surface border-l border-r border-border overflow-y-auto overflow-x-hidden flex flex-col relative z-10"
       >
-        <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-          <span class="text-xs font-medium text-text-primary flex items-center gap-1">
+        <div
+          class="flex items-center justify-between px-3 py-2 border-b border-border"
+        >
+          <span
+            class="text-xs font-medium text-text-primary flex items-center gap-1"
+          >
             <component :is="drawerIcon" :size="14" /> {{ drawerTitle }}
           </span>
-          <button @click="ui.closeDrawer()" class="text-text-muted hover:text-text-primary cursor-pointer">
+          <button
+            @click="ui.closeDrawer()"
+            class="text-text-muted hover:text-text-primary cursor-pointer"
+          >
             <X :size="14" />
           </button>
         </div>
@@ -187,7 +233,11 @@ async function onExtractText(id: number) {
         <AiDrawerPanel
           v-if="ui.activeDrawer === 'ai'"
           :get-selection="() => editorRef?.getSelection?.() ?? ''"
-          :apply-text="(t: string) => { editorRef?.applyToSelection?.(t) }"
+          :apply-text="
+            (t: string) => {
+              editorRef?.applyToSelection?.(t)
+            }
+          "
           :has-entry="!!editorRef?.hasEntry"
           :entry-id="editorRef?.entryId ?? null"
         />
@@ -214,7 +264,9 @@ async function onExtractText(id: number) {
 
     <!-- Right panel: entry detail or editor (full-width when Zen Mode is on) -->
     <div
-      v-if="isJournalView && (ui.zenMode ? showEditor : (showDetail || showEditor))"
+      v-if="
+        isJournalView && (ui.zenMode ? showEditor : showDetail || showEditor)
+      "
       class="bg-editor overflow-y-auto transition-all duration-200"
       :class="ui.zenMode ? 'flex-1 min-w-0' : 'shrink-0 border-l border-border'"
       :style="ui.zenMode ? undefined : { width: ui.rightPanelWidth + 'px' }"

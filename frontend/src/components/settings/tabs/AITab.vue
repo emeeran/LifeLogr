@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   getThemes,
   pullModel,
@@ -12,16 +12,20 @@ import {
   listProviderModels,
   previewProviderModels,
   getProviderPresets,
-} from "../../../api/ai";
-import type { AIProvider, AIProviderUpdate, ProviderPreset } from "../../../api/ai";
-import type { ThemeInsight } from "../../../types";
+} from '../../../api/ai'
+import type {
+  AIProvider,
+  AIProviderUpdate,
+  ProviderPreset,
+} from '../../../api/ai'
+import type { ThemeInsight } from '../../../types'
 import {
   getSettings,
   updateSettings,
   getOllamaModels,
-} from "../../../api/settings";
-import type { AppSettings, AIModelInfo } from "../../../api/settings";
-import { request } from "../../../api/client";
+} from '../../../api/settings'
+import type { AppSettings, AIModelInfo } from '../../../api/settings'
+import { request } from '../../../api/client'
 import {
   Brain,
   Sparkles,
@@ -33,87 +37,85 @@ import {
   Eye,
   RefreshCw,
   AlertTriangle,
-} from "lucide-vue-next";
-import SettingsSection from "../shared/SettingsSection.vue";
-import SettingRow from "../shared/SettingRow.vue";
-import ToggleSwitch from "../shared/ToggleSwitch.vue";
-import SkeletonCard from "../shared/SkeletonCard.vue";
-import AccordionItem from "../shared/AccordionItem.vue";
-import SettingGroup from "../shared/SettingGroup.vue";
-import SButton from "../shared/SButton.vue";
+} from 'lucide-vue-next'
+import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
+import ToggleSwitch from '../shared/ToggleSwitch.vue'
+import SkeletonCard from '../shared/SkeletonCard.vue'
+import AccordionItem from '../shared/AccordionItem.vue'
+import SettingGroup from '../shared/SettingGroup.vue'
+import SButton from '../shared/SButton.vue'
+import { errMsg } from '../../../utils/errMsg.ts'
 
 const emit = defineEmits<{
-  toast: [type: "success" | "error" | "info", message: string];
-}>();
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+  toast: [type: 'success' | 'error' | 'info', message: string]
+}>()
 
 /** Pull the backend ``detail`` out of the API client's ``"API <code>: <body>"``
  * message, so provider errors surface readably (e.g. Gemini's "API key not
  * valid") instead of as raw ``{"detail": …}`` JSON. Falls back to ``errMsg``. */
 function apiErrMsg(e: unknown): string {
-  const raw = errMsg(e);
-  const m = raw.match(/API \d+:\s*([\s\S]*)$/);
+  const raw = errMsg(e)
+  const m = raw.match(/API \d+:\s*([\s\S]*)$/)
   if (m) {
     try {
-      const parsed = JSON.parse(m[1]);
-      if (parsed && typeof parsed.detail === "string") return parsed.detail;
+      const parsed = JSON.parse(m[1])
+      if (parsed && typeof parsed.detail === 'string') return parsed.detail
     } catch {
       /* body wasn't JSON */
     }
   }
-  return raw;
+  return raw
 }
 
 function formatModelSize(bytes: number): string {
-  if (!bytes) return "";
-  const gb = bytes / 1024 ** 3;
+  if (!bytes) return ''
+  const gb = bytes / 1024 ** 3
   return gb >= 1
     ? `${gb.toFixed(1)} GB`
-    : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+    : `${(bytes / 1024 ** 2).toFixed(0)} MB`
 }
 
 // Mirrors backend app.services.ollama_service.is_reasoning_model — reasoning /
 // "thinking" models emit long <think> chains and stall every editor AI tool on
 // CPU-only machines. We warn (but still allow) when one is selected.
 const REASONING_MARKERS = [
-  "qwen3",
-  "deepseek-r1",
-  "qwq",
-  "gpt-oss",
-  "magistral",
-  "openthinker",
-  "thinker",
-  "reasoning",
-  "nemotron",
-];
+  'qwen3',
+  'deepseek-r1',
+  'qwq',
+  'gpt-oss',
+  'magistral',
+  'openthinker',
+  'thinker',
+  'reasoning',
+  'nemotron',
+]
 function isReasoningModel(name: string): boolean {
-  const lowered = (name ?? "").toLowerCase();
-  return REASONING_MARKERS.some((m) => lowered.includes(m));
+  const lowered = (name ?? '').toLowerCase()
+  return REASONING_MARKERS.some((m) => lowered.includes(m))
 }
 const selectedModelIsReasoning = computed(() =>
-  isReasoningModel(appSettings.value?.ai.ollama_model ?? ""),
-);
+  isReasoningModel(appSettings.value?.ai.ollama_model ?? ''),
+)
 
 // ── AI Configuration ──
-const appSettings = ref<AppSettings | null>(null);
-const ollamaModels = ref<AIModelInfo[]>([]);
-const settingsLoading = ref(false);
-const aiSaving = ref(false);
+const appSettings = ref<AppSettings | null>(null)
+const ollamaModels = ref<AIModelInfo[]>([])
+const settingsLoading = ref(false)
+const aiSaving = ref(false)
 
 // Dirty-state tracking: show a "Save" affordance only when edits are pending.
-const aiDirty = ref(false);
+const aiDirty = ref(false)
 
 async function loadAppSettings() {
-  settingsLoading.value = true;
+  settingsLoading.value = true
   try {
-    appSettings.value = await getSettings();
+    appSettings.value = await getSettings()
   } catch {
     /* ignore */
   } finally {
-    settingsLoading.value = false;
-    aiDirty.value = false;
+    settingsLoading.value = false
+    aiDirty.value = false
   }
 }
 
@@ -121,277 +123,287 @@ async function loadAppSettings() {
 watch(
   () => appSettings.value?.ai,
   () => {
-    if (appSettings.value) aiDirty.value = true;
+    if (appSettings.value) aiDirty.value = true
   },
   { deep: true },
-);
+)
 
 async function loadOllamaModels() {
   try {
-    ollamaModels.value = await getOllamaModels();
+    ollamaModels.value = await getOllamaModels()
   } catch {
     /* ignore */
   }
 }
 
-const modelsRefreshing = ref(false);
+const modelsRefreshing = ref(false)
 async function refreshModels() {
-  modelsRefreshing.value = true;
+  modelsRefreshing.value = true
   try {
-    ollamaModels.value = await getOllamaModels();
-    const n = ollamaModels.value.length;
-    emit("toast", "success", `Found ${n} model${n === 1 ? "" : "s"}`);
+    ollamaModels.value = await getOllamaModels()
+    const n = ollamaModels.value.length
+    emit('toast', 'success', `Found ${n} model${n === 1 ? '' : 's'}`)
   } catch (e: unknown) {
-    emit("toast", "error", `Refresh failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Refresh failed: ${errMsg(e)}`)
   } finally {
-    modelsRefreshing.value = false;
+    modelsRefreshing.value = false
   }
 }
 
 async function saveAISettings() {
-  if (!appSettings.value) return;
-  aiSaving.value = true;
+  if (!appSettings.value) return
+  aiSaving.value = true
   try {
-    await updateSettings({ ai: appSettings.value.ai });
-    aiDirty.value = false;
-    emit("toast", "success", "AI settings saved");
+    await updateSettings({ ai: appSettings.value.ai })
+    aiDirty.value = false
+    emit('toast', 'success', 'AI settings saved')
   } catch (e: unknown) {
-    emit("toast", "error", `Save failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Save failed: ${errMsg(e)}`)
   } finally {
-    aiSaving.value = false;
+    aiSaving.value = false
   }
 }
 
 // ── Connection Test ──
-const connTesting = ref(false);
+const connTesting = ref(false)
 const connStatus = ref<{
-  ok: boolean;
-  model: string;
-  modelLoaded: boolean;
-  embedAvailable: boolean;
-} | null>(null);
+  ok: boolean
+  model: string
+  modelLoaded: boolean
+  embedAvailable: boolean
+} | null>(null)
 
 async function testConnection() {
-  connTesting.value = true;
-  connStatus.value = null;
+  connTesting.value = true
+  connStatus.value = null
   try {
     const res = await request<{
-      ollama_available: boolean;
-      model_name: string;
-      model_loaded: boolean;
-      embed_model_available: boolean;
-      error: string | null;
-    }>("/ai/status");
+      ollama_available: boolean
+      model_name: string
+      model_loaded: boolean
+      embed_model_available: boolean
+      error: string | null
+    }>('/ai/status')
     connStatus.value = {
       ok: res.ollama_available,
       model: res.model_name,
       modelLoaded: res.model_loaded,
       embedAvailable: res.embed_model_available,
-    };
+    }
     if (!res.ollama_available)
       emit(
-        "toast",
-        "error",
-        `Ollama unavailable: ${res.error ?? "connection refused"}`,
-      );
+        'toast',
+        'error',
+        `Ollama unavailable: ${res.error ?? 'connection refused'}`,
+      )
     else
       emit(
-        "toast",
-        "success",
-        `Connected — ${res.model_name} ${res.model_loaded ? "(loaded)" : "(not loaded)"}`,
-      );
+        'toast',
+        'success',
+        `Connected — ${res.model_name} ${res.model_loaded ? '(loaded)' : '(not loaded)'}`,
+      )
   } catch (e: unknown) {
     connStatus.value = {
       ok: false,
-      model: "",
+      model: '',
       modelLoaded: false,
       embedAvailable: false,
-    };
-    emit("toast", "error", `Connection failed: ${errMsg(e)}`);
+    }
+    emit('toast', 'error', `Connection failed: ${errMsg(e)}`)
   } finally {
-    connTesting.value = false;
+    connTesting.value = false
   }
 }
 
 // ── Pull AI Model ──
-const pullModelName = ref("");
-const pulling = ref(false);
-const pullStatus = ref("");
+const pullModelName = ref('')
+const pulling = ref(false)
+const pullStatus = ref('')
 
 async function handlePullModel() {
-  if (!pullModelName.value.trim()) return;
-  pulling.value = true;
-  pullStatus.value = "Pulling...";
+  if (!pullModelName.value.trim()) return
+  pulling.value = true
+  pullStatus.value = 'Pulling...'
   try {
-    await pullModel(pullModelName.value.trim());
-    pullStatus.value = `Pull started for ${pullModelName.value.trim()}`;
+    await pullModel(pullModelName.value.trim())
+    pullStatus.value = `Pull started for ${pullModelName.value.trim()}`
     emit(
-      "toast",
-      "success",
+      'toast',
+      'success',
       `Model pull started: ${pullModelName.value.trim()}`,
-    );
+    )
   } catch (e: unknown) {
-    pullStatus.value = `Failed: ${errMsg(e)}`;
-    emit("toast", "error", `Pull failed: ${errMsg(e)}`);
+    pullStatus.value = `Failed: ${errMsg(e)}`
+    emit('toast', 'error', `Pull failed: ${errMsg(e)}`)
   } finally {
-    pulling.value = false;
+    pulling.value = false
   }
 }
 
 // ── AI Themes & Insights ──
-const themesMonths = ref(6);
-const themes = ref<ThemeInsight[]>([]);
-const themesLoading = ref(false);
+const themesMonths = ref(6)
+const themes = ref<ThemeInsight[]>([])
+const themesLoading = ref(false)
 
 async function fetchThemes() {
-  themesLoading.value = true;
+  themesLoading.value = true
   try {
-    themes.value = (await getThemes(themesMonths.value)).themes;
+    themes.value = (await getThemes(themesMonths.value)).themes
   } catch (e: unknown) {
-    emit("toast", "error", `Themes failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Themes failed: ${errMsg(e)}`)
   } finally {
-    themesLoading.value = false;
+    themesLoading.value = false
   }
 }
 
 function resetAIDefaults() {
-  if (!appSettings.value) return;
-  const ai = appSettings.value.ai;
-  ai.ollama_model = "llama3.2:3b";
-  ai.ollama_base_url = "http://localhost:11434";
-  ai.ollama_embed_model = "nomic-embed-text";
-  ai.enable_embeddings = true;
-  ai.enable_tag_suggestions = true;
-  ai.enable_sentiment = true;
-  ai.enable_summarization = true;
-  ai.enable_reflection_prompts = true;
-  ai.enable_writer_block_helper = true;
-  emit("toast", "success", "AI settings reset to defaults");
+  if (!appSettings.value) return
+  const ai = appSettings.value.ai
+  ai.ollama_model = 'llama3.2:3b'
+  ai.ollama_base_url = 'http://localhost:11434'
+  ai.ollama_embed_model = 'nomic-embed-text'
+  ai.enable_embeddings = true
+  ai.enable_tag_suggestions = true
+  ai.enable_sentiment = true
+  ai.enable_summarization = true
+  ai.enable_reflection_prompts = true
+  ai.enable_writer_block_helper = true
+  emit('toast', 'success', 'AI settings reset to defaults')
 }
 
 const availableEmbedModels = computed(() => {
-  const names = ollamaModels.value.map((m) => m.name);
-  const suggestions = ["nomic-embed-text", "mxbai-embed-large", "all-minilm"];
+  const names = ollamaModels.value.map((m) => m.name)
+  const suggestions = ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm']
   return [
     ...new Set([
       ...names.filter(
-        (n) => n.includes("embed") || n.includes("e5") || n.includes("minilm"),
+        (n) => n.includes('embed') || n.includes('e5') || n.includes('minilm'),
       ),
       ...suggestions,
     ]),
-  ];
-});
+  ]
+})
 
 // Feature toggles with descriptions + whether they need the embedding model.
 const featureToggles = computed(
   () =>
     [
       {
-        key: "enable_embeddings",
-        label: "Embeddings",
-        desc: "Generate vector embeddings. Required for semantic search.",
+        key: 'enable_embeddings',
+        label: 'Embeddings',
+        desc: 'Generate vector embeddings. Required for semantic search.',
         needsEmbed: true,
       },
       {
-        key: "enable_tag_suggestions",
-        label: "Tag suggestions",
-        desc: "Suggest tags for entries using the chat model.",
+        key: 'enable_tag_suggestions',
+        label: 'Tag suggestions',
+        desc: 'Suggest tags for entries using the chat model.',
         needsEmbed: false,
       },
       {
-        key: "enable_sentiment",
-        label: "Sentiment analysis",
-        desc: "Score the mood of each entry.",
+        key: 'enable_sentiment',
+        label: 'Sentiment analysis',
+        desc: 'Score the mood of each entry.',
         needsEmbed: false,
       },
       {
-        key: "enable_summarization",
-        label: "Summarization",
-        desc: "Auto-generate entry summaries.",
+        key: 'enable_summarization',
+        label: 'Summarization',
+        desc: 'Auto-generate entry summaries.',
         needsEmbed: false,
       },
       {
-        key: "enable_reflection_prompts",
-        label: "Reflection prompts",
-        desc: "Offer writing prompts based on past entries.",
+        key: 'enable_reflection_prompts',
+        label: 'Reflection prompts',
+        desc: 'Offer writing prompts based on past entries.',
         needsEmbed: false,
       },
       {
-        key: "enable_writer_block_helper",
+        key: 'enable_writer_block_helper',
         label: "Writer's block helper",
-        desc: "Suggest continuations while writing.",
+        desc: 'Suggest continuations while writing.',
         needsEmbed: false,
       },
     ] as const,
-);
+)
 
 // ── AI providers (cloud, OpenAI-compatible) ──
-const providers = ref<AIProvider[]>([]);
-const presets = ref<ProviderPreset[]>([]);
+const providers = ref<AIProvider[]>([])
+const presets = ref<ProviderPreset[]>([])
 
 // Cloud-egress warning: the active provider (if non-Ollama) receives the text of
 // any entry/note an AI tool runs on — it leaves the device. Surfaced as a banner
 // here and drives the editor "leaves device" badge + the Privacy tab.
-const cloudWarningDismissed = ref(false);
+const cloudWarningDismissed = ref(false)
 const activeCloudProvider = computed(
-  () => providers.value.find((p) => p.is_active && p.preset !== "ollama") ?? null,
-);
-const activeProviderIsCloud = computed(() => activeCloudProvider.value !== null);
+  () =>
+    providers.value.find((p) => p.is_active && p.preset !== 'ollama') ?? null,
+)
+const activeProviderIsCloud = computed(() => activeCloudProvider.value !== null)
 const activeCloudProviderName = computed(
-  () => activeCloudProvider.value?.name ?? "your cloud provider",
-);
-const testingId = ref<number | null>(null);
+  () => activeCloudProvider.value?.name ?? 'your cloud provider',
+)
+const testingId = ref<number | null>(null)
 
 // Shared inline Add/Edit form. `formMode` null = collapsed; "add" = new-provider
 // form; "edit" = editing `editingId`. The same field layout serves both.
-type ProviderFormMode = "add" | "edit" | null;
-const formMode = ref<ProviderFormMode>(null);
-const editingId = ref<number | null>(null);
-const providerForm = ref({ name: "", preset: "openai", base_url: "", model: "", api_key: "" });
-const providerSaving = ref(false);
+type ProviderFormMode = 'add' | 'edit' | null
+const formMode = ref<ProviderFormMode>(null)
+const editingId = ref<number | null>(null)
+const providerForm = ref({
+  name: '',
+  preset: 'openai',
+  base_url: '',
+  model: '',
+  api_key: '',
+})
+const providerSaving = ref(false)
 
 // Model selector inside the form: ↻ fetches the provider's real model list
 // (preview endpoint for add-mode, or the saved-key per-id endpoint for edit-mode).
 // "Custom…" drops back to a free-text input for unlisted models.
-const formModels = ref<string[]>([]);
-const formModelsLoading = ref(false);
-const formModelCustom = ref(false);
+const formModels = ref<string[]>([])
+const formModelsLoading = ref(false)
+const formModelCustom = ref(false)
 const formModelOptions = computed(() => {
-  const opts = formModels.value.slice();
+  const opts = formModels.value.slice()
   // Always include the current model so the select is never blank.
   if (providerForm.value.model && !opts.includes(providerForm.value.model)) {
-    opts.unshift(providerForm.value.model);
+    opts.unshift(providerForm.value.model)
   }
-  return opts;
-});
+  return opts
+})
 
 async function loadProviders() {
   try {
-    const [ps, list] = await Promise.all([getProviderPresets(), listProviders()]);
-    presets.value = ps;
-    providers.value = list;
+    const [ps, list] = await Promise.all([
+      getProviderPresets(),
+      listProviders(),
+    ])
+    presets.value = ps
+    providers.value = list
   } catch {
     /* ignore */
   }
 }
 
 function resetFormModels() {
-  formModels.value = [];
-  formModelCustom.value = false;
+  formModels.value = []
+  formModelCustom.value = false
 }
 
 function openAddForm() {
-  const p = presets.value.find((x) => x.key === "openai") ?? presets.value[0];
+  const p = presets.value.find((x) => x.key === 'openai') ?? presets.value[0]
   providerForm.value = {
-    name: p?.label ?? "",
-    preset: p?.key ?? "openai",
-    base_url: p?.base_url ?? "",
-    model: p?.model ?? "",
-    api_key: "",
-  };
-  editingId.value = null;
-  resetFormModels();
-  formMode.value = "add";
+    name: p?.label ?? '',
+    preset: p?.key ?? 'openai',
+    base_url: p?.base_url ?? '',
+    model: p?.model ?? '',
+    api_key: '',
+  }
+  editingId.value = null
+  resetFormModels()
+  formMode.value = 'add'
 }
 
 function openEditForm(p: AIProvider) {
@@ -400,65 +412,67 @@ function openEditForm(p: AIProvider) {
     preset: p.preset,
     base_url: p.base_url,
     model: p.model,
-    api_key: "", // never prefill — the key is write-only
-  };
-  editingId.value = p.id;
-  resetFormModels();
-  formMode.value = "edit";
+    api_key: '', // never prefill — the key is write-only
+  }
+  editingId.value = p.id
+  resetFormModels()
+  formMode.value = 'edit'
 }
 
 function closeForm() {
-  formMode.value = null;
-  editingId.value = null;
-  resetFormModels();
+  formMode.value = null
+  editingId.value = null
+  resetFormModels()
 }
 
 function onFormPresetChange() {
   // Preset is disabled in edit mode, so this only fires when adding.
-  const p = presets.value.find((x) => x.key === providerForm.value.preset);
-  if (!p) return;
-  providerForm.value.name = providerForm.value.name || p.label;
-  providerForm.value.base_url = p.base_url;
-  providerForm.value.model = p.model;
-  resetFormModels();
+  const p = presets.value.find((x) => x.key === providerForm.value.preset)
+  if (!p) return
+  providerForm.value.name = providerForm.value.name || p.label
+  providerForm.value.base_url = p.base_url
+  providerForm.value.model = p.model
+  resetFormModels()
 }
 
 async function fetchFormModels() {
-  if (!providerForm.value.base_url) return;
-  formModelsLoading.value = true;
+  if (!providerForm.value.base_url) return
+  formModelsLoading.value = true
   try {
     // Edit mode without a freshly-typed key → use the saved key (per-id endpoint).
     // Otherwise (add mode, or edit with a new key) → preview endpoint.
     const models =
-      formMode.value === "edit" && editingId.value != null && !providerForm.value.api_key
+      formMode.value === 'edit' &&
+      editingId.value != null &&
+      !providerForm.value.api_key
         ? await listProviderModels(editingId.value)
         : await previewProviderModels(
             providerForm.value.base_url,
             providerForm.value.api_key || undefined,
-          );
-    formModels.value = models.map((m) => m.id).sort();
-    formModelCustom.value = false;
-    const n = formModels.value.length;
-    emit("toast", "success", `Found ${n} model${n === 1 ? "" : "s"}`);
+          )
+    formModels.value = models.map((m) => m.id).sort()
+    formModelCustom.value = false
+    const n = formModels.value.length
+    emit('toast', 'success', `Found ${n} model${n === 1 ? '' : 's'}`)
   } catch (e) {
-    emit("toast", "error", `Models: ${apiErrMsg(e)}`);
+    emit('toast', 'error', `Models: ${apiErrMsg(e)}`)
   } finally {
-    formModelsLoading.value = false;
+    formModelsLoading.value = false
   }
 }
 
 function onFormModelChange(value: string) {
-  if (value === "__custom__") {
-    formModelCustom.value = true; // current model stays in the free-text input
-    return;
+  if (value === '__custom__') {
+    formModelCustom.value = true // current model stays in the free-text input
+    return
   }
-  providerForm.value.model = value;
+  providerForm.value.model = value
 }
 
 async function saveProvider() {
-  providerSaving.value = true;
+  providerSaving.value = true
   try {
-    if (formMode.value === "add") {
+    if (formMode.value === 'add') {
       await createProvider({
         name: providerForm.value.name.trim() || providerForm.value.preset,
         preset: providerForm.value.preset,
@@ -466,37 +480,38 @@ async function saveProvider() {
         model: providerForm.value.model.trim(),
         api_key: providerForm.value.api_key || undefined,
         is_active: providers.value.length === 0, // first provider auto-activates
-      });
-      emit("toast", "success", "Provider added");
-    } else if (formMode.value === "edit" && editingId.value != null) {
+      })
+      emit('toast', 'success', 'Provider added')
+    } else if (formMode.value === 'edit' && editingId.value != null) {
       const patch: AIProviderUpdate = {
         name: providerForm.value.name.trim() || providerForm.value.preset,
         base_url: providerForm.value.base_url.trim(),
         model: providerForm.value.model.trim(),
-      };
+      }
       // Only send the key when the user typed a new one — blank means "keep".
-      if (providerForm.value.api_key) patch.api_key = providerForm.value.api_key;
-      await updateProvider(editingId.value, patch);
-      emit("toast", "success", "Provider saved");
+      if (providerForm.value.api_key) patch.api_key = providerForm.value.api_key
+      await updateProvider(editingId.value, patch)
+      emit('toast', 'success', 'Provider saved')
     }
-    closeForm();
-    await loadProviders();
+    closeForm()
+    await loadProviders()
   } catch (e) {
-    emit("toast", "error", `Save failed: ${apiErrMsg(e)}`);
+    emit('toast', 'error', `Save failed: ${apiErrMsg(e)}`)
   } finally {
-    providerSaving.value = false;
+    providerSaving.value = false
   }
 }
 
 async function removeProvider(p: AIProvider) {
-  if (!window.confirm(`Delete provider "${p.name}"? This cannot be undone.`)) return;
+  if (!window.confirm(`Delete provider "${p.name}"? This cannot be undone.`))
+    return
   try {
-    await deleteProvider(p.id);
-    if (editingId.value === p.id) closeForm();
-    await loadProviders();
-    emit("toast", "info", "Provider removed");
+    await deleteProvider(p.id)
+    if (editingId.value === p.id) closeForm()
+    await loadProviders()
+    emit('toast', 'info', 'Provider removed')
   } catch (e) {
-    emit("toast", "error", apiErrMsg(e));
+    emit('toast', 'error', apiErrMsg(e))
   }
 }
 
@@ -505,33 +520,33 @@ async function toggleActive(p: AIProvider) {
   // (→ local Ollama fallback); turning one on deactivates the others.
   try {
     if (p.is_active) {
-      await updateProvider(p.id, { is_active: false });
+      await updateProvider(p.id, { is_active: false })
     } else {
-      await activateProvider(p.id);
+      await activateProvider(p.id)
     }
-    await loadProviders();
+    await loadProviders()
   } catch (e) {
-    emit("toast", "error", apiErrMsg(e));
+    emit('toast', 'error', apiErrMsg(e))
   }
 }
 
 async function testConn(p: AIProvider) {
-  testingId.value = p.id;
+  testingId.value = p.id
   try {
-    const r = await testProvider(p.id);
-    emit("toast", "success", `Connected — ${r.model}`);
+    const r = await testProvider(p.id)
+    emit('toast', 'success', `Connected — ${r.model}`)
   } catch (e) {
-    emit("toast", "error", `Test failed: ${apiErrMsg(e)}`);
+    emit('toast', 'error', `Test failed: ${apiErrMsg(e)}`)
   } finally {
-    testingId.value = null;
+    testingId.value = null
   }
 }
 
 onMounted(() => {
-  loadAppSettings();
-  loadOllamaModels();
-  loadProviders();
-});
+  loadAppSettings()
+  loadOllamaModels()
+  loadProviders()
+})
 </script>
 
 <template>
@@ -541,10 +556,11 @@ onMounted(() => {
   >
     <AlertTriangle :size="14" class="mt-px shrink-0" />
     <div class="flex-1">
-      <strong class="font-medium">Cloud AI is on.</strong> Running any AI tool on an
-      entry or note sends its text to <strong>{{ activeCloudProviderName }}</strong> —
-      it leaves your device. Switch the active provider to local Ollama to keep
-      everything on your machine. See <em>Privacy</em> for the full picture.
+      <strong class="font-medium">Cloud AI is on.</strong> Running any AI tool
+      on an entry or note sends its text to
+      <strong>{{ activeCloudProviderName }}</strong> — it leaves your device.
+      Switch the active provider to local Ollama to keep everything on your
+      machine. See <em>Privacy</em> for the full picture.
     </div>
     <button
       class="shrink-0 text-amber-200/70 hover:text-amber-200"
@@ -565,16 +581,24 @@ onMounted(() => {
         v-for="p in providers"
         :key="p.id"
         class="rounded-md bg-surface-hover"
-        :class="formMode === 'edit' && editingId === p.id ? 'ring-1 ring-accent/60' : ''"
+        :class="
+          formMode === 'edit' && editingId === p.id
+            ? 'ring-1 ring-accent/60'
+            : ''
+        "
       >
         <div class="flex items-center gap-2 px-2 py-1.5">
           <ToggleSwitch
             :model-value="p.is_active"
-            :title="p.is_active ? 'Active — AI tools route here' : 'Set as active'"
+            :title="
+              p.is_active ? 'Active — AI tools route here' : 'Set as active'
+            "
             @update:model-value="toggleActive(p)"
           />
           <div class="flex-1 min-w-0">
-            <div class="text-[12px] text-text-primary truncate flex items-center gap-1.5">
+            <div
+              class="text-[12px] text-text-primary truncate flex items-center gap-1.5"
+            >
               <span class="truncate">{{ p.name }}</span>
               <span
                 v-if="p.is_active"
@@ -584,11 +608,19 @@ onMounted(() => {
             </div>
             <div class="text-[10px] text-text-muted truncate">
               {{ p.model }} · {{ p.base_url
-              }}<span v-if="!p.has_key && p.preset !== 'ollama'"> · no key</span>
+              }}<span v-if="!p.has_key && p.preset !== 'ollama'">
+                · no key</span
+              >
             </div>
           </div>
-          <SButton variant="ghost" size="xs" :disabled="testingId === p.id" @click="testConn(p)">
-            <Loader v-if="testingId === p.id" :size="11" class="animate-spin" /> Test
+          <SButton
+            variant="ghost"
+            size="xs"
+            :disabled="testingId === p.id"
+            @click="testConn(p)"
+          >
+            <Loader v-if="testingId === p.id" :size="11" class="animate-spin" />
+            Test
           </SButton>
           <SButton
             variant="ghost"
@@ -616,10 +648,13 @@ onMounted(() => {
     </p>
 
     <!-- Shared inline Add / Edit form -->
-    <div v-if="formMode !== null" class="mt-2 space-y-1.5 p-2 rounded-md border border-border">
+    <div
+      v-if="formMode !== null"
+      class="mt-2 space-y-1.5 p-2 rounded-md border border-border"
+    >
       <div class="flex items-center gap-1.5 text-[11px] text-text-secondary">
         <Sparkles :size="12" />
-        {{ formMode === "add" ? "Add provider" : "Edit provider" }}
+        {{ formMode === 'add' ? 'Add provider' : 'Edit provider' }}
       </div>
       <div class="flex gap-1.5">
         <select
@@ -628,23 +663,42 @@ onMounted(() => {
           :disabled="formMode === 'edit'"
           @change="onFormPresetChange"
         >
-          <option v-for="pr in presets" :key="pr.key" :value="pr.key">{{ pr.label }}</option>
+          <option v-for="pr in presets" :key="pr.key" :value="pr.key">
+            {{ pr.label }}
+          </option>
         </select>
-        <input v-model="providerForm.name" placeholder="Name" class="settings-input flex-1" />
+        <input
+          v-model="providerForm.name"
+          placeholder="Name"
+          class="settings-input flex-1"
+        />
       </div>
-      <input v-model="providerForm.base_url" placeholder="Base URL (…/v1)" class="settings-input w-full" />
+      <input
+        v-model="providerForm.base_url"
+        placeholder="Base URL (…/v1)"
+        class="settings-input w-full"
+      />
       <!-- Model: dropdown once a list is fetched, else free text. ↻ fetches from the provider. -->
       <div class="flex items-center gap-1.5">
         <select
           v-if="formModels.length && !formModelCustom"
           class="settings-select flex-1"
           :value="providerForm.model"
-          @change="onFormModelChange(($event.target as HTMLSelectElement).value)"
+          @change="
+            onFormModelChange(($event.target as HTMLSelectElement).value)
+          "
         >
-          <option v-for="m in formModelOptions" :key="m" :value="m">{{ m }}</option>
+          <option v-for="m in formModelOptions" :key="m" :value="m">
+            {{ m }}
+          </option>
           <option value="__custom__">Custom…</option>
         </select>
-        <input v-else v-model="providerForm.model" placeholder="Model id" class="settings-input flex-1" />
+        <input
+          v-else
+          v-model="providerForm.model"
+          placeholder="Model id"
+          class="settings-input flex-1"
+        />
         <SButton
           variant="ghost"
           size="xs"
@@ -669,16 +723,24 @@ onMounted(() => {
       <div class="flex gap-1.5">
         <SButton
           variant="primary"
-          :disabled="providerSaving || !providerForm.base_url || !providerForm.model"
+          :disabled="
+            providerSaving || !providerForm.base_url || !providerForm.model
+          "
           @click="saveProvider"
         >
           <Loader v-if="providerSaving" :size="11" class="animate-spin" />
-          {{ formMode === "add" ? "Add provider" : "Save" }}
+          {{ formMode === 'add' ? 'Add provider' : 'Save' }}
         </SButton>
         <SButton variant="ghost" @click="closeForm">Cancel</SButton>
       </div>
     </div>
-    <SButton v-else variant="outline" size="xs" :icon="Sparkles" @click="openAddForm">
+    <SButton
+      v-else
+      variant="outline"
+      size="xs"
+      :icon="Sparkles"
+      @click="openAddForm"
+    >
       Add provider
     </SButton>
   </SettingsSection>
@@ -727,7 +789,7 @@ onMounted(() => {
               v-else
               :size="11"
             />
-            {{ connStatus.ok ? "Connected" : "Unreachable" }}
+            {{ connStatus.ok ? 'Connected' : 'Unreachable' }}
           </span>
         </div>
       </SettingGroup>
@@ -743,7 +805,7 @@ onMounted(() => {
             class="settings-select max-w-44"
           >
             <option v-for="m in ollamaModels" :key="m.name" :value="m.name">
-              {{ m.name }} {{ m.size ? `(${formatModelSize(m.size)})` : "" }}
+              {{ m.name }} {{ m.size ? `(${formatModelSize(m.size)})` : '' }}
             </option>
             <option
               v-if="
@@ -881,7 +943,7 @@ onMounted(() => {
         <div class="flex items-center gap-1.5">
           <select v-model.number="themesMonths" class="settings-select w-24">
             <option v-for="m in [1, 3, 6, 12, 24]" :key="m" :value="m">
-              {{ m }} month{{ m > 1 ? "s" : "" }}
+              {{ m }} month{{ m > 1 ? 's' : '' }}
             </option>
           </select>
           <SButton
@@ -913,7 +975,7 @@ onMounted(() => {
             v-if="t.months_mentioned.length"
             class="text-[10px] text-text-muted"
           >
-            Months: {{ t.months_mentioned.join(", ") }}
+            Months: {{ t.months_mentioned.join(', ') }}
           </div>
           <div v-if="t.insight" class="text-[11px] text-text-secondary">
             {{ t.insight }}

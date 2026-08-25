@@ -5,7 +5,9 @@ import { useRecordingsInjected, fmtTime } from '../../composables/useRecordings'
 
 const recs = useRecordingsInjected()
 
-const visible = computed(() => recs.activeId.value !== null && recs.active.value !== null)
+const visible = computed(
+  () => recs.activeId.value !== null && recs.active.value !== null,
+)
 
 /** Slider value bound to current time; writes seek back on input. */
 function onSeek(e: Event) {
@@ -32,17 +34,33 @@ function onSeek(e: Event) {
       <FileAudio :size="14" class="text-accent shrink-0" />
 
       <div class="flex-1 min-w-0">
-        <div class="flex items-center justify-between text-[10px] text-text-muted font-mono tabular-nums mb-0.5">
+        <div
+          class="flex items-center justify-between text-[10px] text-text-muted font-mono tabular-nums mb-0.5"
+        >
           <span>Voice memo</span>
-          <span>{{ fmtTime(recs.current.value) }} / {{ fmtTime(recs.duration.value) }}</span>
+          <span
+            >{{ fmtTime(recs.current.value) }} /
+            {{ fmtTime(recs.duration.value) }}</span
+          >
         </div>
         <input
           type="range"
           class="w-full h-1 accent-accent cursor-pointer"
           min="0"
-          :max="Math.max(1, Math.floor(recs.duration.value || recs.active.value?.duration_seconds || 0))"
+          :max="
+            Math.max(
+              1,
+              Math.floor(
+                recs.duration.value || recs.active.value?.duration_seconds || 0,
+              ),
+            )
+          "
           :value="Math.floor(recs.current.value)"
-          :disabled="(recs.duration.value || recs.active.value?.duration_seconds || 0) === 0"
+          :disabled="
+            (recs.duration.value ||
+              recs.active.value?.duration_seconds ||
+              0) === 0
+          "
           @input="onSeek"
         />
       </div>

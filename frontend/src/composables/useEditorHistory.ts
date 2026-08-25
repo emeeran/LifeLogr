@@ -1,8 +1,14 @@
 import { ref, nextTick, type Ref } from 'vue'
 
-interface HistoryEntry { content: string; cursor: number }
+interface HistoryEntry {
+  content: string
+  cursor: number
+}
 
-export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaElement | null>) {
+export function useEditorHistory(
+  body: Ref<string>,
+  textarea: Ref<HTMLTextAreaElement | null>,
+) {
   const undoStack = ref<HistoryEntry[]>([])
   const redoStack = ref<HistoryEntry[]>([])
   let lastPushTime = 0
@@ -17,7 +23,10 @@ export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaEl
     if (now - lastPushTime < 500 && undoStack.value.length >= 2) {
       const last = undoStack.value[undoStack.value.length - 1]
       if (last.content === body.value) return
-      undoStack.value[undoStack.value.length - 1] = { content: body.value, cursor }
+      undoStack.value[undoStack.value.length - 1] = {
+        content: body.value,
+        cursor,
+      }
       return
     }
     lastPushTime = now
@@ -35,7 +44,8 @@ export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaEl
       body.value = prev.content
       nextTick(() => {
         if (textarea.value) {
-          textarea.value.selectionStart = textarea.value.selectionEnd = prev.cursor
+          textarea.value.selectionStart = textarea.value.selectionEnd =
+            prev.cursor
         }
       })
     } else {
@@ -51,7 +61,8 @@ export function useEditorHistory(body: Ref<string>, textarea: Ref<HTMLTextAreaEl
     body.value = entry.content
     nextTick(() => {
       if (textarea.value) {
-        textarea.value.selectionStart = textarea.value.selectionEnd = entry.cursor
+        textarea.value.selectionStart = textarea.value.selectionEnd =
+          entry.cursor
       }
     })
   }

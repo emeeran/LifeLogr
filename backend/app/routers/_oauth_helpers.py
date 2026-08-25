@@ -19,7 +19,7 @@ import httpx
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import encrypt
+from app.core.security import decrypt, encrypt
 from app.models.backup import BackupConfig
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,23 @@ def error_page(detail: str) -> HTMLResponse:
     return HTMLResponse(
         content=_ERROR_HTML.replace("__DETAIL__", html.escape(detail)), status_code=400
     )
+
+
+def load_stored_credentials(config: BackupConfig | None, provider_label: str) -> dict[str, str]:
+    """Decrypt a provider's stored credentials; ``{}`` when unreadable.
+
+    A corrupt/undecryptable blob must not block the flow — the caller falls
+    back to env-configured client ids — so failures are logged and swallowed
+    by design.
+    """
+    if config is None:
+        return {}
+    try:
+        stored = json.loads(decrypt(config.credentials_encrypted))
+        return stored if isinstance(stored, dict) else {}
+    except Exception:
+        logger.warning("Failed to decrypt stored %s credentials", provider_label, exc_info=True)
+        return {}
 
 
 async def exchange_authorization_code(

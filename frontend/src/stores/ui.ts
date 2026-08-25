@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
-export type ViewType = 'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'settings'
+export type ViewType =
+  'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'settings'
 export type DrawerPanel = 'ai' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {
@@ -14,7 +15,10 @@ export const useUiStore = defineStore('ui', () => {
   const darkMode = useLocalStorage('lifelogr-dark', true)
   const fontFamily = useLocalStorage<string>('lifelogr-font', 'system-ui')
   const fontSize = useLocalStorage<number>('lifelogr-font-size', 14)
-  const rightPanelWidth = useLocalStorage<number>('lifelogr-right-panel-width', 480)
+  const rightPanelWidth = useLocalStorage<number>(
+    'lifelogr-right-panel-width',
+    480,
+  )
   const defaultTitle = useLocalStorage<string>('lifelogr-default-title', '')
 
   // Pending switch (used by save-prompt dialog)
@@ -40,17 +44,27 @@ export const useUiStore = defineStore('ui', () => {
   // Distinct from the editor's own focusMode/fullscreen (a per-editor control).
   const zenMode = useLocalStorage('lifelogr-zen-mode', false)
 
-  function openSearchPalette() { searchPaletteOpen.value = true }
-  function closeSearchPalette() { searchPaletteOpen.value = false }
+  function openSearchPalette() {
+    searchPaletteOpen.value = true
+  }
+  function closeSearchPalette() {
+    searchPaletteOpen.value = false
+  }
 
   function toggleDrawer(panel: DrawerPanel) {
     activeDrawer.value = activeDrawer.value === panel ? null : panel
   }
-  function closeDrawer() { activeDrawer.value = null }
+  function closeDrawer() {
+    activeDrawer.value = null
+  }
 
-  function toggleScribble() { scribbleOpen.value = !scribbleOpen.value }
+  function toggleScribble() {
+    scribbleOpen.value = !scribbleOpen.value
+  }
 
-  function toggleZenMode() { zenMode.value = !zenMode.value }
+  function toggleZenMode() {
+    zenMode.value = !zenMode.value
+  }
 
   function setView(view: ViewType) {
     activeView.value = view
@@ -151,13 +165,44 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    activeView, sidebarCollapsed, detailPanelOpen, editingEntryId, newEntryDate,
-    darkMode, fontFamily, fontSize, rightPanelWidth, defaultTitle, showEditor,
-    showSavePrompt, pendingSwitch, editorIsDirty, searchPaletteOpen, activeDrawer,
-    scribbleOpen, zenMode,
-    setView, startEditing, requestEdit, requestNewEntry, confirmSwitchSave, confirmSwitchDiscard, cancelSwitch,
-    toggleDetailPanel, toggleSidebar, toggleTheme, setFontFamily, setFontSize, setRightPanelWidth,
-    openSearchPalette, closeSearchPalette, toggleDrawer, closeDrawer, toggleScribble, toggleZenMode,
-    requestedSettingsTab, requestSettingsTab,
+    activeView,
+    sidebarCollapsed,
+    detailPanelOpen,
+    editingEntryId,
+    newEntryDate,
+    darkMode,
+    fontFamily,
+    fontSize,
+    rightPanelWidth,
+    defaultTitle,
+    showEditor,
+    showSavePrompt,
+    pendingSwitch,
+    editorIsDirty,
+    searchPaletteOpen,
+    activeDrawer,
+    scribbleOpen,
+    zenMode,
+    setView,
+    startEditing,
+    requestEdit,
+    requestNewEntry,
+    confirmSwitchSave,
+    confirmSwitchDiscard,
+    cancelSwitch,
+    toggleDetailPanel,
+    toggleSidebar,
+    toggleTheme,
+    setFontFamily,
+    setFontSize,
+    setRightPanelWidth,
+    openSearchPalette,
+    closeSearchPalette,
+    toggleDrawer,
+    closeDrawer,
+    toggleScribble,
+    toggleZenMode,
+    requestedSettingsTab,
+    requestSettingsTab,
   }
 })

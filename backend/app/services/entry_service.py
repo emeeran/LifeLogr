@@ -5,9 +5,9 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError
@@ -19,6 +19,7 @@ from app.services.enrichment_service import EnrichmentService
 from app.services.hashtag import extract_hashtags, resolve_tag_ids
 
 logger = logging.getLogger(__name__)
+
 
 def _entry_list_options() -> tuple[Any, ...]:
     """Eager-load relationships + every scalar column EXCEPT the heavy ``body``.
@@ -124,7 +125,8 @@ class EntryService:
             return {}
         rows = await self.db.execute(
             select(Entry.id, func.substr(Entry.body, 1, 300)).where(
-                Entry.id.in_(entry_ids), Entry.is_encrypted == False  # noqa: E712
+                Entry.id.in_(entry_ids),
+                Entry.is_encrypted == False,  # noqa: E712
             )
         )
         return {row[0]: (row[1] or "") for row in rows.all()}

@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { entriesApi } from "../../../api/entries";
-import { notesApi } from "../../../api/notes";
+import { ref, computed } from 'vue'
+import { entriesApi } from '../../../api/entries'
+import { notesApi } from '../../../api/notes'
 import {
   exportHtml,
   getExportPdfUrl,
   exportDiarium,
   getExportDiariumDbUrl,
-} from "../../../api/export";
-import { useEntriesStore } from "../../../stores/entries";
-import { saveFile, pickFile } from "../../../utils/fileDialog";
+} from '../../../api/export'
+import { useEntriesStore } from '../../../stores/entries'
+import { saveFile, pickFile } from '../../../utils/fileDialog'
 import {
   Download,
   Upload,
@@ -20,229 +20,227 @@ import {
   FileSpreadsheet,
   Database,
   ChevronDown,
-} from "lucide-vue-next";
-import SettingsSection from "../shared/SettingsSection.vue";
-import SButton from "../shared/SButton.vue";
+} from 'lucide-vue-next'
+import SettingsSection from '../shared/SettingsSection.vue'
+import SButton from '../shared/SButton.vue'
+import { errMsg } from '../../../utils/errMsg.ts'
 
 const emit = defineEmits<{
-  toast: [type: "success" | "error" | "info", message: string];
-}>();
-function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+  toast: [type: 'success' | 'error' | 'info', message: string]
+}>()
 
-const entriesStore = useEntriesStore();
+const entriesStore = useEntriesStore()
 
 // ── Import ──
-const importing = ref(false);
-const importMenuOpen = ref(false);
+const importing = ref(false)
+const importMenuOpen = ref(false)
 
 async function runImport(accept: string) {
-  importMenuOpen.value = false;
-  const file = await pickFile({ accept });
-  if (!file) return;
-  importing.value = true;
+  importMenuOpen.value = false
+  const file = await pickFile({ accept })
+  if (!file) return
+  importing.value = true
   try {
-    const r = await entriesApi.importFile(file);
-    entriesStore.refreshAll();
+    const r = await entriesApi.importFile(file)
+    entriesStore.refreshAll()
     emit(
-      "toast",
-      "success",
-      `Imported ${r.imported} entries${r.skipped ? ` (${r.skipped} skipped)` : ""}`,
-    );
+      'toast',
+      'success',
+      `Imported ${r.imported} entries${r.skipped ? ` (${r.skipped} skipped)` : ''}`,
+    )
   } catch (e: unknown) {
-    emit("toast", "error", `Import failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Import failed: ${errMsg(e)}`)
   } finally {
-    importing.value = false;
+    importing.value = false
   }
 }
 
 // ── Export ──
-const exportRange = ref<"all" | "range">("all");
-const exportFrom = ref("");
-const exportTo = ref("");
-const exportMenuOpen = ref(false);
-const exportingHtml = ref(false);
-const exportingDiarium = ref(false);
-const exportingDiariumDb = ref(false);
+const exportRange = ref<'all' | 'range'>('all')
+const exportFrom = ref('')
+const exportTo = ref('')
+const exportMenuOpen = ref(false)
+const exportingHtml = ref(false)
+const exportingDiarium = ref(false)
+const exportingDiariumDb = ref(false)
 
 const rangeError = computed(() => {
-  if (exportRange.value !== "range") return "";
-  if (!exportFrom.value || !exportTo.value) return "";
+  if (exportRange.value !== 'range') return ''
+  if (!exportFrom.value || !exportTo.value) return ''
   return exportFrom.value > exportTo.value
-    ? "Start date must be before end date"
-    : "";
-});
+    ? 'Start date must be before end date'
+    : ''
+})
 const exportDisabled = computed(
   () =>
     !!rangeError.value ||
-    (exportRange.value === "range" && (!exportFrom.value || !exportTo.value)),
-);
+    (exportRange.value === 'range' && (!exportFrom.value || !exportTo.value)),
+)
 const rangeStart = computed(() =>
-  exportRange.value === "range" ? exportFrom.value || undefined : undefined,
-);
+  exportRange.value === 'range' ? exportFrom.value || undefined : undefined,
+)
 const rangeEnd = computed(() =>
-  exportRange.value === "range" ? exportTo.value || undefined : undefined,
-);
+  exportRange.value === 'range' ? exportTo.value || undefined : undefined,
+)
 
 async function downloadMarkdown() {
-  exportMenuOpen.value = false;
+  exportMenuOpen.value = false
   const resp = await fetch(
     entriesApi.exportMarkdownUrl(rangeStart.value, rangeEnd.value),
-  );
-  const blob = await resp.blob();
+  )
+  const blob = await resp.blob()
   await saveFile({
     data: blob,
-    defaultName: "lifelogr-export.zip",
-    filters: [{ name: "ZIP", extensions: ["zip"] }],
-  });
-  emit("toast", "success", "ZIP export saved");
+    defaultName: 'lifelogr-export.zip',
+    filters: [{ name: 'ZIP', extensions: ['zip'] }],
+  })
+  emit('toast', 'success', 'ZIP export saved')
 }
 async function downloadJsonExport() {
-  exportMenuOpen.value = false;
+  exportMenuOpen.value = false
   const resp = await fetch(
     entriesApi.exportJsonUrl(rangeStart.value, rangeEnd.value),
-  );
-  const blob = await resp.blob();
+  )
+  const blob = await resp.blob()
   await saveFile({
     data: blob,
-    defaultName: "lifelogr-export.json",
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  emit("toast", "success", "JSON export saved");
+    defaultName: 'lifelogr-export.json',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  emit('toast', 'success', 'JSON export saved')
 }
 async function downloadHtmlExport() {
-  exportMenuOpen.value = false;
-  exportingHtml.value = true;
+  exportMenuOpen.value = false
+  exportingHtml.value = true
   try {
-    const html = await exportHtml(rangeStart.value, rangeEnd.value);
-    const blob = new Blob([html], { type: "text/html" });
+    const html = await exportHtml(rangeStart.value, rangeEnd.value)
+    const blob = new Blob([html], { type: 'text/html' })
     await saveFile({
       data: blob,
-      defaultName: "lifelogr-export.html",
-      filters: [{ name: "HTML", extensions: ["html"] }],
-    });
-    emit("toast", "success", "HTML export saved");
+      defaultName: 'lifelogr-export.html',
+      filters: [{ name: 'HTML', extensions: ['html'] }],
+    })
+    emit('toast', 'success', 'HTML export saved')
   } catch (e: unknown) {
-    emit("toast", "error", `HTML export failed: ${errMsg(e)}`);
+    emit('toast', 'error', `HTML export failed: ${errMsg(e)}`)
   } finally {
-    exportingHtml.value = false;
+    exportingHtml.value = false
   }
 }
 async function downloadPdfExport() {
-  exportMenuOpen.value = false;
-  const url = getExportPdfUrl(rangeStart.value, rangeEnd.value);
-  const resp = await fetch(url);
-  const blob = await resp.blob();
+  exportMenuOpen.value = false
+  const url = getExportPdfUrl(rangeStart.value, rangeEnd.value)
+  const resp = await fetch(url)
+  const blob = await resp.blob()
   await saveFile({
     data: blob,
-    defaultName: "lifelogr-export.pdf",
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
+    defaultName: 'lifelogr-export.pdf',
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
 }
 async function downloadDiarium() {
-  exportMenuOpen.value = false;
-  exportingDiarium.value = true;
+  exportMenuOpen.value = false
+  exportingDiarium.value = true
   try {
-    const json = await exportDiarium(rangeStart.value, rangeEnd.value);
-    const blob = new Blob([json], { type: "application/json" });
+    const json = await exportDiarium(rangeStart.value, rangeEnd.value)
+    const blob = new Blob([json], { type: 'application/json' })
     await saveFile({
       data: blob,
-      defaultName: "lifelogr-export.json",
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    emit("toast", "success", "Diarium JSON export saved");
+      defaultName: 'lifelogr-export.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    emit('toast', 'success', 'Diarium JSON export saved')
   } catch (e: unknown) {
-    emit("toast", "error", `Diarium export failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Diarium export failed: ${errMsg(e)}`)
   } finally {
-    exportingDiarium.value = false;
+    exportingDiarium.value = false
   }
 }
 async function downloadDiariumDb() {
-  exportMenuOpen.value = false;
-  exportingDiariumDb.value = true;
+  exportMenuOpen.value = false
+  exportingDiariumDb.value = true
   try {
-    const url = getExportDiariumDbUrl(rangeStart.value, rangeEnd.value);
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const blob = await resp.blob();
+    const url = getExportDiariumDbUrl(rangeStart.value, rangeEnd.value)
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
     await saveFile({
       data: blob,
-      defaultName: "lifelogr-export.diary",
-      filters: [{ name: "Diarium", extensions: ["diary"] }],
-    });
-    emit("toast", "success", ".diary export saved");
+      defaultName: 'lifelogr-export.diary',
+      filters: [{ name: 'Diarium', extensions: ['diary'] }],
+    })
+    emit('toast', 'success', '.diary export saved')
   } catch (e: unknown) {
-    emit("toast", "error", `.diary export failed: ${errMsg(e)}`);
+    emit('toast', 'error', `.diary export failed: ${errMsg(e)}`)
   } finally {
-    exportingDiariumDb.value = false;
+    exportingDiariumDb.value = false
   }
 }
 
 // ── Notes import / export ──
-const notesImporting = ref(false);
-const notesImportMenuOpen = ref(false);
-const notesExportMenuOpen = ref(false);
-const exportingNotesHtml = ref(false);
+const notesImporting = ref(false)
+const notesImportMenuOpen = ref(false)
+const notesExportMenuOpen = ref(false)
+const exportingNotesHtml = ref(false)
 
 async function runNotesImport(accept: string) {
-  notesImportMenuOpen.value = false;
-  const file = await pickFile({ accept });
-  if (!file) return;
-  notesImporting.value = true;
+  notesImportMenuOpen.value = false
+  const file = await pickFile({ accept })
+  if (!file) return
+  notesImporting.value = true
   try {
-    const r = await notesApi.importFile(file);
+    const r = await notesApi.importFile(file)
     emit(
-      "toast",
-      "success",
-      `Imported ${r.imported} notes${r.skipped ? ` (${r.skipped} skipped)` : ""}`,
-    );
+      'toast',
+      'success',
+      `Imported ${r.imported} notes${r.skipped ? ` (${r.skipped} skipped)` : ''}`,
+    )
   } catch (e: unknown) {
-    emit("toast", "error", `Import failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Import failed: ${errMsg(e)}`)
   } finally {
-    notesImporting.value = false;
+    notesImporting.value = false
   }
 }
 
 async function downloadNotesMarkdown() {
-  notesExportMenuOpen.value = false;
-  const resp = await fetch(notesApi.exportMarkdownUrl());
-  const blob = await resp.blob();
+  notesExportMenuOpen.value = false
+  const resp = await fetch(notesApi.exportMarkdownUrl())
+  const blob = await resp.blob()
   await saveFile({
     data: blob,
-    defaultName: "lifelogr-notes.zip",
-    filters: [{ name: "ZIP", extensions: ["zip"] }],
-  });
-  emit("toast", "success", "Notes ZIP saved");
+    defaultName: 'lifelogr-notes.zip',
+    filters: [{ name: 'ZIP', extensions: ['zip'] }],
+  })
+  emit('toast', 'success', 'Notes ZIP saved')
 }
 async function downloadNotesJson() {
-  notesExportMenuOpen.value = false;
-  const resp = await fetch(notesApi.exportJsonUrl());
-  const blob = await resp.blob();
+  notesExportMenuOpen.value = false
+  const resp = await fetch(notesApi.exportJsonUrl())
+  const blob = await resp.blob()
   await saveFile({
     data: blob,
-    defaultName: "lifelogr-notes.json",
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  emit("toast", "success", "Notes JSON saved");
+    defaultName: 'lifelogr-notes.json',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  emit('toast', 'success', 'Notes JSON saved')
 }
 async function downloadNotesHtml() {
-  notesExportMenuOpen.value = false;
-  exportingNotesHtml.value = true;
+  notesExportMenuOpen.value = false
+  exportingNotesHtml.value = true
   try {
-    const resp = await fetch(notesApi.exportHtmlUrl());
-    const html = await resp.text();
-    const blob = new Blob([html], { type: "text/html" });
+    const resp = await fetch(notesApi.exportHtmlUrl())
+    const html = await resp.text()
+    const blob = new Blob([html], { type: 'text/html' })
     await saveFile({
       data: blob,
-      defaultName: "lifelogr-notes.html",
-      filters: [{ name: "HTML", extensions: ["html"] }],
-    });
-    emit("toast", "success", "Notes HTML saved");
+      defaultName: 'lifelogr-notes.html',
+      filters: [{ name: 'HTML', extensions: ['html'] }],
+    })
+    emit('toast', 'success', 'Notes HTML saved')
   } catch (e: unknown) {
-    emit("toast", "error", `Notes HTML failed: ${errMsg(e)}`);
+    emit('toast', 'error', `Notes HTML failed: ${errMsg(e)}`)
   } finally {
-    exportingNotesHtml.value = false;
+    exportingNotesHtml.value = false
   }
 }
 </script>
@@ -415,7 +413,11 @@ async function downloadNotesHtml() {
     <!-- Import notes -->
     <div class="p-3">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <Upload :size="13" class="text-text-muted shrink-0" aria-hidden="true" />
+        <Upload
+          :size="13"
+          class="text-text-muted shrink-0"
+          aria-hidden="true"
+        />
         <span class="text-[13px] text-text-secondary flex-1">Import notes</span>
         <div class="relative">
           <SButton
@@ -447,10 +449,17 @@ async function downloadNotesHtml() {
     <!-- Export notes -->
     <div class="p-3">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <Download :size="13" class="text-text-muted shrink-0" aria-hidden="true" />
+        <Download
+          :size="13"
+          class="text-text-muted shrink-0"
+          aria-hidden="true"
+        />
         <span class="text-[13px] text-text-secondary flex-1">Export notes</span>
         <div class="relative">
-          <SButton variant="primary" @click="notesExportMenuOpen = !notesExportMenuOpen">
+          <SButton
+            variant="primary"
+            @click="notesExportMenuOpen = !notesExportMenuOpen"
+          >
             <Download :size="12" /> Export as… <ChevronDown :size="11" />
           </SButton>
           <div
@@ -468,13 +477,18 @@ async function downloadNotesHtml() {
               :disabled="exportingNotesHtml"
               @click="downloadNotesHtml"
             >
-              <Loader v-if="exportingNotesHtml" :size="12" class="animate-spin" /><Download v-else :size="12" /> HTML
+              <Loader
+                v-if="exportingNotesHtml"
+                :size="12"
+                class="animate-spin"
+              /><Download v-else :size="12" /> HTML
             </button>
           </div>
         </div>
       </div>
       <p class="text-[11px] text-text-muted pl-[25px] mt-1">
-        Encrypted notes export with a placeholder body (ciphertext is never written).
+        Encrypted notes export with a placeholder body (ciphertext is never
+        written).
       </p>
     </div>
   </SettingsSection>

@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 
-
 from app.core.config import settings
 from app.core.database import async_session
 from app.services.ollama_service import OllamaService

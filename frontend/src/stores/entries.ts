@@ -36,7 +36,13 @@ export const useEntriesStore = defineStore('entries', () => {
     }
   }
 
-  async function createEntry(data: { entry_date: string; title?: string | null; body: string; tag_ids?: number[]; template_id?: number | null }) {
+  async function createEntry(data: {
+    entry_date: string
+    title?: string | null
+    body: string
+    tag_ids?: number[]
+    template_id?: number | null
+  }) {
     error.value = null
     try {
       return await entriesApi.create(data)
@@ -46,7 +52,14 @@ export const useEntriesStore = defineStore('entries', () => {
     }
   }
 
-  async function updateEntry(id: number, data: { title?: string | null; body?: string | null; tag_ids?: number[] | null }) {
+  async function updateEntry(
+    id: number,
+    data: {
+      title?: string | null
+      body?: string | null
+      tag_ids?: number[] | null
+    },
+  ) {
     error.value = null
     try {
       const entry = await entriesApi.update(id, data)
@@ -73,5 +86,17 @@ export const useEntriesStore = defineStore('entries', () => {
     lastUpdated.value = Date.now()
   }
 
-  return { calendarEntries, currentEntry, loading, error, lastUpdated, fetchCalendarMonth, fetchEntry, createEntry, updateEntry, deleteEntry, refreshAll }
+  return {
+    calendarEntries,
+    currentEntry,
+    loading,
+    error,
+    lastUpdated,
+    fetchCalendarMonth,
+    fetchEntry,
+    createEntry,
+    updateEntry,
+    deleteEntry,
+    refreshAll,
+  }
 })

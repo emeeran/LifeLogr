@@ -22,5 +22,16 @@ export function usePagination(defaultLimit = 20) {
     offset.value = 0
   }
 
-  return { offset, limit, total, page, totalPages, hasNext, hasPrev, nextPage, prevPage, reset }
+  return {
+    offset,
+    limit,
+    total,
+    page,
+    totalPages,
+    hasNext,
+    hasPrev,
+    nextPage,
+    prevPage,
+    reset,
+  }
 }

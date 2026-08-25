@@ -11,9 +11,9 @@ from app.core.database import get_db
 from app.schemas.encryption import (
     DecryptRequest,
     DecryptTextRequest,
+    EncryptionStatusResponse,
     EncryptRequest,
     EncryptTextRequest,
-    EncryptionStatusResponse,
     NoteEncryptionStatusResponse,
 )
 from app.services.encryption_service import EncryptionService

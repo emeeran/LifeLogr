@@ -53,11 +53,7 @@ def ocr_image_bytes(file_data: bytes, lang: str = "eng") -> str:
     from PIL import Image
 
     try:
-        return str(
-            pytesseract.image_to_string(
-                Image.open(io.BytesIO(file_data)), lang=lang
-            )
-        )
+        return str(pytesseract.image_to_string(Image.open(io.BytesIO(file_data)), lang=lang))
     except pytesseract.TesseractError as exc:
         # Most common cause: the language's traineddata file isn't installed.
         raise OcrLanguageUnavailable(

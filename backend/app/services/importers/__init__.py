@@ -8,8 +8,8 @@ Each parser returns a list of dicts shaped for the shared import loop in
 """
 
 from app.services.importers.csv import parse_csv
-from app.services.importers.diarium import parse_diarium_json_entry, parse_diarium_sqlite
 from app.services.importers.dayone import parse_dayone_zip
+from app.services.importers.diarium import parse_diarium_json_entry, parse_diarium_sqlite
 from app.services.importers.markdown import parse_markdown_entry
 
 __all__ = [

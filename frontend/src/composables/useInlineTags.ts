@@ -35,7 +35,9 @@ export function useInlineTags(opts: InlineTagOptions) {
   const rows = computed(() => {
     const q = query.value.trim().toLowerCase()
     const pool = opts.tags.value
-    const matched = (q ? pool.filter((t) => t.name.toLowerCase().includes(q)) : pool).slice(0, 8)
+    const matched = (
+      q ? pool.filter((t) => t.name.toLowerCase().includes(q)) : pool
+    ).slice(0, 8)
     const list = matched.map((t) => ({ id: t.id, name: t.name, create: false }))
     if (q && !matched.some((t) => t.name.toLowerCase() === q)) {
       list.push({ id: -1, name: query.value.trim(), create: true })
@@ -44,7 +46,10 @@ export function useInlineTags(opts: InlineTagOptions) {
   })
 
   function clampIndex() {
-    activeIndex.value = Math.min(activeIndex.value, Math.max(0, rows.value.length - 1))
+    activeIndex.value = Math.min(
+      activeIndex.value,
+      Math.max(0, rows.value.length - 1),
+    )
   }
 
   function recompute() {
@@ -109,7 +114,8 @@ export function useInlineTags(opts: InlineTagOptions) {
     const el = opts.textarea.value
     const end = el ? el.selectionStart : opts.body.value.length
     const repl = '#' + cleaned
-    opts.body.value = opts.body.value.slice(0, start.value) + repl + opts.body.value.slice(end)
+    opts.body.value =
+      opts.body.value.slice(0, start.value) + repl + opts.body.value.slice(end)
     opts.onChange?.()
     close()
     opts.onPick?.(cleaned)
@@ -140,5 +146,16 @@ export function useInlineTags(opts: InlineTagOptions) {
     closeTimer = setTimeout(close, 150)
   }
 
-  return { active, query, rows, activeIndex, coords, onInput, onKeydown, pick, close, scheduleClose }
+  return {
+    active,
+    query,
+    rows,
+    activeIndex,
+    coords,
+    onInput,
+    onKeydown,
+    pick,
+    close,
+    scheduleClose,
+  }
 }

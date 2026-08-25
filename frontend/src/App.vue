@@ -27,8 +27,14 @@ let memorialInteractCleanup: (() => void) | null = null
 
 function stopMemorialAudio() {
   const a = memorialAudio.value
-  if (a) { a.pause(); a.currentTime = 0 }
-  if (memorialInteractCleanup) { memorialInteractCleanup(); memorialInteractCleanup = null }
+  if (a) {
+    a.pause()
+    a.currentTime = 0
+  }
+  if (memorialInteractCleanup) {
+    memorialInteractCleanup()
+    memorialInteractCleanup = null
+  }
   // Best-effort: tell the backend to stop its player too (no-op if it wasn't).
   request('/memorial/audio/stop', { method: 'POST' }).catch(() => {})
 }
@@ -36,7 +42,9 @@ function stopMemorialAudio() {
 async function playMemorialAudio() {
   // Prefer backend-driven system audio (bypasses the browser autoplay policy).
   try {
-    const data = await request<{ mode: string }>('/memorial/audio/start', { method: 'POST' })
+    const data = await request<{ mode: string }>('/memorial/audio/start', {
+      method: 'POST',
+    })
     if (data.mode === 'system') return // backend is playing — nothing more to do
   } catch {
     /* endpoint missing/unreachable → try the in-browser fallback below */
@@ -62,7 +70,10 @@ function playMemorialAudioInBrowser() {
   }
   function startOnInteract() {
     a?.play().catch(() => {})
-    if (memorialInteractCleanup) { memorialInteractCleanup(); memorialInteractCleanup = null }
+    if (memorialInteractCleanup) {
+      memorialInteractCleanup()
+      memorialInteractCleanup = null
+    }
   }
 }
 
@@ -78,7 +89,9 @@ onMounted(() => {
   systemHealth.load()
 })
 // Stop the audio as soon as the splash is dismissed.
-watch(showSplash, (v) => { if (!v) stopMemorialAudio() })
+watch(showSplash, (v) => {
+  if (!v) stopMemorialAudio()
+})
 onUnmounted(() => {
   stopMemorialAudio()
   detachExternalLinks?.()

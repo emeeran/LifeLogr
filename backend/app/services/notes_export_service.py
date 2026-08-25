@@ -103,7 +103,8 @@ class NotesExportService:
             zf.writestr(
                 "manifest.json",
                 json.dumps(
-                    {"format": "lifelogr-notes", "version": 1, "exported_notes": len(notes)}, indent=2
+                    {"format": "lifelogr-notes", "version": 1, "exported_notes": len(notes)},
+                    indent=2,
                 ),
             )
         buf.seek(0)
@@ -250,7 +251,8 @@ class NotesExportService:
             return None
         res = await self.db.execute(
             select(NoteFolder).where(
-                NoteFolder.name == name, NoteFolder.is_deleted == False  # noqa: E712
+                NoteFolder.name == name,
+                NoteFolder.is_deleted == False,  # noqa: E712
             )
         )
         folder = res.scalar_one_or_none()

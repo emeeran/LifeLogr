@@ -90,7 +90,12 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     icon: Wand2,
     endpoint: '/ai/rewrite',
     resultField: 'rewritten_text',
-    param: { name: 'tone', bodyKey: 'style', options: AI_TONE_OPTIONS, default: 'formal' },
+    param: {
+      name: 'tone',
+      bodyKey: 'style',
+      options: AI_TONE_OPTIONS,
+      default: 'formal',
+    },
   },
   {
     id: 'expand',
@@ -105,7 +110,12 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     icon: MessageCircle,
     endpoint: '/ai/change-tone',
     resultField: 'changed_text',
-    param: { name: 'tone', bodyKey: 'tone', options: AI_TONE_OPTIONS, default: 'formal' },
+    param: {
+      name: 'tone',
+      bodyKey: 'tone',
+      options: AI_TONE_OPTIONS,
+      default: 'formal',
+    },
   },
   {
     id: 'define',
@@ -120,7 +130,12 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     icon: ArrowRightLeft,
     endpoint: '/ai/change-voice',
     resultField: 'changed_text',
-    param: { name: 'voice', bodyKey: 'voice', options: ['active', 'passive'], default: 'active' },
+    param: {
+      name: 'voice',
+      bodyKey: 'voice',
+      options: ['active', 'passive'],
+      default: 'active',
+    },
   },
   {
     id: 'clarity',
@@ -180,7 +195,18 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     param: {
       name: 'language',
       bodyKey: 'param',
-      options: ['Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Japanese', 'Chinese', 'Hindi', 'Arabic', 'English'],
+      options: [
+        'Spanish',
+        'French',
+        'German',
+        'Italian',
+        'Portuguese',
+        'Japanese',
+        'Chinese',
+        'Hindi',
+        'Arabic',
+        'English',
+      ],
       default: 'Spanish',
     },
   },

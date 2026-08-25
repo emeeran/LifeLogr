@@ -26,10 +26,20 @@ function mediaIcon(type: string) {
 <template>
   <div class="p-3">
     <div class="flex items-center justify-between mb-2">
-      <span class="text-xs font-medium text-text-secondary">Attachments ({{ attachments.length }})</span>
-      <button class="text-xs text-accent hover:text-accent-hover cursor-pointer" @click="emit('add')">+ Add files</button>
+      <span class="text-xs font-medium text-text-secondary"
+        >Attachments ({{ attachments.length }})</span
+      >
+      <button
+        class="text-xs text-accent hover:text-accent-hover cursor-pointer"
+        @click="emit('add')"
+      >
+        + Add files
+      </button>
     </div>
-    <div v-if="!attachments.length" class="text-xs text-text-muted text-center py-3">
+    <div
+      v-if="!attachments.length"
+      class="text-xs text-text-muted text-center py-3"
+    >
       No attachments yet. Click "Add files" to upload.
     </div>
     <div v-else class="space-y-1.5">
@@ -39,10 +49,23 @@ function mediaIcon(type: string) {
         class="flex items-center gap-2 px-2 py-1.5 rounded bg-surface-hover cursor-pointer hover:bg-surface-hover/80"
         @click="emit('view', idx)"
       >
-        <img v-if="m.media_type === 'image' || m.media_type.startsWith('image/')" :src="mediaApi.fileUrl(m.id)" class="w-8 h-8 rounded object-cover shrink-0" />
-        <component v-else :is="mediaIcon(m.media_type)" :size="16" class="text-accent shrink-0" />
-        <span class="text-xs text-text-primary truncate flex-1">{{ m.filename }}</span>
-        <span class="text-[10px] text-text-muted shrink-0">{{ formatFileSize(m.file_size) }}</span>
+        <img
+          v-if="m.media_type === 'image' || m.media_type.startsWith('image/')"
+          :src="mediaApi.fileUrl(m.id)"
+          class="w-8 h-8 rounded object-cover shrink-0"
+        />
+        <component
+          v-else
+          :is="mediaIcon(m.media_type)"
+          :size="16"
+          class="text-accent shrink-0"
+        />
+        <span class="text-xs text-text-primary truncate flex-1">{{
+          m.filename
+        }}</span>
+        <span class="text-[10px] text-text-muted shrink-0">{{
+          formatFileSize(m.file_size)
+        }}</span>
         <button
           v-if="m.media_type === 'image' || m.media_type.startsWith('image/')"
           class="p-0.5 text-text-muted hover:text-accent cursor-pointer"
@@ -51,7 +74,11 @@ function mediaIcon(type: string) {
         >
           <Sparkles :size="12" />
         </button>
-        <button class="p-0.5 text-text-muted hover:text-red-400 cursor-pointer" @click.stop="emit('remove', m.id)" title="Remove">
+        <button
+          class="p-0.5 text-text-muted hover:text-red-400 cursor-pointer"
+          @click.stop="emit('remove', m.id)"
+          title="Remove"
+        >
           <Trash2 :size="12" />
         </button>
       </div>

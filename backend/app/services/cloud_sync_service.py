@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, IO, Protocol
+from typing import IO, Any, Awaitable, Callable, Protocol
 
 import httpx
 from sqlalchemy import func, select
@@ -96,9 +96,7 @@ class SyncProvider(Protocol):
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str: ...
 
-    async def upload_file(
-        self, path: str, local_path: str, encrypted: bool = False
-    ) -> str: ...
+    async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str: ...
     async def download(self, path: str) -> bytes: ...
     async def list_files(self, prefix: str) -> list[str]: ...
     async def delete(self, path: str) -> None: ...
@@ -978,7 +976,9 @@ class BoxProvider(_OAuthProviderBase):
         client = self._get_client()
         # Box file upload is multipart: an `attributes` JSON field + the file.
         # Value type widened so the dict conforms to httpx's RequestFiles union.
-        files: dict[str, tuple[str | None, bytes | str] | tuple[str | None, bytes | str, str | None]] = {
+        files: dict[
+            str, tuple[str | None, bytes | str] | tuple[str | None, bytes | str, str | None]
+        ] = {
             "attributes": (None, json.dumps({"name": path, "parent": {"id": folder_id}})),
             "file": (path, data),
         }
@@ -997,7 +997,9 @@ class BoxProvider(_OAuthProviderBase):
         folder_id = await self._get_folder_id()
         client = self._get_client()
         fh = open(local_path, "rb")
-        files: dict[str, tuple[str | None, bytes | str] | tuple[str | None, bytes | IO[bytes], str | None]] = {
+        files: dict[
+            str, tuple[str | None, bytes | str] | tuple[str | None, bytes | IO[bytes], str | None]
+        ] = {
             "attributes": (None, json.dumps({"name": path, "parent": {"id": folder_id}})),
             "file": (path, fh, "application/octet-stream"),
         }
@@ -1171,7 +1173,9 @@ class CloudSyncService:
 
         files = await self.provider.list_files("lifelogr/")
         # Newest op per entity: (operation, payload, updated_at, sort_key).
-        winners: dict[tuple[str, int], tuple[str, dict[str, Any], datetime | None, tuple[datetime, int]]] = {}
+        winners: dict[
+            tuple[str, int], tuple[str, dict[str, Any], datetime | None, tuple[datetime, int]]
+        ] = {}
         for path in files:
             parsed = parse_sync_path(path)
             if parsed is None:
@@ -1205,7 +1209,9 @@ class CloudSyncService:
             else:
                 # Media/tag merge is a follow-up (blob handling / model wiring).
                 skipped += 1
-                logger.info("sync: %s merge not implemented; skipped entity %s", entity_type, entity_id)
+                logger.info(
+                    "sync: %s merge not implemented; skipped entity %s", entity_type, entity_id
+                )
 
         if applied:
             status = await self._sync_svc._get_or_create_status("cloud")

@@ -27,12 +27,21 @@ export type UpdateStatus =
   | { kind: 'idle' }
   | { kind: 'checking' }
   | { kind: 'up-to-date'; latest: string }
-  | { kind: 'available'; latest: string; url: string; publishedAt: string | null; notes: string | null }
+  | {
+      kind: 'available'
+      latest: string
+      url: string
+      publishedAt: string | null
+      notes: string | null
+    }
   | { kind: 'offline'; message: string }
 
 /** Parse a version or tag into a tuple of numbers, tolerating a leading "v". */
 function parseVersion(v: string): [number, number, number] {
-  const m = v.trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/)
+  const m = v
+    .trim()
+    .replace(/^v/i, '')
+    .match(/^(\d+)\.(\d+)\.(\d+)/)
   if (!m) return [0, 0, 0]
   return [Number(m[1]), Number(m[2]), Number(m[3])]
 }
@@ -59,11 +68,20 @@ export function useUpdateChecker() {
 
   // ── Persisted preferences (shared across all callers via localStorage) ──
   /** Opt-in weekly background update check. Off by default (privacy-first). */
-  const autoCheckEnabled = useLocalStorage<boolean>('lifelogr-update-autocheck', false)
+  const autoCheckEnabled = useLocalStorage<boolean>(
+    'lifelogr-update-autocheck',
+    false,
+  )
   /** Epoch-ms of the last background check (throttle to once per week). */
-  const lastCheckedAt = useLocalStorage<number>('lifelogr-update-last-checked', 0)
+  const lastCheckedAt = useLocalStorage<number>(
+    'lifelogr-update-last-checked',
+    0,
+  )
   /** The installed version the user last saw the "What's New" dialog for. */
-  const lastSeenVersion = useLocalStorage<string>('lifelogr-update-last-seen', '')
+  const lastSeenVersion = useLocalStorage<string>(
+    'lifelogr-update-last-seen',
+    '',
+  )
 
   /** True when the installed version is newer than what the user last acknowledged. */
   const hasUnseenVersion = (() => {
@@ -135,8 +153,15 @@ export function useUpdateChecker() {
   }
 
   return {
-    status, checkedAt, check, reset,
-    autoCheckEnabled, lastCheckedAt, lastSeenVersion,
-    hasUnseenVersion, markCurrentVersionSeen, maybeAutoCheck,
+    status,
+    checkedAt,
+    check,
+    reset,
+    autoCheckEnabled,
+    lastCheckedAt,
+    lastSeenVersion,
+    hasUnseenVersion,
+    markCurrentVersionSeen,
+    maybeAutoCheck,
   }
 }

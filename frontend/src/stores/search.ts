@@ -10,12 +10,21 @@ export const useSearchStore = defineStore('search', () => {
   const results = ref<SearchResultEntry[]>([])
   const total = ref(0)
   const loading = ref(false)
-  const searchMode = useLocalStorage<SearchMode>('lifelogr-search-mode', 'hybrid')
+  const searchMode = useLocalStorage<SearchMode>(
+    'lifelogr-search-mode',
+    'hybrid',
+  )
   const searchHistory = useLocalStorage<string[]>('lifelogr-search-history', [])
   const queryDuration = ref(0)
 
-  async function search(query: string, params?: { mood?: string; offset?: number; limit?: number }) {
-    if (!query.trim()) { clear(); return }
+  async function search(
+    query: string,
+    params?: { mood?: string; offset?: number; limit?: number },
+  ) {
+    if (!query.trim()) {
+      clear()
+      return
+    }
     loading.value = true
     const startTime = performance.now()
     try {
@@ -44,5 +53,14 @@ export const useSearchStore = defineStore('search', () => {
     queryDuration.value = 0
   }
 
-  return { results, total, loading, searchMode, searchHistory, queryDuration, search, clear }
+  return {
+    results,
+    total,
+    loading,
+    searchMode,
+    searchHistory,
+    queryDuration,
+    search,
+    clear,
+  }
 })

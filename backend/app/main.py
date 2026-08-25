@@ -94,6 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         sched = SchedulerService.get_scheduler()
         if sched.running:
             from datetime import datetime, timedelta
+
             from apscheduler.triggers.date import DateTrigger
 
             sched.add_job(
@@ -317,31 +318,35 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # Register routers
 from app.routers.ai import router as ai_router  # noqa: E402
 from app.routers.backup import router as backup_router  # noqa: E402
-from app.routers.google_drive import router as google_drive_router  # noqa: E402
 from app.routers.box import router as box_router  # noqa: E402
 from app.routers.dropbox import router as dropbox_router  # noqa: E402
-from app.routers.onedrive import router as onedrive_router  # noqa: E402
+from app.routers.encryption import (  # noqa: E402
+    global_router as encryption_global_router,
+)
+from app.routers.encryption import (  # noqa: E402
+    notes_router as encryption_notes_router,
+)
 from app.routers.encryption import (  # noqa: E402
     router as encryption_router,
-    global_router as encryption_global_router,
-    notes_router as encryption_notes_router,
 )  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
-from app.routers.notes import router as notes_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
+from app.routers.google_drive import router as google_drive_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
+from app.routers.memorial import router as memorial_router  # noqa: E402
+from app.routers.notes import router as notes_router  # noqa: E402
+from app.routers.onedrive import router as onedrive_router  # noqa: E402
 from app.routers.prompts import router as prompts_router  # noqa: E402
 from app.routers.recordings import router as recordings_router  # noqa: E402
 from app.routers.reminders import router as reminders_router  # noqa: E402
 from app.routers.search import router as search_router  # noqa: E402
+from app.routers.settings import router as settings_router  # noqa: E402
 from app.routers.sync import router as sync_router  # noqa: E402
+from app.routers.system import router as system_router  # noqa: E402
 from app.routers.tags import router as tags_router  # noqa: E402
 from app.routers.templates import router as templates_router  # noqa: E402
 from app.routers.tts import router as tts_router  # noqa: E402
 from app.routers.video_notes import router as video_router  # noqa: E402
-from app.routers.settings import router as settings_router  # noqa: E402
-from app.routers.memorial import router as memorial_router  # noqa: E402
-from app.routers.system import router as system_router  # noqa: E402
 
 app.include_router(ai_router)
 app.include_router(entries_router)

@@ -95,10 +95,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <div
       v-if="ready"
       class="snip-sel"
-      :style="{ left: sel.x + 'px', top: sel.y + 'px', width: sel.w + 'px', height: sel.h + 'px' }"
+      :style="{
+        left: sel.x + 'px',
+        top: sel.y + 'px',
+        width: sel.w + 'px',
+        height: sel.h + 'px',
+      }"
     />
-    <div class="snip-hint">Drag to select the region to clip · Esc to cancel</div>
-    <button class="snip-x" title="Cancel (Esc)" @click="emit('cancel')">✕</button>
+    <div class="snip-hint">
+      Drag to select the region to clip · Esc to cancel
+    </div>
+    <button class="snip-x" title="Cancel (Esc)" @click="emit('cancel')">
+      ✕
+    </button>
   </div>
 </template>
 
@@ -148,5 +157,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: #fff;
   cursor: pointer;
 }
-.snip-x:hover { background: rgba(0, 0, 0, 0.85); }
+.snip-x:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
 </style>

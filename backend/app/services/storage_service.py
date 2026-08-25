@@ -136,9 +136,7 @@ async def relocate_storage(
     """
     # The size walk stats() every file under MEDIA_DIR — off the event loop so a
     # large media tree can't stall serving during a storage relocate.
-    target = _validate_target(
-        Path(target_data_dir), await asyncio.to_thread(_current_data_size)
-    )
+    target = _validate_target(Path(target_data_dir), await asyncio.to_thread(_current_data_size))
 
     old_dir = Path(settings.DATA_DIR)
     old_db = settings.db_path

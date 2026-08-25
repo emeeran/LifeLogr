@@ -8,8 +8,12 @@ describe('formatDDMMYYYY', () => {
 
   it('prepends the weekday when asked', () => {
     // 2026-08-25 is a Tuesday
-    expect(formatDDMMYYYY('2026-08-25', { weekday: 'short' })).toBe('Tue 25-08-2026')
-    expect(formatDDMMYYYY('2026-08-25', { weekday: 'long' })).toBe('Tuesday 25-08-2026')
+    expect(formatDDMMYYYY('2026-08-25', { weekday: 'short' })).toBe(
+      'Tue 25-08-2026',
+    )
+    expect(formatDDMMYYYY('2026-08-25', { weekday: 'long' })).toBe(
+      'Tuesday 25-08-2026',
+    )
   })
 
   it('zero-pads day and month', () => {

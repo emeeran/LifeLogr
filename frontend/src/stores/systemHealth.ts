@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getIntegrity, refreshIntegrity, rebuildSearchIndex, type IntegrityReport } from '../api/system'
+import {
+  getIntegrity,
+  refreshIntegrity,
+  rebuildSearchIndex,
+  type IntegrityReport,
+} from '../api/system'
 
 export const useSystemHealthStore = defineStore('systemHealth', () => {
   const report = ref<IntegrityReport | null>(null)
@@ -8,10 +13,14 @@ export const useSystemHealthStore = defineStore('systemHealth', () => {
   const dismissed = ref(false)
   const refreshing = ref(false)
 
-  const summary = computed(() => report.value?.summary ?? { ok: 0, warn: 0, error: 0 })
+  const summary = computed(
+    () => report.value?.summary ?? { ok: 0, warn: 0, error: 0 },
+  )
   const issueCount = computed(() => summary.value.warn + summary.value.error)
   const hasIssues = computed(() => issueCount.value > 0)
-  const showBanner = computed(() => loaded.value && hasIssues.value && !dismissed.value)
+  const showBanner = computed(
+    () => loaded.value && hasIssues.value && !dismissed.value,
+  )
 
   async function load() {
     try {
@@ -48,5 +57,18 @@ export const useSystemHealthStore = defineStore('systemHealth', () => {
     dismissed.value = true
   }
 
-  return { report, loaded, dismissed, refreshing, summary, issueCount, hasIssues, showBanner, load, refresh, rebuildIndex, dismiss }
+  return {
+    report,
+    loaded,
+    dismissed,
+    refreshing,
+    summary,
+    issueCount,
+    hasIssues,
+    showBanner,
+    load,
+    refresh,
+    rebuildIndex,
+    dismiss,
+  }
 })

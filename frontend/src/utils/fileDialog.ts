@@ -56,7 +56,14 @@ export async function pickFile(options?: {
     const selected = await open({
       multiple: options?.multiple ?? false,
       filters: options?.accept
-        ? [{ name: 'Files', extensions: options.accept.split(',').map(e => e.replace(/^\./, '')) }]
+        ? [
+            {
+              name: 'Files',
+              extensions: options.accept
+                .split(',')
+                .map((e) => e.replace(/^\./, '')),
+            },
+          ]
         : undefined,
     })
     if (!selected) return null

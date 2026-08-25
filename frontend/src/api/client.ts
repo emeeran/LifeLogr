@@ -11,20 +11,26 @@ async function waitForBackend(maxRetries = 30, delayMs = 500): Promise<void> {
   if (backendReady) return
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const res = await fetch(`${API_ORIGIN}/health`, { signal: AbortSignal.timeout(2000) })
+      const res = await fetch(`${API_ORIGIN}/health`, {
+        signal: AbortSignal.timeout(2000),
+      })
       if (res.ok) {
         backendReady = true
         return
       }
-    } catch { /* not ready yet */ }
-    await new Promise(r => setTimeout(r, delayMs))
+    } catch {
+      /* not ready yet */
+    }
+    await new Promise((r) => setTimeout(r, delayMs))
   }
   throw new Error('Backend failed to start')
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   await waitForBackend()
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string>) }
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  }
   // Don't set Content-Type if body is FormData — let the browser set multipart boundary
   if (!headers['Content-Type'] && !(options?.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
