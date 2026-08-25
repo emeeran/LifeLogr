@@ -20,16 +20,11 @@ const emit = defineEmits<{
 
 const showPicker = ref(false)
 
-// Single-click only selects (highlights) the date; opening happens on
-// double-click. (Browsers fire two `click`s before `dblclick`, so the date is
-// highlighted on the way to opening — the desired effect.)
+// Single click selects (highlights) the date AND opens it: the entry if
+// there's one, the picker if there are several, or a new-entry editor
+// pre-filled with this date if there are none.
 function handleClick() {
   emit('selectDate', props.dateStr)
-}
-
-// Double-click opens the journal for this date: the entry if there's one, the
-// picker if there are several, or a new-entry editor if there are none.
-function handleDoubleClick() {
   if (props.entries.length > 1) {
     showPicker.value = true
   } else if (props.entries.length === 1) {
@@ -60,7 +55,6 @@ function handleNewEntry(dateStr: string) {
       'hover:bg-surface-hover'
     ]"
     @click="handleClick"
-    @dblclick="handleDoubleClick"
   >
     <span
       class="text-[11px] font-semibold"
