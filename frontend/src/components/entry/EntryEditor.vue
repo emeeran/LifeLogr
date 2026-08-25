@@ -1163,7 +1163,7 @@ async function applySuggestedTag(name: string) {
           </div>
           <template v-else>
             <textarea
-              v-if="!showPreview"
+              v-show="!showPreview"
               ref="textarea"
               v-model="body"
               class="w-full h-full resize-none bg-transparent p-4 text-text-primary outline-none leading-relaxed placeholder:text-text-muted/60"
@@ -1177,11 +1177,14 @@ async function applySuggestedTag(name: string) {
               @keydown.capture="onEditorKeydownCapture"
               @paste="pasteMediaHandler"
               @contextmenu="onContextMenu"
+              @keyup="cacheSelection"
+              @mouseup="cacheSelection"
+              @select="cacheSelection"
               @focus="clearSelCache"
               @blur="onEditorBlur"
             />
             <div
-              v-else
+              v-show="showPreview"
               ref="previewEl"
               class="p-4 md-body max-w-none text-text-primary overflow-y-auto h-full"
               :style="{
