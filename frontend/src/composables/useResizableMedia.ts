@@ -22,10 +22,12 @@ export interface ResizableMediaOptions {
   ocrButton?: boolean
   /** Called with the image's src when its OCR pill is clicked. */
   onOcr?: (src: string, mediaEl: HTMLImageElement) => void
+  /** Double-click an <img>/<video> in the preview (e.g. open the viewer). */
+  onMediaDblClick?: (el: HTMLImageElement | HTMLVideoElement) => void
 }
 
 export function useResizableMedia(opts: ResizableMediaOptions) {
-  const { storageKey, ocrButton = false, onOcr } = opts
+  const { storageKey, ocrButton = false, onOcr, onMediaDblClick } = opts
   const mediaSizes = useLocalStorage<MediaSizes>(storageKey, {})
   let observers: ResizeObserver[] = []
 
@@ -46,6 +48,14 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
     const img = wrap?.querySelector('img')
     const src = img?.getAttribute('src') || ''
     if (src) onOcr(src, img as HTMLImageElement)
+  }
+
+  /** Delegated double-click: opens the media in the full-screen viewer
+   *  (zoom/resize there). Bind on the preview container. */
+  function onPreviewDblClick(e: MouseEvent) {
+    if (!onMediaDblClick) return
+    const media = (e.target as HTMLElement).closest<HTMLElement>('.rmedia img, .rmedia video')
+    if (media) onMediaDblClick(media as HTMLImageElement | HTMLVideoElement)
   }
 
   function wrapResizableMedia(root: HTMLElement | null) {
@@ -97,6 +107,7 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
     mediaSizes: mediaSizes as RemovableRef<MediaSizes>,
     wrapResizableMedia,
     onPreviewClick,
+    onPreviewDblClick,
     disconnect,
   }
 }

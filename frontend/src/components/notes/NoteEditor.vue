@@ -23,6 +23,7 @@ import { saveFile } from '../../utils/fileDialog'
 import { isTauri } from '../../api/client'
 import { useTtsStore } from '../../stores/tts'
 import TagAutocomplete from '../editor/TagAutocomplete.vue'
+import MediaViewer from '../media/MediaViewer.vue'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
@@ -654,7 +655,8 @@ async function createAndAssignTag() {
 // per src so it survives re-renders while editing. Images also get a hover
 // "OCR" pill (delegated click) that inserts extracted text below the image.
 const previewEl = ref<HTMLElement | null>(null)
-const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, disconnect: disconnectMedia } =
+const inlineViewer = ref<{ src: string; mediaType: string; filename?: string } | null>(null)
+const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, onPreviewDblClick, disconnect: disconnectMedia } =
   useResizableMedia({
     storageKey: 'lifelogr-note-media-sizes',
     ocrButton: true,
@@ -662,6 +664,15 @@ const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, disconnect: dis
       // Note media URLs: /api/v1/notes/{noteId}/media/{mediaId}/file
       const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
       if (mediaId) void runOcr(mediaId, src)
+    },
+    onMediaDblClick: (el) => {
+      const src = el.getAttribute('src') || ''
+      const isVideo = el.tagName === 'VIDEO'
+      inlineViewer.value = {
+        src,
+        mediaType: isVideo ? 'video' : 'image',
+        filename: src.split('/').pop(),
+      }
     },
   })
 
@@ -860,6 +871,7 @@ defineExpose({ isDirty })
           class="flex-1 overflow-y-auto custom-scrollbar px-4 py-3 md-body text-sm text-text-primary"
           v-html="renderedPreview"
           @click="onMediaPreviewClick"
+          @dblclick="onPreviewDblClick"
         />
       </template>
     </div>
@@ -1020,6 +1032,9 @@ defineExpose({ isDirty })
 
     <!-- Web-page clip URL prompt -->
     <WebClipModal v-if="showWebClip" @clip="startWebClip" @cancel="showWebClip = false" />
+
+    <!-- Single inline media opened by double-click from the preview -->
+    <MediaViewer v-if="inlineViewer" :items="[]" :single="inlineViewer" @close="inlineViewer = null" />
 
     <!-- Inline #tag autocomplete -->
     <TagAutocomplete

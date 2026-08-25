@@ -373,13 +373,23 @@ const { renderedPreview } = useMarkdownPreview(
 // per src) and adds a hover "OCR" pill to each image (pill clicks are handled
 // by delegation inside the composable).
 const previewEl = ref<HTMLElement | null>(null);
-const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick } =
+const inlineViewer = ref<{ src: string; mediaType: string; filename?: string } | null>(null);
+const { wrapResizableMedia, onPreviewClick: onMediaPreviewClick, onPreviewDblClick } =
   useResizableMedia({
     storageKey: "lifelogr-entry-media-sizes",
     ocrButton: true,
     onOcr: (src) => {
       const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0);
       if (mediaId) void runEntryOcr(mediaId, src);
+    },
+    onMediaDblClick: (el) => {
+      const src = el.getAttribute("src") || "";
+      const isVideo = el.tagName === "VIDEO";
+      inlineViewer.value = {
+        src,
+        mediaType: isVideo ? "video" : "image",
+        filename: src.split("/").pop(),
+      };
     },
   });
 
@@ -535,6 +545,10 @@ function onGlobalKeydown(e: KeyboardEvent) {
   }
   if (showEmoji.value) {
     showEmoji.value = false;
+    return;
+  }
+  if (inlineViewer.value) {
+    inlineViewer.value = null;
     return;
   }
   if (viewerOpen.value) {
@@ -1171,6 +1185,7 @@ async function applySuggestedTag(name: string) {
               }"
               v-html="renderedPreview"
               @click="onMediaPreviewClick"
+              @dblclick="onPreviewDblClick"
             />
           </template>
         </div>
@@ -1369,6 +1384,14 @@ async function applySuggestedTag(name: string) {
       :items="attachments"
       v-model:index="viewerIndex"
       @close="viewerOpen = false"
+    />
+
+    <!-- Single inline media opened by double-click from the preview -->
+    <MediaViewer
+      v-if="inlineViewer"
+      :items="[]"
+      :single="inlineViewer"
+      @close="inlineViewer = null"
     />
 
     <!-- OCR running toast -->
