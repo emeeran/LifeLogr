@@ -67,6 +67,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception:
         logger.warning("Failed to load persisted settings", exc_info=True)
     await init_db()
+    # Rewrite AI-provider rows still naming a retired model (e.g. Groq's
+    # 2026-08-16 decommissions) so stored configs keep working. Warn-only.
+    try:
+        from app.core.database import async_session
+        from app.services.ai_provider_service import apply_deprecated_model_fixups
+
+        async with async_session() as session:
+            await apply_deprecated_model_fixups(session)
+    except Exception:
+        logger.warning("AI-provider model fixup failed", exc_info=True)
     # Startup self-checks (warn-only; never block boot). See app.core.startup_checks.
     try:
         from app.core.startup_checks import check_data_integrity

@@ -32,7 +32,7 @@ PROVIDER_PRESETS: dict[str, dict[str, str]] = {
     "groq": {
         "label": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
     },
     "openrouter": {
         "label": "OpenRouter",
@@ -60,6 +60,24 @@ PROVIDER_PRESETS: dict[str, dict[str, str]] = {
         "model": "",
     },
 }
+
+# Provider models that have been retired upstream (Groq decommissioned both on
+# 2026-08-16). Rows still naming one are rewritten to its replacement — the ids
+# are globally unique to the retiring provider, so matching on model alone is
+# safe and idempotent (the second run matches zero rows).
+_DEPRECATED_MODEL_FIXUPS: dict[str, str] = {
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+}
+
+
+async def apply_deprecated_model_fixups(db: AsyncSession) -> None:
+    """Rewrite stored provider rows still naming a retired model."""
+    for old, new in _DEPRECATED_MODEL_FIXUPS.items():
+        await db.execute(
+            update(AIProvider).where(AIProvider.model == old).values(model=new)
+        )
+    await db.commit()
 
 
 class AIProviderService:
@@ -154,6 +172,12 @@ async def get_active_provider() -> AIProvider | None:
             select(AIProvider).where(AIProvider.is_active == True).limit(1)  # noqa: E712
         )
         provider = res.scalar_one_or_none()
+        # Safety net for rows the startup fixup hasn't touched (e.g. a provider
+        # saved while this process was down): rewrite before caching.
+        if provider is not None and provider.model in _DEPRECATED_MODEL_FIXUPS:
+            provider.model = _DEPRECATED_MODEL_FIXUPS[provider.model]
+            await session.commit()
+            await session.refresh(provider)
     _active_cache = provider
     return provider
 

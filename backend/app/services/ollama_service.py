@@ -197,6 +197,12 @@ class OllamaService:
             ) from exc
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:200] if exc.response is not None else ""
+            if exc.response.status_code == 404 and "model_not_found" in detail:
+                raise OllamaServiceError(
+                    f"Provider does not recognize model '{used_model}'. "
+                    "It may have been retired — pick a current model in "
+                    "Settings → AI (↻ refreshes the provider's model list)."
+                ) from exc
             raise OllamaServiceError(
                 f"Provider rejected the request for '{used_model}' "
                 f"(HTTP {exc.response.status_code}). {detail}"

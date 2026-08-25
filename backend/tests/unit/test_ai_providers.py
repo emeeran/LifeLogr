@@ -7,7 +7,7 @@ import respx
 
 from app.schemas.ai_provider import AIProviderCreate
 from app.services.ai_provider_service import AIProviderService, invalidate_active_cache
-from app.services.ollama_service import OllamaService
+from app.services.ollama_service import OllamaService, OllamaServiceError
 
 
 @pytest.fixture(autouse=True)
@@ -159,3 +159,83 @@ async def test_list_models_missing_data_returns_empty():
     respx.get("https://provider.test/v1/models").respond(200, json={})
     assert await list_models("https://provider.test/v1", "key") == []
 
+
+
+# ── Retired-model fixups (Groq decommissions) ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_groq_preset_uses_current_model():
+    from app.services.ai_provider_service import PROVIDER_PRESETS
+
+    assert PROVIDER_PRESETS["groq"]["model"] == "openai/gpt-oss-120b"
+    for preset in PROVIDER_PRESETS.values():
+        assert preset["model"] not in {
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+        }
+
+
+@pytest.mark.asyncio
+async def test_fixup_rewrites_retired_models_and_is_idempotent(db_session):
+    from app.services.ai_provider_service import apply_deprecated_model_fixups
+
+    stale = await AIProviderService(db_session).create(
+        AIProviderCreate(
+            name="Groq",
+            preset="groq",
+            base_url="https://api.groq.com/openai/v1",
+            model="llama-3.3-70b-versatile",
+            api_key="gsk_test",
+            is_active=True,
+        )
+    )
+    await apply_deprecated_model_fixups(db_session)
+    await db_session.refresh(stale)
+    assert stale.model == "openai/gpt-oss-120b"
+    # Second run matches zero rows — the replacement must be stable.
+    await apply_deprecated_model_fixups(db_session)
+    await db_session.refresh(stale)
+    assert stale.model == "openai/gpt-oss-120b"
+
+
+@pytest.mark.asyncio
+async def test_active_provider_safety_net_rewrites_retired_model(db_session):
+    from app.services.ai_provider_service import get_active_provider
+
+    await AIProviderService(db_session).create(
+        AIProviderCreate(
+            name="Groq",
+            preset="groq",
+            base_url="https://api.groq.com/openai/v1",
+            model="llama-3.1-8b-instant",
+            api_key="gsk_test",
+            is_active=True,
+        )
+    )
+    provider = await get_active_provider()
+    assert provider is not None
+    assert provider.model == "openai/gpt-oss-20b"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_model_not_found_gets_friendly_error(db_session):
+    await AIProviderService(db_session).create(
+        AIProviderCreate(
+            name="Groq",
+            preset="groq",
+            base_url="https://api.groq.com/openai/v1",
+            model="llama-3.3-70b-versatile",
+            api_key="gsk_test",
+            is_active=True,
+        )
+    )
+    respx.post("https://api.groq.com/openai/v1/chat/completions").respond(
+        404,
+        json={"error": {"message": "The model `x` does not exist", "code": "model_not_found"}},
+    )
+    with pytest.raises(OllamaServiceError) as exc:
+        await OllamaService()._generate("hello")
+    assert "retired" in str(exc.value)
+    assert "Settings" in str(exc.value)
