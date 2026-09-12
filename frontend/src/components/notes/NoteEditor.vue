@@ -37,7 +37,10 @@ import MediaViewer from '../media/MediaViewer.vue'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
-import { insertOcrBelowImage } from '../../utils/markdownMedia'
+import {
+  applyMediaSize,
+  insertOcrBelowImage,
+} from '../../utils/markdownMedia'
 import { noteSavePayload } from '../../utils/noteEditorDiff'
 import { errMsg } from '../../utils/errMsg.ts'
 import type {
@@ -647,7 +650,8 @@ async function runOcr(mediaId: number, url?: string) {
     if (text.trim()) {
       const target =
         url ??
-        body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
+        body.value
+          .match(new RegExp(`\\]\\(([^)]*${mediaId}/file[^)]*)\\)`))?.[1]
       if (target) {
         body.value = insertOcrBelowImage(body.value, target, text)
       } else {
@@ -838,8 +842,14 @@ const {
     inlineViewer.value = {
       src,
       mediaType: isVideo ? 'video' : 'image',
-      filename: src.split('/').pop(),
+      filename: src.split('/').pop()?.split('?')[0],
     }
+  },
+  // Persist a settled resize into the body (?w=&h= on the media URL).
+  // Manual-save semantics: it reaches the server on the next explicit Save.
+  onResize: (src, w, h) => {
+    const next = applyMediaSize(body.value, src, w, h)
+    if (next !== body.value) body.value = next
   },
 })
 
