@@ -320,6 +320,37 @@ async def schedule_backup(
     return await svc.schedule_backup(cron, backup_path, retention, config_id)
 
 
+@router.get("/schedule")
+async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Return the persisted backup schedule.
+
+    The settings tab hydrates cron/backup_path/retention from this, so the
+    values the user sees are the ones scheduled runs actually use (the
+    retention input otherwise lives only in browser localStorage and can
+    silently drift from the saved schedule).
+    """
+    from app.services.scheduler_service import SchedulerService
+
+    active = await SchedulerService(db).get_active_schedule()
+    if active is None:
+        return {
+            "configured": False,
+            "cron": None,
+            "config_id": None,
+            "backup_path": None,
+            "retention": 10,
+            "last_run": None,
+        }
+    return {
+        "configured": True,
+        "cron": active.cron,
+        "config_id": active.config_id,
+        "backup_path": active.backup_path,
+        "retention": active.retention,
+        "last_run": active.last_run_at.isoformat() if active.last_run_at else None,
+    }
+
+
 @router.get("/schedule/status")
 async def schedule_status(db: AsyncSession = Depends(get_db)) -> Any:
     """Check the status of the backup scheduler."""

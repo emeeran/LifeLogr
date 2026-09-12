@@ -375,6 +375,20 @@ class SchedulerService:
             entry["retention"] = retention
         await _save_schedule(entry)
 
+        # Retention is enforced at save time too, not just on each run: lowering
+        # the count prunes the folder immediately instead of waiting for the next
+        # backup. Cloud mode has no folder — nothing to prune. A failed prune
+        # (permissions, vanished folder) must not fail the save.
+        if config_id is None and backup_path:
+            try:
+                from app.core.paths import resolve_backup_path
+
+                _cleanup_old_backups(resolve_backup_path(backup_path), retention)
+            except (OSError, ValueError):
+                logger.warning(
+                    "Eager retention prune failed for %s", backup_path, exc_info=True
+                )
+
         job = sched.get_job("auto_backup")
         return {
             "job_id": "auto_backup",

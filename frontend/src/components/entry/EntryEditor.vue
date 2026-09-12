@@ -53,7 +53,10 @@ import { useAttachments } from '../../composables/useAttachments'
 import { usePasteMedia } from '../../composables/usePasteMedia'
 import { useResizableMedia } from '../../composables/useResizableMedia'
 import { useTauriDragDrop } from '../../composables/useTauriDragDrop'
-import { insertOcrBelowImage } from '../../utils/markdownMedia'
+import {
+  applyMediaSize,
+  insertOcrBelowImage,
+} from '../../utils/markdownMedia'
 import { useAutoSave } from '../../composables/useAutoSave'
 import {
   useRecordings,
@@ -393,8 +396,16 @@ const {
     inlineViewer.value = {
       src,
       mediaType: isVideo ? 'video' : 'image',
-      filename: src.split('/').pop(),
+      filename: src.split('/').pop()?.split('?')[0],
     }
+  },
+  // Persist a settled resize into the body (?w=&h= on the media URL), then
+  // run the normal input chain so the entry's autosave picks it up.
+  onResize: (src, w, h) => {
+    const next = applyMediaSize(body.value, src, w, h)
+    if (next === body.value) return
+    body.value = next
+    onInput()
   },
 })
 
@@ -722,7 +733,8 @@ async function runEntryOcr(mediaId: number, url?: string) {
     if (text.trim()) {
       const target =
         url ??
-        body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
+        body.value
+          .match(new RegExp(`\\]\\(([^)]*${mediaId}/file[^)]*)\\)`))?.[1]
       if (target) {
         body.value = insertOcrBelowImage(body.value, target, text)
       } else {

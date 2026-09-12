@@ -37,7 +37,11 @@ import MediaViewer from '../media/MediaViewer.vue'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
-import { insertOcrBelowImage } from '../../utils/markdownMedia'
+import {
+  applyMediaSize,
+  insertOcrBelowImage,
+} from '../../utils/markdownMedia'
+import { noteSavePayload } from '../../utils/noteEditorDiff'
 import { errMsg } from '../../utils/errMsg.ts'
 import type {
   NoteResponse,
@@ -179,25 +183,45 @@ watch(
   { immediate: true },
 )
 
+// A rename made outside this editor (the rail's inline rename) moves
+// props.note.title without touching our buffers. Re-sync the title so the
+// editor shows the new name and the next save doesn't write the stale one
+// back. Guarded so in-flight typing is never clobbered, and Main only — a
+// page tab's buffer holds the page's title, not the note's.
+watch(
+  () => props.note.title,
+  (t) => {
+    if (!isMain.value) return
+    if (title.value !== loadedTitle.value) return
+    const next = t ?? ''
+    if (title.value === next) return
+    title.value = next
+    loadedTitle.value = next
+  },
+)
+
 // Autosave is OFF — notes persist ONLY on explicit Save (Ctrl+S / saveNow).
 // Switching pages with unsaved edits now prompts (selectPage), and closing the
 // tab/window warns (beforeunload), so edits are never silently lost.
 
 async function doSave() {
   if (isMain.value) {
-    if (
-      title.value === (props.note.title ?? '') &&
-      body.value === props.note.body
+    // Diff against the loaded snapshot, not props.note: an external rename
+    // moves the prop, and diffing against it would treat the rename as a
+    // local edit and send the stale buffer back. Fields we didn't edit are
+    // omitted, so the backend keeps their persisted values.
+    const payload = noteSavePayload(
+      title.value,
+      loadedTitle.value,
+      body.value,
+      loadedBody.value,
     )
-      return
+    if (!payload) return
     saving.value = true
     try {
       // Tags live in the text: the backend derives the note's tags from #tokens
       // in the body, so we just persist title + body.
-      await store.updateNote(props.note.id, {
-        title: title.value,
-        body: body.value,
-      })
+      await store.updateNote(props.note.id, payload)
       savedAt.value = Date.now()
       loadedTitle.value = title.value
       loadedBody.value = body.value
@@ -210,10 +234,16 @@ async function doSave() {
   } else {
     const p = activePage.value
     if (!p) return
-    if (title.value === (p.title ?? '') && body.value === p.body) return
+    const payload = noteSavePayload(
+      title.value,
+      loadedTitle.value,
+      body.value,
+      loadedBody.value,
+    )
+    if (!payload) return
     saving.value = true
     try {
-      await store.updatePage(p.id, { title: title.value, body: body.value })
+      await store.updatePage(p.id, payload)
       savedAt.value = Date.now()
       loadedTitle.value = title.value
       loadedBody.value = body.value
@@ -271,8 +301,15 @@ function startRename(p: NotePageResponse) {
 async function commitRename() {
   const id = editingPageId.value
   editingPageId.value = null
-  if (id != null && editingTitle.value.trim() !== '') {
-    await store.updatePage(id, { title: editingTitle.value })
+  const newTitle = editingTitle.value
+  if (id == null || newTitle.trim() === '') return
+  await store.updatePage(id, { title: newTitle })
+  // The renamed page's prop moves but our buffers don't — sync the active
+  // page's title so the next save doesn't write the old name back (same
+  // staleness as a rail rename of the note itself).
+  if (id === activePageId.value && title.value === loadedTitle.value) {
+    title.value = newTitle
+    loadedTitle.value = newTitle
   }
 }
 
@@ -613,7 +650,8 @@ async function runOcr(mediaId: number, url?: string) {
     if (text.trim()) {
       const target =
         url ??
-        body.value.match(new RegExp(`\\]\\(([^)]*${mediaId}/file)\\)`))?.[1]
+        body.value
+          .match(new RegExp(`\\]\\(([^)]*${mediaId}/file[^)]*)\\)`))?.[1]
       if (target) {
         body.value = insertOcrBelowImage(body.value, target, text)
       } else {
@@ -804,8 +842,14 @@ const {
     inlineViewer.value = {
       src,
       mediaType: isVideo ? 'video' : 'image',
-      filename: src.split('/').pop(),
+      filename: src.split('/').pop()?.split('?')[0],
     }
+  },
+  // Persist a settled resize into the body (?w=&h= on the media URL).
+  // Manual-save semantics: it reaches the server on the next explicit Save.
+  onResize: (src, w, h) => {
+    const next = applyMediaSize(body.value, src, w, h)
+    if (next !== body.value) body.value = next
   },
 })
 

@@ -1,9 +1,10 @@
 """Unit tests for SchedulerService — local and cloud backup scheduling."""
 
 import json
+import os
 import time
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -196,6 +197,96 @@ class TestScheduleBackupCloud:
         job = sched.get_job("auto_backup")
         # Only one job, and it's the cloud one
         assert job.kwargs == {"config_id": 1}
+
+
+def _seed_backups(backup_dir, count: int) -> list:
+    """Create *count* fake backup archives with distinct, ordered mtimes."""
+    files = []
+    for i in range(count):
+        f = backup_dir / f"lifelogr-backup-2025010{i + 1}-000000.tar.gz"
+        f.write_bytes(f"backup-{i}".encode())
+        # Ensure distinct mtime so sorting is deterministic
+        os.utime(str(f), (1000 + i, 1000 + i))
+        files.append(f)
+    return files
+
+
+class TestEagerRetentionPrune:
+    """Saving a local schedule enforces the new retention count immediately —
+    redundant archives are deleted at save time, not on the next run."""
+
+    @pytest.mark.asyncio
+    async def test_schedule_local_prunes_to_new_retention(
+        self, db_session, _clean_scheduler, _scheduler_db, tmp_path
+    ):
+        _seed_backups(tmp_path, 4)
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(
+            cron_expr="0 2 * * *", backup_path=str(tmp_path), retention=1
+        )
+
+        remaining = sorted(tmp_path.glob("lifelogr-backup-*.tar.gz"))
+        assert len(remaining) == 1
+        assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.retention == 1
+
+    @pytest.mark.asyncio
+    async def test_schedule_cloud_does_not_prune(
+        self, db_session, _clean_scheduler, _scheduler_db, tmp_path, monkeypatch
+    ):
+        """Retention is local-mode only — saving a cloud schedule must not
+        touch any filesystem folder."""
+        import app.services.scheduler_service as sched_mod
+
+        creds = {
+            "client_id": "test-id",
+            "client_secret": "test-secret",
+            "access_token": "token",
+            "refresh_token": "refresh",
+            "token_expiry": str(time.time() + 3600),
+        }
+        config = BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt(json.dumps(creds)),
+        )
+        db_session.add(config)
+        await db_session.commit()
+        await db_session.refresh(config)
+
+        seeded = _seed_backups(tmp_path, 2)
+        mock_prune = MagicMock()
+        monkeypatch.setattr(sched_mod, "_cleanup_old_backups", mock_prune)
+
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 3 * * *", config_id=config.id)
+
+        mock_prune.assert_not_called()
+        assert all(f.exists() for f in seeded)
+
+    @pytest.mark.asyncio
+    async def test_schedule_save_survives_prune_failure(
+        self, db_session, _clean_scheduler, _scheduler_db, tmp_path, monkeypatch
+    ):
+        """A prune that fails (permissions, etc.) must not fail the save."""
+        import app.services.scheduler_service as sched_mod
+
+        monkeypatch.setattr(
+            sched_mod,
+            "_cleanup_old_backups",
+            MagicMock(side_effect=OSError("permission denied")),
+        )
+
+        svc = SchedulerService(db_session)
+        result = await svc.schedule_backup(
+            cron_expr="0 2 * * *", backup_path=str(tmp_path), retention=2
+        )
+
+        assert result["job_id"] == "auto_backup"
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.retention == 2
 
 
 class TestRunCloudBackup:

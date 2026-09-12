@@ -48,3 +48,13 @@ export function migrateLegacyKeys(): void {
     localStorage.removeItem(oldKey)
   }
 }
+
+/**
+ * Clamp the backup "keep N" count to the API's accepted range (the backend
+ * rejects the request otherwise) and fall back to the minimum for non-finite
+ * values (a cleared number input yields NaN).
+ */
+export function clampRetention(value: number, min = 1, max = 100): number {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
