@@ -101,6 +101,18 @@ export const backupApi = {
     return request('/backup/schedule/status')
   },
 
+  /** The persisted schedule — source of truth for path/retention/cron. */
+  getSchedule(): Promise<{
+    configured: boolean
+    cron: string | null
+    config_id: number | null
+    backup_path: string | null
+    retention: number
+    last_run: string | null
+  }> {
+    return request('/backup/schedule')
+  },
+
   unscheduleBackup(): Promise<{ removed: boolean }> {
     return request('/backup/schedule', { method: 'DELETE' })
   },

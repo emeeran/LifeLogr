@@ -92,6 +92,18 @@ def _make_archive_from_bytes(db_content: bytes, name: str = "diarium.diarium") -
     return buf.getvalue()
 
 
+def _seed_backups(backup_dir: Path, count: int) -> list[Path]:
+    """Create *count* fake backup archives with distinct, ordered mtimes."""
+    files = []
+    for i in range(count):
+        f = backup_dir / f"lifelogr-backup-2025010{i + 1}-000000.tar.gz"
+        f.write_bytes(f"backup-{i}".encode())
+        # Ensure distinct mtime so sorting is deterministic
+        os.utime(str(f), (1000 + i, 1000 + i))
+        files.append(f)
+    return files
+
+
 # ── Restore utility unit tests ───────────────────────────────────────────────
 
 
@@ -835,6 +847,116 @@ class TestScheduledBackupExecution:
         # Keeps the two newest (by mtime): 04 and 05
         assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
         assert remaining[1].name == "lifelogr-backup-20250105-000000.tar.gz"
+
+    def test_retention_cleanup_zero_keeps_all(self, tmp_path: Path) -> None:
+        """retention=0 means unlimited — no archive is ever removed."""
+        from app.services.scheduler_service import _cleanup_old_backups
+
+        _seed_backups(tmp_path, 3)
+        _cleanup_old_backups(tmp_path, retention=0)
+        assert len(list(tmp_path.glob("lifelogr-backup-*.tar.gz"))) == 3
+
+    async def test_get_schedule_when_not_configured(self, client: AsyncClient) -> None:
+        """GET /schedule reports defaults when nothing is configured."""
+        await client.delete("/api/v1/backup/schedule")
+        r = await client.get("/api/v1/backup/schedule")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["configured"] is False
+        assert data["cron"] is None
+        assert data["config_id"] is None
+        assert data["backup_path"] is None
+        assert data["retention"] == 10
+        assert data["last_run"] is None
+
+    async def test_get_schedule_round_trips_local_schedule(
+        self, client: AsyncClient
+    ) -> None:
+        """GET /schedule returns the persisted schedule the UI hydrates from."""
+        backup_dir = tempfile.mkdtemp()
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={
+                    "cron": "0 3 * * *",
+                    "backup_path": backup_dir,
+                    "retention": 3,
+                },
+            )
+            r = await client.get("/api/v1/backup/schedule")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["configured"] is True
+            assert data["cron"] == "0 3 * * *"
+            assert data["backup_path"] == backup_dir
+            assert data["retention"] == 3
+            assert data["config_id"] is None
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    async def test_get_schedule_returns_cloud_config_id(
+        self, client: AsyncClient
+    ) -> None:
+        """A cloud schedule reports its config_id and no local path."""
+        cr = await client.post(
+            "/api/v1/backup/config",
+            json={
+                "provider": "webdav",
+                "credentials": {"url": "https://dav.example.com"},
+            },
+        )
+        config_id = cr.json()["id"]
+        try:
+            await client.post(
+                "/api/v1/backup/schedule",
+                params={"cron": "0 4 * * *", "config_id": config_id},
+            )
+            r = await client.get("/api/v1/backup/schedule")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["configured"] is True
+            assert data["cron"] == "0 4 * * *"
+            assert data["config_id"] == config_id
+            assert data["backup_path"] is None
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+            await client.delete(f"/api/v1/backup/config/{config_id}")
+
+    async def test_schedule_save_prunes_existing_backups_eagerly(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Saving a local schedule prunes the folder to the new count right
+        away — the user-defined retention is not deferred to the next run."""
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        _seed_backups(backup_dir, 5)
+        try:
+            r = await client.post(
+                "/api/v1/backup/schedule",
+                params={"cron": "0 2 * * *", "backup_path": str(backup_dir), "retention": 2},
+            )
+            assert r.status_code == 200
+            remaining = sorted(backup_dir.glob("lifelogr-backup-*.tar.gz"))
+            assert len(remaining) == 2
+            # Keeps the two newest (by mtime): 04 and 05
+            assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
+            assert remaining[1].name == "lifelogr-backup-20250105-000000.tar.gz"
+        finally:
+            await client.delete("/api/v1/backup/schedule")
+
+    async def test_schedule_save_with_missing_folder_does_not_error(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """A first-time save targeting a not-yet-created folder is a no-op."""
+        missing = tmp_path / "does-not-exist"
+        r = await client.post(
+            "/api/v1/backup/schedule",
+            params={"cron": "0 2 * * *", "backup_path": str(missing), "retention": 3},
+        )
+        assert r.status_code == 200
+        assert not missing.exists()
+        await client.delete("/api/v1/backup/schedule")
 
 
 class _FakeCheckpointEngine:

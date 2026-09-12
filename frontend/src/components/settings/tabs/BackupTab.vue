@@ -6,7 +6,7 @@ import { useEntriesStore } from '../../../stores/entries'
 import { isTauri } from '../../../api/client'
 import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
 import { useLocalStorage } from '@vueuse/core'
-import { providerLabel } from '../../../utils/settings'
+import { providerLabel, clampRetention } from '../../../utils/settings'
 import {
   Cloud,
   RefreshCw,
@@ -370,7 +370,7 @@ async function saveAutoBackup() {
       backupPath: autoBackupConfigId.value ? undefined : autoBackupPath.value,
       retention: autoBackupConfigId.value
         ? undefined
-        : autoBackupRetention.value,
+        : clampRetention(autoBackupRetention.value),
     })
     await loadAutoBackupStatus()
     autoBackupEnabled.value = true
@@ -410,7 +410,7 @@ async function runBackupNow() {
       status?: string
       error?: string
     }>(
-      `/backup/run-now?backup_path=${encodeURIComponent(autoBackupPath.value)}&retention=${autoBackupRetention.value}`,
+      `/backup/run-now?backup_path=${encodeURIComponent(autoBackupPath.value)}&retention=${clampRetention(autoBackupRetention.value)}`,
       { method: 'POST' },
     )
     emit('toast', 'success', `Backup saved to ${r.path}`)
@@ -429,6 +429,26 @@ async function loadAutoBackupStatus() {
   }
 }
 
+async function loadAutoBackupSchedule() {
+  try {
+    const s = await backupApi.getSchedule()
+    if (!s.configured) return
+    // Cloud mode first — it flips the Destination select and hides the
+    // local-only fields below.
+    autoBackupConfigId.value = s.config_id
+    if (s.config_id === null) {
+      // Local mode: the persisted folder/count are authoritative — the
+      // localStorage copies can silently drift from what scheduled runs use.
+      if (s.backup_path) autoBackupPath.value = s.backup_path
+      if (s.retention >= 1) autoBackupRetention.value = s.retention
+    }
+    if (s.cron) autoBackupFrequency.value = s.cron
+    autoBackupEnabled.value = true
+  } catch {
+    /* ignore — keep localStorage values */
+  }
+}
+
 async function browseBackupFolder() {
   const folder = await pickFolder()
   if (folder) autoBackupPath.value = folder
@@ -438,6 +458,7 @@ onMounted(() => {
   backup.fetchConfigs()
   backup.fetchSnapshots()
   loadAutoBackupStatus()
+  loadAutoBackupSchedule()
 })
 </script>
 
