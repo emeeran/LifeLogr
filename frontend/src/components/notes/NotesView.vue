@@ -373,6 +373,12 @@ async function commitRenameNote() {
   if (id == null || !name) return
   try {
     await store.updateNote(id, { title: name })
+    // searchResults is component-local (the store only patches the main list
+    // and currentNote) — keep it consistent so the rename isn't stale there.
+    if (searchResults.value)
+      searchResults.value = searchResults.value.map((n) =>
+        n.id === id ? { ...n, title: name } : n,
+      )
   } catch {
     /* store surfaces error */
   }
