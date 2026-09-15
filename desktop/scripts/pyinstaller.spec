@@ -93,7 +93,10 @@ if _tesseract_dir.is_dir():
     ]
 
 a = Analysis(
-    [str(ROOT / 'backend' / 'app' / 'main.py')],
+    # entry.py, not main.py: with console=False an unhandled startup
+    # exception becomes an invisible dialog and the process hangs. entry.py
+    # writes the traceback to %TEMP%\lifelogr-backend-crash.log instead.
+    [str(ROOT / 'backend' / 'entry.py')],
     pathex=[str(ROOT / 'backend')],
     binaries=[
         *_pysqlite3_binaries,

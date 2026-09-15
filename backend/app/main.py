@@ -518,7 +518,7 @@ if _FRONTEND_DIST.is_dir():
         return FileResponse(str(target), headers=headers)
 
 
-if __name__ == "__main__":
+def main() -> None:
     import argparse
 
     import uvicorn
@@ -528,3 +528,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=18765, help="Bind port")
     args = parser.parse_args()
     uvicorn.run("app.main:app", host=args.host, port=args.port, reload=False)
+
+
+if __name__ == "__main__":
+    main()

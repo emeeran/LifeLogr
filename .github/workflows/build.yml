@@ -176,6 +176,8 @@ jobs:
               Get-Content $out -ErrorAction SilentlyContinue | Write-Host
               Write-Host "--- sidecar stderr ---"
               Get-Content $err -ErrorAction SilentlyContinue | Write-Host
+              Write-Host "--- crash log (written by entry.py) ---"
+              Get-Content "$env:TEMP\lifelogr-backend-crash.log" -ErrorAction SilentlyContinue | Write-Host
               throw "frozen sidecar never became healthy on 127.0.0.1:18765"
             }
             Write-Host "Sidecar healthy after $($i * 2)s"
