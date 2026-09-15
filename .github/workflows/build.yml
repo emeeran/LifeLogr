@@ -152,21 +152,32 @@ jobs:
           copy desktop\dist\lifelogr-backend.exe desktop\src-tauri\lifelogr-backend-x86_64-pc-windows-msvc.exe
 
       # Same gate as the Linux job: prove the frozen sidecar actually starts
-      # and serves /health before packaging it into the installer.
+      # and serves /health before packaging it into the installer. Onefile
+      # extraction under Defender can be slow, so the budget is 2 minutes,
+      # and a failure dumps the sidecar's captured stdout/stderr.
       - name: Verify backend binary
         shell: pwsh
         run: |
+          $out = "desktop\dist\sidecar-out.log"
+          $err = "desktop\dist\sidecar-err.log"
           $p = Start-Process -FilePath "desktop\dist\lifelogr-backend.exe" `
-            -ArgumentList "--host","127.0.0.1","--port","18765" -PassThru -WindowStyle Hidden
+            -ArgumentList "--host","127.0.0.1","--port","18765" -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $out -RedirectStandardError $err
           try {
             $ok = $false
-            foreach ($i in 1..30) {
+            foreach ($i in 1..60) {
               try {
                 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18765/health -TimeoutSec 2 | Out-Null
                 $ok = $true; break
               } catch { Start-Sleep -Seconds 2 }
             }
-            if (-not $ok) { throw "frozen sidecar never became healthy on 127.0.0.1:18765" }
+            if (-not $ok) {
+              Write-Host "--- sidecar stdout ---"
+              Get-Content $out -ErrorAction SilentlyContinue | Write-Host
+              Write-Host "--- sidecar stderr ---"
+              Get-Content $err -ErrorAction SilentlyContinue | Write-Host
+              throw "frozen sidecar never became healthy on 127.0.0.1:18765"
+            }
             Write-Host "Sidecar healthy after $($i * 2)s"
           } finally {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
