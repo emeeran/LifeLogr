@@ -1,18 +1,17 @@
 # Vendor Tesseract OCR for the Windows build (run once, before `make build`).
 #
-# Downloads the UB-Mannheim Tesseract installer, silently installs it into
-# desktop/vendor/tesseract, and prunes the language packs to the two the app
-# offers (eng + tam - see SUPPORTED_OCR_LANGS in
-# backend/app/services/ocr_service.py); tam is fetched from the upstream
-# tessdata repo because stock installs ship only eng + osd.
-# pyinstaller.spec bundles the directory when it exists; Linux never runs this.
+# Puts tesseract.exe + eng/tam tessdata into desktop/vendor/tesseract; the
+# PyInstaller spec bundles the directory so OCR works out of the box. Linux
+# builds get tesseract from apt and never run this.
 #
-# Unattended-runner hardening: the pinned direct release URL avoids
-# api.github.com (which intermittently stalls runners' connections), and the
-# installer gets a hard 10-minute timeout so a wedged install fails fast
-# instead of hanging the build for an hour.
+# Two install routes (languages pruned to eng + tam either way - see
+# SUPPORTED_OCR_LANGS in backend/app/services/ocr_service.py; tam comes from
+# the upstream tessdata repo since stock installs ship only eng + osd):
 #
-# Usage (from desktop/):  powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+#   1. chocolatey `tesseract` package - the standard unattended-runner recipe.
+#   2. Direct UB-Mannheim installer fallback with a hard 10-minute timeout and
+#      an Inno /LOG dump, after a bare silent install was observed to hang CI
+#      for an hour. For humans the same fallback is the normal path.
 
 $ErrorActionPreference = "Stop"
 
@@ -22,29 +21,65 @@ if (Test-Path (Join-Path $vendor "tesseract.exe")) {
     exit 0
 }
 
-$tessVersion = "5.4.0.20240606"
-$url = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVersion/tesseract-ocr-w64-setup-$tessVersion.exe"
-
 $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "lifelogr-tesseract") -Force
-$installer = Join-Path $tmp (Split-Path $url -Leaf)
-Write-Host "Downloading $url ..."
-curl.exe -L --fail --retry 3 -o $installer $url
-if ($LASTEXITCODE -ne 0) { throw "Download failed (curl exit $LASTEXITCODE)." }
+$tessVersion = "5.5.0.20241111"
+$installed = $false
 
-Write-Host "Installing into $vendor ..."
-# Inno Setup flags: silent, no reboot, custom install dir. WaitForExit caps a
-# wedged install at 10 minutes (a bare -Wait has hung CI for an hour).
-$proc = Start-Process $installer "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$vendor`"" -PassThru
-if (-not $proc.WaitForExit(600000)) {
-    $proc.Kill()
-    throw "Tesseract installer did not finish within 10 minutes - killed."
-}
-if ($proc.ExitCode -ne 0) { throw "Installer exited with code $($proc.ExitCode)." }
-if (-not (Test-Path (Join-Path $vendor "tesseract.exe"))) {
-    throw "Install finished but tesseract.exe is missing at $vendor"
+# Route 1: chocolatey (installs to C:\Program Files\Tesseract-OCR).
+$choco = Join-Path $env:ProgramData "chocolatey\choco.exe"
+if (-not (Test-Path $choco)) { $choco = "choco" }
+if (Get-Command $choco -ErrorAction SilentlyContinue) {
+    Write-Host "Installing tesseract $tessVersion via chocolatey ..."
+    $proc = Start-Process $choco `
+        -ArgumentList "install", "tesseract", "-y", "--no-progress", "--version=$tessVersion" `
+        -PassThru -NoNewWindow
+    if ($proc.WaitForExit(900000)) {
+        if ($proc.ExitCode -eq 0) { $installed = $true }
+        else { Write-Host "choco exited with $($proc.ExitCode) - trying direct installer." }
+    } else {
+        $proc.Kill()
+        Write-Host "choco install timed out after 15 min - trying direct installer."
+    }
+    if ($installed) {
+        $src = Join-Path ${env:ProgramFiles} "Tesseract-OCR"
+        if (-not (Test-Path (Join-Path $src "tesseract.exe"))) {
+            throw "choco reported success but tesseract.exe is missing in $src"
+        }
+        New-Item -ItemType Directory -Path $vendor -Force | Out-Null
+        Copy-Item (Join-Path $src "*") $vendor -Recurse -Force
+    }
 }
 
-# Keep only the languages the app offers - the stock install carries dozens of
+# Route 2: direct UB-Mannheim installer (fallback on CI, primary for humans
+# without chocolatey). Bounded so a wedged setup fails fast, with the Inno
+# log in the error for diagnosis.
+if (-not $installed) {
+    $url = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVersion/tesseract-ocr-w64-setup-$tessVersion.exe"
+    $installer = Join-Path $tmp (Split-Path $url -Leaf)
+    Write-Host "Downloading $url ..."
+    curl.exe -L --fail --retry 3 -o $installer $url
+    if ($LASTEXITCODE -ne 0) { throw "Download failed (curl exit $LASTEXITCODE)." }
+
+    Write-Host "Installing into $vendor ..."
+    $log = Join-Path $tmp "inno.log"
+    $proc = Start-Process $installer `
+        -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /FORCECLOSEAPPLICATIONS /DIR=`"$vendor`" /LOG=`"$log`"" `
+        -PassThru
+    if (-not $proc.WaitForExit(600000)) {
+        $proc.Kill()
+        if (Test-Path $log) {
+            Write-Host "--- inno.log tail ---"
+            Get-Content $log -Tail 30 | Write-Host
+        }
+        throw "Tesseract installer did not finish within 10 minutes - killed."
+    }
+    if ($proc.ExitCode -ne 0) { throw "Installer exited with code $($proc.ExitCode)." }
+    if (-not (Test-Path (Join-Path $vendor "tesseract.exe"))) {
+        throw "Install finished but tesseract.exe is missing at $vendor"
+    }
+}
+
+# Keep only the languages the app offers - stock installs carry dozens of
 # packs we'd otherwise bundle for nothing.
 $tessdata = Join-Path $vendor "tessdata"
 Get-ChildItem $tessdata -File |
