@@ -2,7 +2,7 @@
 #
 # Downloads the current UB-Mannheim Tesseract release, silently installs it
 # into desktop/vendor/tesseract, and prunes the language packs to the two the
-# app offers (eng + tam — see SUPPORTED_OCR_LANGS in
+# app offers (eng + tam - see SUPPORTED_OCR_LANGS in
 # backend/app/services/ocr_service.py). pyinstaller.spec collects the
 # directory into the sidecar when it exists; Linux builds never run this.
 #
@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 
 $vendor = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\vendor\tesseract"))
 if (Test-Path (Join-Path $vendor "tesseract.exe")) {
-    Write-Host "Tesseract already vendored at $vendor — skipping."
+    Write-Host "Tesseract already vendored at $vendor - skipping."
     exit 0
 }
 
@@ -36,7 +36,7 @@ if (-not (Test-Path (Join-Path $vendor "tesseract.exe"))) {
     throw "Install finished but tesseract.exe is missing at $vendor"
 }
 
-# Keep only the languages the app offers — the stock install carries dozens of
+# Keep only the languages the app offers - the stock install carries dozens of
 # packs we'd otherwise bundle for nothing.
 $tessdata = Join-Path $vendor "tessdata"
 if (Test-Path $tessdata) {
