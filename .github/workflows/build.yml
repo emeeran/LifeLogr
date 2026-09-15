@@ -176,6 +176,18 @@ jobs:
             }
             if (-not $ok) {
               Write-Host "Sidecar process HasExited: $($p.HasExited)"
+              Write-Host "--- sidecar process tree ---"
+              Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" |
+                Select-Object ProcessId, Name, CommandLine | Format-List | Write-Host
+              Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)" |
+                Select-Object ProcessId, Name, CommandLine | Format-List | Write-Host
+              Write-Host "--- onefile extraction dir (_MEI*) ---"
+              Get-ChildItem $env:TEMP -Filter "_MEI*" -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                  $size = (Get-ChildItem $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
+                    Measure-Object Length -Sum).Sum
+                  Write-Host "$($_.Name): $([math]::Round($size / 1MB, 1)) MB"
+                }
               Write-Host "--- sidecar stdout ---"
               Get-Content $out -ErrorAction SilentlyContinue | Write-Host
               Write-Host "--- sidecar stderr ---"

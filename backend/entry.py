@@ -2,10 +2,12 @@
 
 With console=False, an unhandled startup exception surfaces as an invisible
 "Failed to execute script" dialog and the process hangs - useless on an
-unattended runner and inscrutable for a user. This wrapper writes any fatal
-traceback to %TEMP%\\lifelogr-backend-crash.log before exiting non-zero, so a
-failed start is diagnosable from the file alone. Stdlib-only imports up top:
-even a failure importing app.* (config paths, DB init, routers) gets logged.
+unattended runner and inscrutable for a user. This wrapper appends its
+progress and any fatal traceback to %TEMP%\\lifelogr-backend-crash.log and
+exits non-zero, so a failed or stuck start is diagnosable from the file
+alone: "invoked" without a traceback means the hang is inside app startup;
+no line at all means the PyInstaller bootloader never ran Python.
+Stdlib-only imports up top: even a failure importing app.* gets logged.
 """
 
 import sys
@@ -16,6 +18,14 @@ from pathlib import Path
 CRASH_LOG = Path(tempfile.gettempdir()) / "lifelogr-backend-crash.log"
 
 
+def _mark(message: str) -> None:
+    try:
+        with open(CRASH_LOG, "a", encoding="utf-8") as f:
+            f.write(message + "\n")
+    except OSError:
+        pass
+
+
 def run() -> None:
     from app.main import main
 
@@ -23,11 +33,10 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    _mark(f"entry.py invoked (python {sys.version.split()[0]}, frozen={getattr(sys, 'frozen', False)})")
     try:
         run()
+        _mark("run() returned normally")
     except BaseException:
-        try:
-            CRASH_LOG.write_text(traceback.format_exc(), encoding="utf-8")
-        except OSError:
-            pass
+        _mark(traceback.format_exc())
         sys.exit(1)
