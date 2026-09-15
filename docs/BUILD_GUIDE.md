@@ -7,7 +7,7 @@ Complete guide for building, updating, and installing LifeLogr on **Linux**, **W
 ## Table of Contents
 
 1. [Prerequisites](#1-prerequisites)
-2. [Building the AppImage / MSI / DMG](#2-building)
+2. [Building the AppImage / NSIS / DMG](#2-building)
 3. [Updating an Existing Build](#3-updating)
 4. [Installing on Linux](#4-linux)
 5. [Installing on Windows](#5-windows)
@@ -41,6 +41,9 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev \
 **Windows:**
 - Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload)
 - WebView2 is pre-installed on Windows 11; the installer handles Windows 10
+- Rust target `x86_64-pc-windows-msvc` (default with Build Tools installed)
+- Run all `make` commands from **Git Bash** (ships with Git for Windows)
+- Tesseract OCR is vendored by `make setup` (see §5); Linux builds don't need it
 
 **macOS:**
 - Xcode Command Line Tools: `xcode-select --install`
@@ -59,7 +62,7 @@ make build     # Builds frontend + backend + native package
 
 The output goes to `desktop/src-tauri/target/release/bundle/`:
 - **Linux**: `appimage/LifeLogr_0.10.1_amd64.AppImage` + `deb/LifeLogr_0.10.1_amd64.deb`
-- **Windows**: `msi/LifeLogr_0.10.1_x64_en-US.msi`
+- **Windows**: `nsis/LifeLogr_0.11.0_x64-setup.exe`
 - **macOS**: `dmg/LifeLogr_0.10.1_aarch64.dmg`
 
 > **Versioning:** the package version is sourced from `backend/pyproject.toml`, `desktop/src-tauri/Cargo.toml`, and `desktop/src-tauri/tauri.conf.json` — bump all three together. The version shown in the app's **About** tab comes from `APP_VERSION` in `backend/app/core/config.py` (served via the `/api/v1/settings` endpoint), so update that too or the UI will lag behind the package version. The artifact filenames above reflect whatever version you set.
@@ -87,7 +90,7 @@ mkdir -p ../desktop/src-tauri/binaries
 cp dist/lifelogr-backend ../desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
 chmod +x ../desktop/src-tauri/binaries/lifelogr-backend-x86_64-unknown-linux-gnu
 #    Windows:
-#      copy dist\lifelogr-backend.exe ..\desktop\src-tauri\binaries\lifelogr-backend-x86_64-pc-windows-msvc.exe
+#      copy dist\lifelogr-backend.exe ..\desktop\src-tauri\lifelogr-backend-x86_64-pc-windows-msvc.exe
 #    macOS (Apple Silicon):
 #      cp dist/lifelogr-backend ../desktop/src-tauri/binaries/lifelogr-backend-aarch64-apple-darwin
 
@@ -96,7 +99,7 @@ cd ../desktop/src-tauri
 #    Linux:
 cargo tauri build --bundles appimage,deb
 #    Windows:
-#      cargo tauri build --bundles msi
+#      cargo tauri build --bundles nsis
 #    macOS:
 #      cargo tauri build --bundles dmg
 ```
@@ -106,7 +109,7 @@ cargo tauri build --bundles appimage,deb
 | Platform | Expected Size | Notes |
 |----------|--------------|-------|
 | Linux AppImage | ~80-100 MB | webkit2gtk adds ~60MB (unavoidable) |
-| Windows MSI | ~50-70 MB | Uses Edge WebView2 (pre-installed) |
+| Windows NSIS | ~50-70 MB | Uses Edge WebView2 (pre-installed) |
 | macOS DMG | ~40-60 MB | Uses system WebKit |
 
 ---
@@ -229,12 +232,17 @@ Open http://localhost:5173 in your browser.
 
 ## 5. Installing on Windows
 
-### From MSI installer
+### From the NSIS installer
 
-1. Double-click `LifeLogr_0.10.1_x64_en-US.msi`
-2. Follow the installer wizard
-3. If prompted about WebView2, allow the installer to download it
-4. Launch from **Start Menu → LifeLogr**
+1. Double-click `LifeLogr_0.11.0_x64-setup.exe`
+2. If SmartScreen appears (unsigned build), click **More info → Run anyway**
+3. The installer runs per-user — **no admin rights or UAC prompt**
+4. Leave **Run LifeLogr** ticked on the finish page — the app opens immediately
+
+Everything needed at runtime ships inside the app: the Python backend and
+Tesseract OCR (English + Tamil) are bundled, the backend binds loopback only
+(no firewall prompt), and WebView2 is pre-installed on Windows 11. The only
+optional external is [Ollama](https://ollama.com/download) for local AI.
 
 ### From source (development)
 
@@ -261,12 +269,25 @@ Open http://localhost:5173 in your browser.
 
 ### Building on Windows
 
-```powershell
+One-time: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+(C++ workload), Rust, Node.js, uv — see §1. Then from **Git Bash**:
+
+```bash
 cd desktop
-make install
+make install   # First time only — installs frontend/backend deps
+make setup     # First time only — vendors Tesseract OCR (eng + tam)
 make build
-# Output: src-tauri\target\release\bundle\msi\LifeLogr_0.10.1_x64_en-US.msi
+# Output: src-tauri\target\release\bundle\nsis\LifeLogr_<version>_x64-setup.exe
 ```
+
+`make setup` downloads Tesseract from the UB-Mannheim releases into
+`desktop/vendor/tesseract/` (gitignored); `pyinstaller.spec` bundles it into
+the sidecar when present. Skip it and the build still works — minus OCR.
+
+> **Unsigned build:** without a code-signing certificate, SmartScreen shows a
+> "Windows protected your PC" warning on first run — expected, not malware.
+> Defender may scan the PyInstaller sidecar slowly on first launch; the app
+> waits for the backend to come up before opening the UI.
 
 ---
 
@@ -498,7 +519,7 @@ brew install tesseract            # macOS
 
 ### Windows: WebView2 missing
 
-The MSI installer downloads WebView2 automatically. If it fails:
+The installer downloads WebView2 automatically if missing (Windows 10). If it fails:
 1. Download from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
 2. Install the "Evergreen Bootstrapper"
 3. Re-run LifeLogr

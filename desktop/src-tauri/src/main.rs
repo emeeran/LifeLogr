@@ -33,13 +33,6 @@ fn check_deps() -> serde_json::Value {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    // Check if gstreamer1.0-plugins-bad is installed (needed for audio recording)
-    let gst_plugins_bad = std::process::Command::new("gst-inspect-1.0")
-        .arg("webrtcbin")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
     // Tesseract is required for note-image OCR (declared in deb `depends`).
     let tesseract = std::process::Command::new("tesseract")
         .arg("--version")
@@ -47,12 +40,37 @@ fn check_deps() -> serde_json::Value {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    serde_json::json!({
-        "ollama": ollama,
-        "gst_plugins_bad": gst_plugins_bad,
-        "tesseract": tesseract,
-        "all_installed": ollama,
-    })
+    #[cfg(windows)]
+    {
+        // GStreamer is a Linux/WebKit2GTK concern — the Windows backend records
+        // audio through its bundled PortAudio (see pyinstaller.spec). Report
+        // ready so Settings → About doesn't nag about a package that doesn't
+        // exist here. OCR runs from the tesseract bundled in the sidecar
+        // (setup-windows.ps1); the PATH probe above stays as the visible hint.
+        serde_json::json!({
+            "ollama": ollama,
+            "gst_plugins_bad": true,
+            "tesseract": tesseract,
+            "all_installed": ollama,
+        })
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Check if gstreamer1.0-plugins-bad is installed (needed for audio recording)
+        let gst_plugins_bad = std::process::Command::new("gst-inspect-1.0")
+            .arg("webrtcbin")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        serde_json::json!({
+            "ollama": ollama,
+            "gst_plugins_bad": gst_plugins_bad,
+            "tesseract": tesseract,
+            "all_installed": ollama,
+        })
+    }
 }
 
 /// Run the first-run setup script (Linux only). Requires pkexec for sudo.
@@ -88,7 +106,11 @@ async fn run_setup(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(not(target_os = "linux"))]
     {
         let _ = app;
-        Err("System setup is only available on Linux.".to_string())
+        Err(
+            "No system setup is needed on Windows — everything ships with the app. \
+             For local AI, install Ollama from https://ollama.com/download"
+                .to_string(),
+        )
     }
 }
 
@@ -124,26 +146,47 @@ fn reclaim_port(port: u16) {
     if !port_is_listening(port) {
         return; // port free — nothing to reclaim
     }
-    warn!(
-        "Port {port} is already in use — reclaiming it from a stale backend sidecar"
-    );
-    // fuser kills exactly the process holding the port (psmisc, standard on
-    // Debian/Ubuntu); fall back to matching the sidecar name if fuser is absent.
-    let port_arg = format!("{port}/tcp");
-    let reclaimed = std::process::Command::new("fuser")
-        .arg("-k")
-        .arg(&port_arg)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-        || std::process::Command::new("pkill")
-            .args(["-f", "lifelogr-backend"])
+    warn!("Port {port} is already in use — reclaiming it from a stale backend sidecar");
+
+    #[cfg(windows)]
+    {
+        let mut reclaimed = false;
+        for pid in listening_pids(port) {
+            if pid == std::process::id() {
+                continue; // never kill ourselves
+            }
+            reclaimed |= std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+        }
+        if !reclaimed {
+            warn!("Could not reclaim port {port} (taskkill failed) — sidecar may fail to bind");
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        // fuser kills exactly the process holding the port (psmisc, standard on
+        // Debian/Ubuntu); fall back to matching the sidecar name if fuser is absent.
+        let port_arg = format!("{port}/tcp");
+        let reclaimed = std::process::Command::new("fuser")
+            .arg("-k")
+            .arg(&port_arg)
             .status()
             .map(|s| s.success())
-            .unwrap_or(false);
-    if !reclaimed {
-        warn!("Could not reclaim port {port} (no fuser/pkill) — sidecar may fail to bind");
+            .unwrap_or(false)
+            || std::process::Command::new("pkill")
+                .args(["-f", "lifelogr-backend"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+        if !reclaimed {
+            warn!("Could not reclaim port {port} (no fuser/pkill) — sidecar may fail to bind");
+        }
     }
+
     // Wait for the port to actually free up before we spawn our sidecar.
     for _ in 0..20 {
         if !port_is_listening(port) {
@@ -153,6 +196,38 @@ fn reclaim_port(port: u16) {
         std::thread::sleep(Duration::from_millis(150));
     }
     warn!("Port {port} still in use after reclaim attempt");
+}
+
+/// PIDs with a TCP socket in LISTENING state on :port (Windows).
+///
+/// Parses `netstat -ano` — present on a stock Win11 box, no extra tooling. A
+/// local address is anything ending in `:{port}`, so both `127.0.0.1:{port}`
+/// and a wildcard `0.0.0.0:{port}` bind are caught.
+#[cfg(windows)]
+fn listening_pids(port: u16) -> Vec<u32> {
+    let out = match std::process::Command::new("netstat")
+        .args(["-ano", "-p", "tcp"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let suffix = format!(":{port}");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            // TCP  <local>  <remote>  LISTENING  <pid>
+            match cols.as_slice() {
+                [proto, local, _remote, state, pid]
+                    if *proto == "TCP" && *state == "LISTENING" && local.ends_with(&suffix) =>
+                {
+                    pid.parse::<u32>().ok()
+                }
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// Max time (ms) to wait for the backend to exit on SIGTERM before SIGKILL.
@@ -174,31 +249,53 @@ fn shutdown_sidecar(port: u16) {
     if !port_is_listening(port) {
         return; // backend already gone
     }
-    info!("Stopping backend sidecar on port {port} (SIGTERM)");
-    let _ = std::process::Command::new("pkill")
-        .args(["-TERM", "-f", "lifelogr-backend"])
-        .status();
-    for _ in 0..(SIDECAR_GRACE_MS / 100) {
-        if !port_is_listening(port) {
-            info!("Backend sidecar stopped gracefully");
-            return;
+
+    #[cfg(windows)]
+    {
+        // Windows has no cross-process SIGTERM; the PID-correct `child.kill()`
+        // (TerminateProcess) above is the primary path, this is the fallback.
+        info!("Stopping backend sidecar on port {port} (taskkill /F)");
+        for pid in listening_pids(port) {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .status();
         }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    warn!(
-        "Backend sidecar did not exit within {SIDECAR_GRACE_MS} ms — sending SIGKILL"
-    );
-    let _ = std::process::Command::new("pkill")
-        .args(["-KILL", "-f", "lifelogr-backend"])
-        .status();
-    for _ in 0..20 {
-        if !port_is_listening(port) {
-            info!("Backend sidecar killed");
-            return;
+        for _ in 0..20 {
+            if !port_is_listening(port) {
+                info!("Backend sidecar killed");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(150));
         }
-        std::thread::sleep(Duration::from_millis(150));
+        warn!("Backend sidecar still on port {port} after taskkill (next launch will reclaim it)");
     }
-    warn!("Backend sidecar still on port {port} after SIGKILL (next launch will reclaim it)");
+
+    #[cfg(not(windows))]
+    {
+        info!("Stopping backend sidecar on port {port} (SIGTERM)");
+        let _ = std::process::Command::new("pkill")
+            .args(["-TERM", "-f", "lifelogr-backend"])
+            .status();
+        for _ in 0..(SIDECAR_GRACE_MS / 100) {
+            if !port_is_listening(port) {
+                info!("Backend sidecar stopped gracefully");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        warn!("Backend sidecar did not exit within {SIDECAR_GRACE_MS} ms — sending SIGKILL");
+        let _ = std::process::Command::new("pkill")
+            .args(["-KILL", "-f", "lifelogr-backend"])
+            .status();
+        for _ in 0..20 {
+            if !port_is_listening(port) {
+                info!("Backend sidecar killed");
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
+        warn!("Backend sidecar still on port {port} after SIGKILL (next launch will reclaim it)");
+    }
 }
 
 /// Best-effort PID owning a TCP port, via `lsof`. `None` if lsof is unavailable
@@ -241,7 +338,15 @@ fn init_logging(data_dir: &std::path::Path) {
     let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(env_logger::Target::Pipe(Box::new(log_file)))
-        .format(|buf, record| writeln!(buf, "[{} {}] {}", record.level(), record.target(), record.args()))
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "[{} {}] {}",
+                record.level(),
+                record.target(),
+                record.args()
+            )
+        })
         .init();
     info!("Logging initialised — writing to {}", log_path.display());
 }
@@ -320,7 +425,11 @@ fn main() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![check_deps, run_setup, capture_screen])
+        .invoke_handler(tauri::generate_handler![
+            check_deps,
+            run_setup,
+            capture_screen
+        ])
         .setup(|app| {
             // Resolve data directory
             let data_dir = app
@@ -351,10 +460,7 @@ fn main() {
                 .shell()
                 .sidecar("lifelogr-backend")
                 .map_err(|e| format!("Failed to find sidecar binary: {e}"))?
-                .args([
-                    "--host", "127.0.0.1",
-                    "--port", &port.to_string(),
-                ])
+                .args(["--host", "127.0.0.1", "--port", &port.to_string()])
                 .env("DATA_DIR", data_dir.to_string_lossy().to_string())
                 .env("APP_ENV", "production");
 
@@ -376,9 +482,15 @@ fn main() {
                     use tauri_plugin_shell::process::CommandEvent;
                     while let Some(event) = rx.recv().await {
                         match event {
-                            CommandEvent::Stdout(line) => info!("[backend] {}", String::from_utf8_lossy(&line)),
-                            CommandEvent::Stderr(line) => warn!("[backend:err] {}", String::from_utf8_lossy(&line)),
-                            CommandEvent::Terminated(status) => info!("[backend] exited: {:?}", status),
+                            CommandEvent::Stdout(line) => {
+                                info!("[backend] {}", String::from_utf8_lossy(&line))
+                            }
+                            CommandEvent::Stderr(line) => {
+                                warn!("[backend:err] {}", String::from_utf8_lossy(&line))
+                            }
+                            CommandEvent::Terminated(status) => {
+                                info!("[backend] exited: {:?}", status)
+                            }
                             CommandEvent::Error(err) => error!("[backend:error] {}", err),
                             _ => {}
                         }
@@ -401,25 +513,32 @@ fn main() {
             // no risk of malicious sites abusing these permissions.
             #[cfg(target_os = "linux")]
             {
-                let webview_window = app.get_webview_window("main")
+                let webview_window = app
+                    .get_webview_window("main")
                     .ok_or_else(|| "Main webview window not found".to_string())?;
-                webview_window.with_webview(|webview| {
-                    use webkit2gtk::{PermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt};
-                    let ctx = webview.inner();
+                webview_window
+                    .with_webview(|webview| {
+                        use webkit2gtk::{
+                            PermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt,
+                        };
+                        let ctx = webview.inner();
 
-                    // Explicitly enable media stream and MediaSource APIs
-                    if let Some(settings) = ctx.settings() {
-                        settings.set_enable_media_stream(true);
-                        settings.set_enable_mediasource(true);
-                        settings.set_enable_webrtc(true);
-                    }
+                        // Explicitly enable media stream and MediaSource APIs
+                        if let Some(settings) = ctx.settings() {
+                            settings.set_enable_media_stream(true);
+                            settings.set_enable_mediasource(true);
+                            settings.set_enable_webrtc(true);
+                        }
 
-                    // Auto-grant all permission requests (microphone, camera, geolocation, etc.)
-                    ctx.connect_permission_request(|_: &webkit2gtk::WebView, req: &PermissionRequest| {
-                        req.allow();
-                        true
-                    });
-                }).map_err(|e| format!("Failed to set webview media settings: {e}"))?;
+                        // Auto-grant all permission requests (microphone, camera, geolocation, etc.)
+                        ctx.connect_permission_request(
+                            |_: &webkit2gtk::WebView, req: &PermissionRequest| {
+                                req.allow();
+                                true
+                            },
+                        );
+                    })
+                    .map_err(|e| format!("Failed to set webview media settings: {e}"))?;
             }
 
             Ok(())

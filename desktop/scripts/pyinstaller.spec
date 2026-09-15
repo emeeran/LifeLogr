@@ -77,6 +77,21 @@ _track_src = ROOT / 'frontend' / 'public' / 'Garden.mp3'
 if _track_src.exists():
     _memorial_track = [(str(_track_src), 'frontend/public')]
 
+# Windows OCR — tesseract.exe, its DLLs and eng/tam tessdata, vendored into
+# desktop/vendor/tesseract by scripts/setup-windows.ps1. Linux gets tesseract
+# from apt (deb `depends`), so the vendor dir only exists on a Windows build
+# machine; absent → nothing is collected and Linux builds are unchanged.
+# Collected as datas (Windows doesn't need exec bits); ocr_service resolves
+# them under sys._MEIPASS/tesseract/ at runtime.
+_tesseract_dir = ROOT / 'desktop' / 'vendor' / 'tesseract'
+_tesseract_datas = []
+if _tesseract_dir.is_dir():
+    _tesseract_datas = [
+        (str(f), 'tesseract/' + f.relative_to(_tesseract_dir).as_posix())
+        for f in sorted(_tesseract_dir.rglob('*'))
+        if f.is_file()
+    ]
+
 a = Analysis(
     [str(ROOT / 'backend' / 'app' / 'main.py')],
     pathex=[str(ROOT / 'backend')],
@@ -95,6 +110,8 @@ a = Analysis(
         *_soundfile_datas,
         # Memorial dedication track (resolved via sys._MEIPASS when frozen).
         *_memorial_track,
+        # Windows-only: bundled tesseract + tessdata (see note above).
+        *_tesseract_datas,
     ],
     hiddenimports=[
         # Auto-discovered app modules

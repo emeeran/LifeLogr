@@ -20,7 +20,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 ifeq ($(OS),Windows_NT)
     TRIPLE   := x86_64-pc-windows-msvc
-    TARGETS  := msi
+    TARGETS  := nsis
     EXE      := .exe
 endif
 
@@ -66,8 +66,10 @@ build: build-frontend build-sidecar
 setup:
 	@if [ "$(UNAME_S)" = "Linux" ]; then \
 	    sudo bash scripts/setup-linux.sh; \
+	elif [ "$(OS)" = "Windows_NT" ]; then \
+	    powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1; \
 	else \
-	    echo "System setup is only available on Linux."; \
+	    echo "System setup is only available on Linux and Windows."; \
 	fi
 
 # ── Clean ──

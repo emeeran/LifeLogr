@@ -9,6 +9,8 @@ binary into HTTP 500 with an install hint.
 from __future__ import annotations
 
 import io
+import os
+import sys
 
 # Language codes offered in the frontend Settings → Appearance → "OCR language"
 # picker. Only English and Tamil are shipped — both have Tesseract data packs
@@ -32,6 +34,30 @@ class OcrLanguageUnavailable(RuntimeError):
     """
 
 
+def _configure_bundled_tesseract(pytesseract) -> None:
+    """Point pytesseract at the tesseract bundled in the frozen Windows build.
+
+    The deb build gets tesseract from apt; on Windows there's no apt, so the
+    sidecar ships tesseract.exe + tessdata inside the PyInstaller bundle
+    (collected from desktop/vendor/tesseract by pyinstaller.spec). No-op when
+    not frozen or when nothing was bundled at build time. The
+    LIFELOGR_TESSERACT_CMD env var overrides everything.
+    """
+    override = os.environ.get("LIFELOGR_TESSERACT_CMD")
+    if override:
+        pytesseract.pytesseract.tesseract_cmd = override
+        return
+    meipass = getattr(sys, "_MEIPASS", None)
+    if not meipass:
+        return  # dev/unfrozen run — expect tesseract on PATH as today
+    bundled = os.path.join(meipass, "tesseract", "tesseract.exe")
+    if os.path.exists(bundled):
+        pytesseract.pytesseract.tesseract_cmd = bundled
+        tessdata = os.path.join(meipass, "tesseract", "tessdata")
+        if os.path.isdir(tessdata):
+            os.environ["TESSDATA_PREFIX"] = tessdata
+
+
 def ocr_image_bytes(file_data: bytes, lang: str = "eng") -> str:
     """Run Tesseract OCR on raw image bytes and return the recognized text.
 
@@ -51,6 +77,8 @@ def ocr_image_bytes(file_data: bytes, lang: str = "eng") -> str:
 
     import pytesseract  # type: ignore[import-untyped]
     from PIL import Image
+
+    _configure_bundled_tesseract(pytesseract)
 
     try:
         return str(pytesseract.image_to_string(Image.open(io.BytesIO(file_data)), lang=lang))

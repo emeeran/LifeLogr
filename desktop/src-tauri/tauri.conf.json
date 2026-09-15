@@ -55,7 +55,10 @@
     },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
-      "wix": { "language": "en-US" }
+      "wix": { "language": "en-US" },
+      "nsis": {
+        "installMode": "currentUser"
+      }
     },
     "externalBin": ["lifelogr-backend"],
     "resources": ["../scripts/setup-linux.sh"]

@@ -61,6 +61,8 @@ desktop/src-tauri/binaries/
 desktop/src-tauri/lifelogr-backend-*
 desktop/build/
 desktop/dist/
+# Tesseract vendored by desktop/scripts/setup-windows.ps1 (build machine only)
+desktop/vendor/
 
 # Root-level node_modules (no root package.json)
 node_modules/
