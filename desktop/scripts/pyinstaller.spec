@@ -213,7 +213,10 @@ exe = EXE(
     name='lifelogr-backend',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
+    # Windows: strip corrupts PE files (API-set stubs especially) - the build
+    # log shows it ran and the frozen exe then never reached Python. Linux
+    # keeps it for the smaller AppImage/deb payloads.
+    strip=(sys.platform != 'win32'),
     upx=False,
     console=sys.platform != 'win32',  # Hide cmd window on Windows
     argv_emulation=False,
