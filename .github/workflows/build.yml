@@ -165,13 +165,17 @@ jobs:
             -RedirectStandardOutput $out -RedirectStandardError $err
           try {
             $ok = $false
-            foreach ($i in 1..60) {
+            foreach ($i in 1..150) {
               try {
                 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18765/health -TimeoutSec 2 | Out-Null
                 $ok = $true; break
-              } catch { Start-Sleep -Seconds 2 }
+              } catch {
+                if ($i % 15 -eq 0) { Write-Host "Still waiting for the sidecar ($($i * 2)s) - onefile extraction under Defender is slow..." }
+                Start-Sleep -Seconds 2
+              }
             }
             if (-not $ok) {
+              Write-Host "Sidecar process HasExited: $($p.HasExited)"
               Write-Host "--- sidecar stdout ---"
               Get-Content $out -ErrorAction SilentlyContinue | Write-Host
               Write-Host "--- sidecar stderr ---"
