@@ -130,11 +130,8 @@ jobs:
 
       # Vendors tesseract.exe + eng/tam tessdata into desktop/vendor/tesseract
       # (gitignored); pyinstaller.spec bundles it so OCR works out of the box.
-      # innoextract lets the script unpack the Tesseract installer without
-      # executing it - silent installs hang on unattended runners.
-      - name: Install innoextract
-        run: choco install innoextract -y --no-progress
-
+      # The script pins a direct release URL and hard-times-out the installer
+      # so a stalled mirror or wedged install fails fast instead of hanging.
       - name: Vendor Tesseract OCR
         run: powershell -ExecutionPolicy Bypass -File desktop\scripts\setup-windows.ps1
 
