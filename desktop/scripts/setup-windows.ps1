@@ -34,19 +34,20 @@ if (Get-Command $choco -ErrorAction SilentlyContinue) {
         -ArgumentList "install", "tesseract", "-y", "--no-progress", "--version=$tessVersion" `
         -PassThru -NoNewWindow
     if ($proc.WaitForExit(900000)) {
-        if ($proc.ExitCode -eq 0) { $installed = $true }
-        else { Write-Host "choco exited with $($proc.ExitCode) - trying direct installer." }
+        # Don't gate on ExitCode - it comes back empty when choco is launched
+        # via its shim. The installed binary is the source of truth.
+        Write-Host "choco exited with code $($proc.ExitCode)."
+        $src = Join-Path ${env:ProgramFiles} "Tesseract-OCR"
+        if (Test-Path (Join-Path $src "tesseract.exe")) {
+            New-Item -ItemType Directory -Path $vendor -Force | Out-Null
+            Copy-Item (Join-Path $src "*") $vendor -Recurse -Force
+            $installed = $true
+        } else {
+            Write-Host "tesseract.exe not found in $src - trying direct installer."
+        }
     } else {
         $proc.Kill()
         Write-Host "choco install timed out after 15 min - trying direct installer."
-    }
-    if ($installed) {
-        $src = Join-Path ${env:ProgramFiles} "Tesseract-OCR"
-        if (-not (Test-Path (Join-Path $src "tesseract.exe"))) {
-            throw "choco reported success but tesseract.exe is missing in $src"
-        }
-        New-Item -ItemType Directory -Path $vendor -Force | Out-Null
-        Copy-Item (Join-Path $src "*") $vendor -Recurse -Force
     }
 }
 
@@ -54,7 +55,10 @@ if (Get-Command $choco -ErrorAction SilentlyContinue) {
 # without chocolatey). Bounded so a wedged setup fails fast, with the Inno
 # log in the error for diagnosis.
 if (-not $installed) {
-    $url = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVersion/tesseract-ocr-w64-setup-$tessVersion.exe"
+    # 5.4.0 is the newest release whose asset name matches this URL pattern;
+    # the 5.5.0 tag ships a different (unresolved) asset name.
+    $fallbackVersion = "5.4.0.20240606"
+    $url = "https://github.com/UB-Mannheim/tesseract/releases/download/v$fallbackVersion/tesseract-ocr-w64-setup-$fallbackVersion.exe"
     $installer = Join-Path $tmp (Split-Path $url -Leaf)
     Write-Host "Downloading $url ..."
     curl.exe -L --fail --retry 3 -o $installer $url
