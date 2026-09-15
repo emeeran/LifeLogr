@@ -136,18 +136,32 @@ class TestMediaFromPath:
         )
         assert r.status_code in (400, 403, 404, 422)
 
-    async def test_sensitive_dir_rejected(self, client: AsyncClient, tmp_path):
+    async def test_sensitive_dir_rejected(self, client: AsyncClient):
         from pathlib import Path
+
+        import pytest
 
         from app.core.exceptions import ValidationError
         from app.services.media_service import MediaService
         from app.core.database import async_session
 
         entry = await _entry(client)
-        secret = Path.home() / ".ssh" / "authorized_keys"
-        async with async_session() as session:
-            with __import__("pytest").raises(ValidationError):
-                await MediaService(session).upload_from_path(entry["id"], str(secret))
+        # The probe must exist (upload_from_path resolves strictly) AND sit in a
+        # sensitive dir. Create it rather than assuming ~/.ssh/authorized_keys
+        # exists — CI runners have no .ssh, so the old probe 404'd before the
+        # sensitive-dir check ever ran.
+        ssh_dir = Path.home() / ".ssh"
+        ssh_dir.mkdir(mode=0o700, exist_ok=True)
+        probe = ssh_dir / ".lifelogr-import-test-probe"
+        probe.touch()
+        try:
+            async with async_session() as session:
+                with pytest.raises(ValidationError):
+                    await MediaService(session).upload_from_path(
+                        entry["id"], str(probe)
+                    )
+        finally:
+            probe.unlink(missing_ok=True)
 
     async def test_unknown_extension_rejected(self, client: AsyncClient, tmp_path):
         entry = await _entry(client)
