@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+from types import ModuleType
 
 # Language codes offered in the frontend Settings → Appearance → "OCR language"
 # picker. Only English and Tamil are shipped — both have Tesseract data packs
@@ -34,7 +35,7 @@ class OcrLanguageUnavailable(RuntimeError):
     """
 
 
-def _configure_bundled_tesseract(pytesseract) -> None:
+def _configure_bundled_tesseract(pytesseract: ModuleType) -> None:
     """Point pytesseract at the tesseract bundled in the frozen Windows build.
 
     The deb build gets tesseract from apt; on Windows there's no apt, so the

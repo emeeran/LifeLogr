@@ -96,7 +96,7 @@ jobs:
           name: linux-packages
           path: desktop/src-tauri/target/release/bundle/
 
-  # ── Windows Desktop (MSI) ──
+  # ── Windows Desktop (NSIS, per-user installer) ──
   build-windows:
     needs: [tests]
     runs-on: windows-latest
@@ -127,6 +127,11 @@ jobs:
       - name: Install UPX
         run: choco install upx
 
+      # Vendors tesseract.exe + eng/tam tessdata into desktop/vendor/tesseract
+      # (gitignored); pyinstaller.spec bundles it so OCR works out of the box.
+      - name: Vendor Tesseract OCR
+        run: powershell -ExecutionPolicy Bypass -File desktop\scripts\setup-windows.ps1
+
       - name: Build frontend
         shell: bash
         run: |
@@ -143,11 +148,33 @@ jobs:
         run: |
           copy desktop\dist\lifelogr-backend.exe desktop\src-tauri\lifelogr-backend-x86_64-pc-windows-msvc.exe
 
-      - name: Build Tauri (MSI)
+      # Same gate as the Linux job: prove the frozen sidecar actually starts
+      # and serves /health before packaging it into the installer.
+      - name: Verify backend binary
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "desktop\dist\lifelogr-backend.exe" `
+            -ArgumentList "--host","127.0.0.1","--port","18765" -PassThru -WindowStyle Hidden
+          try {
+            $ok = $false
+            foreach ($i in 1..30) {
+              try {
+                Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18765/health -TimeoutSec 2 | Out-Null
+                $ok = $true; break
+              } catch { Start-Sleep -Seconds 2 }
+            }
+            if (-not $ok) { throw "frozen sidecar never became healthy on 127.0.0.1:18765" }
+            Write-Host "Sidecar healthy after $($i * 2)s"
+          } finally {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Build Tauri (NSIS)
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: desktop
           tauriScript: cargo tauri
+          args: --bundles nsis
 
       - uses: actions/upload-artifact@v4
         with:
