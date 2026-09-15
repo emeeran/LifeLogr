@@ -250,17 +250,7 @@ cd desktop/src-tauri && cargo tauri build --no-default-features
 
 ---
 
-## 📑 SDD pipeline & project docs
-
-System blueprints are generated via a Spec-Driven Development pipeline:
-
-| Phase | Command | Document | Purpose |
-| :--- | :--- | :--- | :--- |
-| p0 | `make domain` | [DOMAIN.md](docs/00-domain/DOMAIN.md) | Bounded contexts & domain models |
-| p1 | `make reqs` | [REQUIREMENTS.md](docs/01-requirements/REQUIREMENTS.md) | Functional & non-functional requirements |
-| p2 | `make spec` | [SPEC.md](docs/02-spec/SPEC.md) | Schema models & API contract |
-| p3 | `make review` | [REVIEW.md](docs/03-review/REVIEW.md) | Quality gate (PASS required) |
-| p4 | `make design` | [DESIGN.md](docs/04-design/DESIGN.md) | Module mapping & sequence diagrams |
+## 📚 Project docs
 
 Further reading: [Architecture & Developer Guide](docs/ARCHITECTURE.md) ·
 [User Manual](docs/manual/USER_MANUAL.md) ·

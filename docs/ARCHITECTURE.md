@@ -115,8 +115,8 @@ diary/
 │   ├── scripts/pyinstaller.spec   # bundles the Python backend → lifelogr-backend
 │   └── Makefile             # build-frontend / build-backend / build-sidecar / build
 ├── scripts/                 # build-web-deb.sh · check_version.py · …
-├── docs/                    # this file + SDD artefacts + manual/
-├── Makefile                 # top-level dev + SDD-pipeline targets
+├── docs/                    # this file + design ADRs + manual/
+├── Makefile                 # top-level dev targets
 ├── Dockerfile · docker-compose.yml   # optional containerized deployment
 └── .github/workflows/       # ci.yml (gate) · build.yml (release artifacts)
 ```
@@ -588,8 +588,7 @@ the override file and moves the directory (carrying `.secret_key`).
 | `lint` | `ruff check` + `mypy` (strict). |
 | `bump V=x.y.z` | Bump version in **all four** sources (see below). |
 | `check-version` | Fail if the four versions drift. |
-| `domain`/`reqs`/`spec`/`review`/`design`/`code`/`review-code` | SDD pipeline phases (p0–p5.5). |
-| `clean` / `all` | Remove caches / run the full SDD pipeline. |
+| `clean` | Remove caches. |
 
 ### Versioning (4 sources, kept in sync)
 
@@ -721,7 +720,7 @@ in sync. Reuse `core/cron_utils.py` for any new cron-occurrence math (and unit-t
 - **Body limits:** `EntryCreate.body` ≤ 1,000,000 chars; media ≤ 25 MiB.
 - **Version parity:** bump all four sources together with `make bump`, never by hand.
 - **Commits:** conventional-commit prefixes (`feat:`, `fix:`, `test:`, `docs:`, …);
-  **no** `Co-Authored-By: Claude` trailer; never commit on `main`.
+  **no** AI co-author trailers; never commit on `main`.
 - **Packaging:** the desktop build excludes `devtools` from release; `snip` needs
   `libpipewire-0.3-dev` to compile.
 

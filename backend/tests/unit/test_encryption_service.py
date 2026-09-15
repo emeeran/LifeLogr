@@ -51,8 +51,7 @@ class TestEncryption:
         assert r.status_code == 400
 
     async def test_decrypt_note_wrong_passphrase_returns_400(self, client: AsyncClient):
-        # Notes decrypt must also map a wrong passphrase to 400 (InvalidTag used
-        # to propagate as a 500 — see AUDIT.md).
+        # Notes decrypt must also map a wrong passphrase to 400, not a 500.
         n = await client.post(
             "/api/v1/notes/folders", json={"name": "nb"}
         )

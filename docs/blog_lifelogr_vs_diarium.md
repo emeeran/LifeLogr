@@ -85,10 +85,10 @@ Diarium proved there's real demand for a *daily, calendar-driven, media-rich* jo
 - **Offline-first** — the app is fully usable with no network. Sync is an opt-in side-channel.
 - **Local AI** — transcription and language assistance run on your hardware, not a third-party API.
 - **Encrypted backups** — your journal is recoverable without ever being readable by your cloud provider.
-- **Open architecture** — a plugin system, FTS5 + semantic search, and a clean SDD-documented codebase (150 passing tests) make it straightforward to extend.
+- **Open architecture** — a plugin system, FTS5 + semantic search, and a cleanly documented codebase (150 passing tests) make it straightforward to extend.
 
 If you've been holding out for "Diarium, but on Linux, and open, and private" — LifeLogr is for you.
 
 ---
 
-*Want to try it? Clone the repo, `make setup`, then `make run`. The full spec-driven design docs live under `docs/` if you'd like to read the architecture in depth.*
+*Want to try it? Clone the repo, `make setup`, then `make run`. The full design docs live under `docs/` if you'd like to read the architecture in depth.*

@@ -1,26 +1,17 @@
-# ─── SDD Pipeline Makefile ────────────────────────────────────────────────────
+# ─── LifeLogr Makefile ───────────────────────────────────────────────────────
 SHELL := /bin/bash
 BACKEND := backend
 PYTHON  := $(BACKEND)/.venv/bin/python
 UV      := uv
-# AI CLI used by the SDD pipeline. Override with: make domain AI=codex
-AI      ?= claude
 
-.PHONY: help setup domain reqs spec review design code review-code test lint run clean bump check-version
+.PHONY: help setup test lint run clean bump check-version
 
 help:
 	@echo ""
-	@echo "  SDD Pipeline Commands"
+	@echo "  LifeLogr Commands"
 	@echo "  ─────────────────────────────────────────"
 	@echo "  make setup        Install / sync dependencies"
-	@echo "  make domain       p0 · Domain analysis"
-	@echo "  make reqs         p1 · Requirements"
-	@echo "  make spec         p2 · Spec generation"
-	@echo "  make review       p3 · Review gate (PASS required)"
-	@echo "  make design       p4 · Architecture design"
-	@echo "  make code         p5 · Code generation"
-	@echo "  make review-code  p5.5 · Code bloat review"
-	@echo "  make test         p6 · Run tests"
+	@echo "  make test         Run tests"
 	@echo "  make lint         Ruff + mypy"
 	@echo "  make run          Start dev server"
 	@echo "  make bump V=x    Bump version in all 4 places"
@@ -31,41 +22,7 @@ help:
 setup:
 	cd $(BACKEND) && $(UV) sync
 
-domain:
-	@echo "── Phase 0: Domain Analysis ──"
-	$(AI) "Read docs/planning/raw_idea.txt and docs/planning/prompts/p0_domain.txt. Save outputs to docs/00-domain/DOMAIN.md and docs/00-domain/CONTEXT_MAP.md."
-
-reqs: domain
-	@echo "── Phase 1: Requirements ──"
-	$(AI) "Read docs/00-domain/DOMAIN.md and docs/planning/prompts/p1_requirements.txt. Save to docs/01-requirements/REQUIREMENTS.md."
-
-spec: reqs
-	@echo "── Phase 2: Spec Generation ──"
-	$(AI) "Read docs/01-requirements/REQUIREMENTS.md and docs/planning/prompts/p2_spec.txt. Save to docs/02-spec/SPEC.md."
-
-review: spec
-	@echo "── Phase 3: Review Gate ──"
-	$(AI) "Read docs/02-spec/SPEC.md and docs/planning/prompts/p3_review.txt. Save to docs/03-review/REVIEW.md. Print PASS or FAIL."
-	@grep -q "^## Verdict: PASS" docs/03-review/REVIEW.md \
-		|| (echo "❌ Review FAILED. Fix issues in REVIEW.md before proceeding." && exit 1)
-	@echo "✔ Review PASSED. Proceeding..."
-
-design: review
-	@echo "── Phase 4: Design ──"
-	$(AI) "Read docs/02-spec/SPEC.md, docs/03-review/REVIEW.md, and docs/planning/prompts/p4_design.txt. Save to docs/04-design/DESIGN.md."
-
-code: design
-	@echo "── Phase 5: Implementation ──"
-	$(AI) "Read docs/02-spec/SPEC.md, docs/04-design/DESIGN.md, and docs/planning/prompts/p5_code.txt. Write code into backend/app/."
-
-review-code: code
-	@echo "── Phase 5.5: Code Review ──"
-	$(AI) "Read docs/planning/prompts/p5.5_review_code.txt and every file in backend/app/. Output the review to stdout."
-	@echo ""
-	@echo "If issues were found, fix them, then re-run: make review-code"
-
-test: review-code
-	@echo "── Phase 6: Tests ──"
+test:
 	cd $(BACKEND) && $(UV) run pytest tests/ -v --tb=short
 
 lint:
@@ -94,6 +51,3 @@ bump:
 
 check-version:
 	@python scripts/check_version.py
-
-all: domain reqs spec review design code review-code test
-	@echo "✔ Full SDD pipeline complete."
