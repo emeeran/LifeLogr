@@ -26,7 +26,10 @@ if (-not $asset) { throw "No w64 installer asset found in the latest release." }
 $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "lifelogr-tesseract") -Force
 $installer = Join-Path $tmp $asset.name
 Write-Host "Downloading $($asset.name) ..."
-Invoke-WebRequest $asset.browser_download_url -OutFile $installer
+# curl.exe (ships with Windows 10+) - Invoke-WebRequest under PowerShell 5.1
+# crawls on large downloads due to progress-bar rendering.
+curl.exe -L --fail --retry 3 -o $installer $asset.browser_download_url
+if ($LASTEXITCODE -ne 0) { throw "Download failed (curl exit $LASTEXITCODE)." }
 
 Write-Host "Installing into $vendor ..."
 # Inno Setup flags: silent, no reboot, custom install dir.
