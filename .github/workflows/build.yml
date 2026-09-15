@@ -166,13 +166,14 @@ jobs:
           try {
             $ok = $false
             foreach ($i in 1..150) {
-              try {
-                Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18765/health -TimeoutSec 2 | Out-Null
-                $ok = $true; break
-              } catch {
-                if ($i % 15 -eq 0) { Write-Host "Still waiting for the sidecar ($($i * 2)s) - onefile extraction under Defender is slow..." }
-                Start-Sleep -Seconds 2
-              }
+              # curl.exe, not Invoke-WebRequest: PS 5.1's IWR routes loopback
+              # through the system proxy (no bypass-local), so it never reaches
+              # a healthy server - run thirteen proved the sidecar fine while
+              # IWR timed out for 6 minutes straight.
+              curl.exe -s --noproxy "*" -f http://127.0.0.1:18765/health | Out-Null
+              if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+              if ($i % 15 -eq 0) { Write-Host "Still waiting for the sidecar ($($i * 2)s)..." }
+              Start-Sleep -Seconds 2
             }
             if (-not $ok) {
               Write-Host "Sidecar process HasExited: $($p.HasExited)"
