@@ -52,7 +52,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev libpipewire-0.3-dev upx-ucl
+            libayatana-appindicator3-dev librsvg2-dev libpipewire-0.3-dev \
+            libgbm-dev libxkbcommon-dev libwayland-dev upx-ucl
 
       - name: Build frontend
         run: |
