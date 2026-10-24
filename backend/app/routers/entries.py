@@ -36,7 +36,7 @@ from app.schemas.entry import (
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 from app.services.entry_service import EntryService
-from app.services.export_service import build_diarium_database
+from app.services.export_service import build_diarium_database, build_daylio_csv
 from app.services.importers import (
     parse_csv,
     parse_dayone_zip,
@@ -258,10 +258,13 @@ async def export_diarium(
     end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Export entries in Diarium-compatible JSON format.
+    """Export entries as a JSON array (date/text/heading/rating/tags).
 
-    Produces a JSON array where each entry has: date, text, heading, rating, tags.
-    This format can be imported directly by Diarium or re-imported here.
+    NOTE: Diarium itself has no generic JSON import — to move entries into
+    Diarium use the Daylio CSV export (its documented migration format) or the
+    .diary export (native backup restore). This file exists for tooling and
+    re-import into LifeLogr (also via /import/file, where the importer accepts
+    both this shape and Diarium's capitalized tick-keyed object model).
     """
     mood_to_rating = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
 
@@ -306,6 +309,41 @@ async def export_diarium(
         buf,
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=diarium-export.json"},
+    )
+
+
+@router.get("/export/daylio-csv")
+async def export_daylio_csv(
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Export entries as Daylio-format CSV — Diarium's supported migration import.
+
+    Diarium reads this via Settings → Database → Migrate from other app → CSV
+    (columns: full_date, date, weekday, time, mood, activities, note_title,
+    note; mood words awful/bad/meh/good/rad). CSV carries text, mood and tags;
+    use the .diary export for a full-fidelity backup restore instead.
+    """
+    q = (
+        select(Entry)
+        .where(Entry.is_deleted.is_(False))
+        .options(selectinload(Entry.tag_associations).selectinload(EntryTag.tag))
+        .order_by(Entry.entry_date, Entry.id)
+    )
+    if start_date:
+        q = q.where(Entry.entry_date >= start_date)
+    if end_date:
+        q = q.where(Entry.entry_date <= end_date)
+    result = await db.execute(q)
+    entries = list(result.scalars().all())
+
+    buf = io.BytesIO(await asyncio.to_thread(build_daylio_csv, entries))
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="lifelogr-export.csv"'},
     )
 
 

@@ -63,6 +63,7 @@ const exportMenuOpen = ref(false)
 const exportingHtml = ref(false)
 const exportingDiarium = ref(false)
 const exportingDiariumDb = ref(false)
+const exportingDaylioCsv = ref(false)
 
 const rangeError = computed(() => {
   if (exportRange.value !== 'range') return ''
@@ -174,6 +175,30 @@ async function downloadDiariumDb() {
     emit('toast', 'error', `.diary export failed: ${errMsg(e)}`)
   } finally {
     exportingDiariumDb.value = false
+  }
+}
+
+// Daylio-format CSV — the migration format Diarium actually documents an
+// importer for (Settings → Database → Migrate from other app → CSV).
+async function downloadDaylioCsv() {
+  exportMenuOpen.value = false
+  exportingDaylioCsv.value = true
+  try {
+    const resp = await fetch(
+      entriesApi.exportDaylioCsvUrl(rangeStart.value, rangeEnd.value),
+    )
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    await saveFile({
+      data: blob,
+      defaultName: 'lifelogr-export.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    emit('toast', 'success', 'CSV export saved')
+  } catch (e: unknown) {
+    emit('toast', 'error', `CSV export failed: ${errMsg(e)}`)
+  } finally {
+    exportingDaylioCsv.value = false
   }
 }
 
@@ -396,6 +421,17 @@ async function downloadNotesHtml() {
               :size="12"
               class="animate-spin"
             /><Database v-else :size="12" /> Diarium .diary
+          </button>
+          <button
+            class="export-item"
+            :disabled="exportingDaylioCsv"
+            @click="downloadDaylioCsv"
+          >
+            <Loader
+              v-if="exportingDaylioCsv"
+              :size="12"
+              class="animate-spin"
+            /><FileSpreadsheet v-else :size="12" /> Diarium CSV (Daylio)
           </button>
         </div>
       </div>

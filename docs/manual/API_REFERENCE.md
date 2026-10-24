@@ -65,9 +65,10 @@ enrichment.
 | `POST` | `/entries/import/file` | Import from an uploaded file (`.diary` / `.json` / `.zip`) |
 | `POST` | `/entries/deduplicate` | Find & soft-delete duplicates (by date + title) |
 | `GET` | `/entries/export/markdown` | Export as Markdown ZIP |
-| `GET` | `/entries/export/diarium` | Export as Diarium JSON |
+| `GET` | `/entries/export/diarium` | Export as JSON array (tooling interchange; Diarium has no JSON import) |
 | `GET` | `/entries/export/json` | Export as JSON |
-| `GET` | `/entries/export/diarium-db` | Export as a Diarium SQLite database |
+| `GET` | `/entries/export/diarium-db` | Export as a Diarium-native `.diary` SQLite database (real 3.3.x schema) |
+| `GET` | `/entries/export/daylio-csv` | Export as Daylio-format CSV (Diarium's documented migration import) |
 
 ### Create Entry
 ```
@@ -89,7 +90,7 @@ Returns `EntryListResponse` (`items`, `total`, `offset`, `limit`). Each item inc
 ```
 POST /entries/import/file     (multipart/form-data, field: file)
 ```
-Supports Diarium `.diary` (SQLite), `.json`, and Markdown `.zip` archives.
+Supports Diarium `.diary` (SQLite backup), `.json` (both lowercase interchange and Diarium's capitalized tick-keyed shape), Daylio CSV, Day One `.zip`, and Markdown `.zip` archives.
 **Response:** `{ "imported": 15, "skipped": 2 }`
 
 ### Deduplicate

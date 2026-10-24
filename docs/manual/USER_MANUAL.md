@@ -462,9 +462,15 @@ memory-hard **scrypt** KDF, per-item salt).
 ## 19. Export & Import
 
 - **Export** your journal as **Markdown** (a ZIP of `.md` files, Obsidian-compatible),
-  **HTML** (a styled single file), **PDF** (desktop — bundled fpdf2), **Diarium
-  JSON**, or a **Diarium `.diary` SQLite** database.
-- **Import** from **CSV**, **Diarium** (`.diary`/JSON), or **Markdown/ZIP** archives.
+  **HTML** (a styled single file), **PDF** (desktop — bundled fpdf2), a
+  **Diarium `.diary` SQLite** database (schema-identical to a real Diarium
+  backup — restore it via Diarium's Settings → Backup), or a **Daylio-format
+  CSV** (Diarium's documented migration import: Settings → Database → Migrate
+  from other app → CSV; carries text, mood and tags).
+- **Import** from **CSV** (incl. Daylio and Diarium exports), **Diarium**
+  (`.diary` backup/JSON — real files with capitalized field names and
+  tick-based ids are recognized; weather, media and tracker tags are skipped),
+  **Day One ZIP**, or **Markdown/ZIP** archives.
 - After importing, run **Deduplicate** (Settings → Data → Maintenance) to find/remove
   duplicate entries.
 

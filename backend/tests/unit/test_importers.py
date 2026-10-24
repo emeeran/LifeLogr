@@ -239,3 +239,179 @@ async def test_export_diarium_db_builds_diarium_schema(client, db_session, tmp_p
     us = (ticks - 621355968000000000) / 10
     assert datetime.fromtimestamp(us / 1_000_000, tz=timezone.utc).strftime("%Y-%m-%d") == "2026-01-15"
     conn.close()
+
+
+# ── Diarium compatibility (schema extracted from the shipped 3.3.12.0 binary) ─
+#
+# The DDL below is copied verbatim from the CREATE TABLE strings inside
+# Diarium.exe (SHA-256 5b8cc6fb…). Any drift between our .diary export and
+# these statements — column names, NOT NULLs, the six-table set — means
+# Diarium's backup restore will reject or mangle the file.
+
+_DIARIUM_DDL_VERBATIM = [
+    "CREATE TABLE Entries(DiaryEntryId bigint primary key not null, Heading varchar not null, Text varchar not null, Rating integer not null, Latitude float not null, Longitude float not null)",
+    "CREATE TABLE EntryTags(DiaryEntryId bigint not null, DiaryTagId integer not null, TrackingValue varchar)",
+    "CREATE TABLE Events(DiaryEventId integer primary key autoincrement not null, Type integer not null, Content varchar not null, Tag varchar, DiaryEntryId bigint not null )",
+    'CREATE TABLE Media(DiaryMediaId varchar(36) primary key not null, Type integer not null, Data blob, Name varchar not null, FileEnding varchar not null, "Index" integer not null, DiaryEntryId bigint not null)',
+    "CREATE TABLE Tags(DiaryTagId integer primary key autoincrement not null, Value varchar not null, Type integer not null, Color varchar, Icon varchar)",
+    "CREATE TABLE Templates(TemplateId integer primary key autoincrement not null, Name varchar not null, Heading varchar not null, Text varchar not null, Tags varchar not null)",
+]
+
+
+def _real_diarium_db(tmp_path) -> "sqlite3.Connection":
+    """A database with the real Diarium schema, for importer tests."""
+    conn = sqlite3.connect(tmp_path / "real.diary")
+    for ddl in _DIARIUM_DDL_VERBATIM:
+        conn.execute(ddl)
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_export_diarium_db_matches_real_diarium_schema(client, tmp_path):
+    """The .diary export must be byte-schema identical to a real Diarium backup."""
+    r = await client.get("/api/v1/entries/export/diarium-db")
+    assert r.status_code == 200
+    db_file = tmp_path / "export.diary"
+    db_file.write_bytes(r.content)
+    conn = sqlite3.connect(db_file)
+    got = sorted(
+        (row[0] or "").replace("  ", " ")
+        for row in conn.execute("SELECT sql FROM sqlite_master WHERE type='table'")
+        # sqlite_sequence comes with AUTOINCREMENT — real Diarium backups
+        # carry it too; it's runtime bookkeeping, not part of the contract.
+        if row[0] and not row[0].startswith("CREATE TABLE sqlite_sequence")
+    )
+    conn.close()
+    assert got == sorted(_DIARIUM_DDL_VERBATIM)
+
+
+@pytest.mark.asyncio
+async def test_export_diarium_db_satisfies_not_null_and_round_trips(client, db_session, tmp_path):
+    """Exported rows must satisfy the real schema's NOT NULLs and re-import losslessly."""
+    from app.models.entry import Entry
+    from app.models.tag import Tag
+
+    e = Entry(
+        entry_date=date(2026, 2, 3),
+        title="Trip day",
+        body="Went hiking.\n\nSaw a lake.",
+        mood="great",
+        # None lat/lon — real columns are NOT NULL, export must coalesce.
+    )
+    db_session.add(e)
+    await db_session.flush()
+    db_session.add(Tag(name="hiking"))
+    await db_session.flush()
+    from app.models.tag import EntryTag
+
+    db_session.add(EntryTag(entry_id=e.id, tag_id=1))
+    await db_session.commit()
+
+    r = await client.get("/api/v1/entries/export/diarium-db")
+    db_file = tmp_path / "rt.diary"
+    db_file.write_bytes(r.content)
+
+    # 1. The real schema's NOT NULL constraints accept every exported row.
+    conn = sqlite3.connect(db_file)
+    conn.execute("PRAGMA ignore_check_constraints = OFF")
+    assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    count = conn.execute(
+        "SELECT COUNT(*) FROM Entries WHERE Latitude IS NULL OR Longitude IS NULL "
+        "OR Heading IS NULL OR Text IS NULL"
+    ).fetchone()[0]
+    assert count == 0
+    tag_type = conn.execute("SELECT Type FROM Tags WHERE Value='hiking'").fetchone()
+    assert tag_type is not None and tag_type[0] == 0  # 0 = plain tag
+    conn.close()
+
+    # 2. Round trip: our own importer reads it back.
+    entries = parse_diarium_sqlite(db_file.read_bytes())
+    assert len(entries) == 1
+    got = entries[0]
+    assert got["entry_date"] == "2026-02-03"
+    assert got["title"] == "Trip day"
+    assert "Went hiking." in got["body"]
+    assert got["mood"] == "great"
+    assert got["tags"] == ["hiking"]
+
+
+def test_parse_diarium_sqlite_imports_tags_and_persons_skips_trackers(tmp_path):
+    """Tags.Type: 0 = tag and 1 = person import; 2 = tracker is skipped."""
+    conn = _real_diarium_db(tmp_path)
+    target = datetime(2026, 1, 15, tzinfo=timezone.utc)
+    ticks = 621355968000000000 + int(target.timestamp()) * 10_000_000
+    conn.execute(
+        "INSERT INTO Entries VALUES (?, 'Title', '<p>Body</p>', 3, 0.0, 0.0)", (ticks,)
+    )
+    for tag_id, value, tag_type in [(1, "work", 0), (2, "Alice", 1), (3, "Gym", 2)]:
+        conn.execute(
+            "INSERT INTO Tags (DiaryTagId, Value, Type) VALUES (?, ?, ?)",
+            (tag_id, value, tag_type),
+        )
+        conn.execute(
+            "INSERT INTO EntryTags (DiaryEntryId, DiaryTagId) VALUES (?, ?)", (ticks, tag_id)
+        )
+    conn.commit()
+    conn.close()
+
+    entries = parse_diarium_sqlite((tmp_path / "real.diary").read_bytes())
+    assert len(entries) == 1
+    # "Gym" is a tracker (boolean check-off) — excluded; tag and person kept.
+    assert sorted(entries[0]["tags"]) == ["Alice", "work"]
+    # <p>Body</p> HTML is stripped to plain text.
+    assert entries[0]["body"] == "Body"
+
+
+def test_parse_diarium_json_entry_accepts_real_diarium_shape():
+    """Diarium's own JSON object model: tick-keyed, capitalized field names."""
+    # 2026-01-15 00:00:00 local as .NET ticks.
+    ticks = 621355968000000000 + int(datetime(2026, 1, 15, tzinfo=timezone.utc).timestamp()) * 10_000_000
+    parsed = parse_diarium_json_entry(
+        {
+            "DiaryEntryId": ticks,
+            "Heading": "Real Diarium",
+            "Text": "<p>Hello <b>world</b></p><p>Second para</p>",
+            "Rating": 5,
+            "Tags": ["holiday", "Alice"],
+        }
+    )
+    assert parsed["entry_date"] == "2026-01-15"
+    assert parsed["title"] == "Real Diarium"
+    assert parsed["body"] == "Hello world\n\nSecond para"  # HTML stripped, paragraphs split
+    assert parsed["mood"] == "great"
+    assert parsed["tags"] == ["holiday", "Alice"]
+
+
+@pytest.mark.asyncio
+async def test_daylio_csv_export_round_trips_through_csv_import(client, db_session):
+    """The Daylio CSV we emit is exactly what Diarium's CSV importer reads —
+    so it must also re-import here (header spelling, rad->great, pipe tags)."""
+    from app.models.entry import Entry
+    from app.models.tag import EntryTag, Tag
+
+    e = Entry(entry_date=date(2026, 3, 9), title="Office", body="Long day.", mood="great")
+    db_session.add(e)
+    await db_session.flush()
+    t = Tag(name="work")
+    db_session.add(t)
+    await db_session.flush()
+    db_session.add(EntryTag(entry_id=e.id, tag_id=t.id))
+    await db_session.commit()
+
+    r = await client.get("/api/v1/entries/export/daylio-csv")
+    assert r.status_code == 200
+    text = r.content.decode("utf-8")
+    first_line = text.splitlines()[0]
+    assert first_line == "full_date,date,weekday,time,mood,activities,note_title,note"
+    assert "rad" in text  # great -> Daylio's "rad"
+    assert "Monday" in text  # 2026-03-09 is a Monday
+
+    # Round trip through the CSV importer (the same shape Diarium reads).
+    imported = parse_csv(text)
+    assert len(imported) == 1
+    row = imported[0]
+    assert row["entry_date"] == "2026-03-09"
+    assert row["title"] == "Office"
+    assert row["body"] == "Long day."
+    assert row["mood"] == "great"  # rad -> great
+    assert row["tags"] == ["work"]

@@ -365,11 +365,34 @@ class ExportService:
 
 # ── Diarium-native .diary SQLite export ─────────────────────────────────────
 # Moved from app.routers.entries so the router stays a thin transport layer.
-# Produces the real Diarium schema (Entries keyed by .NET DateTime ticks, Tags,
-# EntryTags) so the file opens in Diarium or re-imports via the .diary importer.
+# Produces the real Diarium schema so Diarium's backup-restore accepts the file.
+#
+# The DDL below is the verbatim schema extracted from the shipped Diarium
+# 3.3.12.0 binary (UTF-16 strings in Diarium.exe, SHA-256 5b8cc6fb…): its own
+# database is created from exactly these CREATE TABLE statements, and entries
+# are written with `INSERT OR REPLACE INTO Entries(DiaryEntryId,Heading,Text,
+# Rating,Latitude,Longitude)`. Do not "simplify" it — Latitude/Longitude and
+# Tags.Type are NOT NULL in the real schema, and a backup missing any of the
+# six tables is not a valid Diarium database.
+#
+# Conventions verified from the same binary and the vendor's documented
+# behaviour:
+# - DiaryEntryId is .NET DateTime ticks (100ns since 0001-01-01) — it *is* the
+#   entry's timestamp; the UI derives the date from it.
+# - Text is HTML, typically a sequence of <p>…</p> paragraphs.
+# - Rating is 1–5 (awful/bad/meh/good/rad), 0 = unrated.
+# - Tags.Type: 0 = tag, 1 = person, 2 = tracker.
 _DOTNET_TICKS_EPOCH = 621355968000000000
 _TICKS_PER_SECOND = 10_000_000
 _MOOD_TO_RATING = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
+_DIARIUM_DDL = """
+CREATE TABLE Entries(DiaryEntryId bigint primary key not null, Heading varchar not null, Text varchar not null, Rating integer not null, Latitude float not null, Longitude float not null);
+CREATE TABLE EntryTags(DiaryEntryId bigint not null, DiaryTagId integer not null, TrackingValue varchar);
+CREATE TABLE Events(DiaryEventId integer primary key autoincrement not null, Type integer not null, Content varchar not null, Tag varchar, DiaryEntryId bigint not null );
+CREATE TABLE Media(DiaryMediaId varchar(36) primary key not null, Type integer not null, Data blob, Name varchar not null, FileEnding varchar not null, "Index" integer not null, DiaryEntryId bigint not null);
+CREATE TABLE Tags(DiaryTagId integer primary key autoincrement not null, Value varchar not null, Type integer not null, Color varchar, Icon varchar);
+CREATE TABLE Templates(TemplateId integer primary key autoincrement not null, Name varchar not null, Heading varchar not null, Text varchar not null, Tags varchar not null);
+"""
 
 
 def _markdown_to_diarium_html(body: str) -> str:
@@ -409,27 +432,7 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
 
     conn = sqlite3.connect(":memory:")
     try:
-        conn.executescript(
-            """
-            CREATE TABLE Entries (
-                DiaryEntryId INTEGER PRIMARY KEY,
-                Heading     TEXT,
-                Text        TEXT,
-                Rating      INTEGER DEFAULT 0,
-                Latitude    REAL,
-                Longitude   REAL
-            );
-            CREATE TABLE Tags (
-                DiaryTagId  INTEGER PRIMARY KEY AUTOINCREMENT,
-                Value       TEXT NOT NULL
-            );
-            CREATE TABLE EntryTags (
-                DiaryEntryId INTEGER NOT NULL,
-                DiaryTagId   INTEGER NOT NULL,
-                PRIMARY KEY (DiaryEntryId, DiaryTagId)
-            );
-            """
-        )
+        conn.executescript(_DIARIUM_DDL)
 
         tag_id_map: dict[str, int] = {}
         used_entry_ids: set[int] = set()
@@ -459,8 +462,9 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
                     heading,
                     text_html,
                     rating,
-                    entry.latitude,
-                    entry.longitude,
+                    # NOT NULL in the real schema — unrated location reads as 0.
+                    float(entry.latitude or 0.0),
+                    float(entry.longitude or 0.0),
                 ),
             )
             for assoc in entry.tag_associations:
@@ -468,10 +472,16 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
                 if not tag or not tag.name:
                     continue
                 if tag.name not in tag_id_map:
-                    cur = conn.execute("INSERT INTO Tags (Value) VALUES (?)", (tag.name,))
+                    cur = conn.execute(
+                        # Type 0 = tag (1 would be person, 2 tracker — we only
+                        # have plain tags). Color/Icon stay NULL (nullable).
+                        "INSERT INTO Tags (Value, Type, Color, Icon) VALUES (?, 0, NULL, NULL)",
+                        (tag.name,),
+                    )
                     tag_id_map[tag.name] = cur.lastrowid  # type: ignore[assignment]
                 conn.execute(
-                    "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId) VALUES (?, ?)",
+                    "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId, TrackingValue) "
+                    "VALUES (?, ?, NULL)",
                     (entry_id, tag_id_map[tag.name]),
                 )
         conn.commit()
@@ -488,3 +498,55 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
             Path(tmp.name).unlink(missing_ok=True)
     finally:
         conn.close()
+
+
+# ── Daylio CSV export (Diarium's supported migration import) ────────────────
+# Diarium has no generic JSON import; its documented migration path for CSV is
+# Settings → Database → Migrate from other app, which reads the Daylio export
+# format (columns confirmed both in the Diarium binary's importer strings and
+# the vendor forum): full_date, date, weekday, time, mood, activities,
+# note_title, note. Mood uses Daylio's five words — LifeLogr's "great" maps to
+# Daylio's "rad" (both are the top of the 5-point scale Diarium rates 1–5).
+_DAYLIO_HEADER = ["full_date", "date", "weekday", "time", "mood", "activities", "note_title", "note"]
+_MOOD_TO_DAYLIO = {"awful": "awful", "bad": "bad", "meh": "meh", "good": "good", "great": "rad"}
+
+
+def build_daylio_csv(entries: list[Entry]) -> bytes:
+    """Serialize entries into Daylio CSV text (as bytes) for Diarium import.
+
+    ``entries`` must have ``tag_associations`` loaded. Markdown is exported
+    verbatim in ``note`` — Diarium renders CSV notes as plain text, so most
+    markdown is legible as written; converting to HTML here would only bury
+    the content in tags.
+    """
+    import csv as csv_mod
+    import io
+
+    buf = io.StringIO(newline="")
+    writer = csv_mod.writer(buf)
+    writer.writerow(_DAYLIO_HEADER)
+    for entry in entries:
+        ed = entry.entry_date
+        if isinstance(ed, str):
+            ed = date.fromisoformat(ed[:10])
+        created = entry.created_at
+        # Daylio's time is a plain local HH:MM; LifeLogr stores created_at in
+        # UTC and the entry_date separately, so fall back to midnight rather
+        # than inventing a timezone conversion the entry never recorded.
+        hhmm = "00:00"
+        if created is not None:
+            hhmm = f"{created:%H:%M}"
+        tags = [a.tag.name for a in entry.tag_associations if a.tag and a.tag.name]
+        writer.writerow(
+            [
+                ed.isoformat(),
+                f"{ed:%b} {ed.day}",
+                f"{ed:%A}",
+                hhmm,
+                _MOOD_TO_DAYLIO.get((entry.mood or "").lower(), ""),
+                " | ".join(tags),
+                (entry.title or "").strip(),
+                entry.body or "",
+            ]
+        )
+    return buf.getvalue().encode("utf-8")

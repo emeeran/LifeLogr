@@ -16,13 +16,16 @@ import csv
 import io
 import re
 
-_DATE_KEYS = {"date", "entry_date", "entry date", "datetime"}
-_TITLE_KEYS = {"title", "heading"}
+_DATE_KEYS = {"date", "full_date", "entry_date", "entry date", "datetime"}
+_TITLE_KEYS = {"title", "heading", "note_title"}
 _BODY_KEYS = {"body", "text", "content", "entry", "note", "journal"}
 _MOOD_KEYS = {"mood", "rating", "feeling"}
-_TAG_KEYS = {"tags", "tag"}
+_TAG_KEYS = {"tags", "tag", "activities"}
 
 _RATING_TO_MOOD = {1: "awful", 2: "bad", 3: "meh", 4: "good", 5: "great"}
+# Daylio spells the top of its 5-point scale "rad"; Diarium's mood import uses
+# the same five words. Both map to LifeLogr's "great".
+_MOOD_WORD_ALIASES = {"rad": "great"}
 
 
 def _field(row: dict[str, str | None], keys: set[str]) -> str | None:
@@ -56,7 +59,9 @@ def parse_csv(text: str) -> list[dict[str, str | None | list[str]]]:
         mood_raw = _field(row, _MOOD_KEYS)
         if mood_raw:
             m = str(mood_raw).strip().lower()
-            if m in _RATING_TO_MOOD.values():
+            if m in _MOOD_WORD_ALIASES:
+                mood = _MOOD_WORD_ALIASES[m]
+            elif m in _RATING_TO_MOOD.values():
                 mood = m
             elif m.isdigit() and int(m) in _RATING_TO_MOOD:
                 mood = _RATING_TO_MOOD[int(m)]

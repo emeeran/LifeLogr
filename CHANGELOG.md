@@ -11,7 +11,17 @@ offline at any time.
 
 ## [Unreleased]
 
-_(nothing yet)_
+### Fixed
+- **Diarium compatibility, verified against the shipped app.** The `.diary`
+  export now builds the exact six-table schema extracted from the Diarium
+  3.3.12.0 binary (previously `Tags.Type` — a NOT NULL column — was missing,
+  and unrated latitudes were written as NULL into NOT NULL columns), so the
+  file passes Diarium's backup restore. Added a **Daylio-format CSV export**,
+  Diarium's documented migration import (Settings → Database → Migrate from
+  other app → CSV; `great` maps to Daylio's `rad`). The `.diary` importer now
+  understands real Diarium backups (imports tag + person tags, skips tracker
+  tags) and the JSON importer accepts Diarium's capitalized, tick-keyed entry
+  shape. The JSON-export docstring no longer claims Diarium can import it.
 
 ---
 

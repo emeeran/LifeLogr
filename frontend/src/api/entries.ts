@@ -99,4 +99,12 @@ export const entriesApi = {
     const qs = sp.toString()
     return `${API_ORIGIN}/api/v1/entries/export/json${qs ? `?${qs}` : ''}`
   },
+
+  exportDaylioCsvUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/daylio-csv${qs ? `?${qs}` : ''}`
+  },
 }
