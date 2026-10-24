@@ -33,20 +33,49 @@ def parse_markdown_entry(raw: str) -> dict[str, Any] | None:
     title = None
     mood = None
     tags: list[str] = []
+    media: list[dict[str, Any]] = []
+    # Which top-level key the "- " list items currently belong to — without
+    # this, the `media:` manifest's items would be swallowed as tags.
+    section: str | None = None
+    current_media: dict[str, Any] | None = None
 
     for line in frontmatter.split("\n"):
-        line = line.strip()
-        if line.startswith("date:"):
-            entry_date = line.split(":", 1)[1].strip()[:10]
-        elif line.startswith("title:"):
-            title = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("mood:"):
-            mood = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("- "):
-            # Lines are stripped above, so a YAML list item is "- item" here.
-            # (Previously checked "  - " which never matched post-strip, silently
-            # dropping all frontmatter tags.)
-            tags.append(line[2:].strip())
+        stripped = line.strip()
+        if stripped == "tags:":
+            section = "tags"
+            continue
+        if stripped == "media:":
+            section = "media"
+            continue
+        if line.startswith("  - ") or line.startswith("- "):
+            item = stripped[2:].strip()
+            if section == "media":
+                # "  - ref: 42" opens a media item; follow-up "    key: v"
+                # lines below fill it in.
+                current_media = {}
+                if ":" in item:
+                    k, _, v = item.partition(":")
+                    current_media[k.strip()] = v.strip()
+                media.append(current_media)
+            else:
+                # (Previously checked "  - " which never matched post-strip,
+                # silently dropping all frontmatter tags.)
+                tags.append(item)
+            continue
+        if line.startswith("    ") and section == "media" and current_media is not None:
+            if ":" in stripped:
+                k, _, v = stripped.partition(":")
+                current_media[k.strip()] = v.strip()
+            continue
+        # Any non-list line ends the current list section.
+        section = None
+        current_media = None
+        if stripped.startswith("date:"):
+            entry_date = stripped.split(":", 1)[1].strip()[:10]
+        elif stripped.startswith("title:"):
+            title = stripped.split(":", 1)[1].strip().strip('"')
+        elif stripped.startswith("mood:"):
+            mood = stripped.split(":", 1)[1].strip().strip('"')
 
     return {
         "entry_date": entry_date,
@@ -54,4 +83,5 @@ def parse_markdown_entry(raw: str) -> dict[str, Any] | None:
         "body": body,
         "mood": mood,
         "tags": tags,
+        "media": media,
     }

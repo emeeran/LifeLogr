@@ -11,6 +11,18 @@ offline at any time.
 
 ## [Unreleased]
 
+### Added
+- **Media-aware export/import.** New native **Archive ZIP** export
+  (`/entries/export/archive`) carries entries together with their media files
+  (`lifelogr.json` + `media/`); importing it recreates the media rows and
+  rewrites the body's `/api/v1/media/{id}/file` links to the new ids. The
+  `.diary` export now embeds attachments as real Diarium Media rows (blob +
+  name + order, Type mapped image/audio/document/video), and importing a real
+  Diarium backup extracts those blobs into LifeLogr — photo-only entries (no
+  text) are no longer dropped. The Markdown ZIP export lists each entry's
+  media in its frontmatter, and re-importing the ZIP re-attaches the files
+  with the same link rewriting.
+
 ### Fixed
 - **Diarium compatibility, verified against the shipped app.** The `.diary`
   export now builds the exact six-table schema extracted from the Diarium

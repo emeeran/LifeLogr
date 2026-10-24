@@ -415,3 +415,171 @@ async def test_daylio_csv_export_round_trips_through_csv_import(client, db_sessi
     assert row["body"] == "Long day."
     assert row["mood"] == "great"  # rad -> great
     assert row["tags"] == ["work"]
+
+
+# ── Media round-trips (archive ZIP, .diary blobs, Markdown ZIP) ──────────────
+
+
+async def _seed_entry_with_media(db_session, monkeypatch, tmp_path):
+    """An entry with a photo on disk and its URL embedded in the body."""
+    from app.core.config import settings
+    from app.models.entry import Entry
+    from app.models.media import Media
+
+    media_root = tmp_path / "media"
+    (media_root / "images").mkdir(parents=True)
+    monkeypatch.setattr(settings, "MEDIA_DIR", media_root)
+
+    entry = Entry(
+        entry_date=date(2026, 5, 1),
+        title="Photo day",
+        body="Here is a photo:\n\n![pic](/api/v1/media/PLACEHOLDER/file)",
+        mood="good",
+    )
+    db_session.add(entry)
+    await db_session.flush()
+    blob = b"\xff\xd8\xff\xe0FAKEJPEGDATA"
+    media = Media(
+        entry_id=entry.id,
+        filename="photo.jpg",
+        media_type="image",
+        file_size=len(blob),
+        storage_path="images/rt-test.jpg",
+        caption="A lake",
+        is_inline=True,
+    )
+    db_session.add(media)
+    await db_session.flush()
+    (media_root / "images" / "rt-test.jpg").write_bytes(blob)
+    entry.body = entry.body.replace("PLACEHOLDER", str(media.id))
+    await db_session.commit()
+    return entry, media, blob
+
+
+@pytest.mark.asyncio
+async def test_archive_export_import_round_trips_media(client, db_session, tmp_path, monkeypatch):
+    """Native archive: media bytes + metadata survive, body URLs are remapped."""
+    from app.models.media import Media
+
+    entry, media, blob = await _seed_entry_with_media(db_session, monkeypatch, tmp_path)
+
+    r = await client.get("/api/v1/entries/export/archive")
+    assert r.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    assert "lifelogr.json" in zf.namelist()
+    doc = json.loads(zf.read("lifelogr.json"))
+    assert doc["format"] == "lifelogr-archive"
+    assert doc["entries"][0]["media"][0]["ref"] == media.id
+    assert zf.read(doc["entries"][0]["media"][0]["path"]) == blob
+
+    # Re-import the same archive (skip_duplicates: the source entry is still there).
+    imp = await client.post(
+        "/api/v1/entries/import/file",
+        files={"file": ("archive.zip", r.content, "application/zip")},
+        params={"skip_duplicates": False},
+    )
+    assert imp.status_code == 200, imp.text
+    assert imp.json()["imported"] == 1
+
+    new_media = (
+        await db_session.execute(Media.__table__.select().where(Media.entry_id != entry.id))
+    ).first()
+    assert new_media is not None
+    assert new_media.filename == "photo.jpg"
+    assert (tmp_path / "media" / new_media.storage_path).read_bytes() == blob
+
+    # The imported body references the NEW media id, not the old one.
+    from sqlalchemy import text as sa_text
+
+    reimported = (
+        await db_session.execute(
+            sa_text("SELECT body FROM entries WHERE id != :eid"), {"eid": entry.id}
+        )
+    ).scalar()
+    assert f"/api/v1/media/{new_media.id}/file" in reimported
+    assert f"/api/v1/media/{media.id}/file" not in reimported
+    assert "![pic]" in reimported  # the markdown itself is preserved
+
+
+@pytest.mark.asyncio
+async def test_diarium_db_export_includes_media_blobs_and_reimports(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Media rows are embedded as real Diarium Media blobs — and re-import here."""
+    entry, media, blob = await _seed_entry_with_media(db_session, monkeypatch, tmp_path)
+
+    r = await client.get("/api/v1/entries/export/diarium-db")
+    assert r.status_code == 200
+    diary_file = tmp_path / "with-media.diary"
+    diary_file.write_bytes(r.content)
+    conn = sqlite3.connect(diary_file)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT Type, Data, Name, FileEnding FROM Media").fetchall()
+    conn.close()
+    assert len(rows) == 1
+    assert rows[0]["Type"] == 0  # image
+    assert rows[0]["Data"] == blob
+    assert rows[0]["Name"] == "photo" and rows[0]["FileEnding"] == ".jpg"
+
+    # Our .diary importer extracts the blob back into an import payload.
+    parsed = parse_diarium_sqlite(diary_file.read_bytes())
+    assert len(parsed) == 1
+    assert parsed[0]["media"][0]["filename"] == "photo.jpg"
+    assert parsed[0]["media"][0]["media_type"] == "image"
+    assert parsed[0]["media"][0]["data"] == blob
+
+
+@pytest.mark.asyncio
+async def test_markdown_zip_export_import_round_trips_media(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Markdown ZIP: frontmatter media manifest re-attaches files on import."""
+    from sqlalchemy import text as sa_text
+
+
+    entry, media, blob = await _seed_entry_with_media(db_session, monkeypatch, tmp_path)
+
+    r = await client.get("/api/v1/entries/export/markdown")
+    assert r.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    md_name = next(n for n in zf.namelist() if n.endswith(".md"))
+    raw = zf.read(md_name).decode()
+    assert "media:" in raw
+    assert f"path: media/{media.storage_path}" in raw
+    assert zf.read(f"media/{media.storage_path}") == blob
+
+    imp = await client.post(
+        "/api/v1/entries/import/file",
+        files={"file": ("export.zip", r.content, "application/zip")},
+        params={"skip_duplicates": False},
+    )
+    assert imp.status_code == 200, imp.text
+    assert imp.json()["imported"] == 1
+
+    reimported_body = (
+        await db_session.execute(
+            sa_text("SELECT body FROM entries WHERE id != :eid"), {"eid": entry.id}
+        )
+    ).scalar()
+    new_media = (
+        await db_session.execute(
+            sa_text("SELECT id, storage_path FROM media WHERE entry_id != :eid"),
+            {"eid": entry.id},
+        )
+    ).first()
+    assert new_media is not None
+    assert f"/api/v1/media/{new_media.id}/file" in reimported_body
+    assert (tmp_path / "media" / new_media.storage_path).read_bytes() == blob
+
+
+def test_parse_markdown_media_manifest_does_not_pollute_tags():
+    raw = (
+        "---\ndate: 2026-05-01\ntags:\n  - work\nmedia:\n"
+        "  - ref: 42\n    path: media/images/x.jpg\n    filename: x.jpg\n    type: image\n"
+        "---\n\nBody."
+    )
+    parsed = parse_markdown_entry(raw)
+    assert parsed["tags"] == ["work"]  # the media items must not become tags
+    assert parsed["media"] == [
+        {"ref": "42", "path": "media/images/x.jpg", "filename": "x.jpg", "type": "image"}
+    ]

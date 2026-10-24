@@ -118,6 +118,31 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
         if has_tag_type:
             tag_sql += " WHERE t.Type IS NULL OR t.Type IN (0, 1)"
         tag_rows = conn.execute(tag_sql).fetchall()
+
+        # Media blobs (photos, audio, documents) — re-attached to the imported
+        # entry. DiaryMediaId is a GUID we don't need; Type maps back to our
+        # categories (0 image, 1 audio, 2 unknown, 3 document, 4 video).
+        _MEDIA_TYPE_FROM_DIARIUM = {0: "image", 1: "audio", 2: "document", 3: "document", 4: "video"}
+        media_map: dict[int, list[dict[str, Any]]] = {}
+        try:
+            for mr in conn.execute(
+                'SELECT DiaryEntryId, Type, Data, Name, FileEnding FROM Media '
+                'ORDER BY DiaryEntryId, "Index"'
+            ).fetchall():
+                data = mr["Data"] or b""
+                if not data:
+                    continue
+                media_map.setdefault(mr["DiaryEntryId"], []).append(
+                    {
+                        "filename": f"{mr['Name']}{mr['FileEnding'] or ''}",
+                        "media_type": _MEDIA_TYPE_FROM_DIARIUM.get(
+                            mr["Type"] if mr["Type"] is not None else 3, "document"
+                        ),
+                        "data": data,
+                    }
+                )
+        except sqlite3.OperationalError:
+            logger.info("No Media table in .diary file — importing text only")
         entry_tags_map: dict[int, list[str]] = {}
         for tr in tag_rows:
             entry_tags_map.setdefault(tr["DiaryEntryId"], []).append(tr["Value"])
@@ -140,7 +165,9 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
                 body_text = re.sub(r"</?p>", "\n", body_text)
                 body_text = re.sub(r"<[^>]+>", "", body_text).strip()
 
-            if not body_text:
+            if not body_text and not media_map.get(row["DiaryEntryId"]):
+                # Photo-only entries (empty text) survive via their media; a
+                # truly empty entry is noise.
                 continue
 
             if heading == "Today's Summary":
@@ -160,6 +187,7 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
                     "tags": entry_tags_map.get(row["DiaryEntryId"], []),
                     "latitude": row["Latitude"] if row["Latitude"] else None,
                     "longitude": row["Longitude"] if row["Longitude"] else None,
+                    "media": media_map.get(row["DiaryEntryId"], []),
                 }
             )
         conn.close()

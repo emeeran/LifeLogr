@@ -65,6 +65,7 @@ enrichment.
 | `POST` | `/entries/import/file` | Import from an uploaded file (`.diary` / `.json` / `.zip`) |
 | `POST` | `/entries/deduplicate` | Find & soft-delete duplicates (by date + title) |
 | `GET` | `/entries/export/markdown` | Export as Markdown ZIP |
+| `GET` | `/entries/export/archive` | Export entries + media as the native LifeLogr archive ZIP (re-importable, media links remapped) |
 | `GET` | `/entries/export/diarium` | Export as JSON array (tooling interchange; Diarium has no JSON import) |
 | `GET` | `/entries/export/json` | Export as JSON |
 | `GET` | `/entries/export/diarium-db` | Export as a Diarium-native `.diary` SQLite database (real 3.3.x schema) |

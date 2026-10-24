@@ -462,7 +462,9 @@ memory-hard **scrypt** KDF, per-item salt).
 ## 19. Export & Import
 
 - **Export** your journal as **Markdown** (a ZIP of `.md` files, Obsidian-compatible),
-  **HTML** (a styled single file), **PDF** (desktop — bundled fpdf2), a
+  **Archive ZIP** (native, full fidelity: entries **and** media files;
+  re-import restores everything and rewrites image links), **HTML** (a styled
+  single file), **PDF** (desktop — bundled fpdf2), a
   **Diarium `.diary` SQLite** database (schema-identical to a real Diarium
   backup — restore it via Diarium's Settings → Backup), or a **Daylio-format
   CSV** (Diarium's documented migration import: Settings → Database → Migrate

@@ -64,6 +64,7 @@ const exportingHtml = ref(false)
 const exportingDiarium = ref(false)
 const exportingDiariumDb = ref(false)
 const exportingDaylioCsv = ref(false)
+const exportingArchive = ref(false)
 
 const rangeError = computed(() => {
   if (exportRange.value !== 'range') return ''
@@ -96,6 +97,28 @@ async function downloadMarkdown() {
     filters: [{ name: 'ZIP', extensions: ['zip'] }],
   })
   emit('toast', 'success', 'ZIP export saved')
+}
+// Native archive: full-fidelity entries + media, re-importable as-is.
+async function downloadArchive() {
+  exportMenuOpen.value = false
+  exportingArchive.value = true
+  try {
+    const resp = await fetch(
+      entriesApi.exportArchiveUrl(rangeStart.value, rangeEnd.value),
+    )
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    await saveFile({
+      data: blob,
+      defaultName: 'lifelogr-archive.zip',
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    })
+    emit('toast', 'success', 'Archive export saved')
+  } catch (e: unknown) {
+    emit('toast', 'error', `Archive export failed: ${errMsg(e)}`)
+  } finally {
+    exportingArchive.value = false
+  }
 }
 async function downloadJsonExport() {
   exportMenuOpen.value = false
@@ -380,6 +403,9 @@ async function downloadNotesHtml() {
           v-if="exportMenuOpen"
           class="absolute z-20 mt-1 w-44 rounded-md border border-border bg-surface shadow-lg overflow-hidden"
         >
+          <button class="export-item" @click="downloadArchive">
+            <FileUp :size="12" /> Archive ZIP (entries + media)
+          </button>
           <button class="export-item" @click="downloadJsonExport">
             <FileJson :size="12" /> JSON
           </button>

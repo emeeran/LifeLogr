@@ -6,8 +6,10 @@ import asyncio
 import io
 import json
 import logging
+import re
 import secrets
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.models.entry import Entry
+from app.models.media import Media
 from app.models.tag import EntryTag
 from app.schemas.entry import (
     CalendarEntryResponse,
@@ -36,7 +39,12 @@ from app.schemas.entry import (
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 from app.services.entry_service import EntryService
-from app.services.export_service import build_diarium_database, build_daylio_csv
+from app.services.export_service import (
+    ARCHIVE_FORMAT,
+    build_archive,
+    build_diarium_database,
+    build_daylio_csv,
+)
 from app.services.importers import (
     parse_csv,
     parse_dayone_zip,
@@ -220,6 +228,21 @@ async def export_markdown(
                     frontmatter += "tags:\n"
                     for t in tags:
                         frontmatter += f"  - {t}\n"
+                # Media manifest — the files sit at media/{storage_path} in this
+                # zip; `ref` is the id bodies reference as /api/v1/media/{ref}/file
+                # so the importer can rewrite those links to the new ids.
+                exportable_media = [
+                    m
+                    for m in entry.media
+                    if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+                ]
+                if exportable_media:
+                    frontmatter += "media:\n"
+                    for media in exportable_media:
+                        frontmatter += f"  - ref: {media.id}\n"
+                        frontmatter += f"    path: media/{media.storage_path}\n"
+                        frontmatter += f"    filename: {media.filename}\n"
+                        frontmatter += f"    type: {media.media_type}\n"
                 frontmatter += "---\n\n"
 
                 # Same-day entries used to share one filename and overwrite each
@@ -347,6 +370,46 @@ async def export_daylio_csv(
     )
 
 
+@router.get("/export/archive")
+async def export_archive(
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Export entries + media as the native LifeLogr archive ZIP.
+
+    Full-fidelity, self-contained: ``lifelogr.json`` (entries with media
+    metadata) plus every referenced media file under ``media/``. Re-imports
+    via ``/import/file`` — media rows are recreated and the body's
+    ``/api/v1/media/{id}/file`` links are rewritten to the new ids.
+    """
+    q = (
+        select(Entry)
+        .where(Entry.is_deleted.is_(False))
+        .options(
+            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+            selectinload(Entry.media),
+        )
+        .order_by(Entry.entry_date, Entry.id)
+    )
+    if start_date:
+        q = q.where(Entry.entry_date >= start_date)
+    if end_date:
+        q = q.where(Entry.entry_date <= end_date)
+    result = await db.execute(q)
+    entries = list(result.scalars().all())
+
+    buf = io.BytesIO(await asyncio.to_thread(build_archive, entries))
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="lifelogr-archive.zip"'
+        },
+    )
+
+
 @router.get("/export/json")
 async def export_json(
     start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
@@ -408,13 +471,15 @@ async def export_diarium_db(
 
     Produces the real Diarium schema (Entries keyed by .NET DateTime ticks,
     Tags, EntryTags) so the file can be opened/imported directly by the
-    Diarium app or re-imported here via the .diary importer.
+    Diarium app or re-imported here via the .diary importer. Media
+    attachments are embedded as real Media rows (bytes + name + order).
     """
     q = (
         select(Entry)
         .where(Entry.is_deleted.is_(False))
         .options(
             selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+            selectinload(Entry.media),
         )
         .order_by(Entry.entry_date, Entry.id)
     )
@@ -770,6 +835,84 @@ def _read_member(z: zipfile.ZipFile, name: str) -> bytes:
     return z.read(name)
 
 
+# ── Import-side media attachment ─────────────────────────────────────────────
+# Bodies embed media as URLs of the form /api/v1/media/{id}/file. On import the
+# media rows get NEW ids, so every parsed entry may carry a `media` payload
+# list; after the rows are created the body's URLs are rewritten to point at
+# the fresh ids (keyed by the export-time `ref` id).
+_MEDIA_URL_RE = re.compile(r"/api/v1/media/(\d+)/file")
+_VALID_IMPORT_MEDIA_TYPES = {"image", "video", "audio", "document"}
+
+
+def _remap_media_urls(body: str, ref_map: dict[int, int]) -> str:
+    """Rewrite /api/v1/media/{old}/file references to their imported ids."""
+    if not ref_map:
+        return body
+    return _MEDIA_URL_RE.sub(
+        lambda m: f"/api/v1/media/{ref_map[int(m.group(1))]}/file", body
+    )
+
+
+async def _attach_imported_media(
+    db: AsyncSession, entry_row: Entry, media_items: list[dict[str, Any]]
+) -> dict[int, int]:
+    """Persist parsed media payloads as Media rows for *entry_row*.
+
+    Payloads come from the native archive (bytes read from the ZIP), Diarium
+    ``.diary`` Media blobs, or Markdown ZIP members — each item is
+    ``{filename, media_type, data, caption?, is_inline?, ref?}``. Returns
+    ``{ref: new_id}`` for body-URL remapping. Bytes go through the same
+    signature and size checks as uploads: an import path must never become a
+    way to smuggle blocked file types past MediaService.
+    """
+    ref_map: dict[int, int] = {}
+    for item in media_items:
+        data = item.get("data") or b""
+        if not data:
+            continue
+        filename = (item.get("filename") or "attachment.bin").strip() or "attachment.bin"
+        if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
+            logger.warning(
+                "Import media %s (%d bytes) exceeds the per-file cap — skipped",
+                filename,
+                len(data),
+            )
+            continue
+        try:
+            from app.services.media_service import MediaService
+
+            MediaService._check_signature(data[:64], filename)
+        except Exception as e:
+            logger.warning("Import media %s blocked: %s", filename, e)
+            continue
+        media_type = (item.get("media_type") or "document").lower()
+        if media_type not in _VALID_IMPORT_MEDIA_TYPES:
+            media_type = "document"
+        ext = Path(filename).suffix.lower()
+        stored_name = f"{uuid.uuid4()}{ext}"
+        dest = settings.MEDIA_DIR / f"{media_type}s" / stored_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        row = Media(
+            entry_id=entry_row.id,
+            filename=filename,
+            media_type=media_type,
+            file_size=len(data),
+            storage_path=f"{media_type}s/{stored_name}",
+            caption=item.get("caption") or None,
+            is_inline=bool(item.get("is_inline")),
+        )
+        db.add(row)
+        await db.flush()
+        ref = item.get("ref")
+        if ref is not None:
+            try:
+                ref_map[int(ref)] = row.id
+            except (TypeError, ValueError):
+                pass
+    return ref_map
+
+
 @router.post("/import/file", response_model=ImportResult)
 async def import_file(
     file: UploadFile = File(...),
@@ -813,14 +956,56 @@ async def import_file(
             if filename.endswith(".zip"):
                 # Day One exports carry Journal.json — detect and handle first.
                 is_dayone = False
+                zip_names: list[str] = []
                 try:
                     with zipfile.ZipFile(upload_path, "r") as z:
-                        is_dayone = any(n.endswith("Journal.json") for n in _zip_members(z))
+                        zip_names = _zip_members(z)
+                        is_dayone = any(n.endswith("Journal.json") for n in zip_names)
                 except zipfile.BadZipFile:
                     pass
 
                 if is_dayone:
                     entries_data.extend(parse_dayone_zip(content))
+                elif "lifelogr.json" in zip_names:
+                    # Native archive: lifelogr.json + media/ members. Each
+                    # entry's media bytes are pulled here so the shared loop
+                    # can persist them and rewrite body URLs.
+                    with zipfile.ZipFile(upload_path, "r") as z:
+                        names = set(zip_names)
+                        doc = json.loads(_read_member(z, "lifelogr.json"))
+                        if doc.get("format") != ARCHIVE_FORMAT:
+                            raise HTTPException(
+                                status_code=422,
+                                detail="Not a LifeLogr archive (unexpected format field)",
+                            )
+                        for item in doc.get("entries", []):
+                            media_items = []
+                            for m in item.get("media", []):
+                                member = m.get("path", "")
+                                media_items.append(
+                                    {
+                                        "filename": m.get("filename"),
+                                        "media_type": m.get("media_type"),
+                                        "caption": m.get("caption"),
+                                        "is_inline": m.get("is_inline"),
+                                        "ref": m.get("ref"),
+                                        "data": (
+                                            _read_member(z, member) if member in names else b""
+                                        ),
+                                    }
+                                )
+                            entries_data.append(
+                                {
+                                    "entry_date": item.get("entry_date"),
+                                    "title": item.get("title"),
+                                    "body": item.get("body"),
+                                    "mood": item.get("mood"),
+                                    "tags": item.get("tags", []),
+                                    "latitude": item.get("latitude"),
+                                    "longitude": item.get("longitude"),
+                                    "media": media_items,
+                                }
+                            )
                 else:
                     with zipfile.ZipFile(upload_path, "r") as z:
                         names = _zip_members(z)
@@ -858,6 +1043,13 @@ async def import_file(
                             raw = _read_member(z, mf).decode("utf-8")
                             entry = parse_markdown_entry(raw)
                             if entry:
+                                # Resolve the frontmatter media manifest against
+                                # this zip's media/ members.
+                                for m in entry.get("media", []):
+                                    member = m.get("path", "")
+                                    m["data"] = (
+                                        _read_member(z, member) if member in names else b""
+                                    )
                                 entries_data.append(entry)
 
             elif filename.endswith(".csv"):
@@ -932,7 +1124,9 @@ async def import_file(
         to_enrich.clear()
 
     for idx, entry in enumerate(entries_data):
-        if not entry.get("entry_date") or not entry.get("body"):
+        # An empty body is legal when the entry carries media (photo-only
+        # Diarium entries); only truly empty records are skipped.
+        if not entry.get("entry_date") or (not entry.get("body") and not entry.get("media")):
             skipped += 1
             skip_reasons = _record_skip(
                 skip_reasons,
@@ -983,6 +1177,13 @@ async def import_file(
                 longitude=entry.get("longitude"),
             )
             created = await svc.create(data, commit=False)
+            media_items = entry.get("media") or []
+            if media_items:
+                ref_map = await _attach_imported_media(db, created, media_items)
+                # Bodies reference media by URL; the imported rows have new
+                # ids, so rewrite before anything (incl. enrichment) sees it.
+                if ref_map and created.body:
+                    created.body = _remap_media_urls(created.body, ref_map)
             if not created.is_encrypted:
                 to_enrich.append((created.id, created.title, created.body))
             existing_sigs.add(sig)

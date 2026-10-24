@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import logging
 import re
 from datetime import date
 
@@ -14,6 +15,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.entry import Entry
 from app.models.tag import EntryTag
+
+logger = logging.getLogger(__name__)
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -385,8 +388,9 @@ class ExportService:
 _DOTNET_TICKS_EPOCH = 621355968000000000
 _TICKS_PER_SECOND = 10_000_000
 _MOOD_TO_RATING = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
-_DIARIUM_DDL = """
-CREATE TABLE Entries(DiaryEntryId bigint primary key not null, Heading varchar not null, Text varchar not null, Rating integer not null, Latitude float not null, Longitude float not null);
+# Media.Type: 0 image, 1 audio, 2 unknown, 3 document, 4 audio/video attachment.
+_DIARIUM_MEDIA_TYPE = {"image": 0, "audio": 1, "document": 3, "video": 4}
+_DIARIUM_DDL = """CREATE TABLE Entries(DiaryEntryId bigint primary key not null, Heading varchar not null, Text varchar not null, Rating integer not null, Latitude float not null, Longitude float not null);
 CREATE TABLE EntryTags(DiaryEntryId bigint not null, DiaryTagId integer not null, TrackingValue varchar);
 CREATE TABLE Events(DiaryEventId integer primary key autoincrement not null, Type integer not null, Content varchar not null, Tag varchar, DiaryEntryId bigint not null );
 CREATE TABLE Media(DiaryMediaId varchar(36) primary key not null, Type integer not null, Data blob, Name varchar not null, FileEnding varchar not null, "Index" integer not null, DiaryEntryId bigint not null);
@@ -429,6 +433,8 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
     from datetime import date as date_type
     from datetime import datetime, timezone
     from pathlib import Path
+
+    from app.core.config import settings
 
     conn = sqlite3.connect(":memory:")
     try:
@@ -483,6 +489,34 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
                     "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId, TrackingValue) "
                     "VALUES (?, ?, NULL)",
                     (entry_id, tag_id_map[tag.name]),
+                )
+
+            # Media attachments as real Media rows (blob + name parts + order),
+            # so Diarium shows them after a restore. Name/FileEnding split the
+            # filename the way Diarium stores it (e.g. IMG_3631 / .jpg).
+            from uuid import uuid4
+
+            for media_index, media in enumerate(entry.media):
+                src = settings.MEDIA_DIR / media.storage_path
+                if not src.is_file():
+                    logger.warning(
+                        "Media file missing on disk, skipped in .diary export: %s",
+                        media.storage_path,
+                    )
+                    continue
+                stem, dot, ext = media.filename.rpartition(".")
+                conn.execute(
+                    'INSERT INTO Media (DiaryMediaId, Type, Data, Name, FileEnding, "Index", '
+                    "DiaryEntryId) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        str(uuid4()),
+                        _DIARIUM_MEDIA_TYPE.get((media.media_type or "").lower(), 3),
+                        src.read_bytes(),
+                        stem or media.filename,
+                        f".{ext}" if dot else "",
+                        media_index,
+                        entry_id,
+                    ),
                 )
         conn.commit()
         # Serialize to a binary SQLite file. conn.serialize()/iterdump() aren't
@@ -550,3 +584,69 @@ def build_daylio_csv(entries: list[Entry]) -> bytes:
             ]
         )
     return buf.getvalue().encode("utf-8")
+
+
+# ── Native archive export (entries + media, full fidelity) ──────────────────
+# A ZIP carrying the native JSON document plus every referenced media file.
+# Bodies embed media as markdown/HTML URLs of the form
+# `/api/v1/media/{id}/file`; each media record keeps its export-time id in
+# `ref` so the importer can rewrite those URLs to the freshly created ids.
+ARCHIVE_FORMAT = "lifelogr-archive"
+ARCHIVE_VERSION = 1
+
+
+def build_archive(entries: list[Entry]) -> bytes:
+    """Serialize entries + their media into the native archive ZIP (bytes).
+
+    ``entries`` must have ``tag_associations`` and ``media`` loaded. The JSON
+    build and file copies are CPU/IO-bound — run via ``asyncio.to_thread``.
+    """
+    import io
+    import json as json_mod
+    import zipfile
+
+    from app.core.config import settings
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        doc_entries = []
+        for entry in entries:
+            tags = [a.tag.name for a in entry.tag_associations if a.tag and a.tag.name]
+            media_items = []
+            for media in entry.media:
+                src = settings.MEDIA_DIR / media.storage_path
+                if not src.is_file():
+                    continue
+                arcname = f"media/{media.storage_path}"
+                zf.write(str(src), arcname)
+                media_items.append(
+                    {
+                        # Export-time id: bodies reference
+                        # /api/v1/media/{ref}/file — the importer rewrites it.
+                        "ref": media.id,
+                        "path": arcname,
+                        "filename": media.filename,
+                        "media_type": media.media_type,
+                        "caption": media.caption,
+                        "is_inline": media.is_inline,
+                    }
+                )
+            doc_entries.append(
+                {
+                    "entry_date": str(entry.entry_date),
+                    "title": entry.title,
+                    "body": entry.body,
+                    "mood": entry.mood,
+                    "tags": tags,
+                    "latitude": entry.latitude,
+                    "longitude": entry.longitude,
+                    "media": media_items,
+                }
+            )
+        doc = {
+            "format": ARCHIVE_FORMAT,
+            "version": ARCHIVE_VERSION,
+            "entries": doc_entries,
+        }
+        zf.writestr("lifelogr.json", json_mod.dumps(doc, ensure_ascii=False, indent=2))
+    return buf.getvalue()
