@@ -1,0 +1,540 @@
+"""AI assistance route handlers (Ollama-backed)."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core import security
+from app.core.config import settings
+from app.core.database import get_db
+from app.models.ai_provider import AIProvider
+from app.models.entry import Entry
+from app.models.tag import Tag
+from app.schemas.ai import (
+    AIStatusResponse,
+    AnalyzeTextRequest,
+    AnalyzeTextResponse,
+    ChangeToneRequest,
+    ChangeToneResponse,
+    ContinueWritingRequest,
+    ContinueWritingResponse,
+    DefineTextRequest,
+    DefineTextResponse,
+    ExpandRequest,
+    ExpandResponse,
+    GenericToolRequest,
+    GenericToolResponse,
+    GrammarCheckRequest,
+    GrammarCheckResponse,
+    PullModelStartResponse,
+    PullModelStatusResponse,
+    RewriteForClarityRequest,
+    RewriteForClarityResponse,
+    RewriteRequest,
+    RewriteResponse,
+    SpellCheckRequest,
+    SpellCheckResponse,
+    TagSuggestionRequest,
+    TagSuggestionResponse,
+    ThemeInsight,
+    ThemesResponse,
+    VoiceChangeRequest,
+    VoiceChangeResponse,
+)
+from app.schemas.ai_provider import (
+    AIProviderCreate,
+    AIProviderResponse,
+    AIProviderUpdate,
+    ProviderModelsRequest,
+)
+from app.services.ai_provider_service import (
+    PROVIDER_PRESETS,
+    AIProviderService,
+    list_models,
+    test_connection,
+)
+from app.services.ollama_service import OllamaService
+
+router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
+logger = logging.getLogger(__name__)
+
+
+# ── Existing features ──────────────────────────────────────────────────
+
+
+@router.post("/grammar-check", response_model=GrammarCheckResponse)
+async def grammar_check(data: GrammarCheckRequest) -> Any:
+    svc = OllamaService()
+    return await svc.grammar_check(data.text, data.language)
+
+
+@router.post("/spell-check", response_model=SpellCheckResponse)
+async def spell_check(data: SpellCheckRequest) -> Any:
+    svc = OllamaService()
+    return await svc.spell_check(data.text, data.language)
+
+
+@router.post("/rewrite", response_model=RewriteResponse)
+async def rewrite_text(data: RewriteRequest) -> Any:
+    svc = OllamaService()
+    return await svc.rewrite(data.text, data.style, data.instructions)
+
+
+@router.get("/status", response_model=AIStatusResponse)
+async def ai_status() -> Any:
+    svc = OllamaService()
+    status = await svc.status()
+    # Check if embedding model is available using same status call
+    embed_available = (
+        any(settings.OLLAMA_EMBED_MODEL in m for m in status.model_names)
+        if status.ollama_available
+        else False
+    )
+    return AIStatusResponse(
+        ollama_available=status.ollama_available,
+        model_name=status.model_name,
+        model_loaded=status.model_loaded,
+        embed_model_available=embed_available,
+        error=status.error,
+    )
+
+
+# ── Tag suggestions ────────────────────────────────────────────────────
+
+
+@router.post("/suggest-tags", response_model=TagSuggestionResponse)
+async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Suggest tags for a journal entry based on its content."""
+    # Load existing tag names
+    result = await db.execute(select(Tag.name))
+    existing = [row[0] for row in result]
+    svc = OllamaService()
+    tags = await svc.suggest_tags(data.text, existing)
+    return TagSuggestionResponse(tags=tags)
+
+
+# ── Writer's block helper ──────────────────────────────────────────────
+
+
+@router.post("/continue-writing", response_model=ContinueWritingResponse)
+async def continue_writing(data: ContinueWritingRequest) -> Any:
+    """Generate a short continuation suggestion."""
+    svc = OllamaService()
+    continuation = await svc.continue_writing(data.text)
+    return ContinueWritingResponse(continuation=continuation)
+
+
+# ── Theme detection ────────────────────────────────────────────────────
+
+
+@router.get("/themes", response_model=ThemesResponse)
+async def detect_themes(
+    months: int = Query(6, ge=1, le=24, description="Number of months to analyze"),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Detect recurring themes across recent journal entries."""
+    # Load summaries grouped by month
+    cutoff = date.today() - timedelta(days=months * 30)
+    result = await db.execute(
+        select(
+            func.strftime("%Y-%m", Entry.entry_date).label("month"),
+            Entry.summary,
+        )
+        .where(
+            ~Entry.is_deleted,
+            ~Entry.is_encrypted,
+            Entry.summary.is_not(None),
+            Entry.entry_date >= cutoff,
+        )
+        .order_by(Entry.entry_date)
+    )
+
+    summaries_by_month: dict[str, list[str]] = {}
+    for row in result:
+        if row.month not in summaries_by_month:
+            summaries_by_month[row.month] = []
+        if row.summary:
+            summaries_by_month[row.month].append(row.summary)
+
+    if not summaries_by_month:
+        return ThemesResponse(themes=[])
+
+    svc = OllamaService()
+    themes = await svc.detect_themes(summaries_by_month)
+    return ThemesResponse(themes=[ThemeInsight(**t) if isinstance(t, dict) else t for t in themes])
+
+
+# ── Smart Tools ────────────────────────────────────────────────────────
+
+
+@router.post("/expand", response_model=ExpandResponse)
+async def expand_text(data: ExpandRequest) -> Any:
+    """Expand and elaborate on text."""
+    svc = OllamaService()
+    expanded = await svc.expand(data.text)
+    return ExpandResponse(expanded_text=expanded)
+
+
+@router.post("/change-tone", response_model=ChangeToneResponse)
+async def change_tone(data: ChangeToneRequest) -> Any:
+    """Change the tone of text."""
+    svc = OllamaService()
+    changed = await svc.change_tone(data.text, data.tone)
+    return ChangeToneResponse(changed_text=changed, tone=data.tone)
+
+
+@router.post("/analyze-text", response_model=AnalyzeTextResponse)
+async def analyze_text(data: AnalyzeTextRequest) -> Any:
+    """Analyze text for emotions, themes, and a brief summary."""
+    svc = OllamaService()
+    result = await svc.analyze_text(data.text)
+    return AnalyzeTextResponse(
+        emotions=result.get("emotions", []),
+        themes=result.get("themes", []),
+        summary=result.get("summary", ""),
+    )
+
+
+@router.post("/define-text", response_model=DefineTextResponse)
+async def define_text(data: DefineTextRequest) -> Any:
+    """Define or explain a word, phrase, or concept."""
+    svc = OllamaService()
+    definition = await svc.define_text(data.text)
+    return DefineTextResponse(definition=definition)
+
+
+@router.post("/change-voice", response_model=VoiceChangeResponse)
+async def change_voice(data: VoiceChangeRequest) -> Any:
+    """Convert text between active and passive voice."""
+    svc = OllamaService()
+    changed = await svc.change_voice(data.text, data.voice)
+    return VoiceChangeResponse(changed_text=changed, voice=data.voice)
+
+
+@router.post("/rewrite-for-clarity", response_model=RewriteForClarityResponse)
+async def rewrite_for_clarity(data: RewriteForClarityRequest) -> Any:
+    """Rewrite text for maximum clarity and readability."""
+    svc = OllamaService()
+    rewritten = await svc.rewrite_for_clarity(data.text)
+    return RewriteForClarityResponse(rewritten_text=rewritten)
+
+
+# ── Generic registry tools ─────────────────────────────────────────────
+
+
+@router.post("/tool/{tool_id}", response_model=GenericToolResponse)
+async def run_generic_tool(
+    tool_id: str,
+    data: GenericToolRequest,
+) -> Any:
+    """Run a registry-defined AI text tool (summarize, translate, …)."""
+    svc = OllamaService()
+    try:
+        result = await svc.run_generic_tool(tool_id, data.text, data.param)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown AI tool: {tool_id}") from None
+    except ValueError as exc:
+        logger.warning("Invalid AI tool parameter for %s: %s", tool_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return GenericToolResponse(result=result)
+
+
+# ── Model management ───────────────────────────────────────────────────
+
+# In-process registry of `ollama pull` jobs. Pulls used to be fire-and-forget:
+# the route returned {"status": "pulling"} and the only trace of a failure was
+# a log line, so the UI could not tell a slow download from a dead one. Jobs
+# live in a dict (not the DB) because they only matter while the backend that
+# spawned the subprocess is alive — the frontend polls, it does not resume.
+_PULL_JOBS: dict[str, dict[str, Any]] = {}
+# Strong references to the running tasks (a bare create_task can be GC'd) and
+# to the subprocesses (so cancel can reach the one to kill).
+_PULL_TASKS: dict[str, asyncio.Task[None]] = {}
+_PULL_PROCS: dict[str, asyncio.subprocess.Process] = {}
+
+_PULL_JOBS_MAX = 50
+_PULL_JOB_TTL_SECONDS = 3600.0
+_PULL_MESSAGE_MAX_CHARS = 200
+_MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9._:/-]+$")
+# `ollama pull` prints "37%" style progress (progress bars are \r-delimited, so
+# we scan whatever chunk arrived for the last percentage seen).
+_PROGRESS_RE = re.compile(r"(\d{1,3})%")
+
+
+def _prune_pull_jobs(now: datetime) -> None:
+    """Drop finished jobs past their TTL, then evict oldest finished over cap."""
+    finished = [jid for jid, j in _PULL_JOBS.items() if j["status"] != "pulling"]
+    for jid in finished:
+        finished_at = _PULL_JOBS[jid].get("finished_at")
+        if finished_at is not None and (now - finished_at).total_seconds() > _PULL_JOB_TTL_SECONDS:
+            _PULL_JOBS.pop(jid, None)
+            _PULL_TASKS.pop(jid, None)
+    remaining_finished = [jid for jid, j in _PULL_JOBS.items() if j["status"] != "pulling"]
+    while len(_PULL_JOBS) > _PULL_JOBS_MAX and remaining_finished:
+        _PULL_JOBS.pop(remaining_finished.pop(0), None)
+    if len(_PULL_JOBS) > _PULL_JOBS_MAX:
+        logger.warning("Model-pull job registry over capacity (%d jobs)", len(_PULL_JOBS))
+
+
+def _pull_job_response(job_id: str) -> PullModelStatusResponse:
+    job = _PULL_JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown model-pull job: {job_id}")
+    return PullModelStatusResponse(
+        job_id=job_id,
+        model=job["model"],
+        status=job["status"],
+        error=job.get("error"),
+        progress_percent=job.get("progress_percent"),
+        message=job.get("message"),
+        started_at=job["started_at"],
+        finished_at=job.get("finished_at"),
+    )
+
+
+async def _spawn_pull(model: str) -> asyncio.subprocess.Process:
+    """Start `ollama pull` (indirection so tests can stub the spawn)."""
+    return await asyncio.create_subprocess_exec(
+        "ollama",
+        "pull",
+        model,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+
+async def _run_pull_job(job_id: str, model: str) -> None:
+    """Stream the pull to completion, recording progress and terminal state.
+
+    Never raises: the job dict is the only channel the poller sees.
+    """
+    job = _PULL_JOBS[job_id]
+    try:
+        proc = await _spawn_pull(model)
+        _PULL_PROCS[job_id] = proc
+        assert proc.stdout is not None and proc.stderr is not None
+        while chunk := await proc.stdout.read(512):
+            text = chunk.decode("utf-8", "ignore")
+            percents = _PROGRESS_RE.findall(text)
+            if percents:
+                job["progress_percent"] = float(percents[-1])
+            if text.strip():
+                job["message"] = text.strip()[-_PULL_MESSAGE_MAX_CHARS:]
+        stderr_tail = (await proc.stderr.read()).decode("utf-8", "ignore").strip()
+        await proc.wait()
+        if job["status"] != "pulling":  # cancelled while we were reading
+            return
+        if proc.returncode == 0:
+            job["status"] = "complete"
+            job["progress_percent"] = 100.0
+        else:
+            job["status"] = "failed"
+            job["error"] = (
+                stderr_tail[-_PULL_MESSAGE_MAX_CHARS:]
+                or f"ollama pull exited with code {proc.returncode}"
+            )
+            logger.warning("Model pull %s failed (rc=%s): %s", model, proc.returncode, stderr_tail)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        if job["status"] == "pulling":
+            job["status"] = "failed"
+            job["error"] = str(exc)[-_PULL_MESSAGE_MAX_CHARS:]
+        logger.error("Failed to pull model %s: %s", model, exc)
+    finally:
+        job["finished_at"] = datetime.now(timezone.utc)
+        _PULL_PROCS.pop(job_id, None)
+        _PULL_TASKS.pop(job_id, None)
+
+
+@router.post("/pull-model", response_model=PullModelStartResponse, status_code=202)
+async def pull_model(
+    model: str = Query(..., description="Model name to pull (e.g. nomic-embed-text)"),
+) -> Any:
+    """Start pulling an Ollama model in the background and return its job id.
+
+    Poll ``GET /pull-model/{job_id}`` for progress; ``DELETE`` cancels.
+    """
+    # Validate model name to prevent command injection
+    if not _MODEL_NAME_RE.match(model):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid model name. Use alphanumeric characters, dots, hyphens, colons, and slashes only.",
+        )
+
+    now = datetime.now(timezone.utc)
+    _prune_pull_jobs(now)
+    job_id = uuid.uuid4().hex
+    _PULL_JOBS[job_id] = {
+        "model": model,
+        "status": "pulling",
+        "error": None,
+        "progress_percent": None,
+        "message": None,
+        "started_at": now,
+        "finished_at": None,
+    }
+    _PULL_TASKS[job_id] = asyncio.create_task(_run_pull_job(job_id, model))
+    return PullModelStartResponse(status="pulling", model=model, job_id=job_id)
+
+
+@router.get("/pull-model/{job_id}", response_model=PullModelStatusResponse)
+async def pull_model_status(job_id: str) -> Any:
+    """Status (and last reported progress) of a model pull."""
+    return _pull_job_response(job_id)
+
+
+@router.delete("/pull-model/{job_id}", response_model=PullModelStatusResponse)
+async def cancel_pull_model(job_id: str) -> Any:
+    """Cancel a running model pull by terminating its subprocess."""
+    _pull_job_response(job_id)  # 404 for unknown ids
+    job = _PULL_JOBS[job_id]
+    if job["status"] != "pulling":
+        return _pull_job_response(job_id)
+    proc = _PULL_PROCS.get(job_id)
+    if proc is not None and proc.returncode is None:
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            logger.info("Model pull %s already exited before cancel", job_id)
+    job["status"] = "failed"
+    job["error"] = "Pull cancelled"
+    job["finished_at"] = datetime.now(timezone.utc)
+    logger.info("Model pull for %s cancelled (job %s)", job["model"], job_id)
+    return _pull_job_response(job_id)
+
+
+# ── AI providers (OpenAI-compatible cloud + local Ollama) ────────────────────
+def _to_provider_response(p: AIProvider) -> AIProviderResponse:
+    return AIProviderResponse(
+        id=p.id,
+        name=p.name,
+        preset=p.preset,
+        base_url=p.base_url,
+        model=p.model,
+        has_key=p.api_key_encrypted is not None,
+        is_active=p.is_active,
+        created_at=p.created_at,
+    )
+
+
+def _provider_http_error(exc: Exception) -> HTTPException:
+    """Map an httpx failure to a 502 carrying the provider's own error body.
+
+    Providers return actionable JSON on auth/model failures (e.g. Gemini's 401
+    body is literally ``"API key not valid. Please pass a valid API key."``).
+    Surfacing it — instead of a bare ``Client error '401 Unauthorized'`` — tells
+    the user exactly what's wrong. Used by both the Test and List-models routes.
+    """
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        body = exc.response.text[:300]
+        logger.warning("AI provider returned HTTP %s: %s", exc.response.status_code, body)
+        return HTTPException(
+            status_code=502,
+            detail=f"Provider returned HTTP {exc.response.status_code}: {body}",
+        )
+    logger.warning("AI provider connection failure", exc_info=True)
+    return HTTPException(status_code=502, detail="Could not reach the AI provider.")
+
+
+@router.get("/providers/presets")
+async def provider_presets() -> list[dict[str, str]]:
+    """The provider preset catalogue (key → label/base_url/default model)."""
+    return [
+        {"key": k, "label": v["label"], "base_url": v["base_url"], "model": v["model"]}
+        for k, v in PROVIDER_PRESETS.items()
+    ]
+
+
+@router.get("/providers", response_model=list[AIProviderResponse])
+async def list_providers(db: AsyncSession = Depends(get_db)) -> Any:
+    return [_to_provider_response(p) for p in await AIProviderService(db).list()]
+
+
+@router.post("/providers", response_model=AIProviderResponse, status_code=201)
+async def create_provider(data: AIProviderCreate, db: AsyncSession = Depends(get_db)) -> Any:
+    return _to_provider_response(await AIProviderService(db).create(data))
+
+
+@router.patch("/providers/{provider_id}", response_model=AIProviderResponse)
+async def update_provider(
+    provider_id: int, data: AIProviderUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    try:
+        return _to_provider_response(await AIProviderService(db).update(provider_id, data))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/providers/{provider_id}", status_code=204)
+async def delete_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    try:
+        await AIProviderService(db).delete(provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/providers/{provider_id}/activate", response_model=AIProviderResponse)
+async def activate_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    try:
+        return _to_provider_response(await AIProviderService(db).activate(provider_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/providers/{provider_id}/test")
+async def test_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Probe the provider with a 1-token completion to verify the key/endpoint."""
+    svc = AIProviderService(db)
+    try:
+        provider = await svc._get(provider_id)  # noqa: SLF001
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    api_key = security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
+    try:
+        model = await test_connection(provider.base_url, api_key, provider.model)
+    except Exception as exc:  # httpx errors, etc.
+        raise _provider_http_error(exc) from exc
+    return {"status": "ok", "model": model}
+
+
+@router.get("/providers/{provider_id}/models")
+async def list_provider_models(
+    provider_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """List the models the provider exposes (drives the model selector in the UI)."""
+    svc = AIProviderService(db)
+    try:
+        provider = await svc._get(provider_id)  # noqa: SLF001
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    api_key = security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
+    try:
+        models = await list_models(provider.base_url, api_key)
+    except Exception as exc:  # httpx errors, etc.
+        raise _provider_http_error(exc) from exc
+    return {"models": models}
+
+
+@router.post("/providers/models")
+async def preview_provider_models(data: ProviderModelsRequest) -> dict[str, Any]:
+    """List models from an arbitrary base_url + key (Add form, pre-save).
+
+    Mirrors ``GET /providers/{id}/models`` but takes the endpoint + key directly
+    so the Add form can browse a provider's models before it is created.
+    """
+    try:
+        models = await list_models(data.base_url, data.api_key)
+    except Exception as exc:  # httpx errors, etc.
+        raise _provider_http_error(exc) from exc
+    return {"models": models}

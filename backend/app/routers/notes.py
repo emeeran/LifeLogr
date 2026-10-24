@@ -1,0 +1,460 @@
+"""Notes route handlers."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from pydantic import BaseModel, HttpUrl
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.models.note import Note
+from app.schemas.note import (
+    NoteCreate,
+    NoteFolderCreate,
+    NoteFolderResponse,
+    NoteFolderUpdate,
+    NoteListItem,
+    NoteListResponse,
+    NotePageCreate,
+    NotePageReorder,
+    NotePageResponse,
+    NotePageUpdate,
+    NoteResponse,
+    NoteUpdate,
+)
+from app.schemas.note_media import NoteMediaFromPath, NoteMediaResponse
+from app.schemas.tag import TagBrief
+from app.core.config import settings
+from app.services.media_service import spool_upload
+from app.services.note_media_service import NoteMediaService
+from app.services.note_service import NoteService
+from app.services.notes_export_service import NotesExportService
+from app.services.ocr_service import OcrLanguageUnavailable, ocr_image_bytes
+
+router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
+logger = logging.getLogger(__name__)
+
+
+def _folder_response(folder: Any, note_count: int) -> NoteFolderResponse:
+    """Single builder for every folder payload (list / create / update).
+
+    ``folder`` may be a ``NoteFolder`` entity or the projected row returned by
+    ``NoteService.list_folders`` — both expose the same attributes.
+    """
+    return NoteFolderResponse(
+        id=folder.id,
+        name=folder.name,
+        parent_id=folder.parent_id,
+        color=folder.color,
+        sort_order=folder.sort_order,
+        note_count=note_count,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
+def _to_response(note: Note) -> NoteResponse:
+    """Convert a Note ORM object to NoteResponse schema."""
+    return NoteResponse(
+        id=note.id,
+        folder_id=note.folder_id,
+        title=note.title,
+        body=note.body,
+        is_pinned=note.is_pinned,
+        color=note.color,
+        is_encrypted=note.is_encrypted,
+        encrypted_at=note.encrypted_at,
+        tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in note.tag_associations if a.tag],
+        pages=[NotePageResponse.model_validate(p) for p in note.pages],
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
+
+
+def _to_list_item(note: Note, snippet: str) -> NoteListItem:
+    """Convert a Note (loaded WITHOUT body/pages) to a lightweight list item.
+
+    ``snippet`` is a server-side body truncation (empty for encrypted notes),
+    so full bodies + nested page bodies never load for list rows.
+    """
+    return NoteListItem(
+        id=note.id,
+        folder_id=note.folder_id,
+        title=note.title,
+        body_snippet=snippet,
+        is_pinned=note.is_pinned,
+        color=note.color,
+        is_encrypted=note.is_encrypted,
+        encrypted_at=note.encrypted_at,
+        tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in note.tag_associations if a.tag],
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
+
+
+class _PinBody(BaseModel):
+    is_pinned: bool
+
+
+class _WebClipBody(BaseModel):
+    url: HttpUrl
+
+
+@router.post("", response_model=NoteResponse, status_code=201)
+async def create_note(data: NoteCreate, db: AsyncSession = Depends(get_db)) -> Any:
+    """Create a new note."""
+    svc = NoteService(db)
+    return _to_response(await svc.create(data))
+
+
+@router.get("", response_model=NoteListResponse)
+async def list_notes(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    folder_id: int | None = Query(None),
+    tag_ids: str | None = Query(None),
+    is_pinned: bool | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """List notes with optional filters and pagination (pinned-first)."""
+    svc = NoteService(db)
+    parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
+    notes, total = await svc.list_notes(offset, limit, folder_id, parsed_tag_ids, is_pinned)
+    snippets = await svc.body_snippets([n.id for n in notes])
+    return NoteListResponse(
+        items=[_to_list_item(n, snippets.get(n.id, "")) for n in notes],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/search", response_model=NoteListResponse)
+async def search_notes(
+    q: str = Query(..., min_length=1),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Full-text search on notes (notes_fts, ILIKE fallback)."""
+    svc = NoteService(db)
+    notes, total = await svc.search(q, offset, limit)
+    snippets = await svc.body_snippets([n.id for n in notes])
+    return NoteListResponse(
+        items=[_to_list_item(n, snippets.get(n.id, "")) for n in notes],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.post("/web-clip")
+async def web_clip(data: _WebClipBody) -> dict[str, str]:
+    """Clip a web page to markdown.
+
+    Fallback for the desktop web-page image capture: the Tauri shell captures
+    the page as a picture (then OCRs it); this text path is used when capture
+    is unavailable (web build) or fails. SSRF-hardened (see web_clip_service).
+    """
+    from app.services.web_clip_service import extract_markdown_from_url
+
+    return {"markdown": await extract_markdown_from_url(str(data.url))}
+
+
+# ── Sub-pages (EPIM-style page tabs) ────────────────────────────────────────
+
+
+@router.post("/{note_id}/pages", response_model=NotePageResponse, status_code=201)
+async def create_page(
+    note_id: int, data: NotePageCreate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Append a new page tab to a note."""
+    svc = NoteService(db)
+    return await svc.create_page(note_id, data)
+
+
+@router.post("/{note_id}/pages/reorder")
+async def reorder_pages(
+    note_id: int, data: NotePageReorder, db: AsyncSession = Depends(get_db)
+) -> dict[str, int]:
+    """Re-set sort_order for the given pages (scoped to note_id)."""
+    svc = NoteService(db)
+    await svc.reorder_pages(note_id, data.items)
+    return {"reordered": len(data.items)}
+
+
+@router.patch("/{note_id}/pages/{page_id}", response_model=NotePageResponse)
+async def update_page(
+    note_id: int, page_id: int, data: NotePageUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    svc = NoteService(db)
+    return await svc.update_page(note_id, page_id, data)
+
+
+@router.delete("/{note_id}/pages/{page_id}", status_code=204)
+async def delete_page(note_id: int, page_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    svc = NoteService(db)
+    await svc.delete_page(note_id, page_id)
+
+
+@router.get("/folders", response_model=list[NoteFolderResponse])
+async def list_folders(db: AsyncSession = Depends(get_db)) -> Any:
+    """List non-deleted folders with their live note counts."""
+    svc = NoteService(db)
+    return [_folder_response(folder, count) for folder, count in await svc.list_folders()]
+
+
+@router.post("/folders", response_model=NoteFolderResponse, status_code=201)
+async def create_folder(data: NoteFolderCreate, db: AsyncSession = Depends(get_db)) -> Any:
+    """Create a note folder (the response carries its real note count — 0 for a new one)."""
+    svc = NoteService(db)
+    folder = await svc.create_folder(data)
+    return _folder_response(folder, await svc.count_notes(folder.id))
+
+
+@router.patch("/folders/{folder_id}", response_model=NoteFolderResponse)
+async def update_folder(
+    folder_id: int, data: NoteFolderUpdate, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Update a note folder (the response carries its real note count)."""
+    svc = NoteService(db)
+    folder = await svc.update_folder(folder_id, data)
+    return _folder_response(folder, await svc.count_notes(folder.id))
+
+
+@router.delete("/folders/{folder_id}", status_code=204)
+async def delete_folder(folder_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Soft-delete a note folder."""
+    svc = NoteService(db)
+    await svc.soft_delete_folder(folder_id)
+
+
+# ── Note media (drag-and-drop / paste image embedding) ──
+
+
+@router.post("/{note_id}/media", response_model=NoteMediaResponse, status_code=201)
+async def upload_note_media(
+    note_id: int,
+    file: UploadFile = File(...),
+    caption: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Upload a media file attached to a note (used for inline image embedding)."""
+    svc = NoteMediaService(db)
+    # Spool to disk with incremental size enforcement instead of materialising
+    # the whole body in RAM before the size check runs (same as /media).
+    spool, _size = await spool_upload(file, settings.MAX_MEDIA_SIZE_BYTES)
+    try:
+        return await svc.upload_file(
+            note_id,
+            file.filename or "upload",
+            file.content_type or "application/octet-stream",
+            spool,
+            caption,
+        )
+    finally:
+        spool.unlink(missing_ok=True)
+
+
+@router.post("/{note_id}/media/from-path", response_model=NoteMediaResponse, status_code=201)
+async def upload_note_media_from_path(
+    note_id: int, data: NoteMediaFromPath, db: AsyncSession = Depends(get_db)
+) -> Any:
+    """Import a local file by absolute path as note media.
+
+    Used by the Tauri native drag-drop handler, which receives a file path
+    (WebKitGTK doesn't deliver HTML5 file drops to the webview).
+    """
+    svc = NoteMediaService(db)
+    return await svc.upload_from_path(note_id, data.path, data.caption)
+
+
+@router.get("/{note_id}/media", response_model=list[NoteMediaResponse])
+async def list_note_media(note_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """List all media attachments for a note."""
+    svc = NoteMediaService(db)
+    return await svc.list_for_note(note_id)
+
+
+@router.get("/{note_id}/media/{media_id}/file")
+async def download_note_media(
+    note_id: int, media_id: int, db: AsyncSession = Depends(get_db)
+) -> FileResponse:
+    """Stream a note media file (inline, with HTTP range support)."""
+    svc = NoteMediaService(db)
+    path, content_type, filename = await svc.get_file_path(media_id, note_id)
+    return FileResponse(
+        path=str(path),
+        media_type=content_type,
+        filename=filename,
+        content_disposition_type="inline",
+    )
+
+
+@router.delete("/{note_id}/media/{media_id}", status_code=204)
+async def delete_note_media(
+    note_id: int, media_id: int, db: AsyncSession = Depends(get_db)
+) -> None:
+    """Delete a note media attachment and its file."""
+    svc = NoteMediaService(db)
+    await svc.delete(media_id, note_id)
+
+
+@router.post("/{note_id}/media/{media_id}/ocr")
+async def ocr_note_media(
+    note_id: int,
+    media_id: int,
+    lang: str = "eng",
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Extract text from a note image attachment via OCR (tesseract/pytesseract).
+
+    ``lang`` selects the Tesseract language (e.g. ``eng``, ``jpn``); it mirrors
+    the Settings → Appearance → "OCR language" picker. Returns only the
+    recognized text. The frontend inserts it into the note body; the autosave
+    PATCH then makes it searchable (the ``notes_fts`` AFTER-UPDATE trigger
+    reindexes ``notes.body``).
+    """
+    svc = NoteMediaService(db)
+    path, content_type, _filename = await svc.get_file_path(media_id, note_id)
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="OCR is only available for images.")
+
+    try:
+        text = await asyncio.to_thread(ocr_image_bytes, path.read_bytes(), lang)
+    except ValueError as exc:
+        # Unsupported language code (not in the whitelist).
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OcrLanguageUnavailable as exc:
+        # Tesseract is installed but the language's data pack is not.
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=f"OCR unavailable: {exc}") from exc
+    except Exception as exc:
+        # Most common cause: the `tesseract` system binary isn't installed.
+        logger.error("Note OCR failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="OCR failed — is the `tesseract` binary installed? "
+            "Run System Setup (Settings → Features) or: sudo apt install tesseract-ocr",
+        ) from exc
+    return {"text": text.strip()}
+
+
+@router.get("/{note_id}", response_model=NoteResponse)
+async def get_note(note_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Get a single note by ID."""
+    svc = NoteService(db)
+    return _to_response(await svc.get(note_id))
+
+
+@router.get("/{note_id}/export/markdown")
+async def export_note_markdown(note_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+    """A single note as a downloadable Markdown file (YAML frontmatter + body)."""
+    res = await NotesExportService(db).export_single_markdown(note_id)
+    if res is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    filename, content = res
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.patch("/{note_id}", response_model=NoteResponse)
+async def update_note(note_id: int, data: NoteUpdate, db: AsyncSession = Depends(get_db)) -> Any:
+    """Update an existing note."""
+    svc = NoteService(db)
+    return _to_response(await svc.update(note_id, data))
+
+
+@router.delete("/{note_id}", status_code=204)
+async def delete_note(note_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Soft-delete a note."""
+    svc = NoteService(db)
+    await svc.soft_delete(note_id)
+
+
+@router.post("/{note_id}/restore", response_model=NoteResponse)
+async def restore_note(note_id: int, db: AsyncSession = Depends(get_db)) -> Any:
+    """Restore a previously soft-deleted note (re-indexes it in notes_fts)."""
+    svc = NoteService(db)
+    return _to_response(await svc.restore(note_id))
+
+
+@router.patch("/{note_id}/pin", response_model=NoteResponse)
+async def pin_note(note_id: int, body: _PinBody, db: AsyncSession = Depends(get_db)) -> Any:
+    """Set the pinned state of a note."""
+    svc = NoteService(db)
+    return _to_response(await svc.set_pinned(note_id, body.is_pinned))
+
+
+# ── Notes import / export ────────────────────────────────────────────────────
+@router.get("/export/markdown")
+async def export_notes_markdown(db: AsyncSession = Depends(get_db)) -> Response:
+    """All notes as a ZIP of per-note Markdown files (with YAML frontmatter)."""
+    data = await NotesExportService(db).export_markdown()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="lifelogr-notes.zip"'},
+    )
+
+
+@router.get("/export/json")
+async def export_notes_json(db: AsyncSession = Depends(get_db)) -> Response:
+    """All notes as a portable LifeLogr JSON document."""
+    data = await NotesExportService(db).export_json()
+    return Response(
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="lifelogr-notes.json"'},
+    )
+
+
+@router.get("/export/html")
+async def export_notes_html(db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    """All notes as a single styled HTML document.
+
+    Served as a download inside a sandboxing CSP: the document embeds note
+    bodies, so it must never execute script or touch the app origin.
+    """
+    return HTMLResponse(
+        content=await NotesExportService(db).export_html(),
+        headers={
+            "Content-Disposition": "attachment; filename=lifelogr-notes.html",
+            "Content-Security-Policy": "sandbox",
+        },
+    )
+
+
+@router.post("/import/file")
+async def import_notes_file(
+    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Import notes from a LifeLogr notes .json or Markdown .zip export."""
+    content = await file.read()
+    svc = NotesExportService(db)
+    name = (file.filename or "").lower()
+    if name.endswith(".json"):
+        result = await svc.import_json(content)
+    elif name.endswith(".zip"):
+        result = await svc.import_markdown_zip(content)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use .json or .zip.")
+    return result
+
+
+@router.post("/import/markdown")
+async def import_note_markdown(
+    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Import a single Markdown (.md) file as a new note (frontmatter-aware)."""
+    content = await file.read()
+    return await NotesExportService(db).import_single_markdown(content)

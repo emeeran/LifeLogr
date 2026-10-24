@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.venv/
+venv/
+*.egg-info/
+*.egg
+dist/
+build/
+local/ 
+
+# Environment
+.env
+*.env.local
+
+# Editors
+.vscode/settings.json
+.idea/
+*.swp
+*~
+
+# Testing / Coverage
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+.python-version
+
+# DB & data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+*.diary
+backend/media/
+
+# Build artifacts
+.vite/
+# package-lock.json is TRACKED (npm ci in Docker/CI depends on it) — never ignore it.
+frontend/test-results/
+backend/test-results/
+frontend/playwright-report/
+
+# Packaging / distribution
+releases/
+*.AppImage
+*.deb
+*.rpm
+
+# Tauri / desktop build
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/
+# PyInstaller sidecar binaries built fresh by CI/dev.sh — never commit
+desktop/src-tauri/lifelogr-backend-*
+desktop/build/
+desktop/dist/
+
+# Root-level node_modules (no root package.json)
+node_modules/
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+
+# Local model artifacts (never commit)
+backend/models/
+
+# Local linker shim for builds on hosts without libgbm-dev (see desktop/scripts/setup-linux.sh)
+desktop/.build-libs/

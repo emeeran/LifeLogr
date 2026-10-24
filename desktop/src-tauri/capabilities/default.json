@@ -1,0 +1,40 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for LifeLogr",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        { "name": "lifelogr-backend", "sidecar": true, "args": true }
+      ]
+    },
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$HOME/Documents/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$HOME/Documents/**" }
+      ]
+    },
+    "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-read-text"
+  ]
+}

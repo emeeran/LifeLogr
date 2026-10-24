@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LifeLogr</title>
+    <script>
+      // Apply the persisted theme before first paint. The default is dark
+      // (class on <html>), so only an explicit `lifelogr-dark: false` — stored
+      // by vueuse as a bare JSON boolean — switches to light. Kept inline and
+      // synchronous to avoid a light-mode flash on refresh.
+      try {
+        var stored = localStorage.getItem('lifelogr-dark')
+        if (stored != null && JSON.parse(stored) === false)
+          document.documentElement.classList.remove('dark')
+      } catch (e) {
+        /* malformed or blocked storage — keep the dark default */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,337 @@
+<script setup lang="ts">
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useSearchStore } from '../../stores/search'
+import { useUiStore } from '../../stores/ui'
+import { useNotesStore } from '../../stores/notes'
+import {
+  Search as SearchIcon,
+  Calendar,
+  ArrowRight,
+  Clock,
+  NotebookPen,
+  Bell,
+} from 'lucide-vue-next'
+import DOMPurify from 'dompurify'
+import { formatDDMMYYYY } from '../../composables/useFormat'
+import { useModalFocus } from '../../composables/useModalFocus'
+import type { SearchResultEntry } from '../../types'
+
+const searchStore = useSearchStore()
+const ui = useUiStore()
+const router = useRouter()
+const notesStore = useNotesStore()
+
+const query = ref('')
+const inputRef = ref<HTMLInputElement | null>(null)
+const selectedIndex = ref(0)
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const results = computed(() => searchStore.results)
+
+// Modal a11y: role="dialog", focus trap, Esc + focus restore.
+const modal = useModalFocus(
+  () => true,
+  () => ui.closeSearchPalette(),
+)
+
+watch(query, (q) => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  if (!q.trim()) {
+    searchStore.clear()
+    return
+  }
+  debounceTimer = setTimeout(() => searchStore.search(q), 200)
+  selectedIndex.value = 0
+})
+
+onMounted(() => {
+  nextTick(() => inputRef.value?.focus())
+})
+onUnmounted(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+})
+
+function openEntry(item: SearchResultEntry) {
+  // The editor only renders on the Journal view, so jump there to edit.
+  ui.setView('calendar')
+  ui.startEditing(item.id)
+  ui.closeSearchPalette()
+}
+
+function openResult(item: SearchResultEntry) {
+  // History records explicit intent only — opening a result (or pressing Enter
+  // on one), never the intermediate keystrokes that ran the search.
+  searchStore.addToHistory(query.value)
+  if (item.type === 'note') {
+    notesStore.selectNote(item.id)
+    router.push('/notes')
+    ui.closeSearchPalette()
+    return
+  }
+  if (item.type === 'reminder') {
+    router.push('/reminders')
+    ui.closeSearchPalette()
+    return
+  }
+  openEntry(item)
+}
+
+function formatDateTime(d: string) {
+  return new Date(d).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    ui.closeSearchPalette()
+    return
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    selectedIndex.value = Math.min(
+      selectedIndex.value + 1,
+      results.value.length - 1,
+    )
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
+    return
+  }
+  if (e.key === 'Enter' && results.value.length) {
+    openResult(results.value[selectedIndex.value])
+    return
+  }
+}
+
+function formatDate(d: string) {
+  return formatDDMMYYYY(d)
+}
+
+function sanitize(html: string) {
+  return DOMPurify.sanitize(html, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] })
+}
+
+function applyHistoryItem(h: string) {
+  query.value = h
+}
+
+function wordCount(snippet: string): number {
+  return snippet.trim().split(/\s+/).length
+}
+
+const showHistory = computed(
+  () => !query.value.trim() && searchStore.searchHistory.length > 0,
+)
+</script>
+
+<template>
+  <div
+    class="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh] bg-black/40"
+    @click.self="ui.closeSearchPalette()"
+  >
+    <div
+      ref="modal.container"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search"
+      tabindex="-1"
+      class="bg-surface border border-border rounded-xl w-[560px] max-h-[60vh] flex flex-col shadow-2xl overflow-hidden"
+      @keydown="modal.onKeydown"
+    >
+      <!-- Input -->
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
+        <SearchIcon :size="18" class="text-text-muted shrink-0" />
+        <input
+          ref="inputRef"
+          v-model="query"
+          class="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+          placeholder="Search journals, notes & reminders… (Ctrl+K)"
+          @keydown="onKeydown"
+        />
+        <!-- Search mode toggle -->
+        <div
+          class="flex bg-surface-hover rounded-md overflow-hidden border border-border text-[10px]"
+        >
+          <button
+            v-for="m in ['keyword', 'semantic', 'hybrid'] as const"
+            :key="m"
+            @click="searchStore.searchMode = m; if (query) searchStore.search(query)"
+            class="px-1.5 py-0.5 transition-colors"
+            :class="
+              searchStore.searchMode === m
+                ? 'bg-accent text-white'
+                : 'text-text-muted hover:text-text-primary'
+            "
+            :title="
+              m === 'keyword'
+                ? 'Exact text match'
+                : m === 'semantic'
+                  ? 'AI meaning-based'
+                  : 'Combined results'
+            "
+          >
+            {{ m === 'keyword' ? 'Aa' : m === 'semantic' ? 'AI' : 'Mix' }}
+          </button>
+        </div>
+        <kbd
+          class="hidden sm:inline text-[10px] text-text-muted bg-surface-hover border border-border rounded px-1.5 py-0.5"
+          >Esc</kbd
+        >
+      </div>
+
+      <!-- Results -->
+      <div class="flex-1 overflow-y-auto">
+        <div
+          v-if="searchStore.loading"
+          class="px-4 py-8 text-center text-text-muted text-xs flex items-center justify-center gap-2"
+        >
+          <SearchIcon :size="12" class="animate-pulse" /> Searching...
+        </div>
+
+        <div
+          v-else-if="searchStore.error"
+          class="px-4 py-8 text-center text-xs text-danger"
+          role="alert"
+        >
+          Search failed: {{ searchStore.error }}
+        </div>
+
+        <div
+          v-else-if="query && !results.length"
+          class="px-4 py-8 text-center text-text-muted text-xs"
+        >
+          No results for "{{ query }}"
+        </div>
+
+        <!-- Search history (when no query) -->
+        <div v-else-if="showHistory" class="px-4 py-3">
+          <div
+            class="text-[9px] font-bold text-text-muted uppercase tracking-wider mb-2"
+          >
+            Recent Searches
+          </div>
+          <div class="space-y-0.5">
+            <button
+              v-for="h in searchStore.searchHistory"
+              :key="h"
+              class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-text-secondary hover:bg-surface-hover cursor-pointer transition-colors"
+              @click="applyHistoryItem(h)"
+            >
+              <Clock :size="11" class="text-text-muted shrink-0" />
+              <span class="truncate">{{ h }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-else-if="!query && !showHistory"
+          class="px-4 py-6 text-center text-text-muted text-xs"
+        >
+          Type to search across journals, notes & reminders
+        </div>
+
+        <div
+          v-for="(item, i) in results"
+          :key="item.type + '-' + item.id"
+          class="flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors"
+          :class="
+            i === selectedIndex ? 'bg-accent/10' : 'hover:bg-surface-hover'
+          "
+          @click="openResult(item)"
+          @mouseenter="selectedIndex = i"
+        >
+          <component
+            :is="
+              item.type === 'note'
+                ? NotebookPen
+                : item.type === 'reminder'
+                  ? Bell
+                  : Calendar
+            "
+            :size="13"
+            class="text-text-muted mt-0.5 shrink-0"
+          />
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-text-primary">
+                {{
+                  item.type === 'note'
+                    ? item.title || 'Untitled note'
+                    : item.type === 'reminder'
+                      ? item.title || 'Reminder'
+                      : item.entry_date
+                        ? formatDate(item.entry_date)
+                        : ''
+                }}
+              </span>
+              <span
+                v-if="
+                  (item.type === 'note' || item.type === 'reminder') &&
+                  item.updated_at
+                "
+                class="text-[10px] text-text-muted truncate"
+                >{{ formatDateTime(item.updated_at) }}</span
+              >
+              <span
+                v-else-if="item.type === 'entry' && item.title"
+                class="text-xs text-text-secondary truncate"
+                >{{ item.title }}</span
+              >
+            </div>
+            <p
+              class="text-[11px] text-text-muted leading-relaxed mt-0.5 line-clamp-2"
+              v-html="sanitize(item.snippet)"
+            />
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-[9px] text-text-muted"
+                >{{ wordCount(item.snippet) }} words</span
+              >
+            </div>
+          </div>
+          <ArrowRight
+            v-if="i === selectedIndex"
+            :size="12"
+            class="text-accent mt-1 shrink-0"
+          />
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div
+        v-if="results.length || searchStore.queryDuration"
+        class="flex items-center justify-between px-4 py-2 border-t border-border text-[10px] text-text-muted"
+      >
+        <span v-if="results.length"
+          >{{ searchStore.total }} result{{
+            searchStore.total === 1 ? '' : 's'
+          }}</span
+        >
+        <span v-if="searchStore.queryDuration" class="text-text-muted/60"
+          >{{ searchStore.queryDuration }}ms</span
+        >
+        <div v-if="results.length" class="flex items-center gap-3">
+          <span class="flex items-center gap-1"
+            ><kbd
+              class="bg-surface-hover border border-border rounded px-1 py-px"
+              >&uarr;&darr;</kbd
+            >
+            navigate</span
+          >
+          <span class="flex items-center gap-1"
+            ><kbd
+              class="bg-surface-hover border border-border rounded px-1 py-px"
+              >Enter</kbd
+            >
+            open</span
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

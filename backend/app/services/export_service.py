@@ -1,0 +1,490 @@
+"""ExportService — PDF and HTML export with branded templates."""
+
+from __future__ import annotations
+
+import asyncio
+import html
+import re
+from datetime import date
+
+from markdown_it import MarkdownIt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.entry import Entry
+from app.models.tag import EntryTag
+
+_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{title}</title>
+<style>
+  body {{ font-family: Georgia, serif; max-width: 800px; margin: 40px auto; color: #333; }}
+  h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px; }}
+  .meta {{ color: #666; font-size: 0.9em; margin-bottom: 16px; }}
+  .tag {{ background: #e8f4f8; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }}
+  .entry {{ margin-bottom: 40px; page-break-after: always; }}
+  .mood {{ color: #e67e22; font-weight: bold; }}
+  @page {{ margin: 2cm; }}
+</style>
+</head>
+<body>
+{content}
+</body>
+</html>"""
+
+_ENTRY_HTML = """
+<div class="entry">
+  <h1>{date}{title}</h1>
+  <div class="meta">
+    {mood}{tags}
+  </div>
+  <div class="body">{body_html}</div>
+</div>
+"""
+
+
+# fpdf2's built-in core fonts render the Latin-1 (ISO-8859-1) range only, so map
+# common Unicode punctuation (em/en dash, smart quotes, ellipsis, …) to ASCII and
+# clip anything else outside Latin-1 — otherwise PDF export raises
+# FPDFUnicodeEncodingException on entries containing those characters.
+_PDF_TEXT_REPLACEMENTS = {
+    "—": "-",  # em dash
+    "–": "-",  # en dash
+    "‘": "'",  # left single quote
+    "’": "'",  # right single quote / apostrophe
+    "“": '"',  # left double quote
+    "”": '"',  # right double quote
+    "…": "...",  # ellipsis
+    "•": "*",  # bullet
+    " ": " ",  # non-breaking space
+    "™": "(TM)",
+    "®": "(R)",
+}
+
+
+def _pdf_text(text: str) -> str:
+    """Coerce text into the Latin-1 range fpdf2's core fonts can render."""
+    for src, dst in _PDF_TEXT_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+    # Replace any remaining non-Latin-1 code points (e.g. CJK, emoji) with "?".
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
+class ExportService:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+        # Raw HTML in entry bodies must NEVER pass through into the export
+        # document: MarkdownIt's default preset renders ``<script>`` verbatim,
+        # which turns a stored XSS payload in one entry into an executable
+        # script in every exported HTML file. ``html: False`` escapes it.
+        self._md = MarkdownIt("default", {"html": False})
+
+    async def _get_entries(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> list[Entry]:
+        q = (
+            select(Entry)
+            .where(Entry.is_deleted == False)  # noqa: E712
+            .options(
+                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+            )
+            .order_by(Entry.entry_date)
+        )
+
+        if start_date:
+            q = q.where(Entry.entry_date >= start_date)
+        if end_date:
+            q = q.where(Entry.entry_date <= end_date)
+
+        result = await self.db.execute(q)
+        return list(result.scalars().all())
+
+    async def export_html(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> str:
+        """Export entries as a single styled HTML document."""
+        entries = await self._get_entries(start_date, end_date)
+        parts = []
+        for entry in entries:
+            tags = [a.tag.name for a in entry.tag_associations if a.tag]
+            title_part = f" — {html.escape(entry.title)}" if entry.title else ""
+            mood_part = (
+                f'<span class="mood">{html.escape(entry.mood)}</span> · ' if entry.mood else ""
+            )
+            tag_html = " ".join(f'<span class="tag">{html.escape(t)}</span>' for t in tags)
+            if tag_html:
+                tag_html = f"<div>{tag_html}</div>"
+
+            body_html = self._md.render(entry.body)
+            parts.append(
+                _ENTRY_HTML.format(
+                    date=html.escape(str(entry.entry_date)),
+                    title=title_part,
+                    mood=mood_part,
+                    tags=tag_html,
+                    body_html=body_html,
+                )
+            )
+
+        content = "\n".join(parts)
+        return _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
+
+    async def export_pdf(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> bytes:
+        """Export entries as a PDF document using fpdf2 (pure Python, no system deps).
+
+        fpdf2 (and its transitive numpy/PIL via ``image_parsing``) is imported lazily
+        here so it doesn't inflate app startup — PDF export is a rarely-used feature.
+        Matches the lazy-import pattern in the ocr/tts/recording services.
+        """
+        entries = await self._get_entries(start_date, end_date)
+        # Rendering is pure CPU (fpdf2 layout + markdown parse per entry) — offload
+        # it from the event loop so a large journal doesn't stall other requests.
+        return await asyncio.to_thread(self._render_pdf, entries)
+
+    def _render_pdf(self, entries: list[Entry]) -> bytes:
+        """Synchronously lay out ``entries`` into the branded PDF."""
+        from fpdf import FPDF
+
+        class _DiaryPDF(FPDF):
+            """Custom PDF with Georgia-like font and branded styling."""
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.set_auto_page_break(auto=True, margin=25)
+
+            def header(self) -> None:
+                if self.page_no() > 1:
+                    self.set_font("Helvetica", "I", 8)
+                    self.set_text_color(150, 150, 150)
+                    self.cell(0, 10, "LifeLogr Export", align="C")
+                    self.ln(5)
+
+            def footer(self) -> None:
+                self.set_y(-15)
+                self.set_font("Helvetica", "I", 8)
+                self.set_text_color(150, 150, 150)
+                self.cell(0, 10, f"Page {self.page_no()}/{{nb}}", align="C")
+
+        pdf = _DiaryPDF()
+        pdf.alias_nb_pages()
+
+        for entry in entries:
+            pdf.add_page()
+
+            # Title line: date + optional title
+            title_text = f"{entry.entry_date}"
+            if entry.title:
+                title_text += f"  —  {entry.title}"
+
+            pdf.set_font("Helvetica", "B", 16)
+            pdf.set_text_color(44, 62, 80)  # #2c3e50
+            pdf.cell(0, 12, _pdf_text(title_text), new_x="LMARGIN", new_y="NEXT")
+
+            # Blue divider line
+            pdf.set_draw_color(52, 152, 219)  # #3498db
+            pdf.set_line_width(0.8)
+            pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+            pdf.ln(4)
+
+            # Meta: mood + tags
+            meta_parts: list[str] = []
+            if entry.mood:
+                meta_parts.append(f"Mood: {entry.mood}")
+            tags = [a.tag.name for a in entry.tag_associations if a.tag]
+            if tags:
+                meta_parts.append(f"Tags: {', '.join(tags)}")
+
+            if meta_parts:
+                pdf.set_font("Helvetica", "I", 10)
+                pdf.set_text_color(102, 102, 102)  # #666
+                pdf.cell(0, 6, _pdf_text("  |  ".join(meta_parts)), new_x="LMARGIN", new_y="NEXT")
+                pdf.ln(4)
+
+            # Body — strip markdown to plain text for PDF
+            pdf.set_font("Helvetica", "", 11)
+            pdf.set_text_color(51, 51, 51)  # #333
+            body_text = self._md.render(entry.body)
+            # Quick HTML→text: remove tags
+            plain = re.sub(r"<[^>]+>", "", body_text)
+            plain = html.unescape(plain)
+            pdf.multi_cell(0, 6, _pdf_text(plain))
+
+        return bytes(pdf.output())
+
+    async def export_markdown(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> bytes:
+        """Export entries as an Obsidian-compatible Markdown vault bundled inside a ZIP file."""
+        from sqlalchemy.orm import selectinload
+
+        q = (
+            select(Entry)
+            .where(Entry.is_deleted == False)  # noqa: E712
+            .options(
+                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+                selectinload(Entry.media),
+            )
+            .order_by(Entry.entry_date)
+        )
+
+        if start_date:
+            q = q.where(Entry.entry_date >= start_date)
+        if end_date:
+            q = q.where(Entry.entry_date <= end_date)
+
+        result = await self.db.execute(q)
+        entries = list(result.scalars().all())
+
+        # Zip assembly reads every attachment from disk and deflate-compresses it
+        # (plus markdown per entry) — CPU + blocking file I/O, so offload it.
+        return await asyncio.to_thread(self._build_markdown_zip, entries)
+
+    def _build_markdown_zip(self, entries: list[Entry]) -> bytes:
+        """Synchronously assemble the Obsidian vault ZIP for ``entries``.
+
+        Multiple entries can share one ``entry_date``, so the naive
+        ``journal/Y/M/<date>.md`` path silently overwrote every entry after the
+        first for that day (data loss in the export). The first entry of a date
+        keeps the legacy path; any further same-day entry gets ``<date>-<id>.md``.
+        """
+        import io
+        import zipfile
+
+        from app.core.config import settings
+
+        zip_buffer = io.BytesIO()
+        used_paths: set[str] = set()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for entry in entries:
+                # 1. Gather tags
+                tags = [assoc.tag.name for assoc in entry.tag_associations if assoc.tag]
+
+                # 2. Gather attachments and copy files to Zip
+                attachments_meta: list[dict[str, object]] = []
+                for media in entry.media:
+                    local_file_path = settings.MEDIA_DIR / media.storage_path
+                    if local_file_path.exists():
+                        zip_media_path = f"attachments/{entry.entry_date}/{media.filename}"
+                        zip_file.writestr(zip_media_path, local_file_path.read_bytes())
+                        attachments_meta.append(
+                            {
+                                "filename": media.filename,
+                                "size": media.file_size,
+                                "type": media.media_type,
+                                "path": zip_media_path,
+                            }
+                        )
+
+                # 3. Create frontmatter manually to avoid PyYAML dependency
+                metadata: dict[str, object] = {
+                    "date": str(entry.entry_date),
+                    "title": entry.title,
+                    "mood": entry.mood,
+                    "tags": tags,
+                    "location": entry.location_name,
+                    "latitude": entry.latitude,
+                    "longitude": entry.longitude,
+                }
+                if attachments_meta:
+                    metadata["attachments"] = attachments_meta
+
+                frontmatter_block = self._dump_yaml(metadata)
+
+                # 4. Format entry body with relative links
+                body_content = entry.body or ""
+
+                unread_attachments: list[dict[str, object]] = []
+                for attachment in attachments_meta:
+                    filename = str(attachment.get("filename", ""))
+                    if filename and filename not in body_content:
+                        unread_attachments.append(attachment)
+
+                if unread_attachments:
+                    body_content += "\n\n## Attachments\n"
+                    for attachment in unread_attachments:
+                        filename = str(attachment.get("filename", "attachment"))
+                        media_type = str(attachment.get("type", "document"))
+                        rel_path = f"../../attachments/{entry.entry_date}/{filename}"
+                        if media_type == "image":
+                            body_content += f"![{filename}]({rel_path})\n"
+                        elif media_type == "audio":
+                            body_content += f'<audio controls src="{rel_path}"></audio>\n'
+                        elif media_type == "video":
+                            body_content += f'<video controls src="{rel_path}"></video>\n'
+                        else:
+                            body_content += f"[{filename}]({rel_path})\n"
+
+                full_markdown = f"---\n{frontmatter_block}\n---\n\n{body_content}"
+
+                # 5. Save markdown entry in the zip under a collision-free path.
+                year_str = entry.entry_date.strftime("%Y")
+                month_str = entry.entry_date.strftime("%m")
+                zip_md_path = f"journal/{year_str}/{month_str}/{entry.entry_date}.md"
+                if zip_md_path in used_paths:
+                    zip_md_path = f"journal/{year_str}/{month_str}/{entry.entry_date}-{entry.id}.md"
+                used_paths.add(zip_md_path)
+                zip_file.writestr(zip_md_path, full_markdown.encode("utf-8"))
+
+        return zip_buffer.getvalue()
+
+    @staticmethod
+    def _dump_yaml(data: dict[str, object]) -> str:
+        """Helper to serialize a simple dictionary to YAML format manually."""
+        lines = []
+        for k, v in data.items():
+            if v is None:
+                lines.append(f"{k}: null")
+            elif isinstance(v, (bool, int, float)):
+                lines.append(f"{k}: {str(v).lower() if isinstance(v, bool) else str(v)}")
+            elif isinstance(v, str):
+                if ":" in v or "'" in v or '"' in v or "\n" in v or "-" in v:
+                    escaped = v.replace('"', '\\"')
+                    lines.append(f'{k}: "{escaped}"')
+                else:
+                    lines.append(f"{k}: {v}")
+            elif isinstance(v, list):
+                if not v:
+                    lines.append(f"{k}: []")
+                else:
+                    lines.append(f"{k}:")
+                    for item in v:
+                        if isinstance(item, dict):
+                            lines.append(f"  - filename: {item.get('filename')}")
+                            lines.append(f"    size: {item.get('size')}")
+                            lines.append(f"    type: {item.get('type')}")
+                            lines.append(f"    path: {item.get('path')}")
+                        else:
+                            lines.append(f"  - {item}")
+        return "\n".join(lines)
+
+
+# ── Diarium-native .diary SQLite export ─────────────────────────────────────
+# Moved from app.routers.entries so the router stays a thin transport layer.
+# Produces the real Diarium schema (Entries keyed by .NET DateTime ticks, Tags,
+# EntryTags) so the file opens in Diarium or re-imports via the .diary importer.
+_DOTNET_TICKS_EPOCH = 621355968000000000
+_TICKS_PER_SECOND = 10_000_000
+_MOOD_TO_RATING = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
+
+
+def _markdown_to_diarium_html(body: str) -> str:
+    """Convert a markdown/plain-text body into Diarium-style HTML.
+
+    Diarium stores entry text as HTML (<p>...</p> with <br> line breaks) — the
+    inverse of the HTML-stripping performed by the .diary importer.
+    """
+    escaped = html.escape(body or "")
+    paragraphs = re.split(r"\n\s*\n", escaped)
+    rendered = []
+    for para in paragraphs:
+        if not para.strip():
+            continue
+        para = para.replace("\n", "<br>")
+        rendered.append(f"<p>{para}</p>")
+    return "".join(rendered)
+
+
+async def build_diarium_database(entries: list[Entry]) -> bytes:
+    """Build a Diarium-native .diary SQLite database (as bytes) from entries.
+
+    ``entries`` must have ``tag_associations`` loaded (selectinload). Returns the
+    serialized SQLite file so the caller can wrap it in a StreamingResponse.
+    The SQLite build is CPU-bound, so it runs in a worker thread.
+    """
+    return await asyncio.to_thread(_build_diarium_database_sync, entries)
+
+
+def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
+    """Synchronously serialize ``entries`` into the Diarium SQLite schema."""
+    import sqlite3
+    import tempfile
+    from datetime import date as date_type
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE Entries (
+                DiaryEntryId INTEGER PRIMARY KEY,
+                Heading     TEXT,
+                Text        TEXT,
+                Rating      INTEGER DEFAULT 0,
+                Latitude    REAL,
+                Longitude   REAL
+            );
+            CREATE TABLE Tags (
+                DiaryTagId  INTEGER PRIMARY KEY AUTOINCREMENT,
+                Value       TEXT NOT NULL
+            );
+            CREATE TABLE EntryTags (
+                DiaryEntryId INTEGER NOT NULL,
+                DiaryTagId   INTEGER NOT NULL,
+                PRIMARY KEY (DiaryEntryId, DiaryTagId)
+            );
+            """
+        )
+
+        tag_id_map: dict[str, int] = {}
+        used_entry_ids: set[int] = set()
+
+        for entry in entries:
+            ed = entry.entry_date
+            if isinstance(ed, str):
+                ed = date_type.fromisoformat(ed[:10])
+            # DiaryEntryId = .NET ticks for the entry date at 00:00:00 UTC.
+            midnight = datetime.combine(ed, datetime.min.time(), tzinfo=timezone.utc)
+            unix_us = int(midnight.timestamp() * 1_000_000)
+            entry_id = _DOTNET_TICKS_EPOCH + unix_us * 10
+            # Guarantee uniqueness while staying on the same calendar day.
+            while entry_id in used_entry_ids:
+                entry_id += _TICKS_PER_SECOND
+            used_entry_ids.add(entry_id)
+
+            heading = (entry.title or "").strip()
+            text_html = _markdown_to_diarium_html(entry.body or "")
+            rating = _MOOD_TO_RATING.get(entry.mood or "", 0)
+
+            conn.execute(
+                "INSERT INTO Entries (DiaryEntryId, Heading, Text, Rating, Latitude, Longitude) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    entry_id,
+                    heading,
+                    text_html,
+                    rating,
+                    entry.latitude,
+                    entry.longitude,
+                ),
+            )
+            for assoc in entry.tag_associations:
+                tag = assoc.tag
+                if not tag or not tag.name:
+                    continue
+                if tag.name not in tag_id_map:
+                    cur = conn.execute("INSERT INTO Tags (Value) VALUES (?)", (tag.name,))
+                    tag_id_map[tag.name] = cur.lastrowid  # type: ignore[assignment]
+                conn.execute(
+                    "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId) VALUES (?, ?)",
+                    (entry_id, tag_id_map[tag.name]),
+                )
+        conn.commit()
+        # Serialize to a binary SQLite file. conn.serialize()/iterdump() aren't
+        # available under pysqlite3 (the frozen-build FTS5 swap), so backup() to
+        # a file connection (works in both stdlib sqlite3 and pysqlite3).
+        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
+        tmp.close()
+        try:
+            with sqlite3.connect(tmp.name) as out:
+                conn.backup(out)
+            return Path(tmp.name).read_bytes()
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+    finally:
+        conn.close()

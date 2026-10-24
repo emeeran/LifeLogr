@@ -1,0 +1,49 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.11.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "build:analyze": "vue-tsc -b && VITE_BUNDLE_ANALYZE=1 vite build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@tanstack/vue-virtual": "^3.13.26",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@vueuse/core": "^14.3.0",
+    "dompurify": "^3.4.2",
+    "lucide-vue-next": "^1.0.0",
+    "marked": "^18.0.3",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.32",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^24.12.2",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "@vue/test-utils": "^2.5.1",
+    "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "happy-dom": "^20.11.1",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.10",
+    "vue-tsc": "^3.2.7"
+  }
+}
