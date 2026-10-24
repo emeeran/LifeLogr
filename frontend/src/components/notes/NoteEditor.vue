@@ -1408,7 +1408,7 @@ defineExpose({ isDirty })
     <ConfirmDialog
       v-if="drafts.pendingDraft.value"
       title="Recover unsaved changes?"
-      :message="draftPrompt"
+      :message="draftPrompt ?? ''"
       @confirm="drafts.restore()"
       @cancel="drafts.discard()"
     />
