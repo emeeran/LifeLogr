@@ -345,6 +345,8 @@ Architecture: ${ARCH}
 Maintainer: Meeran <me@lifelogr.dev>
 Depends: python3 (>= 3.11), shared-mime-info, tesseract-ocr
 Recommends: ollama
+Conflicts: life-logr
+Replaces: life-logr
 Section: web
 Priority: optional
 Description: LifeLogr — Privacy-first journaling web app
