@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBackupStore } from '../../../stores/backup'
 import { backupApi } from '../../../api/backup'
+import { getBackupArchiveUrl } from '../../../api/data'
 import { useEntriesStore } from '../../../stores/entries'
 import { isTauri } from '../../../api/client'
 import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
@@ -93,7 +94,7 @@ onUnmounted(() => stopJobWatch?.())
 const importing = ref(false)
 
 async function handleBackupDownload() {
-  const resp = await fetch(backupApi.exportLocal())
+  const resp = await fetch(getBackupArchiveUrl())
   const blob = await resp.blob()
   const defaultName = `lifelogr-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.tar.gz`
   const saved = await saveFile({

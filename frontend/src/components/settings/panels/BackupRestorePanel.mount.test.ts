@@ -16,7 +16,6 @@ vi.mock('../../../api/client', () => ({
   blobRequest: vi.fn(),
 }))
 const backupApiMocks = {
-  exportLocal: vi.fn(() => '/backup/export'),
   importLocal: vi.fn(),
   runBackupJob: vi.fn(),
   restoreJob: vi.fn(),
@@ -30,6 +29,9 @@ const backupApiMocks = {
   getBoxAuthUrl: vi.fn(),
 }
 vi.mock('../../../api/backup', () => ({ backupApi: backupApiMocks }))
+vi.mock('../../../api/data', () => ({
+  getBackupArchiveUrl: vi.fn(() => '/backup/export'),
+}))
 vi.mock('../../../stores/backup', () => ({
   useBackupStore: () => ({
     configs: [],

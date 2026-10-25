@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { entriesApi } from '../../../api/entries'
-import { vacuumDatabase, checkIntegrity } from '../../../api/settings'
+import { vacuumDatabase } from '../../../api/settings'
 import { useSystemHealthStore } from '../../../stores/systemHealth'
 import {
   Database,
   Copy,
   Wrench,
-  Shield,
   Loader,
   RefreshCw,
   Search,
@@ -34,7 +33,6 @@ function formatBytes(bytes: number): string {
 
 const deduplicating = ref(false)
 const vacuuming = ref(false)
-const checkingIntegrity = ref(false)
 
 async function handleDeduplicate() {
   deduplicating.value = true
@@ -68,19 +66,6 @@ async function handleVacuum() {
     vacuuming.value = false
   }
 }
-async function handleIntegrityCheck() {
-  checkingIntegrity.value = true
-  try {
-    const r = await checkIntegrity()
-    if (r.status === 'ok') emit('toast', 'success', 'Database integrity: OK')
-    else emit('toast', 'error', `Integrity check failed: ${r.message}`)
-  } catch (e: unknown) {
-    emit('toast', 'error', `Check failed: ${errMsg(e)}`)
-  } finally {
-    checkingIntegrity.value = false
-  }
-}
-
 // ── Startup system check (absorbed from the former Diagnostics pill) ──
 const health = useSystemHealthStore()
 const checks = computed(() => health.report?.checks ?? [])
@@ -142,22 +127,6 @@ async function rebuildIndex() {
         <SButton variant="ghost" :disabled="vacuuming" @click="handleVacuum">
           <Loader v-if="vacuuming" :size="12" class="animate-spin" />
           {{ vacuuming ? 'Compacting…' : 'Vacuum' }}
-        </SButton>
-      </SettingRow>
-    </div>
-    <div class="p-3">
-      <SettingRow
-        :icon="Shield"
-        label="Check integrity"
-        description="Verifies the SQLite database file is not corrupt."
-      >
-        <SButton
-          variant="ghost"
-          :disabled="checkingIntegrity"
-          @click="handleIntegrityCheck"
-        >
-          <Loader v-if="checkingIntegrity" :size="12" class="animate-spin" />
-          {{ checkingIntegrity ? 'Checking…' : 'Check' }}
         </SButton>
       </SettingRow>
     </div>

@@ -1,4 +1,4 @@
-import { request, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
+import { request, UPLOAD_TIMEOUT_MS } from './client'
 import type {
   BackupConfigCreate,
   BackupConfigResponse,
@@ -89,10 +89,6 @@ export const backupApi = {
 
   deleteConfig(configId: number): Promise<void> {
     return request(`/backup/config/${configId}`, { method: 'DELETE' })
-  },
-
-  exportLocal(): string {
-    return `${API_ORIGIN}/api/v1/backup/export`
   },
 
   importLocal(

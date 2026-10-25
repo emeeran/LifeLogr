@@ -77,11 +77,6 @@ export const vacuumDatabase = () =>
     method: 'POST',
   })
 
-export const checkIntegrity = () =>
-  request<{ status: string; message: string }>('/settings/integrity-check', {
-    method: 'POST',
-  })
-
 export const getStoragePath = () =>
   request<StoragePathInfo>('/settings/storage-path')
 

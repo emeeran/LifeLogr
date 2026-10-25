@@ -274,8 +274,8 @@ const index: SearchEntry[] = [
   },
   {
     tab: 'data',
-    label: 'Check integrity',
-    keywords: ['integrity', 'corrupt', 'check database'],
+    label: 'System check',
+    keywords: ['integrity', 'corrupt', 'check database', 'system check'],
   },
   {
     tab: 'data',

@@ -1,3 +1,7 @@
+/** Egress URL builders + text fetchers for the Data tab's export operations.
+ *  Bulk/media imports stay in `api/backup.ts` (archive) and `api/entries.ts`
+ *  / `api/notes.ts` (multipart uploads) — they are request wrappers, not URLs.
+ */
 import { API_ORIGIN } from './client'
 
 const BASE_URL = `${API_ORIGIN}/api/v1`
@@ -47,4 +51,9 @@ export async function exportDiarium(
   )
   if (!res.ok) throw new Error(`Diarium export failed: ${res.status}`)
   return res.text()
+}
+
+/** Full-instance local backup archive (.tar.gz, DB + media). */
+export function getBackupArchiveUrl(): string {
+  return `${API_ORIGIN}/api/v1/backup/export`
 }

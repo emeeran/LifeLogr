@@ -6,7 +6,7 @@
 IDs `DM#`, effort **S** ≤ 1 day / **M** 1–3 days; every task ends with
 `ruff` + `pytest` green, UI tasks also `vitest`.
 
-Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ done — DM7–DM12 pending (2026-10-26).
+Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ · DM7 ✅ done — DM8–DM12 pending (2026-10-26).
 
 ---
 
@@ -87,7 +87,7 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ done — 
   in PR description); no duplicate "Run now"/integrity buttons in the tab;
   vitest green.
 
-### DM7 — Deduplicate maintenance/integrity & API wrappers · **S**
+### DM7 — Deduplicate maintenance/integrity & API wrappers · **S** ✅
 - Keep `GET/POST /system/integrity` + `rebuild-search-index`; make
   MaintenancePanel use them and delete `/settings/vacuum`'s sibling
   `/settings/integrity-check` (migrate any callers; keep `/settings/vacuum`

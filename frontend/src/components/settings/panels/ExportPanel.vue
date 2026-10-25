@@ -7,7 +7,7 @@ import {
   getExportPdfUrl,
   exportDiarium,
   getExportDiariumDbUrl,
-} from '../../../api/export'
+} from '../../../api/data'
 import { useJobProgress } from '../../../composables/useJobProgress'
 import { jobsApi } from '../../../api/jobs'
 import { saveFile } from '../../../utils/fileDialog'

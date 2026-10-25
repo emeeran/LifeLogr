@@ -32,7 +32,6 @@ class TestVacuum:
         await client.post(f"{_SETTINGS}/vacuum")
         await client.post(f"{_SETTINGS}/vacuum")
         # Session still usable afterwards.
-        assert (await client.post(f"{_SETTINGS}/integrity-check")).status_code == 200
         assert (await client.get(f"{_SETTINGS}")).status_code == 200
 
 

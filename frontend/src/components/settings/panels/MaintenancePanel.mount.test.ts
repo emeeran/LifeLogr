@@ -2,15 +2,13 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 /**
- * MaintenancePanel mount smoke test — dedupe/vacuum/integrity rows render,
+ * MaintenancePanel mount smoke test — dedupe/vacuum rows render,
  * and the startup system check (absorbed from the former Diagnostics pill)
  * shows its summary chips with Re-check / Rebuild index actions.
  */
 
-const checkIntegrity = vi.fn(async () => ({ status: 'ok', message: 'fine' }))
 vi.mock('../../../api/settings', () => ({
   vacuumDatabase: vi.fn(async () => ({ reclaimed_bytes: 0 })),
-  checkIntegrity: (...args: unknown[]) => checkIntegrity(...(args as [])),
 }))
 vi.mock('../../../api/entries', () => ({
   entriesApi: { deduplicate: vi.fn() },
@@ -46,7 +44,6 @@ async function mountPanel() {
 }
 
 beforeEach(() => {
-  checkIntegrity.mockClear()
   healthMocks.load.mockClear()
   healthMocks.refresh.mockClear()
   healthMocks.rebuildIndex.mockClear()
@@ -58,7 +55,6 @@ describe('MaintenancePanel mount', () => {
     const text = wrapper.text()
     expect(text).toContain('Remove duplicates')
     expect(text).toContain('Compact database')
-    expect(text).toContain('Check integrity')
     expect(text).toContain('System Check')
     expect(text).toContain('Rebuild index')
     expect(text).toContain('Re-check')
@@ -71,16 +67,16 @@ describe('MaintenancePanel mount', () => {
     expect(healthMocks.load).toHaveBeenCalledTimes(1)
   })
 
-  it('toasts OK after a passing integrity check', async () => {
+  it('re-checks the system on demand and toasts the outcome', async () => {
     const wrapper = await mountPanel()
-    const checkButton = wrapper
+    const recheckButton = wrapper
       .findAll('button')
-      .find((b) => b.text().trim() === 'Check')!
-    await checkButton.trigger('click')
+      .find((b) => b.text().trim() === 'Re-check')!
+    await recheckButton.trigger('click')
     await flushPromises()
-    expect(checkIntegrity).toHaveBeenCalledTimes(1)
+    expect(healthMocks.refresh).toHaveBeenCalledTimes(1)
     expect(
-      wrapper.emitted('toast')?.some(([t, m]) => t === 'success' && String(m).includes('integrity: OK')),
+      wrapper.emitted('toast')?.some(([t, m]) => t === 'success' && String(m).includes('All checks passed')),
     ).toBe(true)
     wrapper.unmount()
   })

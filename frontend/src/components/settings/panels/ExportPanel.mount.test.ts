@@ -41,7 +41,7 @@ const urlBuilders = {
   exportDaylioCsvUrl: vi.fn(() => '/entries/export/daylio-csv'),
 }
 vi.mock('../../../api/entries', () => ({ entriesApi: urlBuilders }))
-vi.mock('../../../api/export', () => ({
+vi.mock('../../../api/data', () => ({
   exportHtml: vi.fn(async () => '<html></html>'),
   getExportPdfUrl: vi.fn(() => '/entries/export/pdf'),
   exportDiarium: vi.fn(async () => '[]'),

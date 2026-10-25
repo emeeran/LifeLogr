@@ -252,15 +252,6 @@ async def vacuum_database(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     return {"status": "ok", "reclaimed_bytes": max(0, before - after)}
 
 
-@router.post("/integrity-check")
-async def integrity_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Run SQLite integrity check on the database."""
-    result = await db.execute(text("PRAGMA integrity_check"))
-    row = result.scalar()
-    ok = row == "ok"
-    return {"status": "ok" if ok else "error", "message": row}
-
-
 @router.get("/storage-path", response_model=StoragePathResponse)
 async def get_storage_path() -> Any:
     """Return the active data directory and disk usage."""
