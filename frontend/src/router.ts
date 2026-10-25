@@ -31,6 +31,11 @@ const router = createRouter({
       component: () => import('./components/media/MediaTimelineView.vue'),
     },
     {
+      path: '/stats',
+      name: 'stats',
+      component: () => import('./components/stats/StatsView.vue'),
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('./components/settings/SettingsView.vue'),

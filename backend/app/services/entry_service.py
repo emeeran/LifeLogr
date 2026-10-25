@@ -1,7 +1,9 @@
 """Business logic for journal entries."""
 
 import logging
-from datetime import date, datetime, timezone
+import time
+from collections import Counter
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -12,8 +14,17 @@ from sqlalchemy.sql.expression import Select as Select
 from app.core.config import settings
 from app.core.exceptions import NotFoundError
 from app.models.entry import Entry
+from app.models.media import Media
 from app.models.tag import EntryTag, Tag
-from app.schemas.entry import CalendarEntryResponse, EntryCreate, EntryUpdate
+from app.schemas.entry import (
+    CalendarEntryResponse,
+    EntryCreate,
+    EntryUpdate,
+    JournalStatsResponse,
+    MediaTypeCount,
+    MoodCount,
+    WeeklyCount,
+)
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 from app.services.hashtag import extract_hashtags, resolve_tag_ids
@@ -31,11 +42,34 @@ def _word_count(text: str | None) -> int:
     Matches the frontend helper in ``frontend/src/utils/text.ts`` (trim, split
     on whitespace runs). Used by the calendar projection so the daily
     word-count goal can total a day's entries without shipping bodies to the
-    client, and by future aggregate stats.
+    client, and by the stats aggregates.
     """
     if not text:
         return 0
     return len(text.split())
+
+
+def _current_streak(dates: list[date], today: date) -> int:
+    """Consecutive days with an entry ending today (or yesterday — a streak
+    isn't broken just because today's entry hasn't been written yet)."""
+    dayset = set(dates)
+    streak = 0
+    d = today if today in dayset else today - timedelta(days=1)
+    while d in dayset:
+        streak += 1
+        d -= timedelta(days=1)
+    return streak
+
+
+def _longest_streak(dates: list[date]) -> int:
+    """Longest run of consecutive entry days across all history."""
+    longest = current = 0
+    prev: date | None = None
+    for d in dates:  # sorted ascending
+        current = current + 1 if prev is not None and (d - prev).days == 1 else 1
+        longest = max(longest, current)
+        prev = d
+    return longest
 
 
 def _entry_list_options() -> tuple[Any, ...]:
@@ -64,6 +98,19 @@ def _entry_list_options() -> tuple[Any, ...]:
         selectinload(Entry.media),
         selectinload(Entry.recordings),
     )
+
+
+# In-memory cache for the stats aggregates (keyed by database URL — the app
+# has one DB, the tests many). Every entry mutation calls
+# :func:`invalidate_stats_cache`, so the TTL only bounds staleness from
+# out-of-band writes (e.g. direct imports in other processes).
+_STATS_CACHE_TTL = 60.0
+_stats_cache: dict[str, tuple[float, JournalStatsResponse]] = {}
+
+
+def invalidate_stats_cache() -> None:
+    """Drop the cached stats aggregates (call after any entry/media mutation)."""
+    _stats_cache.clear()
 
 
 class EntryService:
@@ -104,6 +151,7 @@ class EntryService:
             await self.db.flush()
         await self.db.commit()
         await self.db.refresh(entry)
+        invalidate_stats_cache()
         # Never enrich encrypted entries — their body column holds ciphertext,
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
@@ -133,6 +181,7 @@ class EntryService:
             desired = await self._desired_tag_ids(data.body, data.tag_ids or [])
             if desired:
                 self.db.add_all([EntryTag(entry_id=entry.id, tag_id=tid) for tid in desired])
+        invalidate_stats_cache()
         return entry
 
     async def _desired_tag_ids(self, body: str | None, explicit_tag_ids: list[int]) -> set[int]:
@@ -231,6 +280,7 @@ class EntryService:
                 )
         await self.db.commit()
         await self.db.refresh(entry)
+        invalidate_stats_cache()
         # Never enrich encrypted entries — their body column holds ciphertext,
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
@@ -256,6 +306,7 @@ class EntryService:
                 await self.db.delete(media)
 
         await self.db.commit()
+        invalidate_stats_cache()
         # Best-effort: drop from the vector cache now (ensure_fresh reloads on
         # any divergence anyway, so a miss here self-heals on the next search).
         try:
@@ -283,6 +334,7 @@ class EntryService:
         entry.deleted_at = None
         await self.db.commit()
         await self.db.refresh(entry)
+        invalidate_stats_cache()
         return entry
 
     async def get_calendar_month_light(self, year: int, month: int) -> list[CalendarEntryResponse]:
@@ -338,6 +390,85 @@ class EntryService:
             )
             for r in rows
         ]
+
+    async def get_stats(self, weeks: int = 12) -> JournalStatsResponse:
+        """Journal aggregates for the stats dashboard, cached in memory.
+
+        One query pass per component (dates, bodies, moods, media). Total
+        words reuses :func:`_word_count` so it matches the daily goal and the
+        calendar's counts; bodies are read but never leave the server.
+        """
+        bind = self.db.get_bind()
+        cache_key = str(getattr(bind, "engine", bind).url)
+        now = time.monotonic()
+        hit = _stats_cache.get(cache_key)
+        if hit is not None and now - hit[0] < _STATS_CACHE_TTL:
+            return hit[1]
+
+        today = date.today()
+
+        dates_result = await self.db.execute(
+            select(Entry.entry_date)
+            .where(
+                Entry.is_deleted == False,  # noqa: E712
+                # Exclude year-1 tick-epoch artifacts (would poison streaks).
+                Entry.entry_date >= date(2, 1, 1),
+            )
+            .distinct()
+        )
+        dates = sorted(d for (d,) in dates_result.all())
+
+        total_entries_result = await self.db.execute(
+            select(func.count())
+            .select_from(Entry)
+            .where(Entry.is_deleted == False)  # noqa: E712
+        )
+        total_entries = total_entries_result.scalar_one()
+
+        words_result = await self.db.execute(
+            select(Entry.body).where(
+                Entry.is_deleted == False,  # noqa: E712
+                Entry.is_encrypted == False,  # noqa: E712
+            )
+        )
+        total_words = sum(_word_count(body) for (body,) in words_result.all())
+
+        mood_result = await self.db.execute(
+            select(Entry.mood, func.count())
+            .where(Entry.is_deleted == False, Entry.mood.is_not(None))  # noqa: E712
+            .group_by(Entry.mood)
+        )
+        moods = [MoodCount(mood=mood, count=count) for mood, count in mood_result.all()]
+
+        media_result = await self.db.execute(
+            select(Media.media_type, func.count()).group_by(Media.media_type)
+        )
+        media = [MediaTypeCount(media_type=t, count=c) for t, c in media_result.all()]
+
+        # Trailing N-week window, Monday-start, zero-filled.
+        this_week = today - timedelta(days=today.weekday())
+        per_week: Counter[date] = Counter()
+        for d in dates:
+            per_week[d - timedelta(days=d.weekday())] += 1
+        weekly = [
+            WeeklyCount(
+                week_start=this_week - timedelta(weeks=i),
+                count=per_week.get(this_week - timedelta(weeks=i), 0),
+            )
+            for i in range(weeks - 1, -1, -1)
+        ]
+
+        stats = JournalStatsResponse(
+            total_entries=total_entries,
+            total_words=total_words,
+            current_streak=_current_streak(dates, today),
+            longest_streak=_longest_streak(dates),
+            weekly=weekly,
+            moods=moods,
+            media=media,
+        )
+        _stats_cache[cache_key] = (now, stats)
+        return stats
 
     async def get_on_this_day(self, today: date) -> list[CalendarEntryResponse]:
         """Entries written on ``today``'s month/day in prior years.

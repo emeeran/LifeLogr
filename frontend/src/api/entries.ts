@@ -6,6 +6,7 @@ import type {
   EntryUpdate,
   EntryListParams,
   CalendarEntryResponse,
+  JournalStats,
 } from '../types'
 
 export const entriesApi = {
@@ -80,6 +81,10 @@ export const entriesApi = {
 
   onThisDay(): Promise<CalendarEntryResponse[]> {
     return request('/entries/on-this-day')
+  },
+
+  stats(weeks = 12): Promise<JournalStats> {
+    return request(`/entries/stats?weeks=${weeks}`)
   },
 
   search(query: string, offset = 0, limit = 20): Promise<EntryListResponse> {

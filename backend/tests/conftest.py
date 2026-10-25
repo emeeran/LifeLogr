@@ -109,6 +109,20 @@ def _reset_destructive_rate_store():
 
 
 @pytest.fixture(autouse=True)
+def _reset_stats_cache():
+    """Isolate the in-memory stats aggregates cache between tests.
+
+    The cache is keyed by DB URL with a 60s TTL; without a reset, one test's
+    aggregates would leak into the next test sharing the same URL shape.
+    """
+    from app.services.entry_service import invalidate_stats_cache
+
+    invalidate_stats_cache()
+    yield
+    invalidate_stats_cache()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_scheduler_singleton():
     """Stop the APScheduler singleton leaking across tests.
 

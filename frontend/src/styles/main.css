@@ -37,6 +37,24 @@ mark {
   /* Logo wordmark forced white so it reads on the teal sidebar in both themes.
      Declared in plain :root (not @theme) so Tailwind doesn't tree-shake it. */
   --logo-filter: brightness(0) invert(1);
+  /* Mood ordinal ramp (awful→great, light→dark), one indigo hue. Validated
+     per mode with the dataviz six-checks script: monotone L, adjacent ΔL ≥
+     0.06, light end ≥ 2:1 vs the mode's surface. Plain vars (not @theme) so
+     Tailwind doesn't tree-shake them. */
+  --chart-mood-1: #6f77ea;
+  --chart-mood-2: #5c63c5;
+  --chart-mood-3: #4a50a2;
+  --chart-mood-4: #393e80;
+  --chart-mood-5: #282c60;
+}
+
+/* Dark mode flips the anchor: "more" (great) reads brighter on dark. */
+.dark {
+  --chart-mood-1: #474d91;
+  --chart-mood-2: #5961a6;
+  --chart-mood-3: #6c75bc;
+  --chart-mood-4: #7f89d2;
+  --chart-mood-5: #939ee9;
 }
 
 /* ── Base legibility: medium weight so small UI text reads clearly ── */

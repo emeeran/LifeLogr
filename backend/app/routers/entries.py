@@ -34,6 +34,7 @@ from app.schemas.entry import (
     EntryUpdate,
     ImportResult,
     ImportSkipReason,
+    JournalStatsResponse,
     ResetRequest,
 )
 from app.schemas.tag import TagBrief
@@ -162,6 +163,17 @@ async def calendar_view(year: int, month: int, db: AsyncSession = Depends(get_db
     """
     svc = EntryService(db)
     return await svc.get_calendar_month_light(year, month)
+
+
+@router.get("/stats", response_model=JournalStatsResponse)
+async def journal_stats(
+    weeks: int = Query(12, ge=1, le=52),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Aggregates for the stats dashboard (streaks, words, weekly histogram,
+    mood + media counts). Cached in memory; invalidated on entry mutations."""
+    svc = EntryService(db)
+    return await svc.get_stats(weeks=weeks)
 
 
 @router.get("/on-this-day", response_model=list[CalendarEntryResponse])
@@ -578,6 +590,9 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
     )
 
     await db.commit()
+    from app.services.entry_service import invalidate_stats_cache
+
+    invalidate_stats_cache()
     return {"groups_found": groups_found, "duplicates_removed": len(ids_to_delete)}
 
 

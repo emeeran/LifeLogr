@@ -165,3 +165,36 @@ class EntryListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class WeeklyCount(BaseModel):
+    """Entries written in the ISO week starting ``week_start`` (a Monday)."""
+
+    week_start: date
+    count: int
+
+
+class MoodCount(BaseModel):
+    mood: str
+    count: int
+
+
+class MediaTypeCount(BaseModel):
+    media_type: str
+    count: int
+
+
+class JournalStatsResponse(BaseModel):
+    """Aggregates for the statistics dashboard.
+
+    ``weekly`` is the trailing ``weeks``-week window (oldest first, current
+    week last) with zero-filled gaps so the chart's x-axis is continuous.
+    """
+
+    total_entries: int
+    total_words: int
+    current_streak: int
+    longest_streak: int
+    weekly: list[WeeklyCount]
+    moods: list[MoodCount]
+    media: list[MediaTypeCount]

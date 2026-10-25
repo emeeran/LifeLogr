@@ -48,6 +48,22 @@ export interface CalendarEntryResponse {
   tags: TagBrief[]
 }
 
+export interface WeeklyCount {
+  /** ISO date (YYYY-MM-DD) of the week's Monday. */
+  week_start: string
+  count: number
+}
+
+export interface JournalStats {
+  total_entries: number
+  total_words: number
+  current_streak: number
+  longest_streak: number
+  weekly: WeeklyCount[]
+  moods: { mood: string; count: number }[]
+  media: { media_type: string; count: number }[]
+}
+
 /** Lightweight entry for list/timeline views: full ``body`` replaced by a
  *  server-side snippet so list queries don't load every entry's full body. */
 export interface EntryListItem extends Omit<EntryResponse, 'body'> {

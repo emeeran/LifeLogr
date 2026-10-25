@@ -4,7 +4,7 @@ import { useLocalStorage } from '@vueuse/core'
 import router from '../router'
 
 export type ViewType =
-  'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'settings'
+  'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'stats' | 'settings'
 export type DrawerPanel = 'ai' | 'attachments'
 
 export const useUiStore = defineStore('ui', () => {

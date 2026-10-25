@@ -13,6 +13,7 @@ import {
   ChevronsRight,
   StickyNote,
   NotebookPen,
+  BarChart3,
   GripVertical,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
@@ -25,6 +26,7 @@ const navItems: { view: ViewType; icon: Component; label: string }[] = [
   { view: 'notes', icon: NotebookPen, label: 'Notes' },
   { view: 'reminders', icon: Bell, label: 'Reminders' },
   { view: 'media', icon: ImageIcon, label: 'Media' },
+  { view: 'stats', icon: BarChart3, label: 'Stats' },
 ]
 
 // User-customisable nav order (persisted). Drag a nav item to reorder.
