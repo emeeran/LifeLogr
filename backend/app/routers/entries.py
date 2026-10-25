@@ -43,6 +43,7 @@ from app.services.enrichment_service import EnrichmentService
 from app.services.entry_service import EntryService
 from app.services.export_service import (
     ARCHIVE_FORMAT,
+    ExportService,
     build_archive,
     build_diarium_database,
     build_daylio_csv,
@@ -307,6 +308,33 @@ async def export_markdown(
         io.BytesIO(data),
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=diarium-export.zip"},
+    )
+
+
+@router.get("/export/html-zip")
+async def export_html_zip(
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Export entries as a styled HTML archive ZIP with media attachments.
+
+    ``website/index.html`` renders every entry; media live under
+    ``attachments/<date>/<filename>`` and are referenced relatively, so the
+    unzipped folder browses offline like the Markdown vault export.
+    """
+    service = ExportService(db)
+    from datetime import date as date_type
+
+    start = date_type.fromisoformat(start_date) if start_date else None
+    end = date_type.fromisoformat(end_date) if end_date else None
+    payload = await service.export_html_zip(start, end)
+    buf = io.BytesIO(payload)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=lifelogr-export-html.zip"},
     )
 
 

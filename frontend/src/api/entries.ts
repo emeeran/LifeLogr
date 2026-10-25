@@ -109,6 +109,14 @@ export const entriesApi = {
     return `${API_ORIGIN}/api/v1/entries/export/json${qs ? `?${qs}` : ''}`
   },
 
+  exportHtmlZipUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/html-zip${qs ? `?${qs}` : ''}`
+  },
+
   exportDaylioCsvUrl(startDate?: string, endDate?: string): string {
     const sp = new URLSearchParams()
     if (startDate) sp.set('start_date', startDate)

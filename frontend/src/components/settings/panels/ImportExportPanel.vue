@@ -61,6 +61,7 @@ const exportFrom = ref('')
 const exportTo = ref('')
 const exportMenuOpen = ref(false)
 const exportingHtml = ref(false)
+const exportingHtmlZip = ref(false)
 const exportingDiarium = ref(false)
 const exportingDiariumDb = ref(false)
 const exportingDaylioCsv = ref(false)
@@ -149,6 +150,28 @@ async function downloadHtmlExport() {
     emit('toast', 'error', `HTML export failed: ${errMsg(e)}`)
   } finally {
     exportingHtml.value = false
+  }
+}
+// HTML archive: styled page per journal + media referenced relatively, browses offline.
+async function downloadHtmlZip() {
+  exportMenuOpen.value = false
+  exportingHtmlZip.value = true
+  try {
+    const resp = await fetch(
+      entriesApi.exportHtmlZipUrl(rangeStart.value, rangeEnd.value),
+    )
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    await saveFile({
+      data: blob,
+      defaultName: 'lifelogr-export-html.zip',
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    })
+    emit('toast', 'success', 'HTML archive export saved')
+  } catch (e: unknown) {
+    emit('toast', 'error', `HTML archive export failed: ${errMsg(e)}`)
+  } finally {
+    exportingHtmlZip.value = false
   }
 }
 async function downloadPdfExport() {
@@ -411,6 +434,17 @@ async function downloadNotesHtml() {
           </button>
           <button class="export-item" @click="downloadMarkdown">
             <FileUp :size="12" /> Markdown ZIP
+          </button>
+          <button
+            class="export-item"
+            :disabled="exportingHtmlZip"
+            @click="downloadHtmlZip"
+          >
+            <Loader
+              v-if="exportingHtmlZip"
+              :size="12"
+              class="animate-spin"
+            /><FileUp v-else :size="12" /> HTML archive (media)
           </button>
           <button
             class="export-item"

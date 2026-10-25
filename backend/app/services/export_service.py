@@ -30,6 +30,9 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   .tag {{ background: #e8f4f8; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }}
   .entry {{ margin-bottom: 40px; page-break-after: always; }}
   .mood {{ color: #e67e22; font-weight: bold; }}
+  .gallery {{ margin-top: 12px; }}
+  .gallery img, .gallery video {{ max-width: 100%; border-radius: 4px; }}
+  .gallery figcaption {{ color: #666; font-size: 0.8em; }}
   @page {{ margin: 2cm; }}
 </style>
 </head>
@@ -44,9 +47,18 @@ _ENTRY_HTML = """
   <div class="meta">
     {mood}{tags}
   </div>
-  <div class="body">{body_html}</div>
+  <div class="body">{body_html}</div>{gallery}
 </div>
 """
+
+# Gallery blocks for attachments not already referenced in the body. Paths are
+# relative to website/index.html inside the HTML export ZIP.
+_FIGURE_HTML = {
+    "image": '<figure><img src="{src}" alt="{name}"><figcaption>{name}</figcaption></figure>',
+    "audio": '<figure><audio controls src="{src}"></audio><figcaption>{name}</figcaption></figure>',
+    "video": '<figure><video controls src="{src}"></video><figcaption>{name}</figcaption></figure>',
+    "document": '<figure><a href="{src}">{name}</a></figure>',
+}
 
 
 # fpdf2's built-in core fonts render the Latin-1 (ISO-8859-1) range only, so map
@@ -105,35 +117,128 @@ class ExportService:
         result = await self.db.execute(q)
         return list(result.scalars().all())
 
+    def _entry_fragment(self, entry: Entry, body_html: str, gallery_html: str = "") -> str:
+        """Render one entry as the shared HTML fragment (single-file + ZIP exports)."""
+        tags = [a.tag.name for a in entry.tag_associations if a.tag]
+        title_part = f" — {html.escape(entry.title)}" if entry.title else ""
+        mood_part = (
+            f'<span class="mood">{html.escape(entry.mood)}</span> · ' if entry.mood else ""
+        )
+        tag_html = " ".join(f'<span class="tag">{html.escape(t)}</span>' for t in tags)
+        if tag_html:
+            tag_html = f"<div>{tag_html}</div>"
+        return _ENTRY_HTML.format(
+            date=html.escape(str(entry.entry_date)),
+            title=title_part,
+            mood=mood_part,
+            tags=tag_html,
+            body_html=body_html,
+            gallery=gallery_html,
+        )
+
     async def export_html(
         self, start_date: date | None = None, end_date: date | None = None
     ) -> str:
         """Export entries as a single styled HTML document."""
         entries = await self._get_entries(start_date, end_date)
-        parts = []
-        for entry in entries:
-            tags = [a.tag.name for a in entry.tag_associations if a.tag]
-            title_part = f" — {html.escape(entry.title)}" if entry.title else ""
-            mood_part = (
-                f'<span class="mood">{html.escape(entry.mood)}</span> · ' if entry.mood else ""
-            )
-            tag_html = " ".join(f'<span class="tag">{html.escape(t)}</span>' for t in tags)
-            if tag_html:
-                tag_html = f"<div>{tag_html}</div>"
-
-            body_html = self._md.render(entry.body)
-            parts.append(
-                _ENTRY_HTML.format(
-                    date=html.escape(str(entry.entry_date)),
-                    title=title_part,
-                    mood=mood_part,
-                    tags=tag_html,
-                    body_html=body_html,
-                )
-            )
+        parts = [
+            self._entry_fragment(entry, self._md.render(entry.body)) for entry in entries
+        ]
 
         content = "\n".join(parts)
         return _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
+
+    async def export_html_zip(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> bytes:
+        """Export entries as an HTML archive ZIP with media attachments.
+
+        ``website/index.html`` holds every entry (same styling as
+        :meth:`export_html`); attachments are copied to
+        ``attachments/<date>/<filename>`` and referenced relatively from the
+        page, mirroring the Markdown vault ZIP. Attachments not already
+        referenced by the body render as a figure gallery under the entry.
+        """
+        from sqlalchemy.orm import selectinload
+
+        q = (
+            select(Entry)
+            .where(Entry.is_deleted == False)  # noqa: E712
+            .options(
+                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+                selectinload(Entry.media),
+            )
+            .order_by(Entry.entry_date)
+        )
+        if start_date:
+            q = q.where(Entry.entry_date >= start_date)
+        if end_date:
+            q = q.where(Entry.entry_date <= end_date)
+        result = await self.db.execute(q)
+        entries = list(result.scalars().all())
+
+        # Zip assembly reads every attachment from disk — off the event loop,
+        # same as the Markdown vault path.
+        return await asyncio.to_thread(self._build_html_zip, entries)
+
+    def _build_html_zip(self, entries: list[Entry]) -> bytes:
+        """Synchronously assemble the HTML archive ZIP for ``entries``.
+
+        Same-day entries sharing an attachment filename would silently
+        overwrite each other (the Markdown vault path has this latent issue) —
+        later collisions get an ``<id>-`` prefix instead.
+        """
+        import io
+        import zipfile
+
+        from app.core.config import settings
+
+        zip_buffer = io.BytesIO()
+        used_attachment_paths: set[str] = set()
+        parts: list[str] = []
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for entry in entries:
+                body = entry.body or ""
+                body_html = self._md.render(body)
+                gallery_parts: list[str] = []
+                for media in entry.media:
+                    local_file_path = settings.MEDIA_DIR / media.storage_path
+                    if not local_file_path.exists():
+                        continue
+                    zip_media_path = f"attachments/{entry.entry_date}/{media.filename}"
+                    if zip_media_path in used_attachment_paths:
+                        zip_media_path = (
+                            f"attachments/{entry.entry_date}/{media.id}-{media.filename}"
+                        )
+                    used_attachment_paths.add(zip_media_path)
+                    zip_file.writestr(zip_media_path, local_file_path.read_bytes())
+
+                    # Skip the gallery for media the body already references
+                    # (by filename or by its API URL).
+                    if media.filename and media.filename in body:
+                        continue
+                    if f"/api/v1/media/{media.id}/" in body:
+                        continue
+                    template = _FIGURE_HTML.get(media.media_type, _FIGURE_HTML["document"])
+                    gallery_parts.append(
+                        template.format(
+                            src=f"../{zip_media_path}", name=html.escape(media.filename or "attachment")
+                        )
+                    )
+
+                gallery_html = (
+                    "\n  <div class=\"gallery\">" + "".join(gallery_parts) + "</div>"
+                    if gallery_parts
+                    else ""
+                )
+                parts.append(
+                    self._entry_fragment(entry, body_html, gallery_html)
+                )
+
+            content = "\n".join(parts)
+            page = _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
+            zip_file.writestr("website/index.html", page.encode("utf-8"))
+        return zip_buffer.getvalue()
 
     async def export_pdf(
         self, start_date: date | None = None, end_date: date | None = None
