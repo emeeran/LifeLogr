@@ -102,10 +102,6 @@ export const entriesApi = {
     return request(`/entries/calendar/${year}/${month}`)
   },
 
-  onThisDay(): Promise<CalendarEntryResponse[]> {
-    return request('/entries/on-this-day')
-  },
-
   stats(weeks = 12): Promise<JournalStats> {
     return request(`/entries/stats?weeks=${weeks}`)
   },

@@ -6,7 +6,6 @@ import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
 import CalendarHeader from './CalendarHeader.vue'
 import CalendarCell from './CalendarCell.vue'
-import OnThisDayCard from './OnThisDayCard.vue'
 import GoToDateModal from '../common/GoToDateModal.vue'
 import { Tag, X } from 'lucide-vue-next'
 
@@ -45,9 +44,6 @@ const entryMap = computed(() => {
 
 function loadMonth() {
   entries.fetchCalendarMonth(cal.year.value, cal.month.value)
-  // "On this day" is month-independent but should track edits (a prior-year
-  // entry deleted today must drop off the strip) — cheap endpoint, piggyback.
-  entries.fetchOnThisDay()
 }
 
 onMounted(loadMonth)
@@ -166,12 +162,6 @@ async function onGoToDate(dateStr: string) {
         </button>
       </div>
     </div>
-
-    <OnThisDayCard
-      :entries="entries.onThisDayEntries"
-      :today="todayStr"
-      @open-entry="openEntry"
-    />
 
     <div class="flex-1 p-3 overflow-auto">
       <!-- Day name headers -->

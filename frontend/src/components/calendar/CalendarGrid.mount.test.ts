@@ -9,7 +9,6 @@ import { createPinia, setActivePinia } from 'pinia'
 vi.mock('../../api/entries', () => ({
   entriesApi: {
     calendarMonth: vi.fn(async () => []),
-    onThisDay: vi.fn(async () => []),
     list: vi.fn(async () => ({ items: [], total: 0 })),
     get: vi.fn(),
     create: vi.fn(),

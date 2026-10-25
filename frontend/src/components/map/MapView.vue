@@ -58,7 +58,7 @@ function escapeHtml(text: string): string {
 }
 
 function openEntry(entryId: number) {
-  // Same open flow as the calendar's on-this-day / day cards.
+  // Same open flow as the calendar's day cards.
   ui.requestEdit(entryId)
 }
 

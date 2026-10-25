@@ -491,6 +491,7 @@ from app.routers.encryption import (  # noqa: E402
 from app.routers.entries import router as entries_router  # noqa: E402
 from app.routers.export import router as export_router  # noqa: E402
 from app.routers.google_drive import router as google_drive_router  # noqa: E402
+from app.routers.jobs import router as jobs_router  # noqa: E402
 from app.routers.media import router as media_router  # noqa: E402
 from app.routers.notes import router as notes_router  # noqa: E402
 from app.routers.onedrive import router as onedrive_router  # noqa: E402
@@ -516,6 +517,7 @@ app.include_router(media_router)
 app.include_router(recordings_router)
 app.include_router(backup_router)
 app.include_router(google_drive_router)
+app.include_router(jobs_router)
 app.include_router(box_router)
 app.include_router(onedrive_router)
 app.include_router(dropbox_router)
