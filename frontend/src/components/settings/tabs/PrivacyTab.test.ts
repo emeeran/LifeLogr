@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 
 /**
  * PrivacyTab — the weather auto-fill opt-in round-trips through
@@ -40,7 +41,9 @@ import { getEgressReport } from '../../../api/system'
 
 async function mountTab() {
   const { default: PrivacyTab } = await import('./PrivacyTab.vue')
-  const wrapper = mount(PrivacyTab)
+  const wrapper = mount(PrivacyTab, {
+    global: { plugins: [createPinia()] },
+  })
   await flushPromises()
   return wrapper
 }

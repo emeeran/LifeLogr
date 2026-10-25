@@ -11,6 +11,9 @@ const AiDrawerPanel = defineAsyncComponent(
 const AttachmentsPanel = defineAsyncComponent(
   () => import('../entry/AttachmentsPanel.vue'),
 )
+const ContextDrawerPanel = defineAsyncComponent(
+  () => import('../entry/ContextDrawerPanel.vue'),
+)
 import SearchPalette from '../search/SearchPalette.vue'
 import { useToastStore } from '../../stores/toast'
 import ScribblePad from '../scribble/ScribblePad.vue'
@@ -38,6 +41,7 @@ import {
   X,
   Sparkles,
   Paperclip,
+  CalendarClock,
 } from 'lucide-vue-next'
 import { useLocalStorage } from '@vueuse/core'
 import type { Component } from 'vue'
@@ -69,6 +73,8 @@ const drawerTitle = computed(() => {
       return 'AI Assistant'
     case 'attachments':
       return 'Attachments'
+    case 'context':
+      return 'Context'
     default:
       return ''
   }
@@ -80,6 +86,8 @@ const drawerIcon = computed<Component>(() => {
       return Sparkles
     case 'attachments':
       return Paperclip
+    case 'context':
+      return CalendarClock
     default:
       return Sparkles
   }
@@ -276,6 +284,13 @@ async function onExtractText(id: number) {
           @remove="(id: number) => editorRef?.removeAttachment?.(id)"
           @view="onAttachmentView"
           @extract-text="onExtractText"
+        />
+        <ContextDrawerPanel
+          v-if="ui.activeDrawer === 'context'"
+          :entry-date="editorRef?.entryDate ?? ''"
+          :entry-id="editorRef?.entryId ?? null"
+          @insert-text="(t: string) => editorRef?.applyToSelection?.(t)"
+          @refresh-attachments="editorRef?.loadAttachments?.()"
         />
       </div>
     </Transition>

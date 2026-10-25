@@ -501,6 +501,7 @@ from app.routers.search import router as search_router  # noqa: E402
 from app.routers.settings import router as settings_router  # noqa: E402
 from app.routers.sync import router as sync_router  # noqa: E402
 from app.routers.system import router as system_router  # noqa: E402
+from app.routers.context import router as context_router  # noqa: E402
 from app.routers.tags import router as tags_router  # noqa: E402
 from app.routers.templates import router as templates_router  # noqa: E402
 from app.routers.tts import router as tts_router  # noqa: E402
@@ -530,6 +531,7 @@ app.include_router(templates_router)
 app.include_router(video_router)
 app.include_router(settings_router)
 app.include_router(system_router)
+app.include_router(context_router)
 
 
 # Ollama probe result cache — /health is polled by the UI and the packaged app,

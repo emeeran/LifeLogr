@@ -342,6 +342,20 @@ const index: SearchEntry[] = [
       'privacy',
     ],
   },
+  {
+    tab: 'privacy',
+    label: 'Composer context sidebar',
+    keywords: [
+      'context',
+      'photos',
+      'camera roll',
+      'calendar',
+      'ics',
+      'sidebar',
+      'local files',
+      'privacy',
+    ],
+  },
 
   // ── Dedication ──
   {

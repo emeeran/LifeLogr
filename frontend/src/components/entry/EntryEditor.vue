@@ -22,8 +22,10 @@ import {
   LayoutTemplate,
   Loader,
   Pause,
+  CalendarClock,
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
+import { isTauri } from '../../api/client'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import EditorStatusBar from './EditorStatusBar.vue'
 import EditorContextMenu from '../editor/EditorContextMenu.vue'
@@ -657,6 +659,7 @@ defineExpose({
   onInput,
   hasEntry,
   entryId: computed(() => ui.editingEntryId),
+  entryDate: computed(() => entryDate.value),
   attachments,
   handleFileUpload,
   removeAttachment,
@@ -1448,6 +1451,22 @@ async function applySuggestedTag(name: string) {
               attachments.length
             }}</span>
           </div>
+        </button>
+        <!-- Context sidebar (local photos + ICS calendar): only rendered when
+             opted in, so off ⇒ no entry point and no filesystem traffic. -->
+        <button
+          v-if="ui.contextSidebarEnabled && isTauri"
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="
+            ui.activeDrawer === 'context'
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          title="Context (photos, calendar)"
+          aria-label="Context (photos, calendar)"
+          @click="ui.toggleDrawer('context')"
+        >
+          <CalendarClock :size="13" />
         </button>
         <input
           ref="fileInput"

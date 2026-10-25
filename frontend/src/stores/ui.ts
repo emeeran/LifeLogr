@@ -5,7 +5,7 @@ import router from '../router'
 
 export type ViewType =
   'calendar' | 'timeline' | 'notes' | 'reminders' | 'media' | 'stats' | 'settings'
-export type DrawerPanel = 'ai' | 'attachments'
+export type DrawerPanel = 'ai' | 'attachments' | 'context'
 
 export const useUiStore = defineStore('ui', () => {
   const activeView = useLocalStorage<ViewType>('lifelogr-view', 'calendar')
@@ -24,6 +24,10 @@ export const useUiStore = defineStore('ui', () => {
   const defaultTitle = useLocalStorage<string>('lifelogr-default-title', '')
   // Daily word-count goal — 0 disables the goal chip in the editor status bar.
   const dailyWordGoal = useLocalStorage<number>('lifelogr-daily-word-goal', 0)
+  // Composer context sidebar (local photos + ICS calendar). Master opt-in: when
+  // false, the editor shows no entry point and the app never touches the
+  // filesystem — the backend endpoints are stateless, so gating here is total.
+  const contextSidebarEnabled = useLocalStorage('lifelogr-context-enabled', false)
 
   // Pending switch (used by save-prompt dialog)
   const pendingSwitch = ref<{ entryId: number; date?: string } | null>(null)
@@ -209,6 +213,7 @@ export const useUiStore = defineStore('ui', () => {
     rightPanelWidth,
     defaultTitle,
     dailyWordGoal,
+    contextSidebarEnabled,
     showEditor,
     showSavePrompt,
     pendingSwitch,

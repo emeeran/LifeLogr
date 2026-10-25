@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   CloudSun,
+  FolderOpen,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
@@ -22,6 +23,9 @@ import {
 } from '../../../api/system'
 import { getSettings, updateSettings } from '../../../api/settings'
 import { errMsg } from '../../../utils/errorMessage.ts'
+import { useUiStore } from '../../../stores/ui'
+
+const uiStore = useUiStore()
 
 // A surface row in the report. `leavesDevice` is the truth that drives the badge.
 const report = ref<EgressReport | null>(null)
@@ -128,6 +132,20 @@ onMounted(async () => {
       >
         <AlertTriangle :size="11" /> {{ weatherErrorMsg }}
       </p>
+    </div>
+
+    <!-- Composer context sidebar (local-only filesystem surface) -->
+    <div class="mb-3 rounded-md border border-border bg-surface-hover p-2.5">
+      <SettingRow
+        :icon="FolderOpen"
+        label="Composer context sidebar"
+        description="Adds a panel to the entry editor listing photos by date from a folder you choose and events from a calendar (.ics) file you choose — both read-only and local-only. With this off, nothing is ever scanned; paths live in this browser profile and are sent only when you open the panel."
+      >
+        <ToggleSwitch
+          v-model="uiStore.contextSidebarEnabled"
+          label="Enable composer context sidebar"
+        />
+      </SettingRow>
     </div>
 
     <template v-if="loading"><SkeletonCard :lines="5" /></template>
