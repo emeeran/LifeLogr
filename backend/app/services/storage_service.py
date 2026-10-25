@@ -26,7 +26,13 @@ from app.core.restore import _checkpoint_live, validate_extracted_db
 logger = logging.getLogger(__name__)
 
 # _PASSENGER_FILES imported from app.core.config (single source of truth,
-# shared with _migrate_existing_db).
+# shared with _migrate_existing_db). A hot-move additionally carries ``.env`` —
+# the packaged app's OAuth credentials live there, and the DB it accompanies was
+# encrypted under the SECRET_KEY that file (or .secret_key) provided, so the two
+# must never be separated. Legacy first-run migration deliberately does NOT
+# import a dev checkout's .env: its SECRET_KEY would override the managed
+# .secret_key for a database it didn't encrypt.
+_MOVE_PASSENGER_FILES = (*_PASSENGER_FILES, ".env")
 # Require this multiple of the live data size as free space on the target.
 _MIN_HEADROOM_MULT = 1.5
 
@@ -171,7 +177,7 @@ async def relocate_storage(
             await asyncio.to_thread(shutil.copytree, old_media, target / "media")
             staged.append(target / "media")
 
-        for name in _PASSENGER_FILES:
+        for name in _MOVE_PASSENGER_FILES:
             src = old_dir / name
             if src.exists():
                 _atomic_copy(src, target / name)

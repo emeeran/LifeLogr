@@ -80,6 +80,7 @@ async def isolated_data_env(tmp_path, monkeypatch):
     data_dir.mkdir()
     (data_dir / "media").mkdir()
     (data_dir / ".secret_key").write_text("original-secret")
+    (data_dir / ".env").write_text("GOOGLE_CLIENT_ID=desktop-client-id\n")
 
     saved = (settings.DATA_DIR, settings.MEDIA_DIR, settings.DATABASE_URL)
     settings.DATA_DIR = data_dir
@@ -119,6 +120,8 @@ async def test_relocate_success(isolated_data_env, tmp_path):
     # secret carried to the new location; old dir left intact
     assert (new_dir / ".secret_key").read_text() == "original-secret"
     assert (isolated_data_env / ".secret_key").exists()
+    # the OAuth-credentials .env travels with the DB it keys
+    assert (new_dir / ".env").read_text() == "GOOGLE_CLIENT_ID=desktop-client-id\n"
     assert (isolated_data_env / "lifelogr.db").exists()
     # entry survived on the new DB (global engine now points at new_dir)
     assert await _count_entries() == 1
