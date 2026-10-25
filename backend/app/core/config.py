@@ -108,6 +108,26 @@ def write_storage_override(data_dir: Path) -> None:
         os.umask(prev)
 
 
+def _env_files() -> tuple[str, ...]:
+    """Env files to load, highest priority first.
+
+    The cwd ``.env`` serves dev (``backend/.env``). A managed run's
+    ``DATA_DIR/.env`` serves the packaged desktop app: its PyInstaller backend
+    has no project checkout beside it, so OAuth client credentials (Google
+    Drive / OneDrive / Dropbox / Box) would otherwise be unreachable — the
+    Tauri sidecar only forwards ``DATA_DIR`` and ``APP_ENV``. Same placement
+    pattern as the auto-managed ``.secret_key``. Earlier files win, and a real
+    environment variable beats every file, so dev and server deployments are
+    unaffected.
+    """
+    files = [".env"]
+    for var in ("LIFELOGR_DATA_DIR", "DATA_DIR"):
+        data_dir = os.environ.get(var)
+        if data_dir and (candidate := Path(data_dir) / ".env") != Path(".env"):
+            files.append(str(candidate))
+    return tuple(files)
+
+
 def _is_managed_run() -> bool:
     """True for packaged local runs that should auto-manage a per-data-dir key.
 
@@ -248,7 +268,7 @@ def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
 class Settings(BaseSettings):
     """Application settings loaded from .env file."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=_env_files(), env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
     APP_VERSION: str = "0.12.0"  # in-app version; keep in sync with pyproject.toml

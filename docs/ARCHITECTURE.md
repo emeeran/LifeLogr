@@ -551,7 +551,7 @@ Ctrl+Shift+S ──▶ Tauri emits "snip-requested" ──▶ frontend hides app
 | `MAX_MEDIA_SIZE_BYTES` | 25 MiB default. |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` / `OLLAMA_EMBED_MODEL` / `OLLAMA_TIMEOUT_SECONDS` | Local AI. |
 | `AI_ENABLE_*` | Per-feature enrichment toggles. |
-| `GOOGLE_CLIENT_ID/SECRET`, `ONEDRIVE_*`, `DROPBOX_*`, `BOX_*` | OAuth app credentials for cloud backup. |
+| `GOOGLE_CLIENT_ID/SECRET`, `ONEDRIVE_*`, `DROPBOX_*`, `BOX_*` | OAuth app credentials for cloud backup. In the packaged desktop app (no project checkout beside the backend), set them in `DATA_DIR/.env` — dev uses `backend/.env`. |
 | `DIARI_PORT` | Tauri sidecar backend port (default 18765). |
 | `VITE_BACKEND_PORT` | Dev: Vite proxy target. |
 | `VITE_APP_VERSION` | Build-time version injected into the SPA. |
