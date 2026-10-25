@@ -611,16 +611,17 @@ def _build_diarium_database_sync(entries: list[Entry], report=None) -> bytes:
                     continue
                 if tag.name not in tag_id_map:
                     cur = conn.execute(
-                        # Type 0 = tag (1 would be person, 2 tracker — we only
-                        # have plain tags). Color/Icon stay NULL (nullable).
-                        "INSERT INTO Tags (Value, Type, Color, Icon) VALUES (?, 0, NULL, NULL)",
-                        (tag.name,),
+                        # Type 0 = tag, 2 = tracker (1 is person — lifelogr has
+                        # no separate person kind). Tracker readings ride in
+                        # EntryTags.TrackingValue. Color/Icon stay NULL.
+                        "INSERT INTO Tags (Value, Type, Color, Icon) VALUES (?, ?, NULL, NULL)",
+                        (tag.name, 2 if getattr(tag, "is_tracker", False) else 0),
                     )
                     tag_id_map[tag.name] = cur.lastrowid  # type: ignore[assignment]
                 conn.execute(
                     "INSERT OR IGNORE INTO EntryTags (DiaryEntryId, DiaryTagId, TrackingValue) "
-                    "VALUES (?, ?, NULL)",
-                    (entry_id, tag_id_map[tag.name]),
+                    "VALUES (?, ?, ?)",
+                    (entry_id, tag_id_map[tag.name], assoc.tracking_value),
                 )
 
             # Media attachments as real Media rows (blob + name parts + order),
@@ -676,6 +677,11 @@ def _build_diarium_database_sync(entries: list[Entry], report=None) -> bytes:
                     (event_type, event.content, event.label, entry_id),
                 )
         conn.commit()
+        # Match a real Diarium backup's container (format analysis §1):
+        # user_version 4. The backup() target file is rollback-journal
+        # ("delete") by construction, and sqlite_sequence is maintained by
+        # AUTOINCREMENT itself — no manual upkeep needed.
+        conn.execute("PRAGMA user_version = 4")
         # Serialize to a binary SQLite file. conn.serialize()/iterdump() aren't
         # available under pysqlite3 (the frozen-build FTS5 swap), so backup() to
         # a file connection (works in both stdlib sqlite3 and pysqlite3).
