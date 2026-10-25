@@ -21,6 +21,10 @@ from app.services.hashtag import extract_hashtags, resolve_tag_ids
 logger = logging.getLogger(__name__)
 
 
+def _is_leap(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
 def _entry_list_options() -> tuple[Any, ...]:
     """Eager-load relationships + every scalar column EXCEPT the heavy ``body``.
 
@@ -286,6 +290,59 @@ class EntryService:
             .order_by(Entry.entry_date)
         )
         rows = entries_result.all()
+        if not rows:
+            return []
+
+        entry_ids = [r.id for r in rows]
+        tags_result = await self.db.execute(
+            select(EntryTag.entry_id, Tag.id, Tag.name)
+            .join(Tag, EntryTag.tag_id == Tag.id)
+            .where(EntryTag.entry_id.in_(entry_ids))
+        )
+        tags_map: dict[int, list[TagBrief]] = {}
+        for tr in tags_result.all():
+            tags_map.setdefault(tr.entry_id, []).append(TagBrief(id=tr.id, name=tr.name))
+
+        return [
+            CalendarEntryResponse(
+                id=r.id,
+                entry_date=r.entry_date,
+                title=r.title,
+                mood=r.mood,
+                is_encrypted=r.is_encrypted,
+                tags=tags_map.get(r.id, []),
+            )
+            for r in rows
+        ]
+
+    async def get_on_this_day(self, today: date) -> list[CalendarEntryResponse]:
+        """Entries written on ``today``'s month/day in prior years.
+
+        Same lightweight projection as the calendar month query (no body —
+        titles/mood/tags only, tags batched in a second query). Year-1 rows
+        (Diarium's .NET-tick epoch artifacts) are excluded via the
+        ``>= date(2, 1, 1)`` bound rather than a per-row check.
+
+        Feb 29 entries surface on Feb 28 of a non-leap year — the only day
+        they'd otherwise never be shown on — so their anniversary is skipped
+        in leap years alone, not silently dropped forever.
+        """
+        mmdd = today.strftime("%m-%d")
+        patterns = [mmdd]
+        if today.month == 2 and today.day == 28 and not _is_leap(today.year):
+            patterns.append("02-29")
+
+        rows_result = await self.db.execute(
+            select(Entry.id, Entry.entry_date, Entry.title, Entry.mood, Entry.is_encrypted)
+            .where(
+                Entry.is_deleted == False,  # noqa: E712
+                Entry.entry_date >= date(2, 1, 1),
+                Entry.entry_date < date(today.year, 1, 1),
+                func.strftime("%m-%d", Entry.entry_date).in_(patterns),
+            )
+            .order_by(Entry.entry_date)
+        )
+        rows = rows_result.all()
         if not rows:
             return []
 

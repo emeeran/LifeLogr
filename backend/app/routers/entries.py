@@ -164,6 +164,15 @@ async def calendar_view(year: int, month: int, db: AsyncSession = Depends(get_db
     return await svc.get_calendar_month_light(year, month)
 
 
+@router.get("/on-this-day", response_model=list[CalendarEntryResponse])
+async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
+    """Entries written on today's month/day in prior years (leap-day aware)."""
+    from datetime import date as date_type
+
+    svc = EntryService(db)
+    return await svc.get_on_this_day(date_type.today())
+
+
 @router.get("/search", response_model=EntryListResponse)
 async def search_entries(
     q: str = Query(..., min_length=1),

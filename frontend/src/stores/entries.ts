@@ -5,6 +5,7 @@ import { entriesApi } from '../api/entries'
 
 export const useEntriesStore = defineStore('entries', () => {
   const calendarEntries = shallowRef<CalendarEntryResponse[]>([])
+  const onThisDayEntries = shallowRef<CalendarEntryResponse[]>([])
   const currentEntry = ref<EntryResponse | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -19,6 +20,15 @@ export const useEntriesStore = defineStore('entries', () => {
       error.value = e instanceof Error ? e.message : 'Failed to load entries'
     } finally {
       loading.value = false
+    }
+  }
+
+  async function fetchOnThisDay() {
+    error.value = null
+    try {
+      onThisDayEntries.value = await entriesApi.onThisDay()
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to load memories'
     }
   }
 
@@ -88,11 +98,13 @@ export const useEntriesStore = defineStore('entries', () => {
 
   return {
     calendarEntries,
+    onThisDayEntries,
     currentEntry,
     loading,
     error,
     lastUpdated,
     fetchCalendarMonth,
+    fetchOnThisDay,
     fetchEntry,
     createEntry,
     updateEntry,

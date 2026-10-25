@@ -9,7 +9,7 @@ import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -821,6 +821,37 @@ def _cleanup_old_backups(backup_dir: Path, retention: int) -> None:
             logger.info(f"Removed old backup: {old.name}")
 
 
+async def _on_this_day_count(session: Any) -> int:
+    """Number of non-deleted entries from prior years sharing today's date.
+
+    Mirrors ``EntryService.get_on_this_day`` (year-1 tick-epoch artifacts
+    excluded; Feb 29 counted on Feb 28 of a non-leap year). Kept as a plain
+    SQL count — the notification only needs the number, not the projections.
+    """
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select
+
+    from app.models.entry import Entry
+    from app.services.entry_service import _is_leap
+
+    today = datetime.now().date()
+    mmdd = today.strftime("%m-%d")
+    patterns = [mmdd]
+    if today.month == 2 and today.day == 28 and not _is_leap(today.year):
+        patterns.append("02-29")
+    q = (
+        select(sa_func.count())
+        .select_from(Entry)
+        .where(
+            Entry.is_deleted == False,  # noqa: E712
+            Entry.entry_date >= date(2, 1, 1),
+            Entry.entry_date < date(today.year, 1, 1),
+            sa_func.strftime("%m-%d", Entry.entry_date).in_(patterns),
+        )
+    )
+    return (await session.execute(q)).scalar_one()
+
+
 async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:
     """Deliver a single reminder via desktop notification.
 
@@ -840,11 +871,18 @@ async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:
             reminder = result.scalar_one_or_none()
             if reminder is None or not reminder.is_active:
                 return  # deleted or deactivated since the job was queued
+            message = reminder.message or "Time to write in your journal!"
+            memories = await _on_this_day_count(session)
+            if memories:
+                message += (
+                    f" You have written {memories} "
+                    f"{'entry' if memories == 1 else 'entries'} on this day in past years."
+                )
             # Off the event loop: spawning the notification subprocess blocks.
             await asyncio.to_thread(
                 ReminderService._send_notification,
                 reminder.title,
-                reminder.message or "Time to write in your journal!",
+                message,
             )
             if mark_fired:
                 reminder.last_fired_at = datetime.now(timezone.utc)

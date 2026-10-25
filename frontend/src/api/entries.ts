@@ -78,6 +78,10 @@ export const entriesApi = {
     return request(`/entries/calendar/${year}/${month}`)
   },
 
+  onThisDay(): Promise<CalendarEntryResponse[]> {
+    return request('/entries/on-this-day')
+  },
+
   search(query: string, offset = 0, limit = 20): Promise<EntryListResponse> {
     return request(
       `/entries/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`,
