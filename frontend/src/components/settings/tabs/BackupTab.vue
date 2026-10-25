@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBackupStore } from '../../../stores/backup'
 import { backupApi } from '../../../api/backup'
 import { useEntriesStore } from '../../../stores/entries'
@@ -7,6 +7,9 @@ import { isTauri } from '../../../api/client'
 import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
 import { openExternal } from '../../../utils/externalLink'
 import { useLocalStorage } from '@vueuse/core'
+import { useJobProgress } from '../../../composables/useJobProgress'
+import type { JobState } from '../../../api/jobs'
+import OperationProgress from '../../common/OperationProgress.vue'
 import { providerLabel, clampRetention } from '../../../utils/settings'
 import {
   Cloud,
@@ -54,6 +57,38 @@ onUnmounted(() => {
 const backup = useBackupStore()
 const entriesStore = useEntriesStore()
 
+// ── Shared job-progress plumbing ──
+// Every long data operation (cloud backup/restore, local import, run-now)
+// starts a backend job and polls it; `opSection` decides which card shows the
+// bar. One operation at a time — the buttons disable via the spinner refs.
+const op = useJobProgress()
+const opSection = ref<'local' | 'schedule' | 'cloud'>('cloud')
+const opLabel = ref('')
+let stopJobWatch: (() => void) | null = null
+
+function trackJob(
+  section: 'local' | 'schedule' | 'cloud',
+  label: string,
+  jobId: string,
+  onFinished: (job: JobState) => void,
+): Promise<void> {
+  return new Promise((resolve) => {
+    opSection.value = section
+    opLabel.value = label
+    stopJobWatch?.()
+    stopJobWatch = watch(op.job, (j) => {
+      if (!j || j.status === 'running') return
+      stopJobWatch?.()
+      stopJobWatch = null
+      onFinished(j)
+      resolve()
+    })
+    op.watch(jobId)
+  })
+}
+
+onUnmounted(() => stopJobWatch?.())
+
 // ── Local archive ──
 const importing = ref(false)
 
@@ -74,9 +109,22 @@ async function handleBackupRestore() {
   if (!file) return
   importing.value = true
   try {
-    const r = await backupApi.importLocal(file)
-    entriesStore.refreshAll()
-    emit('toast', 'success', `Restored — ${r.restored.join(', ')}`)
+    // Upload happens synchronously (the request itself carries the bytes);
+    // extract/swap run as a job so the restore phase shows progress.
+    const started = await backupApi.importLocal(file, { asJob: true })
+    if ('job_id' in started) {
+      await trackJob('local', 'Restore', started.job_id, (j) => {
+        if (j.status === 'done') {
+          entriesStore.refreshAll()
+          emit('toast', 'success', `Restored — ${j.detail ?? 'done'}`)
+        } else {
+          emit('toast', 'error', `Import failed: ${j.error ?? 'unknown'}`)
+        }
+      })
+    } else {
+      entriesStore.refreshAll()
+      emit('toast', 'success', `Restored — ${started.restored.join(', ')}`)
+    }
   } catch (e: unknown) {
     emit('toast', 'error', `Import failed: ${errorMessage(e)}`)
   } finally {
@@ -237,15 +285,15 @@ async function runBackup(configId: number) {
   backingUp.value = configId
   testResult.value = null
   try {
-    const snap = await backup.runBackup(configId)
-    emit(
-      'toast',
-      snap.status === 'completed' ? 'success' : 'error',
-      snap.status === 'completed'
-        ? `Backup done — ${snap.entries_synced}e ${snap.media_synced}m${snap.error_message ? ' (App Data — hidden)' : ''}`
-        : `Backup failed: ${snap.error_message ?? 'unknown'}`,
-    )
-    await backup.fetchSnapshots()
+    const { job_id } = await backupApi.runBackupJob(configId)
+    await trackJob('cloud', 'Backup', job_id, (j) => {
+      if (j.status === 'done') {
+        emit('toast', 'success', j.detail ?? 'Backup completed')
+        void backup.fetchSnapshots()
+      } else {
+        emit('toast', 'error', `Backup failed: ${j.error ?? 'unknown'}`)
+      }
+    })
   } catch (e: unknown) {
     emit('toast', 'error', `Backup failed: ${errorMessage(e)}`)
   } finally {
@@ -259,15 +307,16 @@ async function confirmRestore() {
   restoreConfirm.value = null
   restoring.value = configId
   try {
-    const r = (await backup.restore(configId)) as {
-      entries_restored?: number
-      media_restored?: number
-    }
-    emit(
-      'toast',
-      'success',
-      `Restored from ${providerLabel(provider)} — ${r.entries_restored ?? 0}e ${r.media_restored ?? 0}m`,
-    )
+    const { job_id } = await backupApi.restoreJob(configId)
+    await trackJob('cloud', 'Restore', job_id, (j) => {
+      if (j.status === 'done') {
+        // The restore swapped the engine — every store re-fetches.
+        entriesStore.refreshAll()
+        emit('toast', 'success', `Restored from ${providerLabel(provider)} — ${j.detail ?? 'done'}`)
+      } else {
+        emit('toast', 'error', `Restore failed: ${j.error ?? 'unknown'}`)
+      }
+    })
   } catch (e: unknown) {
     emit('toast', 'error', `Restore failed: ${errorMessage(e)}`)
   } finally {
@@ -415,33 +464,31 @@ async function runBackupNow() {
     // /backup/run path. A one-off run needs no persisted schedule, so "Run now"
     // works immediately after linking a provider instead of 404'ing.
     if (autoBackupConfigId.value) {
-      const snap = await backup.runBackup(autoBackupConfigId.value)
-      emit(
-        'toast',
-        snap.status === 'completed' ? 'success' : 'error',
-        snap.status === 'completed'
-          ? snap.error_message
-            ? 'Cloud backup completed (App Data — hidden)'
-            : 'Cloud backup completed'
-          : `Backup failed: ${snap.error_message ?? 'unknown'}`,
-      )
-      backup.fetchSnapshots()
+      const { job_id } = await backupApi.runBackupJob(autoBackupConfigId.value)
+      await trackJob('schedule', 'Backup', job_id, (j) => {
+        if (j.status === 'done') {
+          emit('toast', 'success', j.detail ?? 'Cloud backup completed')
+          void backup.fetchSnapshots()
+        } else {
+          emit('toast', 'error', `Backup failed: ${j.error ?? 'unknown'}`)
+        }
+      })
       return
     }
     // Local mode: back up to the configured folder now (no saved schedule
     // needed — /run-now accepts the path directly).
-    const { request } = await import('../../../api/client')
-    const r = await request<{
-      mode: string
-      path?: string
-      status?: string
-      error?: string
-    }>(
-      `/backup/run-now?backup_path=${encodeURIComponent(autoBackupPath.value)}&retention=${clampRetention(autoBackupRetention.value)}`,
-      { method: 'POST' },
+    const started = await backupApi.runNowLocalJob(
+      autoBackupPath.value,
+      clampRetention(autoBackupRetention.value),
     )
-    emit('toast', 'success', `Backup saved to ${r.path}`)
-    backup.fetchSnapshots()
+    await trackJob('schedule', 'Backup', started.job_id, (j) => {
+      if (j.status === 'done') {
+        emit('toast', 'success', 'Backup saved')
+        void backup.fetchSnapshots()
+      } else {
+        emit('toast', 'error', `Backup failed: ${j.error ?? 'unknown'}`)
+      }
+    })
   } catch (e: unknown) {
     emit('toast', 'error', `Backup failed: ${errorMessage(e)}`)
   }
@@ -503,7 +550,9 @@ onMounted(() => {
       description="Download a .tar.gz of your database and media, or restore one."
     >
       <SButton variant="ghost" :icon="Download" @click="handleBackupDownload"
-        >Backup</SButton
+        >
+Backup
+</SButton
       >
       <SButton
         variant="ghost"
@@ -513,6 +562,12 @@ onMounted(() => {
         <Loader v-if="importing" :size="12" class="animate-spin" /> Restore
       </SButton>
     </SettingRow>
+    <OperationProgress
+      v-if="opSection === 'local'"
+      :job="op.job.value"
+      :label="opLabel"
+      class="mt-1"
+    />
   </SettingsSection>
 
   <!-- Auto backup -->
@@ -559,7 +614,9 @@ onMounted(() => {
             size="xs"
             :icon="FolderOpen"
             @click="browseBackupFolder"
-            >Browse</SButton
+            >
+Browse
+</SButton
           >
         </SettingRow>
         <SettingRow label="Keep">
@@ -593,8 +650,20 @@ onMounted(() => {
           <Loader v-if="autoBackupSaving" :size="12" class="animate-spin" />
           Save Schedule
         </SButton>
-        <SButton variant="ghost" @click="runBackupNow">Run now</SButton>
+        <SButton
+          variant="ghost"
+          :disabled="op.running.value"
+          @click="runBackupNow"
+          >
+Run now
+</SButton
+        >
       </div>
+      <OperationProgress
+        v-if="opSection === 'schedule'"
+        :job="op.job.value"
+        :label="opLabel"
+      />
     </div>
   </SettingsSection>
 
@@ -607,7 +676,9 @@ onMounted(() => {
   >
     <template #actions>
       <SButton variant="primary" size="xs" :icon="Plus" @click="openCreateForm"
-        >Add</SButton
+        >
+Add
+</SButton
       >
     </template>
 
@@ -642,7 +713,9 @@ onMounted(() => {
         class="flex flex-col gap-1.5 py-1"
       >
         <SButton variant="primary" @click="startGoogleDriveAuth"
-          >Sign in with Google</SButton
+          >
+Sign in with Google
+</SButton
         >
         <div class="text-center">
           <a
@@ -660,7 +733,9 @@ onMounted(() => {
       </div>
       <div v-else-if="newProvider === 'box'" class="flex flex-col gap-1.5 py-1">
         <SButton variant="primary" @click="startBoxAuth"
-          >Sign in with Box</SButton
+          >
+Sign in with Box
+</SButton
         >
         <p class="text-[10px] text-text-muted text-center">
           Authorise in your browser, or fill the fields below manually.
@@ -721,12 +796,14 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-1.5">
         <SButton variant="ghost" size="xs" @click="testConn(config.id)"
-          >Test</SButton
+          >
+Test
+</SButton
         >
         <SButton
           variant="accent-soft"
           size="xs"
-          :disabled="backingUp === config.id"
+          :disabled="backingUp === config.id || op.running.value"
           @click="runBackup(config.id)"
         >
           <Loader
@@ -738,7 +815,7 @@ onMounted(() => {
         <SButton
           variant="danger-soft"
           size="xs"
-          :disabled="restoring === config.id"
+          :disabled="restoring === config.id || op.running.value"
           @click="
             restoreConfirm = { configId: config.id, provider: config.provider }
           "
@@ -750,6 +827,12 @@ onMounted(() => {
           />{{ restoring === config.id ? '…' : 'Restore' }}
         </SButton>
       </div>
+      <OperationProgress
+        v-if="opSection === 'cloud'"
+        :job="op.job.value"
+        :label="opLabel"
+        class="mt-1"
+      />
       <div
         v-if="testResult?.configId === config.id"
         class="mt-1 flex items-center gap-1 text-[11px]"

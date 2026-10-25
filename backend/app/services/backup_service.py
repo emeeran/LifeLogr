@@ -18,6 +18,7 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.jobs import ProgressReporter, noop_reporter
 from app.core.security import decrypt, encrypt, reencrypt
 from app.models.backup import BackupConfig, BackupSnapshot
 from app.schemas.backup import BackupConfigCreate
@@ -159,7 +160,7 @@ class BackupService:
         finally:
             await provider.close()
 
-    async def _build_backup_archive(self) -> Path:
+    async def _build_backup_archive(self, report: ProgressReporter = noop_reporter) -> Path:
         """Build the .tar.gz backup on disk (not in memory); return its path.
 
         Writing to a temp file avoids buffering the entire — potentially
@@ -199,7 +200,7 @@ class BackupService:
         # event loop so a backup doesn't stall other requests (e.g. /health).
         def _pack() -> None:
             with tarfile.open(archive_name, "w:gz") as tar:
-                add_backup_members(tar, db_file, media_dir)
+                add_backup_members(tar, db_file, media_dir, report=report)
 
         await asyncio.to_thread(_pack)
         return Path(archive_name)
@@ -268,12 +269,16 @@ class BackupService:
         await self.db.refresh(snapshot)
         return snapshot
 
-    async def run_backup(self, config_id: int) -> BackupSnapshot:
+    async def run_backup(
+        self, config_id: int, report: ProgressReporter = noop_reporter
+    ) -> BackupSnapshot:
         """Back up the DB + media to the configured cloud provider.
 
         Builds the archive on disk, streams it up, then prunes the provider to
         the cloud retention count. A provider failure is recorded on the
         snapshot (status=failed) rather than raised — the caller gets the row.
+        Progress phases: prepare → database/media (from the archive build) →
+        upload → retention → counts.
         """
         from app.services.cloud_sync_service import GoogleDriveProvider
 
@@ -282,14 +287,16 @@ class BackupService:
         # Construct (and validate the provider name) before claiming the slot,
         # so an unsupported provider is a 400 rather than a recorded failure.
         provider = self._cloud_provider_for(config, creds)
+        report("prepare")
         snapshot = await self._begin_snapshot(config_id)
 
         archive_path: Path | None = None
         try:
-            archive_path = await self._build_backup_archive()
+            archive_path = await self._build_backup_archive(report=report)
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             filename = f"{CLOUD_BACKUP_PREFIX}{timestamp}.tar.gz"
 
+            report("upload")
             if isinstance(provider, GoogleDriveProvider):
                 # Best-effort: move any older hidden (App Data) backups into the
                 # visible folder. Never let migration failure abort the backup.
@@ -310,6 +317,7 @@ class BackupService:
                 )
 
             # Retention: drop the oldest cloud copies beyond the configured count.
+            report("retention")
             await self._prune_cloud_backups(provider, filename)
 
             # Remember the uploaded filename so this snapshot can be deleted
@@ -317,6 +325,7 @@ class BackupService:
             snapshot.backup_filename = filename
 
             # Counts for synced items
+            report("counts")
             counts = await self.count_all()
             snapshot.entries_synced = counts["entries"]
             snapshot.media_synced = counts["media"]
@@ -449,7 +458,9 @@ class BackupService:
             "filename": filename,
         }
 
-    async def restore(self, config_id: int) -> dict[str, int]:
+    async def restore(
+        self, config_id: int, report: ProgressReporter = noop_reporter
+    ) -> dict[str, int]:
         """Atomically replace local data with the newest cloud backup.
 
         The archive is streamed to a temp file (never buffered whole in RAM),
@@ -457,7 +468,8 @@ class BackupService:
         ``atomic_restore``. Failures keep their cause and are classified by
         ``_classify_restore_error`` so the router can return the right status:
         409 nothing to restore, 400 bad archive/DB, 502 provider/network, 500
-        anything genuinely unexpected.
+        anything genuinely unexpected. Progress phases: lookup → download →
+        extract → swap → counts.
         """
         from app.core.archive import extract_archive_file
         from app.core.config import settings
@@ -469,6 +481,7 @@ class BackupService:
 
         engine_reinitialised = False
         try:
+            report("lookup")
             files = await provider.list_files(CLOUD_BACKUP_PREFIX)
             if not files:
                 raise ConflictError("No cloud backups found")
@@ -480,10 +493,12 @@ class BackupService:
             tmpdir = tempfile.mkdtemp()
             try:
                 archive = Path(tmpdir) / "restore.tar.gz"
+                report("download")
                 await _download_backup_archive(provider, latest_backup, archive)
                 extract_dir = Path(tmpdir) / "extracted"
                 extract_dir.mkdir()
                 # Extraction is synchronous and the archive can be large — offload it.
+                report("extract")
                 await asyncio.to_thread(extract_archive_file, archive, extract_dir)
 
                 extracted_db = extract_dir / "diarium.diarium"
@@ -493,6 +508,7 @@ class BackupService:
                 extracted_media = extract_dir / "media"
 
                 if extracted_db.exists():
+                    report("swap")
                     restored = await atomic_restore(
                         extracted_db=extracted_db,
                         extracted_media=extracted_media if extracted_media.exists() else None,
@@ -505,6 +521,7 @@ class BackupService:
                     engine_reinitialised = True
                     # The engine this request's session was bound to is gone —
                     # never touch it again. Count what came back on a fresh one.
+                    report("counts")
                     counts = await _count_all_fresh()
                     if "database" in restored:
                         restored_entries = counts["entries"]

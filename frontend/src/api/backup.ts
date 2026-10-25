@@ -5,6 +5,12 @@ import type {
   BackupSnapshotResponse,
 } from '../types'
 
+/** 202 body from an `as_job=true` data operation. */
+export interface JobStartResponse {
+  job_id: string
+  kind: string
+}
+
 export const backupApi = {
   createConfig(data: BackupConfigCreate): Promise<BackupConfigResponse> {
     return request('/backup/config', {
@@ -28,6 +34,31 @@ export const backupApi = {
       method: 'POST',
       body: JSON.stringify({ config_id: configId }),
     })
+  },
+
+  /** Cloud backup as a polled job — poll `jobsApi.get(job_id)` for
+   *  archive/upload progress; the job's terminal state carries the outcome. */
+  runBackupJob(configId: number): Promise<JobStartResponse> {
+    return request('/backup/run?as_job=true', {
+      method: 'POST',
+      body: JSON.stringify({ config_id: configId }),
+    })
+  },
+
+  /** Cloud restore as a polled job (download/extract/swap progress). */
+  restoreJob(configId: number): Promise<JobStartResponse> {
+    return request('/backup/restore?as_job=true', {
+      method: 'POST',
+      body: JSON.stringify({ config_id: configId }),
+    })
+  },
+
+  /** Scheduled-path "Run now" for a local folder, as a polled job. */
+  runNowLocalJob(backupPath: string, retention: number): Promise<JobStartResponse> {
+    return request(
+      `/backup/run-now?as_job=true&backup_path=${encodeURIComponent(backupPath)}&retention=${retention}`,
+      { method: 'POST' },
+    )
   },
 
   listSnapshots(configId?: number, offset = 0, limit = 20) {
@@ -66,11 +97,12 @@ export const backupApi = {
 
   importLocal(
     file: File,
-  ): Promise<{ success: boolean; restored: string[] }> {
+    opts?: { asJob?: boolean },
+  ): Promise<{ success: boolean; restored: string[] } | JobStartResponse> {
     const fd = new FormData()
     fd.append('file', file)
     // A full-archive restore can be hundreds of MB — long timeout (see api/client).
-    return request('/backup/import', {
+    return request(opts?.asJob ? '/backup/import?as_job=true' : '/backup/import', {
       method: 'POST',
       body: fd,
       timeoutMs: UPLOAD_TIMEOUT_MS,

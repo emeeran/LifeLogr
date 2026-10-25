@@ -16,7 +16,12 @@ Two concerns live here:
 from __future__ import annotations
 
 import tarfile
+from collections.abc import Callable
 from pathlib import Path
+
+# Optional progress callback: (phase, done, total). Phases: "database" then
+# "media". Total counts DB members + media files; None total = unknown.
+ArchiveProgressFn = Callable[[str, int, int | None], None]
 
 
 def _assert_member_name_safe(name: str) -> None:
@@ -63,25 +68,62 @@ def extract_archive_file(archive_path: str | Path, dest: str | Path) -> None:
         raise ValueError(f"Invalid archive: {exc}") from exc
 
 
-def add_backup_members(tar: tarfile.TarFile, db_file: str | Path, media_dir: str | Path) -> None:
+def add_backup_members(
+    tar: tarfile.TarFile,
+    db_file: str | Path,
+    media_dir: str | Path,
+    report: ArchiveProgressFn | None = None,
+) -> None:
     """Add the DB (+ WAL/SHM) and media dir to *tar* under standard arcnames.
 
     ``diarium.diarium`` (+ ``-wal``/``-shm``) is the on-disk name external tools
     expect; ``media/`` holds attachments. Missing files/dirs are skipped so the
     same helper works for a fresh install with no media yet.
+
+    *report* (optional) receives (phase, done, total) as members are written;
+    with it, media is added file-by-file so progress is per-file. Without it the
+    media dir is added in one recursive call, exactly as before.
     """
+    done = 0
+    db_members: list[tuple[str, str]] = []
     db_path = Path(db_file)
     if db_path.exists():
-        tar.add(str(db_path), arcname="diarium.diarium")
+        db_members.append((str(db_path), "diarium.diarium"))
         # Belt-and-suspenders: bundle WAL/SHM so the archive is consistent even
         # if a pre-copy checkpoint couldn't fully finish, and opens correctly in
         # external tools that don't replay WAL.
         wal = db_path.with_suffix(db_path.suffix + "-wal")
         shm = db_path.with_suffix(db_path.suffix + "-shm")
         if wal.exists():
-            tar.add(str(wal), arcname="diarium.diarium-wal")
+            db_members.append((str(wal), "diarium.diarium-wal"))
         if shm.exists():
-            tar.add(str(shm), arcname="diarium.diarium-shm")
+            db_members.append((str(shm), "diarium.diarium-shm"))
+
+    media_files: list[Path] = []
     media_path = Path(media_dir)
-    if media_path.exists():
+    if media_path.exists() and report is not None:
+        media_files = sorted(p for p in media_path.rglob("*") if p.is_file())
+
+    if report is not None:
+        total = len(db_members) + len(media_files)
+        if total == 0:
+            report("archive", 0, 0)
+            return
+        report("database", 0, total)
+        for src, arcname in db_members:
+            tar.add(src, arcname=arcname)
+            done += 1
+            report("database", done, total)
+        report("media", done, total)
+        for path in media_files:
+            tar.add(str(path), arcname=f"media/{path.relative_to(media_path)}")
+            done += 1
+            report("media", done, total)
+        return
+
+    for src, arcname in db_members:
+        tar.add(src, arcname=arcname)
+    if media_path.exists() and not media_files:
         tar.add(str(media_path), arcname="media")
+
+

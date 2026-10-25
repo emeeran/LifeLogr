@@ -6,7 +6,7 @@
 IDs `DM#`, effort **S** ≤ 1 day / **M** 1–3 days; every task ends with
 `ruff` + `pytest` green, UI tasks also `vitest`.
 
-Status: DM1 ✅ done (2026-10-25) — DM2–DM12 pending.
+Status: DM1 ✅ · DM2 ✅ done (2026-10-25) — DM3–DM12 pending.
 
 ---
 
@@ -26,7 +26,7 @@ Status: DM1 ✅ done (2026-10-25) — DM2–DM12 pending.
 - **Accept:** calendar renders with no top strip; no references to
   `OnThisDay` remain in `frontend/src` except none; vitest + pytest green.
 
-### DM2 — Job registry + progress infrastructure · **M**
+### DM2 — Job registry + progress infrastructure · **M** ✅
 - **Backend:** `core/jobs.py` — in-memory registry
   (`create_job(kind) -> id`, `update(job_id, phase, done, total, detail)`,
   `finish/fail`, TTL cleanup); `routers/jobs.py` — `GET /api/v1/jobs/{id}`;

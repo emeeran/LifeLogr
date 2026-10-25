@@ -16,6 +16,7 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cron_utils import last_scheduled_occurrence as _last_scheduled_occurrence
+from app.core.jobs import ProgressReporter
 
 logger = logging.getLogger(__name__)
 
@@ -755,8 +756,16 @@ async def _checkpoint_wal_robust(attempts: int = 5, delay: float = 0.5) -> bool:
     return False
 
 
-async def _run_backup(backup_path: str, retention: int = 10) -> str:
-    """Execute the backup job — creates a .tar.gz archive of DB + media."""
+async def _run_backup(
+    backup_path: str,
+    retention: int = 10,
+    report: ProgressReporter | None = None,
+) -> str:
+    """Execute the backup job — creates a .tar.gz archive of DB + media.
+
+    *report* (optional) receives (phase, done, total) progress; phases mirror
+    the cloud backup: archive/database, archive/media, retention.
+    """
     from app.core.archive import add_backup_members
     from app.core.config import settings
     from app.core.paths import resolve_backup_path
@@ -789,11 +798,13 @@ async def _run_backup(backup_path: str, retention: int = 10) -> str:
         # scheduled backup job doesn't block the event loop.
         def _pack() -> None:
             with tarfile.open(archive_path, "w:gz") as tar:
-                add_backup_members(tar, db_file, media_dir)
+                add_backup_members(tar, db_file, media_dir, report=report)
 
         await asyncio.to_thread(_pack)
         logger.info(f"Backup complete: {archive_path}")
         await _mark_backup_run()
+        if report is not None:
+            report("retention")
     except Exception:
         logger.error("Backup failed", exc_info=True)
         if archive_path.exists():
