@@ -5,6 +5,7 @@ import { backupApi } from '../../../api/backup'
 import { useEntriesStore } from '../../../stores/entries'
 import { isTauri } from '../../../api/client'
 import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
+import { openExternal } from '../../../utils/externalLink'
 import { useLocalStorage } from '@vueuse/core'
 import { providerLabel, clampRetention } from '../../../utils/settings'
 import {
@@ -147,7 +148,7 @@ const showManualGoogleFields = ref(false)
 async function startGoogleDriveAuth() {
   try {
     const res = await backupApi.getGoogleDriveAuthUrl()
-    window.open(res.auth_url, '_blank')
+    await openExternal(res.auth_url)
     emit('toast', 'info', 'Opening Google Authentication in browser...')
     showCreate.value = false
     scheduleConfigRefetch()
@@ -159,7 +160,7 @@ async function startGoogleDriveAuth() {
 async function startBoxAuth() {
   try {
     const res = await backupApi.getBoxAuthUrl()
-    window.open(res.auth_url, '_blank')
+    await openExternal(res.auth_url)
     emit('toast', 'info', 'Opening Box Authentication in browser...')
     showCreate.value = false
     scheduleConfigRefetch()

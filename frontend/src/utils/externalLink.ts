@@ -21,8 +21,12 @@ export function isExternalHref(href: string): boolean {
  * In Tauri this goes through the shell plugin; in a plain browser it opens a
  * new tab. Only http(s)/mailto/tel are ever dispatched — anything else is a
  * no-op, so internal/relative links are never hijacked.
+ *
+ * Exported for call sites that open URLs programmatically (no `<a>` to
+ * intercept) — e.g. the cloud-backup OAuth consent hand-off, where a raw
+ * `window.open` silently does nothing inside the Tauri webview.
  */
-async function openExternal(href: string): Promise<void> {
+export async function openExternal(href: string): Promise<void> {
   if (!isExternalHref(href)) return
   if (isTauri) {
     try {
