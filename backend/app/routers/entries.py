@@ -84,7 +84,16 @@ def _to_response(entry: Entry) -> EntryResponse:
         mood=entry.mood,
         is_deleted=entry.is_deleted,
         is_encrypted=entry.is_encrypted,
-        tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in entry.tag_associations if a.tag],
+        tags=[
+            TagBrief(
+                id=a.tag.id,
+                name=a.tag.name,
+                is_tracker=a.tag.is_tracker,
+                tracking_value=a.tracking_value,
+            )
+            for a in entry.tag_associations
+            if a.tag
+        ],
         events=[
             EntryEventBrief(id=ev.id, kind=ev.kind, content=ev.content, label=ev.label)
             for ev in entry.events
@@ -1222,7 +1231,29 @@ async def import_file(
                     has_new_tags = True
             if has_new_tags:
                 await db.flush()
-            tag_ids = [tag_cache[tn].id for tn in entry.get("tags", []) if tn and tag_cache.get(tn)]
+
+            # Tracker tags (Diarium Tags.Type=2): create/flag before the entry's
+            # associations are written, then stamp the verbatim reading on the
+            # association row afterwards.
+            trackers = entry.get("trackers") or []
+            tracker_names: list[str] = []
+            for tr in trackers:
+                name = (tr.get("name") or "").strip()
+                if not name:
+                    continue
+                tracker_names.append(name)
+                tag = tag_cache.get(name)
+                if tag is None:
+                    tag = Tag(name=name, is_tracker=True)
+                    tag_cache[name] = tag
+                    db.add(tag)
+                elif not tag.is_tracker:
+                    tag.is_tracker = True
+            if trackers:
+                await db.flush()
+
+            all_tag_names = list(entry.get("tags", [])) + tracker_names
+            tag_ids = [tag_cache[tn].id for tn in all_tag_names if tn and tag_cache.get(tn)]
 
             data = EntryCreate(
                 entry_date=ed,
@@ -1244,6 +1275,27 @@ async def import_file(
             events_items = entry.get("events") or []
             if events_items:
                 await _attach_imported_events(db, created, events_items)
+            if trackers:
+                # One bulk UPDATE — the associations were flushed inside
+                # svc.create; touching the ORM collection here would lazy-load
+                # outside a greenlet.
+                from sqlalchemy import update
+
+                from app.models.tag import EntryTag
+
+                for tr in trackers:
+                    name = (tr.get("name") or "").strip()
+                    value = tr.get("value")
+                    if not name or value is None:
+                        continue
+                    await db.execute(
+                        update(EntryTag)
+                        .where(
+                            EntryTag.entry_id == created.id,
+                            EntryTag.tag_id == tag_cache[name].id,
+                        )
+                        .values(tracking_value=str(value)[:500])
+                    )
             if not created.is_encrypted:
                 to_enrich.append((created.id, created.title, created.body))
             existing_sigs.add(sig)

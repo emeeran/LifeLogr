@@ -93,9 +93,10 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
     Real Diarium backups (schema verified against the shipped 3.3.12.0 binary)
     carry more than we import — Templates are skipped; Events and Media blobs
     are imported. ``Tags.Type`` distinguishes 0 = tag, 1 = person, 2 = tracker;
-    tags and persons both import as LifeLogr tags, trackers (boolean check-off
-    items whose Value is the activity name and whose per-entry state lives in
-    EntryTags.TrackingValue) are skipped as noise.
+    tags and persons both import as LifeLogr tags, and trackers import as
+    tracker tags (``is_tracker``) whose per-entry reading arrives verbatim in
+    ``trackers`` (Diarium's ``EntryTags.TrackingValue`` — strings of unknown
+    shape, parsed at read time, never at import).
     """
     entries: list[dict[str, Any]] = []
     tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
@@ -108,17 +109,22 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
             "SELECT e.DiaryEntryId, e.Heading, e.Text, e.Rating, e.Latitude, e.Longitude "
             "FROM Entries e ORDER BY e.DiaryEntryId"
         ).fetchall()
-        # Filter tracker tags only when the file actually carries the Type
-        # column — hand-made or very old databases may predate it.
+        # Tracker tags (Type=2) import too; guard both the select list and the
+        # filter on the file actually carrying the columns — hand-made or very
+        # old databases may predate them.
         has_tag_type = any(
             r[1] == "Type" for r in conn.execute("PRAGMA table_info(Tags)").fetchall()
         )
-        tag_sql = (
-            "SELECT et.DiaryEntryId, t.Value FROM EntryTags et "
-            "JOIN Tags t ON et.DiaryTagId = t.DiaryTagId"
+        has_tracking = any(
+            r[1] == "TrackingValue"
+            for r in conn.execute("PRAGMA table_info(EntryTags)").fetchall()
         )
+        tag_sql = f"SELECT et.DiaryEntryId, t.Value{', t.Type' if has_tag_type else ''}{', et.TrackingValue' if has_tracking else ''} FROM EntryTags et JOIN Tags t ON et.DiaryTagId = t.DiaryTagId"
         if has_tag_type:
-            tag_sql += " WHERE t.Type IS NULL OR t.Type IN (0, 1)"
+            # NULL Type + 0 (tag) + 1 (person) import as plain tags; 2 (tracker)
+            # carries its TrackingValue; anything beyond the known enum stays
+            # excluded rather than guessed.
+            tag_sql += " WHERE t.Type IS NULL OR t.Type IN (0, 1, 2)"
         tag_rows = conn.execute(tag_sql).fetchall()
 
         # Media blobs (photos, audio, documents) — re-attached to the imported
@@ -146,8 +152,19 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
         except sqlite3.OperationalError:
             logger.info("No Media table in .diary file — importing text only")
         entry_tags_map: dict[int, list[str]] = {}
+        entry_trackers_map: dict[int, list[dict[str, Any]]] = {}
         for tr in tag_rows:
-            entry_tags_map.setdefault(tr["DiaryEntryId"], []).append(tr["Value"])
+            is_tracker = has_tag_type and tr["Type"] == 2
+            if is_tracker:
+                entry_trackers_map.setdefault(tr["DiaryEntryId"], []).append(
+                    {
+                        "name": tr["Value"],
+                        # Tracked verbatim (None → no reading that day).
+                        "value": tr["TrackingValue"] if has_tracking else None,
+                    }
+                )
+            else:
+                entry_tags_map.setdefault(tr["DiaryEntryId"], []).append(tr["Value"])
 
         # Events — per-entry typed records. Only Type=0 (weather) is verified
         # (docs/diarium-format-analysis.md §3.5); unknown Types survive as
@@ -210,6 +227,7 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
                     "body": body_text,
                     "mood": mood_val,
                     "tags": entry_tags_map.get(row["DiaryEntryId"], []),
+                    "trackers": entry_trackers_map.get(row["DiaryEntryId"], []),
                     "latitude": row["Latitude"] if row["Latitude"] else None,
                     "longitude": row["Longitude"] if row["Longitude"] else None,
                     "media": media_map.get(row["DiaryEntryId"], []),

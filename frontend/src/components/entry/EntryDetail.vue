@@ -195,8 +195,14 @@ watch(
           v-for="tag in entry.tags"
           :key="tag.id"
           class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-accent/15 text-accent"
+          :title="tag.is_tracker ? 'Tracked value (imported)' : undefined"
         >
-          #{{ tag.name }}
+          <!-- Tracker readings render read-only: #tag then the verbatim value
+               imported from Diarium's TrackingValue. -->
+          <template v-if="tag.is_tracker && tag.tracking_value">
+            #{{ tag.name }}: {{ tag.tracking_value }}
+          </template>
+          <template v-else>#{{ tag.name }}</template>
         </span>
       </div>
     </div>

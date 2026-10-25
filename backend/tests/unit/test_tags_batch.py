@@ -66,12 +66,16 @@ class TestBatchedListing:
         tags = {t["name"]: t for t in (await client.get("/api/v1/tags")).json()}
         # Only roots are listed; children appear nested (unchanged behaviour).
         assert set(tags) == {"places", "food"}
-        assert tags["places"]["children"] == [{"id": ids["child"], "name": "europe"}]
+        assert tags["places"]["children"] == [
+            {"id": ids["child"], "name": "europe", "is_tracker": False, "tracking_value": None}
+        ]
         assert tags["places"]["parent_id"] is None
         assert tags["food"]["children"] == []
 
         europe = (await client.get(f"/api/v1/tags/{ids['child']}")).json()
-        assert europe["children"] == [{"id": ids["grandchild"], "name": "italy"}]
+        assert europe["children"] == [
+            {"id": ids["grandchild"], "name": "italy", "is_tracker": False, "tracking_value": None}
+        ]
         assert europe["parent_id"] == ids["root"]
         # Only live entries are counted.
         assert europe["entry_count"] == 2
@@ -88,7 +92,9 @@ class TestBatchedListing:
         r = await client.get(f"/api/v1/tags/{ids['root']}")
         assert r.status_code == 200
         body = r.json()
-        assert body["children"] == [{"id": ids["child"], "name": "europe"}]
+        assert body["children"] == [
+            {"id": ids["child"], "name": "europe", "is_tracker": False, "tracking_value": None}
+        ]
         assert body["entry_count"] == 0
 
     async def test_listing_is_bounded_queries(self, client: AsyncClient, db_engine):

@@ -1,6 +1,10 @@
 export interface TagBrief {
   id: number
   name: string
+  /** Tracker tag (Diarium Type=2 import). */
+  is_tracker?: boolean
+  /** Per-entry reading, only populated on entry-detail responses. */
+  tracking_value?: string | null
 }
 
 export interface TagResponse {

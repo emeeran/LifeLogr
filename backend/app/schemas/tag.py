@@ -19,6 +19,11 @@ class TagUpdate(BaseModel):
 class TagBrief(BaseModel):
     id: int
     name: str
+    # Tracker tags (Diarium Type=2 import). ``tracking_value`` is only
+    # populated on entry-detail responses — the per-entry reading; calendar
+    # and list projections leave it null.
+    is_tracker: bool = False
+    tracking_value: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,5 +34,6 @@ class TagResponse(BaseModel):
     parent_id: int | None
     children: list[TagBrief]
     entry_count: int
+    is_tracker: bool = False
 
     model_config = ConfigDict(from_attributes=True)

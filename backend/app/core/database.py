@@ -458,6 +458,18 @@ _COLUMN_MIGRATIONS = [
         "encryption_salt",
         "ALTER TABLE notes ADD COLUMN encryption_salt VARCHAR(64)",
     ),
+    # Tag trackers (Diarium Tags.Type=2 import) — definition flag on the tag,
+    # verbatim per-entry reading on the association.
+    (
+        "tags",
+        "is_tracker",
+        "ALTER TABLE tags ADD COLUMN is_tracker BOOLEAN NOT NULL DEFAULT 0",
+    ),
+    (
+        "entry_tags",
+        "tracking_value",
+        "ALTER TABLE entry_tags ADD COLUMN tracking_value VARCHAR(500)",
+    ),
 ]
 
 _INDEX_MIGRATIONS = [

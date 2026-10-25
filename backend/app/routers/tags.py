@@ -32,6 +32,7 @@ async def _to_responses(tags: list[Tag], svc: TagService) -> list[TagResponse]:
             parent_id=tag.parent_id,
             children=[TagBrief(id=c.id, name=c.name) for c in children_map.get(tag.id, [])],
             entry_count=counts.get(tag.id, 0),
+            is_tracker=tag.is_tracker,
         )
         for tag in tags
     ]
