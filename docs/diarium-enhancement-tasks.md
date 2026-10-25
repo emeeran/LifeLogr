@@ -11,6 +11,13 @@ Task IDs are `D#` to avoid colliding with the roadmap's numbered items.
 Effort: **S** ≤ 1 day, **M** 1–3 days, **L** > 3 days. Every task ends with
 `ruff` + `pytest` green and, for UI tasks, vitest for new components.
 
+> **Status (2026-10-25):** D2–D6 and D7–D10 are implemented on
+> `feature/on-this-day` (D7 weather `731662a`, D8 Day One `9d0b361`, D8 Daylio
+> `5805ad3`, D9 HTML ZIP `d2f3f27`, D10 context sidebar `0441232`). D9 shipped
+> as HTML-with-media ZIP only — python-docx evaluated and declined. D1 (map)
+> is the sole remaining item, pending the tile-privacy decision (leaning
+> plot-only default + opt-in online tiles).
+
 ---
 
 ## Dependencies to know before starting
