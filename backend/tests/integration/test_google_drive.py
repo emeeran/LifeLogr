@@ -233,6 +233,78 @@ async def test_oauth_auth_url_endpoint(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_oauth_auth_url_follows_request_port(client):
+    """The loopback redirect URI uses the port the caller actually reached.
+
+    dev.sh binds a random free port, so the redirect can't be the hardcoded
+    18765 — Google must send the browser back to whichever host:port reached
+    this backend or the callback lands on a port nothing listens on.
+    """
+    response = await client.get(
+        "/api/v1/backup/google-drive/auth-url", headers={"Host": "127.0.0.1:8123"}
+    )
+    assert response.status_code == 200
+    redirect_uri = parse_qs(urlparse(response.json()["auth_url"]).query)["redirect_uri"][0]
+    assert redirect_uri == "http://127.0.0.1:8123/api/v1/backup/google-drive/callback"
+
+
+@pytest.mark.asyncio
+async def test_oauth_auth_url_rejects_non_loopback_host(client):
+    """A spoofed non-loopback Host header falls back to the configured bind."""
+    response = await client.get(
+        "/api/v1/backup/google-drive/auth-url", headers={"Host": "evil.example.com:8123"}
+    )
+    assert response.status_code == 200
+    redirect_uri = parse_qs(urlparse(response.json()["auth_url"]).query)["redirect_uri"][0]
+    assert redirect_uri == "http://127.0.0.1:18765/api/v1/backup/google-drive/callback"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_oauth_callback_exchanges_with_matching_redirect_uri(client, db_session):
+    """The callback's token exchange reuses the same redirect_uri as auth-url.
+
+    Google rejects the exchange with ``redirect_uri_mismatch`` when the two
+    differ, so the callback must derive the URI from its own request the same
+    way ``/auth-url`` did.
+    """
+    db_session.add(
+        BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt(
+                json.dumps({"client_id": "test-client-id", "client_secret": "test-client-secret"})
+            ),
+        )
+    )
+    await db_session.commit()
+
+    token_route = respx.post("https://oauth2.googleapis.com/token").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "returned-access-token",
+                "refresh_token": "returned-refresh-token",
+                "expires_in": 3600,
+            },
+        )
+    )
+
+    host = {"Host": "127.0.0.1:8123"}
+    auth = await client.get("/api/v1/backup/google-drive/auth-url", headers=host)
+    state = parse_qs(urlparse(auth.json()["auth_url"]).query).get("state", [""])[0]
+
+    response = await client.get(
+        f"/api/v1/backup/google-drive/callback?code=mock-auth-code&state={state}",
+        headers=host,
+    )
+    assert response.status_code == 200
+    assert token_route.calls.last.request.content
+    assert b"redirect_uri=http%3A%2F%2F127.0.0.1%3A8123%2Fapi%2Fv1%2Fbackup%2Fgoogle-drive%2Fcallback" in (
+        token_route.calls.last.request.content
+    )
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_oauth_callback_endpoint(client, db_session):
     """Test GET /api/v1/backup/google-drive/callback success scenario."""

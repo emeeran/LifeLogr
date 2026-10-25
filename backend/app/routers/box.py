@@ -1,9 +1,10 @@
 """Box OAuth 2.0 route handlers — mirrors google_drive.py.
 
-Loopback flow: /auth-url builds the Box consent URL; Box redirects to
-REDIRECT_URI (port 18765), /callback exchanges the code for tokens and upserts
-a BackupConfig(provider="box"). Box rotates its refresh token, so the stored
-creds are rewritten whenever BackupService refreshes (see BoxProvider).
+Loopback flow: /auth-url builds the Box consent URL; Box redirects to the
+request-derived loopback callback URI, /callback exchanges the code for tokens
+and upserts a BackupConfig(provider="box"). Box rotates its refresh token, so
+the stored creds are rewritten whenever BackupService refreshes (see
+BoxProvider).
 
 Exchange/upsert/render plumbing is shared via ``app.routers._oauth_helpers``.
 """
@@ -14,7 +15,7 @@ import logging
 import time
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,7 @@ from app.routers._oauth_helpers import (
     error_page,
     exchange_authorization_code,
     load_stored_credentials,
+    loopback_redirect_uri,
     success_page,
     upsert_backup_config,
 )
@@ -37,13 +39,15 @@ router = APIRouter(prefix="/api/v1/backup/box", tags=["backup-box"])
 
 AUTHORIZE_URL = "https://account.box.com/api/oauth2/authorize"
 TOKEN_URL = "https://api.box.com/oauth2/token"
-REDIRECT_URI = "http://localhost:18765/api/v1/backup/box/callback"
 _state = OAuthStateStore()
 
 
 @router.get("/auth-url")
-async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def get_auth_url(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """Generate the Box OAuth consent screen URL."""
+    redirect_uri = loopback_redirect_uri(request, "/api/v1/backup/box/callback")
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "box"))
     config = result.scalar_one_or_none()
 
@@ -60,7 +64,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     params = {
         "response_type": "code",
         "client_id": client_id,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
@@ -70,6 +74,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
 @router.get("/callback", response_class=HTMLResponse)
 async def oauth_callback(
+    request: Request,
     code: str | None = Query(None, description="Authorization code from Box"),
     state: str | None = Query(None, description="OAuth state token"),
     error: str | None = Query(None, description="OAuth error from Box"),
@@ -108,7 +113,7 @@ async def oauth_callback(
                 "code": code,
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": loopback_redirect_uri(request, "/api/v1/backup/box/callback"),
                 "code_verifier": code_verifier,
             },
             timeout=15.0,

@@ -6,7 +6,7 @@ import logging
 import time
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from app.routers._oauth_helpers import (
     error_page,
     exchange_authorization_code,
     load_stored_credentials,
+    loopback_redirect_uri,
     success_page,
     upsert_backup_config,
 )
@@ -27,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup/google-drive", tags=["backup-google-drive"])
 
-REDIRECT_URI = "http://127.0.0.1:18765/api/v1/backup/google-drive/callback"
 _state = OAuthStateStore()
 
 
@@ -36,8 +36,11 @@ def get_default_credentials() -> tuple[str, str]:
 
 
 @router.get("/auth-url")
-async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def get_auth_url(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """Generate Google Drive OAuth consent screen URL."""
+    redirect_uri = loopback_redirect_uri(request, "/api/v1/backup/google-drive/callback")
     # Look for existing custom client config in database
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "google_drive"))
     config = result.scalar_one_or_none()
@@ -64,7 +67,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
     params = {
         "client_id": client_id,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": scopes,
         "access_type": "offline",
@@ -79,6 +82,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
 @router.get("/callback", response_class=HTMLResponse)
 async def oauth_callback(
+    request: Request,
     code: str | None = Query(None, description="Authorization code from Google"),
     state: str | None = Query(None, description="OAuth state token"),
     error: str | None = Query(None, description="OAuth error from Google"),
@@ -123,7 +127,9 @@ async def oauth_callback(
                 "code": code,
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": loopback_redirect_uri(
+                    request, "/api/v1/backup/google-drive/callback"
+                ),
                 "grant_type": "authorization_code",
                 "code_verifier": code_verifier,
             },

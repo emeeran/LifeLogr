@@ -38,10 +38,12 @@ class TestLoopbackDetection:
 
 
 class TestDefaultSecretKeyConstant:
-    def test_single_shared_constant(self) -> None:
+    def test_single_shared_constant(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The public default literal must live in exactly one place."""
         assert DEFAULT_SECRET_KEY == "change-me-before-production"
-        assert settings.SECRET_KEY == DEFAULT_SECRET_KEY  # the dev/.env default
+        # A developer's .env may carry a real key; pin the default for the check.
+        monkeypatch.setattr(settings, "SECRET_KEY", DEFAULT_SECRET_KEY)
+        assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
 
     def test_production_validation_uses_it(self) -> None:
         s = Settings(APP_ENV="production", SECRET_KEY=DEFAULT_SECRET_KEY, DATABASE_URL="sqlite://")

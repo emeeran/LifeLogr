@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import DEFAULT_SECRET_KEY, is_loopback_host, settings
 from app.core.database import init_db
 from app.core.exceptions import ConflictError, MediaSizeError, NotFoundError, ValidationError
+from app.core.security import DefaultSecretKeyError
 from app.services.ollama_service import OllamaServiceError
 
 # ── Logging ──
@@ -452,6 +453,10 @@ app.add_exception_handler(
 app.add_exception_handler(
     OllamaServiceError,
     lambda r, e: JSONResponse(status_code=504, content={"detail": str(e)}),
+)
+app.add_exception_handler(
+    DefaultSecretKeyError,
+    lambda r, e: JSONResponse(status_code=400, content={"detail": str(e)}),
 )
 
 

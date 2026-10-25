@@ -11,6 +11,10 @@ offline at any time.
 
 ## [Unreleased]
 
+---
+
+## [0.12.0] — 2026-10-25
+
 ### Added
 - **Media-aware export/import.** New native **Archive ZIP** export
   (`/entries/export/archive`) carries entries together with their media files
@@ -24,6 +28,20 @@ offline at any time.
   with the same link rewriting.
 
 ### Fixed
+- **Cloud-backup OAuth failed on any port other than 18765.** The loopback
+  redirect URIs for Google Drive / Dropbox / OneDrive / Box were hardcoded to
+  port 18765, but dev launches the backend on a free port — the consent
+  screen sent the browser somewhere nothing listened. The redirect URI is now
+  derived from the request host (loopback-gated, so a spoofed Host header
+  can't redirect the authorization code off-machine) and the token exchange
+  reuses the identical URI. Unchanged for the packaged desktop app.
+- **Google Drive connect died with `redirect_uri_mismatch` on Web-type OAuth
+  clients.** Desktop-type clients accept any loopback port; see the setup docs
+  for creating the right client kind.
+- **Saving cloud-backup settings showed "Internal server error" when
+  `SECRET_KEY` was still the shipped default.** The deliberate
+  credential-encryption refusal now surfaces as a 400 with the actual
+  remediation ("Set a SECRET_KEY in .env") instead of an opaque 500.
 - **Diarium compatibility, verified against the shipped app.** The `.diary`
   export now builds the exact six-table schema extracted from the Diarium
   3.3.12.0 binary (previously `Tags.Type` — a NOT NULL column — was missing,

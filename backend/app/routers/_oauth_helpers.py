@@ -16,13 +16,35 @@ import logging
 from typing import Any
 
 import httpx
+from fastapi import Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import is_loopback_host, settings
 from app.core.security import decrypt, encrypt
 from app.models.backup import BackupConfig
 
 logger = logging.getLogger(__name__)
+
+
+def loopback_redirect_uri(request: Request, path: str) -> str:
+    """Build the OAuth loopback redirect URI for *path* from the request host.
+
+    The backend's port is chosen at launch (18765 in the packaged app, any free
+    port under ``dev.sh``), so it cannot be a module constant — Google must be
+    sent back to the same host:port the caller used to reach this backend, and
+    the callback must derive the identical URI for the token exchange (Google
+    rejects a mismatched ``redirect_uri``). Only loopback hosts are honoured:
+    a spoofed Host header falls back to the configured bind address so the
+    authorization code can never be redirected off-machine.
+    """
+    host_header = request.headers.get("host", "")
+    hostname, _, port = host_header.rpartition(":")
+    if not hostname or not port.isdigit() or not is_loopback_host(hostname):
+        hostname, port = "127.0.0.1", str(settings.BIND_PORT)
+    if is_loopback_host(hostname) and ":" in hostname:
+        hostname = f"[{hostname.strip('[]')}]"  # IPv6 literals need brackets in URLs
+    return f"http://{hostname}:{port}{path}"
 
 _SUCCESS_HTML = """<!DOCTYPE html><html><head><title>__TITLE__</title>
 <style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}

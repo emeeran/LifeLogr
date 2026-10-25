@@ -23,8 +23,11 @@ _DECRYPT = "/api/v1/encryption/decrypt-text"
 
 
 class TestDefaultKeyRefusal:
-    async def test_encrypt_text_rejects_default_secret_key(self, client: AsyncClient) -> None:
-        assert settings.SECRET_KEY == DEFAULT_SECRET_KEY  # the shipped default
+    async def test_encrypt_text_rejects_default_secret_key(
+        self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A developer's .env may carry a real key; pin the shipped default here.
+        monkeypatch.setattr(settings, "SECRET_KEY", DEFAULT_SECRET_KEY)
         r = await client.post(_ENCRYPT, json={"text": "dear diary", "passphrase": "pw"})
         assert r.status_code == 403
         assert "SECRET_KEY" in r.json()["detail"]
@@ -44,6 +47,8 @@ class TestDefaultKeyRefusal:
         from app.core import security
 
         monkeypatch.setattr(settings, "APP_ENV", "development")
+        # A developer's .env may carry a real key; pin the shipped default here.
+        monkeypatch.setattr(settings, "SECRET_KEY", DEFAULT_SECRET_KEY)
         with pytest.raises(security.DefaultSecretKeyError, match="SECRET_KEY"):
             security.encrypt("cloud-oauth-refresh-token")
 

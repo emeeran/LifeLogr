@@ -971,7 +971,7 @@ async def import_file(
                     # entry's media bytes are pulled here so the shared loop
                     # can persist them and rewrite body URLs.
                     with zipfile.ZipFile(upload_path, "r") as z:
-                        names = set(zip_names)
+                        media_names = set(zip_names)
                         doc = json.loads(_read_member(z, "lifelogr.json"))
                         if doc.get("format") != ARCHIVE_FORMAT:
                             raise HTTPException(
@@ -990,7 +990,9 @@ async def import_file(
                                         "is_inline": m.get("is_inline"),
                                         "ref": m.get("ref"),
                                         "data": (
-                                            _read_member(z, member) if member in names else b""
+                                            _read_member(z, member)
+                                            if member in media_names
+                                            else b""
                                         ),
                                     }
                                 )

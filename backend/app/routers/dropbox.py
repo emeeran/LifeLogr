@@ -9,7 +9,7 @@ import logging
 import time
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from app.routers._oauth_helpers import (
     error_page,
     exchange_authorization_code,
     load_stored_credentials,
+    loopback_redirect_uri,
     success_page,
     upsert_backup_config,
 )
@@ -30,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup/dropbox", tags=["backup-dropbox"])
 
-REDIRECT_URI = "http://127.0.0.1:18765/api/v1/backup/dropbox/callback"
 AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize"
 TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 
@@ -38,8 +38,11 @@ _state = OAuthStateStore()
 
 
 @router.get("/auth-url")
-async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def get_auth_url(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
     """Generate the Dropbox OAuth consent URL (offline access for refresh token)."""
+    redirect_uri = loopback_redirect_uri(request, "/api/v1/backup/dropbox/callback")
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "dropbox"))
     config = result.scalar_one_or_none()
     client_id = settings.DROPBOX_CLIENT_ID
@@ -53,7 +56,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
     params = {
         "client_id": client_id,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "token_access_type": "offline",  # required to receive a refresh token
         "state": state,
@@ -65,6 +68,7 @@ async def get_auth_url(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
 
 @router.get("/callback", response_class=HTMLResponse)
 async def oauth_callback(
+    request: Request,
     code: str | None = Query(None),
     state: str | None = Query(None),
     error: str | None = Query(None, description="OAuth error from Dropbox"),
@@ -103,7 +107,9 @@ async def oauth_callback(
                 "grant_type": "authorization_code",
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": loopback_redirect_uri(
+                    request, "/api/v1/backup/dropbox/callback"
+                ),
                 "code_verifier": code_verifier,
             },
         )
