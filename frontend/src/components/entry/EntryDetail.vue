@@ -16,6 +16,8 @@ import {
   FileAudio,
   Volume2,
   Loader,
+  CloudSun,
+  Activity,
 } from 'lucide-vue-next'
 import { recordingsApi } from '../../api/recordings'
 import type { VoiceRecordingResponse } from '../../types'
@@ -126,6 +128,25 @@ watch(
       <h2 v-if="entry.title" class="text-lg font-semibold text-text-primary">
         {{ entry.title }}
       </h2>
+
+      <!-- Events (weather etc., imported from Diarium) -->
+      <div
+        v-if="entry.events?.length"
+        class="flex flex-wrap gap-1.5"
+        data-testid="entry-events"
+      >
+        <span
+          v-for="ev in entry.events"
+          :key="ev.id"
+          class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] bg-surface-hover text-text-secondary"
+          :title="ev.kind !== 'weather' ? `Imported event (${ev.kind})` : 'Weather'"
+        >
+          <CloudSun v-if="ev.kind === 'weather'" :size="12" class="text-accent shrink-0" />
+          <Activity v-else :size="12" class="text-text-muted shrink-0" />
+          <span>{{ ev.content }}</span>
+          <span v-if="ev.label" class="text-text-muted">· {{ ev.label }}</span>
+        </span>
+      </div>
 
       <!-- Body (rendered markdown) -->
       <div

@@ -91,6 +91,15 @@ class ImportResult(BaseModel):
     skip_reasons: list[ImportSkipReason] = Field(default_factory=list)
 
 
+class EntryEventBrief(BaseModel):
+    """A per-entry event (weather today; unknown vendor types kept verbatim)."""
+
+    id: int
+    kind: str
+    content: str
+    label: str | None = None
+
+
 class EntryResponse(BaseModel):
     id: int
     entry_date: date
@@ -101,6 +110,7 @@ class EntryResponse(BaseModel):
     is_deleted: bool
     is_encrypted: bool = False
     tags: list[TagBrief]
+    events: list[EntryEventBrief] = Field(default_factory=list)
     media_count: int
     has_recording: bool
     latitude: float | None = None

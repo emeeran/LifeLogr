@@ -10,9 +10,12 @@ import logging
 import re
 import sqlite3
 import tempfile
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from app.models.entry_event import event_kind_for_type
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +91,10 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
     unit-testable and the router stays thin.
 
     Real Diarium backups (schema verified against the shipped 3.3.12.0 binary)
-    carry more than we import — Events (weather), Media blobs, Templates —
-    which are skipped: LifeLogr import carries text, mood, tags and geotags.
-    ``Tags.Type`` distinguishes 0 = tag, 1 = person, 2 = tracker; tags and
-    persons both import as LifeLogr tags, trackers (boolean check-off items
-    whose Value is the activity name and whose per-entry state lives in
+    carry more than we import — Templates are skipped; Events and Media blobs
+    are imported. ``Tags.Type`` distinguishes 0 = tag, 1 = person, 2 = tracker;
+    tags and persons both import as LifeLogr tags, trackers (boolean check-off
+    items whose Value is the activity name and whose per-entry state lives in
     EntryTags.TrackingValue) are skipped as noise.
     """
     entries: list[dict[str, Any]] = []
@@ -147,6 +149,29 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
         for tr in tag_rows:
             entry_tags_map.setdefault(tr["DiaryEntryId"], []).append(tr["Value"])
 
+        # Events — per-entry typed records. Only Type=0 (weather) is verified
+        # (docs/diarium-format-analysis.md §3.5); unknown Types survive as
+        # kind="unknown:<n>" so nothing is dropped. Counts are logged per type
+        # so a backup heavy in an unverified type is visible in the import log.
+        events_map: dict[int, list[dict[str, Any]]] = {}
+        try:
+            type_counts: Counter[int] = Counter()
+            for er in conn.execute(
+                "SELECT DiaryEntryId, Type, Content, Tag FROM Events"
+            ).fetchall():
+                type_counts[er["Type"]] += 1
+                events_map.setdefault(er["DiaryEntryId"], []).append(
+                    {
+                        "kind": event_kind_for_type(er["Type"]),
+                        "content": er["Content"],
+                        "label": er["Tag"],
+                    }
+                )
+            for t, n in sorted(type_counts.items(), key=lambda kv: str(kv[0])):
+                logger.info("Diarium import: %d Events row(s) of Type=%s", n, t)
+        except sqlite3.OperationalError:
+            logger.info("No Events table in .diary file — importing without events")
+
         for row in rows:
             ticks = row["DiaryEntryId"]
             try:
@@ -188,6 +213,7 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
                     "latitude": row["Latitude"] if row["Latitude"] else None,
                     "longitude": row["Longitude"] if row["Longitude"] else None,
                     "media": media_map.get(row["DiaryEntryId"], []),
+                    "events": events_map.get(row["DiaryEntryId"], []),
                 }
             )
         conn.close()

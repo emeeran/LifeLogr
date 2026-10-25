@@ -20,6 +20,15 @@ export interface TagUpdate {
   name: string
 }
 
+/** A per-entry event (weather from Diarium imports; unknown vendor types
+ *  are carried verbatim as kind "unknown:<n>"). */
+export interface EntryEventBrief {
+  id: number
+  kind: string
+  content: string
+  label: string | null
+}
+
 export interface EntryResponse {
   id: number
   entry_date: string
@@ -29,6 +38,7 @@ export interface EntryResponse {
   is_deleted: boolean
   is_encrypted: boolean
   tags: TagBrief[]
+  events: EntryEventBrief[]
   media_count: number
   has_recording: boolean
   created_at: string

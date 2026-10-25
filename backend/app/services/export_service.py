@@ -518,6 +518,26 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
                         entry_id,
                     ),
                 )
+
+            # Events round-trip back into Diarium's native Events table:
+            # weather → Type 0 (the one verified enum value); an imported
+            # unknown:<n> kind keeps its original vendor Type so a re-import
+            # classifies it identically. Anything unparseable stays 0-shaped
+            # but lossless via Tag/Content.
+            for event in entry.events:
+                kind = event.kind or ""
+                if kind.startswith("unknown:"):
+                    try:
+                        event_type = int(kind.split(":", 1)[1])
+                    except ValueError:
+                        event_type = 0
+                else:
+                    event_type = 0
+                conn.execute(
+                    "INSERT INTO Events (Type, Content, Tag, DiaryEntryId) "
+                    "VALUES (?, ?, ?, ?)",
+                    (event_type, event.content, event.label, entry_id),
+                )
         conn.commit()
         # Serialize to a binary SQLite file. conn.serialize()/iterdump() aren't
         # available under pysqlite3 (the frozen-build FTS5 swap), so backup() to

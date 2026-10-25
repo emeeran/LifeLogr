@@ -28,6 +28,7 @@ from app.models.tag import EntryTag
 from app.schemas.entry import (
     CalendarEntryResponse,
     EntryCreate,
+    EntryEventBrief,
     EntryListItem,
     EntryListResponse,
     EntryResponse,
@@ -84,6 +85,10 @@ def _to_response(entry: Entry) -> EntryResponse:
         is_deleted=entry.is_deleted,
         is_encrypted=entry.is_encrypted,
         tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in entry.tag_associations if a.tag],
+        events=[
+            EntryEventBrief(id=ev.id, kind=ev.kind, content=ev.content, label=ev.label)
+            for ev in entry.events
+        ],
         media_count=len(entry.media),
         has_recording=len(entry.recordings) > 0,
         latitude=entry.latitude,
@@ -937,6 +942,32 @@ async def _attach_imported_media(
     return ref_map
 
 
+async def _attach_imported_events(
+    db: AsyncSession, entry_row: Entry, events: list[dict[str, Any]]
+) -> None:
+    """Persist parsed Diarium Events rows as EntryEvent rows for *entry_row*.
+
+    Each item is ``{kind, content, label?}`` (kind "weather" or
+    "unknown:<n>"); blank content is dropped, everything else is kept
+    verbatim so unknown vendor event types survive a round trip.
+    """
+    from app.models.entry_event import EntryEvent
+
+    for ev in events:
+        content = str(ev.get("content") or "").strip()
+        if not content:
+            continue
+        db.add(
+            EntryEvent(
+                entry_id=entry_row.id,
+                kind=str(ev.get("kind") or "unknown:?")[:50],
+                content=content[:500],
+                label=(str(ev["label"])[:255] if ev.get("label") else None),
+            )
+        )
+    await db.flush()
+
+
 @router.post("/import/file", response_model=ImportResult)
 async def import_file(
     file: UploadFile = File(...),
@@ -1210,6 +1241,9 @@ async def import_file(
                 # ids, so rewrite before anything (incl. enrichment) sees it.
                 if ref_map and created.body:
                     created.body = _remap_media_urls(created.body, ref_map)
+            events_items = entry.get("events") or []
+            if events_items:
+                await _attach_imported_events(db, created, events_items)
             if not created.is_encrypted:
                 to_enrich.append((created.id, created.title, created.body))
             existing_sigs.add(sig)

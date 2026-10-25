@@ -473,6 +473,11 @@ _INDEX_MIGRATIONS = [
         "ix_entry_tags_tag_id",
         "CREATE INDEX IF NOT EXISTS ix_entry_tags_tag_id ON entry_tags (tag_id)",
     ),
+    # Entry events (Diarium weather import) — also model-declared.
+    (
+        "ix_entry_events_entry_id",
+        "CREATE INDEX IF NOT EXISTS ix_entry_events_entry_id ON entry_events (entry_id)",
+    ),
     # Notes (also model-declared; listed for parity with entries + idempotent safety).
     (
         "ix_notes_folder_pinned_updated",

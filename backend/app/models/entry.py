@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.entry_event import EntryEvent
     from app.models.media import Media
     from app.models.recording import VoiceRecording
     from app.models.tag import EntryTag
@@ -60,5 +61,8 @@ class Entry(Base):
         back_populates="entry", cascade="all, delete-orphan", lazy="selectin"
     )
     recordings: Mapped[list["VoiceRecording"]] = relationship(  # noqa: F821
+        back_populates="entry", cascade="all, delete-orphan", lazy="selectin"
+    )
+    events: Mapped[list["EntryEvent"]] = relationship(  # noqa: F821
         back_populates="entry", cascade="all, delete-orphan", lazy="selectin"
     )
