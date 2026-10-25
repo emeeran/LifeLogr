@@ -22,6 +22,8 @@ export const useUiStore = defineStore('ui', () => {
     480,
   )
   const defaultTitle = useLocalStorage<string>('lifelogr-default-title', '')
+  // Daily word-count goal — 0 disables the goal chip in the editor status bar.
+  const dailyWordGoal = useLocalStorage<number>('lifelogr-daily-word-goal', 0)
 
   // Pending switch (used by save-prompt dialog)
   const pendingSwitch = ref<{ entryId: number; date?: string } | null>(null)
@@ -206,6 +208,7 @@ export const useUiStore = defineStore('ui', () => {
     fontSize,
     rightPanelWidth,
     defaultTitle,
+    dailyWordGoal,
     showEditor,
     showSavePrompt,
     pendingSwitch,

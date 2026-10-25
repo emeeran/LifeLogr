@@ -49,6 +49,7 @@ import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
 import { useRichTextEditor } from '../../composables/useRichTextEditor'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { extractHashtags } from '../../utils/tags'
+import { countWords } from '../../utils/text'
 import { useAttachments } from '../../composables/useAttachments'
 import { usePasteMedia } from '../../composables/usePasteMedia'
 import { useResizableMedia } from '../../composables/useResizableMedia'
@@ -360,11 +361,34 @@ function isDirty(): boolean {
 const stats = computed(() => {
   const text = body.value
   const chars = text.length
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0
+  const words = countWords(text)
   const lines = text ? text.split('\n').length : 0
   const paragraphs = text.trim() ? text.trim().split(/\n\s*\n/).length : 0
   const readMins = Math.max(1, Math.ceil(words / 200))
   return { chars, words, lines, paragraphs, readMins }
+})
+
+// ── Daily goal ──
+// Today's total = the stored word counts of every entry dated today (from the
+// already-fetched month calendar — no extra requests) with the entry currently
+// being edited substituted by its live count, so the chip tracks typing.
+function todayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const daily = computed(() => {
+  const goal = ui.dailyWordGoal
+  if (!goal) return undefined
+  const today = todayIso()
+  let words = 0
+  for (const e of entries.calendarEntries) {
+    if (e.entry_date !== today) continue
+    if (hasEntry.value && e.id === ui.editingEntryId) continue
+    words += e.word_count
+  }
+  if (entryDate.value === today) words += stats.value.words
+  return { words, goal }
 })
 
 const { renderedPreview } = useMarkdownPreview(
@@ -1291,6 +1315,7 @@ async function applySuggestedTag(name: string) {
         :stats="stats"
         :save-state="saveActive"
         :has-content="!!body.trim()"
+        :daily="daily"
       />
 
       <!-- Controls bar: Edit/Preview + Tags + Save -->

@@ -75,6 +75,16 @@ class TestEntryRead:
         assert len(items) == 1
         assert items[0]["entry_date"] == "2026-06-15"
 
+    async def test_calendar_month_word_counts(self, client: AsyncClient):
+        await _create_entry(client, date="2026-06-15", body="one two  three\nfour")
+        await _create_entry(client, date="2026-06-16", body="   ")
+        r = await client.get("/api/v1/entries/calendar/2026/6")
+        by_date = {i["entry_date"]: i for i in r.json()}
+        # Whitespace-run counting (matches the frontend helper): collapsed
+        # runs and newlines each delimit one word; blank bodies count 0.
+        assert by_date["2026-06-15"]["word_count"] == 4
+        assert by_date["2026-06-16"]["word_count"] == 0
+
 
 class TestEntryUpdate:
     async def test_update_body(self, client: AsyncClient):

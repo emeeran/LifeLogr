@@ -25,6 +25,19 @@ def _is_leap(year: int) -> bool:
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
+def _word_count(text: str | None) -> int:
+    """Whitespace-run word count — the one definition of "word" for the app.
+
+    Matches the frontend helper in ``frontend/src/utils/text.ts`` (trim, split
+    on whitespace runs). Used by the calendar projection so the daily
+    word-count goal can total a day's entries without shipping bodies to the
+    client, and by future aggregate stats.
+    """
+    if not text:
+        return 0
+    return len(text.split())
+
+
 def _entry_list_options() -> tuple[Any, ...]:
     """Eager-load relationships + every scalar column EXCEPT the heavy ``body``.
 
@@ -275,17 +288,25 @@ class EntryService:
     async def get_calendar_month_light(self, year: int, month: int) -> list[CalendarEntryResponse]:
         """Return lightweight entry projections for a calendar grid.
 
-        Unlike a full-body month query, this **excludes the body** (which can
-        be kilobytes per entry) and loads only the fields the grid needs:
-        id, entry_date, title, mood, and tags (batched in a second query to
-        avoid N+1). For a month with many long entries this dramatically
+        Unlike a full-body month query, this **excludes the body from the
+        response** (which can be kilobytes per entry) and loads only the
+        fields the grid needs: id, entry_date, title, mood, tags (batched in
+        a second query to avoid N+1), and a server-side ``word_count`` for
+        the daily goal. For a month with many long entries this dramatically
         reduces JSON payload and parse time.
         """
         start = date(year, month, 1)
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
 
         entries_result = await self.db.execute(
-            select(Entry.id, Entry.entry_date, Entry.title, Entry.mood, Entry.is_encrypted)
+            select(
+                Entry.id,
+                Entry.entry_date,
+                Entry.title,
+                Entry.mood,
+                Entry.is_encrypted,
+                Entry.body,
+            )
             .where(Entry.is_deleted == False, Entry.entry_date >= start, Entry.entry_date < end)  # noqa: E712
             .order_by(Entry.entry_date)
         )
@@ -310,6 +331,9 @@ class EntryService:
                 title=r.title,
                 mood=r.mood,
                 is_encrypted=r.is_encrypted,
+                # Bodies are loaded server-side but never sent — only the count
+                # is; encrypted bodies are ciphertext, so count 0.
+                word_count=0 if r.is_encrypted else _word_count(r.body),
                 tags=tags_map.get(r.id, []),
             )
             for r in rows

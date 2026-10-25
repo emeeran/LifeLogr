@@ -43,6 +43,8 @@ export interface CalendarEntryResponse {
   title: string | null
   mood: string | null
   is_encrypted: boolean
+  /** Server-side word count of the body (0 for encrypted entries). */
+  word_count: number
   tags: TagBrief[]
 }
 

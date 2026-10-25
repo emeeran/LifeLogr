@@ -16,6 +16,7 @@ import {
   ScanText,
   Search,
   LayoutTemplate,
+  Target,
   Keyboard,
   Volume2,
   Play,
@@ -215,6 +216,7 @@ function resetEditorDefaults() {
   autosaveInterval.value = 2
   ocrLanguage.value = 'eng'
   ui.defaultTitle = ''
+  ui.dailyWordGoal = 0
   emit('toast', 'success', 'Editor settings reset to defaults')
 }
 
@@ -318,6 +320,23 @@ onMounted(() => {
           v-model="ui.defaultTitle"
           placeholder="e.g. Daily Journal"
           class="settings-input w-44"
+        />
+      </SettingRow>
+      <SettingRow
+        :icon="Target"
+        label="Daily word goal"
+        description="Shown in the editor status bar as today's running total. 0 disables it."
+      >
+        <input
+          type="number"
+          min="0"
+          step="50"
+          :value="ui.dailyWordGoal"
+          @input="
+            ui.dailyWordGoal = Math.max(0, Math.round(+($event.target as HTMLInputElement).value || 0))
+          "
+          class="settings-input w-24"
+          aria-label="Daily word goal"
         />
       </SettingRow>
     </SettingGroup>

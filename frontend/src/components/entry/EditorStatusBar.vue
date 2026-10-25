@@ -6,6 +6,7 @@ import {
   Loader,
   Pencil,
   AlertCircle,
+  Target,
 } from 'lucide-vue-next'
 import type { SaveState } from '../../composables/useAutoSave'
 
@@ -19,6 +20,12 @@ defineProps<{
   }
   saveState: SaveState
   hasContent: boolean
+  /** Today's running total vs the daily goal — the chip only shows when a
+   *  goal is set (goal > 0); it turns green once the goal is met. */
+  daily?: {
+    words: number
+    goal: number
+  }
 }>()
 </script>
 
@@ -29,6 +36,16 @@ defineProps<{
     <span class="flex items-center gap-0.5"
       ><AlignLeft :size="10" /> {{ stats.words }} words</span
     >
+    <span
+      v-if="daily && daily.goal > 0"
+      class="flex items-center gap-0.5 font-medium"
+      :class="daily.words >= daily.goal ? 'text-green-500' : ''"
+      :title="`Goal: ${daily.goal} words today`"
+    >
+      <Target :size="10" />
+      today: {{ daily.words }} / {{ daily.goal }}
+      <Check v-if="daily.words >= daily.goal" :size="10" />
+    </span>
     <span>{{ stats.chars }} chars</span>
     <span class="hidden sm:inline">{{ stats.lines }} lines</span>
     <span class="hidden sm:inline">{{ stats.paragraphs }} paragraphs</span>

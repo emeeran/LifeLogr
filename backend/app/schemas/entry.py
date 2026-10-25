@@ -146,9 +146,9 @@ class CalendarEntryResponse(BaseModel):
     """Lightweight entry projection for calendar grid rendering.
 
     Excludes ``body``, ``summary``, ``media_count``, timestamps, and
-    location — fields the calendar grid never reads. This keeps the
-    ``/calendar/{year}/{month}`` payload small even for months with many
-    long entries.
+    location — fields the calendar grid never reads. ``word_count`` is
+    computed server-side (body never leaves the API) so the daily
+    word-count goal can total today's entries without fetching bodies.
     """
 
     id: int
@@ -156,6 +156,7 @@ class CalendarEntryResponse(BaseModel):
     title: str | None
     mood: str | None
     is_encrypted: bool = False
+    word_count: int = 0
     tags: list[TagBrief]
 
 
