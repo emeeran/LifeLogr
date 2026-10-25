@@ -1,4 +1,5 @@
 import { request, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
+import type { JobStartResponse } from './backup'
 import type {
   EntryResponse,
   EntryListResponse,
@@ -80,6 +81,17 @@ export const entriesApi = {
     form.append('file', file)
     // Large imports can take minutes — the request-level timeout is raised to match.
     return request('/entries/import/file', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+
+  /** Import as a polled job — poll `jobsApi.get(job_id)` for insert progress. */
+  importFileJob(file: File): Promise<JobStartResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/entries/import/file?as_job=true', {
       method: 'POST',
       body: form,
       timeoutMs: UPLOAD_TIMEOUT_MS,

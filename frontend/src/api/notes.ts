@@ -1,4 +1,5 @@
 import { request, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
+import type { JobStartResponse } from './backup'
 import type {
   NoteResponse,
   NoteCreate,
@@ -219,6 +220,16 @@ export const notesApi = {
     form.append('file', file)
     // Multipart imports can be large — long timeout (see api/client).
     return request('/notes/import/file', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+  /** Import as a polled job — poll `jobsApi.get(job_id)` for insert progress. */
+  importFileJob(file: File): Promise<JobStartResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/notes/import/file?as_job=true', {
       method: 'POST',
       body: form,
       timeoutMs: UPLOAD_TIMEOUT_MS,

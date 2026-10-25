@@ -9,6 +9,7 @@ import {
   getExportDiariumDbUrl,
 } from '../../../api/export'
 import { useEntriesStore } from '../../../stores/entries'
+import { useJobProgress } from '../../../composables/useJobProgress'
 import { saveFile, pickFile } from '../../../utils/fileDialog'
 import {
   Download,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SButton from '../shared/SButton.vue'
+import OperationProgress from '../../common/OperationProgress.vue'
 import { errMsg } from '../../../utils/errorMessage.ts'
 
 const emit = defineEmits<{
@@ -32,8 +34,24 @@ const emit = defineEmits<{
 const entriesStore = useEntriesStore()
 
 // ── Import ──
+// Uploads parse synchronously; the insert loop runs as a polled job so large
+// imports show per-row progress instead of a bare spinner.
 const importing = ref(false)
 const importMenuOpen = ref(false)
+const importProgress = useJobProgress()
+const importLabel = ref('Import')
+
+async function runJobImport(jobId: string, label: string) {
+  importLabel.value = label
+  const final = await importProgress.run(jobId)
+  if (!final) return
+  entriesStore.refreshAll()
+  if (final.status === 'done') {
+    emit('toast', 'success', final.detail ?? `${label} complete`)
+  } else {
+    emit('toast', 'error', `${label} failed: ${final.error ?? 'unknown'}`)
+  }
+}
 
 async function runImport(accept: string) {
   importMenuOpen.value = false
@@ -41,13 +59,8 @@ async function runImport(accept: string) {
   if (!file) return
   importing.value = true
   try {
-    const r = await entriesApi.importFile(file)
-    entriesStore.refreshAll()
-    emit(
-      'toast',
-      'success',
-      `Imported ${r.imported} entries${r.skipped ? ` (${r.skipped} skipped)` : ''}`,
-    )
+    const started = await entriesApi.importFileJob(file)
+    await runJobImport(started.job_id, 'Import')
   } catch (e: unknown) {
     emit('toast', 'error', `Import failed: ${errMsg(e)}`)
   } finally {
@@ -260,12 +273,8 @@ async function runNotesImport(accept: string) {
   if (!file) return
   notesImporting.value = true
   try {
-    const r = await notesApi.importFile(file)
-    emit(
-      'toast',
-      'success',
-      `Imported ${r.imported} notes${r.skipped ? ` (${r.skipped} skipped)` : ''}`,
-    )
+    const started = await notesApi.importFileJob(file)
+    await runJobImport(started.job_id, 'Notes import')
   } catch (e: unknown) {
     emit('toast', 'error', `Import failed: ${errMsg(e)}`)
   } finally {
@@ -372,6 +381,11 @@ async function downloadNotesHtml() {
       <p class="text-[11px] text-text-muted pl-[25px] mt-1">
         Duplicate entries (same date + body) are skipped automatically.
       </p>
+      <OperationProgress
+        :job="importProgress.job.value"
+        :label="importLabel"
+        class="pl-[25px] mt-1.5"
+      />
     </div>
 
     <!-- Export -->

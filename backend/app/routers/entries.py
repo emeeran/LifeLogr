@@ -11,10 +11,19 @@ import secrets
 import tempfile
 import uuid
 import zipfile
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_ as sa_or
 from sqlalchemy import select
@@ -24,6 +33,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import Base, get_db
+from app.core.jobs import ProgressReporter, noop_reporter
+from app.core.jobs import start_data_job as _start_data_job
 from app.models.entry import Entry
 from app.models.media import Media
 from app.models.tag import EntryTag
@@ -37,7 +48,6 @@ from app.schemas.entry import (
     EntryUpdate,
     GeotagItem,
     GeotagResponse,
-    ImportResult,
     ImportSkipReason,
     JournalStatsResponse,
     ResetRequest,
@@ -807,12 +817,40 @@ async def reset_database(payload: ResetRequest, db: AsyncSession = Depends(get_d
     return {"status": "ok", "message": "Database cleared."}
 
 
-@router.post("/import", response_model=ImportResult)
+@router.post("/import")
 async def import_entries(
+    background_tasks: BackgroundTasks,
     payload: list[dict[str, Any]],
+    as_job: bool = Query(False, description="Insert as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Import entries from a JSON array. Each entry needs at least entry_date and body."""
+    """Import entries from a JSON array. Each entry needs at least entry_date and body.
+
+    ``as_job=true`` runs the insert loop as a job (202 ``{job_id}``) — poll
+    ``GET /api/v1/jobs/{job_id}`` for insert progress.
+    """
+    if not as_job:
+        return await _run_json_entry_import(db, payload)
+
+    def _runner(job_report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            from app.core.database import async_session
+
+            async with async_session() as session:
+                result = await _run_json_entry_import(session, payload, job_report)
+                return f"Imported {result['imported']}, skipped {result['skipped']}"
+
+        return _run()
+
+    return _start_data_job(background_tasks, "import-entries", _runner)
+
+
+async def _run_json_entry_import(
+    db: AsyncSession,
+    payload: list[dict[str, Any]],
+    report: ProgressReporter = noop_reporter,
+) -> dict[str, Any]:
+    """Insert a plain JSON entry array (no media/trackers/dedup-signatures)."""
     from app.models.tag import Tag
 
     svc = EntryService(db)
@@ -854,6 +892,8 @@ async def import_entries(
             ids.append(tag.id)
         return ids
 
+    total = len(payload)
+    report("insert", 0, total)
     for idx, item in enumerate(payload):
         entry_date = item.get("entry_date")
         body = item.get("body")
@@ -866,6 +906,7 @@ async def import_entries(
                 item.get("title"),
                 "missing entry_date or body",
             )
+            report("insert", idx + 1, total)
             continue
         try:
             data = EntryCreate(
@@ -887,11 +928,13 @@ async def import_entries(
             skip_reasons = _record_skip(
                 skip_reasons, idx, str(entry_date), item.get("title"), f"error: {e}"
             )
+        report("insert", idx + 1, total)
         since_commit += 1
         if since_commit >= _IMPORT_COMMIT_CHUNK:
             await _commit_batch()
             since_commit = 0
     await _commit_batch()
+    report("enrich", 0, total)
     return {"imported": imported, "skipped": skipped, "skip_reasons": skip_reasons}
 
 
@@ -1076,12 +1119,14 @@ async def _attach_imported_events(
     await db.flush()
 
 
-@router.post("/import/file", response_model=ImportResult)
+@router.post("/import/file")
 async def import_file(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     skip_duplicates: bool = Query(
         True, description="Skip entries already present (same date + body)"
     ),
+    as_job: bool = Query(False, description="Insert as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Import entries from an uploaded file (ZIP, JSON, or Diarium .diary).
@@ -1095,15 +1140,11 @@ async def import_file(
     - Diarium JSON export (array of entries with date/html/heading/tags/rating)
     - Markdown ZIP (entries/*.md with YAML frontmatter: date, mood, tags)
     - CSV
+
+    Parsing happens synchronously (the caller tracks the upload itself);
+    ``as_job=true`` runs the insert loop as a job and returns 202
+    ``{job_id}`` — poll ``GET /api/v1/jobs/{job_id}`` for insert progress.
     """
-    import hashlib
-    from datetime import date as date_type
-
-    from sqlalchemy import func as sa_func
-
-    from app.models.tag import Tag
-
-    svc = EntryService(db)
     filename = file.filename or ""
 
     entries_data: list[dict[str, Any]] = []
@@ -1251,7 +1292,43 @@ async def import_file(
     finally:
         upload_path.unlink(missing_ok=True)
 
-    # Import all parsed entries
+    if not as_job:
+        return await _run_entry_import(db, entries_data, skip_duplicates)
+
+    def _runner(job_report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            from app.core.database import async_session
+
+            async with async_session() as session:
+                result = await _run_entry_import(
+                    session, entries_data, skip_duplicates, job_report
+                )
+                return f"Imported {result['imported']}, skipped {result['skipped']}"
+
+        return _run()
+
+    return _start_data_job(background_tasks, "import-entries", _runner)
+
+
+async def _run_entry_import(
+    db: AsyncSession,
+    entries_data: list[dict[str, Any]],
+    skip_duplicates: bool,
+    report: ProgressReporter = noop_reporter,
+) -> dict[str, Any]:
+    """Insert parsed entries: dedup, tags/trackers, media, events, enrichment.
+
+    Shared by /import/file's sync and job paths (and shaped for reuse); *report*
+    phases: insert (done/total per parsed record).
+    """
+    import hashlib
+    from datetime import date as date_type
+
+    from sqlalchemy import func as sa_func
+
+    from app.models.tag import Tag
+
+    svc = EntryService(db)
     # Pre-load all existing tags to avoid N+1 lookups
     existing_tags_result = await db.execute(select(Tag))
     tag_cache: dict[str, Tag] = {t.name: t for t in existing_tags_result.scalars().all()}
@@ -1296,6 +1373,9 @@ async def import_file(
             EnrichmentService.schedule(entry_id, title, body)
         to_enrich.clear()
 
+    total = len(entries_data)
+    report("dedup", 0, total)
+    report("insert", 0, total)
     for idx, entry in enumerate(entries_data):
         # An empty body is legal when the entry carries media (photo-only
         # Diarium entries) or a mood (Daylio mood-only check-ins); only truly
@@ -1311,6 +1391,7 @@ async def import_file(
                 entry.get("title"),
                 str(entry.get("error") or "missing entry_date or body"),
             )
+            report("insert", idx + 1, total)
             continue
         try:
             ed = entry["entry_date"]
@@ -1330,6 +1411,7 @@ async def import_file(
                 skip_reasons = _record_skip(
                     skip_reasons, idx, str(ed), entry.get("title"), "duplicate of existing entry"
                 )
+                report("insert", idx + 1, total)
                 continue
 
             # Resolve tag names to IDs (create tags if needed)
@@ -1426,10 +1508,12 @@ async def import_file(
                 entry.get("title"),
                 f"error: {e}",
             )
+        report("insert", idx + 1, total)
         since_commit += 1
         if since_commit >= _IMPORT_COMMIT_CHUNK:
             await _commit_batch()
             since_commit = 0
 
     await _commit_batch()
+    report("enrich", 0, total)
     return {"imported": imported, "skipped": skipped, "skip_reasons": skip_reasons}

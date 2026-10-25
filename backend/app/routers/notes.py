@@ -4,14 +4,26 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.jobs import ProgressReporter
+from app.core.jobs import start_data_job as _start_data_job
 from app.models.note import Note
 from app.schemas.note import (
     NoteCreate,
@@ -436,19 +448,42 @@ async def export_notes_html(db: AsyncSession = Depends(get_db)) -> HTMLResponse:
 
 @router.post("/import/file")
 async def import_notes_file(
-    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    as_job: bool = Query(False, description="Insert as a polled job; returns {job_id}"),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Import notes from a LifeLogr notes .json or Markdown .zip export."""
+    """Import notes from a LifeLogr notes .json or Markdown .zip export.
+
+    Parsing happens synchronously; ``as_job=true`` runs the insert loop as a
+    job (202 ``{job_id}``) — poll ``GET /api/v1/jobs/{job_id}`` for progress.
+    """
     content = await file.read()
     svc = NotesExportService(db)
     name = (file.filename or "").lower()
     if name.endswith(".json"):
-        result = await svc.import_json(content)
+        items = svc.parse_json(content)
+        kind = "json"
     elif name.endswith(".zip"):
-        result = await svc.import_markdown_zip(content)
+        items = svc.parse_markdown_zip(content)
+        kind = "zip"
     else:
         raise HTTPException(status_code=400, detail="Unsupported file type. Use .json or .zip.")
-    return result
+
+    if not as_job:
+        return await svc._import_items(items)
+
+    def _runner(report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            from app.core.database import async_session
+
+            async with async_session() as session:
+                result = await NotesExportService(session)._import_items(items, report=report)
+                return f"Imported {result['imported']}, skipped {result['skipped']}"
+
+        return _run()
+
+    return _start_data_job(background_tasks, f"import-notes-{kind}", _runner)
 
 
 @router.post("/import/markdown")

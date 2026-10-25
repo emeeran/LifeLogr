@@ -150,3 +150,29 @@ class JobRegistry:
 
 
 jobs = JobRegistry()
+
+
+def start_data_job(background_tasks: Any, kind: str, runner: Callable[[ProgressReporter], Any]) -> dict[str, str]:
+    """Run *runner* as a polled job behind a FastAPI BackgroundTasks.
+
+    *runner* owns its DB session (the request's dies with the response),
+    receives the job's reporter, and returns a short human detail for the
+    finished job. Failure lands on the job, not the (already-sent) HTTP
+    response. Returns the 202 body: ``{"job_id", "kind"}``.
+
+    Typed loosely (``Any`` for BackgroundTasks) to keep starlette out of this
+    module's import graph; every caller passes a real BackgroundTasks.
+    """
+    job = jobs.create(kind)
+    report = jobs.reporter(job.id)
+
+    async def _task() -> None:
+        try:
+            detail = await runner(report)
+            jobs.finish(job.id, detail=detail)
+        except Exception as exc:
+            logger.exception("Job %s (%s) failed", job.id, kind)
+            jobs.fail(job.id, str(exc))
+
+    background_tasks.add_task(_task)
+    return {"job_id": job.id, "kind": kind}

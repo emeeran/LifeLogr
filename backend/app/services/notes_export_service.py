@@ -182,19 +182,25 @@ class NotesExportService:
         return "".join(parts)
 
     # ── Import ──
-    async def import_json(self, raw: bytes) -> dict[str, Any]:
+    def parse_json(self, raw: bytes) -> list[dict[str, Any]]:
         data = json.loads(raw)
         items = data.get("notes") if isinstance(data, dict) else data
-        return await self._import_items(items or [])
+        return items or []
 
-    async def import_markdown_zip(self, raw: bytes) -> dict[str, Any]:
+    def parse_markdown_zip(self, raw: bytes) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
             for name in zf.namelist():
                 if name.endswith("manifest.json") or not name.endswith(".md"):
                     continue
                 items.append(self._parse_md(zf.read(name).decode("utf-8", "ignore")))
-        return await self._import_items(items)
+        return items
+
+    async def import_json(self, raw: bytes, report=None) -> dict[str, Any]:
+        return await self._import_items(self.parse_json(raw), report=report)
+
+    async def import_markdown_zip(self, raw: bytes, report=None) -> dict[str, Any]:
+        return await self._import_items(self.parse_markdown_zip(raw), report=report)
 
     async def import_single_markdown(self, raw: bytes) -> dict[str, Any]:
         """Import one Markdown file as one new note; returns its id on success."""
@@ -232,7 +238,9 @@ class NotesExportService:
             "color": meta.get("color") or None,
         }
 
-    async def _import_items(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+    async def _import_items(
+        self, items: list[dict[str, Any]], report=None
+    ) -> dict[str, Any]:
         from app.schemas.note import NoteCreate, NotePageCreate
         from app.services.note_service import NoteService
 
@@ -240,7 +248,10 @@ class NotesExportService:
         imported = 0
         skipped = 0
         note_ids: list[int] = []
-        for it in items:
+        total = len(items)
+        if report is not None:
+            report("insert", 0, total)
+        for idx, it in enumerate(items):
             try:
                 folder_id = await self._resolve_folder(it.get("folder"))
                 # Tags live in the text: write the item's tags as #tokens into the
@@ -266,6 +277,8 @@ class NotesExportService:
                 note_ids.append(note.id)
             except Exception:
                 skipped += 1
+            if report is not None:
+                report("insert", idx + 1, total)
         return {"imported": imported, "skipped": skipped, "note_ids": note_ids}
 
     async def _resolve_folder(self, name: str | None) -> int | None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import tempfile
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.jobs import ProgressReporter, jobs
+from app.core.jobs import ProgressReporter, start_data_job as _start_data_job
 from app.schemas.backup import (
     BackupConfigCreate,
     BackupConfigResponse,
@@ -27,32 +27,6 @@ from app.services.backup_service import BackupService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/backup", tags=["backup"])
-
-
-def _start_data_job(
-    background_tasks: BackgroundTasks,
-    kind: str,
-    runner: Callable[[ProgressReporter], Awaitable[str]],
-) -> dict[str, Any]:
-    """Run *runner* as a polled job; returns the 202 body immediately.
-
-    *runner* owns its DB session (the request's dies with the response) and
-    returns a short human detail for the finished job. Failure lands on the
-    job, not the (already-sent) HTTP response.
-    """
-    job = jobs.create(kind)
-    report = jobs.reporter(job.id)
-
-    async def _task() -> None:
-        try:
-            detail = await runner(report)
-            jobs.finish(job.id, detail=detail)
-        except Exception as exc:
-            logger.exception("Job %s (%s) failed", job.id, kind)
-            jobs.fail(job.id, str(exc))
-
-    background_tasks.add_task(_task)
-    return {"job_id": job.id, "kind": kind}
 
 
 @router.post("/config", response_model=BackupConfigResponse, status_code=201)

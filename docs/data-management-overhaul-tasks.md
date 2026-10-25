@@ -6,7 +6,7 @@
 IDs `DM#`, effort **S** ≤ 1 day / **M** 1–3 days; every task ends with
 `ruff` + `pytest` green, UI tasks also `vitest`.
 
-Status: DM1 ✅ · DM2 ✅ done (2026-10-25) — DM3–DM12 pending.
+Status: DM1 ✅ · DM2 ✅ · DM3 ✅ done (2026-10-25) — DM4–DM12 pending.
 
 ---
 
@@ -40,7 +40,7 @@ Status: DM1 ✅ · DM2 ✅ done (2026-10-25) — DM3–DM12 pending.
   composable (fake timers); component test for both bar modes; registering
   no reporter leaves existing endpoints byte-compatible.
 
-### DM3 — Progress for backup & restore · **M**
+### DM3 — Progress for backup & restore · **M** ✅
 - Phases for `run_backup`: checkpoint DB → archive DB → media files
   (done/total) → upload (chunk/byte progress where the provider SDK allows,
   else indeterminate) → retention pruning. Restore: download → extract →
