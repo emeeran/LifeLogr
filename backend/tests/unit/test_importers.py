@@ -17,6 +17,7 @@ from app.services.importers import (
     parse_dayone_zip,
     parse_markdown_entry,
 )
+from tests.helpers.daylio_csv import build_daylio_csv
 from tests.helpers.dayone_zip import PNG_1X1, build_dayone_zip, photo_bytes
 
 MD5_1, _ = photo_bytes()
@@ -61,6 +62,63 @@ def test_parse_csv_tag_split_pipe():
     text = 'date,body,tags\n2024-01-07,b,"t1 | t2 , t3"\n'
     rows = parse_csv(text)
     assert rows[0]["tags"] == ["t1", "t2", "t3"]
+
+
+# ── Daylio CSV ────────────────────────────────────────────────────────────────
+
+
+def test_parse_csv_daylio_mood_only_checkin_survives():
+    text = build_daylio_csv(
+        [{"full_date": "May 2, 2021", "mood": "rad", "activities": "Hiking"}]
+    )
+    rows = parse_csv(text)
+    assert len(rows) == 1
+    assert rows[0]["entry_date"] == "2021-05-02"  # human-readable full_date parsed
+    assert rows[0]["body"] == ""
+    assert rows[0]["mood"] == "great"  # rad → great
+    assert rows[0]["tags"] == ["Hiking"]
+
+
+def test_parse_csv_daylio_activities_split_on_pipe():
+    text = build_daylio_csv(
+        [{"date": "2021-05-01", "mood": "good", "activities": "Coffee | Gym, downtown"}]
+    )
+    rows = parse_csv(text)
+    # Pipe is authoritative — the comma inside an activity name survives.
+    assert rows[0]["tags"] == ["Coffee", "Gym, downtown"]
+
+
+def test_parse_csv_mood_aliases():
+    cases = {"rad": "great", "okay": "meh", "so-so": "meh", "3": "meh", "Good": "good"}
+    for raw, expected in cases.items():
+        rows = parse_csv(f"date,mood\n2024-01-01,{raw}\n")
+        assert rows[0]["mood"] == expected, raw
+
+
+def test_parse_csv_daylio_date_formats():
+    for cell, expected in (
+        ("2024-01-01", "2024-01-01"),
+        ('"May 1, 2021"', "2021-05-01"),
+        ("05/01/2021", "2021-05-01"),
+    ):
+        rows = parse_csv(f"date,mood\n{cell},good\n")
+        assert rows[0]["entry_date"] == expected, cell
+
+
+def test_parse_csv_unparsable_date_reported_as_error():
+    rows = parse_csv("date,mood\nnot a date,good\n")
+    assert len(rows) == 1
+    assert rows[0]["entry_date"] is None
+    assert "unparsable date" in str(rows[0]["error"])
+
+
+def test_parse_csv_daylio_note_title_maps_to_title():
+    text = build_daylio_csv(
+        [{"date": "2021-05-01", "mood": "good", "note_title": "Slow morning", "note": "Body."}]
+    )
+    rows = parse_csv(text)
+    assert rows[0]["title"] == "Slow morning"
+    assert rows[0]["body"] == "Body."
 
 
 # ── Day One parser ───────────────────────────────────────────────────────────

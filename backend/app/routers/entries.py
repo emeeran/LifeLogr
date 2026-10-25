@@ -1157,19 +1157,27 @@ async def import_file(
     existing_tags_result = await db.execute(select(Tag))
     tag_cache: dict[str, Tag] = {t.name: t for t in existing_tags_result.scalars().all()}
 
-    # Duplicate detection: (entry_date, sha256(body[:1000])) of existing rows.
-    # Only the first 1000 body characters are pulled from SQL (``substr``), so
-    # the full body of every entry is never materialised just to fingerprint it.
+    # Duplicate detection: (entry_date, sha256(body[:1000] + mood)) of existing
+    # rows. Only the first 1000 body characters are pulled from SQL (``substr``),
+    # so the full body of every entry is never materialised just to fingerprint
+    # it. The mood suffix keeps same-day mood-only check-ins distinct.
     existing_sigs: set[tuple[str, str]] = set()
     if skip_duplicates:
         _rows = await db.execute(
-            select(Entry.entry_date, sa_func.substr(Entry.body, 1, 1000)).where(
-                ~Entry.is_deleted
-            )
+            select(
+                Entry.entry_date,
+                sa_func.substr(Entry.body, 1, 1000),
+                Entry.mood,
+            ).where(~Entry.is_deleted)
         )
-        for _ed, _prefix in _rows.all():
+        for _ed, _prefix, _mood in _rows.all():
             existing_sigs.add(
-                (str(_ed), hashlib.sha256((_prefix or "").encode()).hexdigest())
+                (
+                    str(_ed),
+                    hashlib.sha256(
+                        ((_prefix or "") + "\x00" + (_mood or "")).encode()
+                    ).hexdigest(),
+                )
             )
 
     imported = 0
@@ -1191,8 +1199,11 @@ async def import_file(
 
     for idx, entry in enumerate(entries_data):
         # An empty body is legal when the entry carries media (photo-only
-        # Diarium entries); only truly empty records are skipped.
-        if not entry.get("entry_date") or (not entry.get("body") and not entry.get("media")):
+        # Diarium entries) or a mood (Daylio mood-only check-ins); only truly
+        # empty records are skipped.
+        if not entry.get("entry_date") or (
+            not entry.get("body") and not entry.get("media") and not entry.get("mood")
+        ):
             skipped += 1
             skip_reasons = _record_skip(
                 skip_reasons,
@@ -1207,9 +1218,13 @@ async def import_file(
             if isinstance(ed, str):
                 ed = date_type.fromisoformat(ed[:10])
 
+            # The dedup fingerprint includes the mood so two same-day
+            # mood-only check-ins with different moods don't collapse.
             sig = (
                 str(ed),
-                hashlib.sha256((entry["body"] or "")[:1000].encode()).hexdigest(),
+                hashlib.sha256(
+                    ((entry["body"] or "")[:1000] + "\x00" + (entry.get("mood") or "")).encode()
+                ).hexdigest(),
             )
             if skip_duplicates and sig in existing_sigs:
                 skipped += 1
