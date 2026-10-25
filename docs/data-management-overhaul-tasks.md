@@ -6,7 +6,7 @@
 IDs `DM#`, effort **S** ≤ 1 day / **M** 1–3 days; every task ends with
 `ruff` + `pytest` green, UI tasks also `vitest`.
 
-Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ done — DM6–DM12 pending (2026-10-26).
+Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ done — DM7–DM12 pending (2026-10-26).
 
 ---
 
@@ -72,7 +72,7 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ done — DM6–DM12 
 
 ## Tier 2
 
-### DM6 — Reorganize the Data tab · **M**
+### DM6 — Reorganize the Data tab · **M** ✅
 - Per plan §DM-C: pills become **Import / Export / Backup & Restore /
   Maintenance / Storage** (Diagnostics reduced to the egress report).
 - New panels `ImportPanel.vue`, `ExportPanel.vue`, `BackupRestorePanel.vue`

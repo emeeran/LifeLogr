@@ -96,22 +96,35 @@ test.describe('Settings UI verification', () => {
   })
 
   // ── Data Tab ──
-  // Storage / Import-Export / Backups / Maintenance / Diagnostics live behind a
-  // pill sub-nav. Assert the nav tab opens, the default Storage panel renders,
-  // and that drilling into the Backups pill surfaces the backup sections.
-  test('Data tab: storage and backup sections render', async ({ page }) => {
+  // Import / Export / Backup & Restore / Maintenance / Storage live behind a
+  // pill sub-nav. Assert the nav tab opens, the default Import panel renders,
+  // and that drilling into the Export and Backup & Restore pills surfaces
+  // their sections.
+  test('Data tab: import, export, and backup sections render', async ({ page }) => {
     await tab(page, 'Data').click()
 
-    // Storage is the default pill → its section renders immediately.
-    await expect(page.getByText('Storage', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Disk usage and entry statistics')).toBeVisible()
+    // Import is the default pill → its sections render immediately.
+    await expect(page.getByText('Import entries', { exact: true })).toBeVisible()
+    await expect(page.getByText('Import notes', { exact: true })).toBeVisible()
 
-    // Switch to the Backups pill → the backup sections render (toBeVisible
+    // Export pill → format rows labeled with what they carry.
+    await page.getByRole('button', { name: 'Export', exact: true }).click()
+    await expect(page.getByText('Archive ZIP', { exact: true })).toBeVisible()
+    await expect(page.getByText('Portable export').first()).toBeVisible()
+
+    // Backup & Restore pill → the backup sections render (toBeVisible
     // waits for the swap; no fixed sleep).
-    await page.getByRole('button', { name: 'Backups', exact: true }).click()
+    await page
+      .getByRole('button', { name: 'Backup & Restore', exact: true })
+      .click()
     await expect(page.getByText('Local Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Scheduled Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Cloud Backup', { exact: true })).toBeVisible()
+
+    // Maintenance pill → maintenance rows + the absorbed system check.
+    await page.getByRole('button', { name: 'Maintenance', exact: true }).click()
+    await expect(page.getByText('Compact database', { exact: true })).toBeVisible()
+    await expect(page.getByText('System Check', { exact: true })).toBeVisible()
   })
 
   // ── About Tab ──

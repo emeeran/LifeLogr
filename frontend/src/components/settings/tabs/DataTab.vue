@@ -1,26 +1,45 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-import { HardDrive, FileUp, Cloud, Wrench, Activity } from 'lucide-vue-next'
+import { HardDrive, FileUp, FileDown, Cloud, Wrench } from 'lucide-vue-next'
 import StoragePanel from '../panels/StoragePanel.vue'
-import ImportExportPanel from '../panels/ImportExportPanel.vue'
-import BackupTab from './BackupTab.vue'
+import ImportPanel from '../panels/ImportPanel.vue'
+import ExportPanel from '../panels/ExportPanel.vue'
+import BackupRestorePanel from '../panels/BackupRestorePanel.vue'
 import MaintenancePanel from '../panels/MaintenancePanel.vue'
-import DiagnosticsPanel from '../panels/DiagnosticsPanel.vue'
 
 type ToastType = 'success' | 'error' | 'info'
 const emit = defineEmits<{ toast: [type: ToastType, message: string] }>()
 
-const activePill = useLocalStorage<string>(
-  'lifelogr-data-backup-pill',
-  'storage',
-)
+// Pre-overhaul pill ids mapped onto their new homes so a persisted
+// 'lifelogr-data-backup-pill' doesn't render a blank panel after upgrading.
+// Resolved on read (not written back in setup) — writing during setup races
+// useLocalStorage's own initialization and can be clobbered by it.
+const legacyPillIds: Record<string, string> = {
+  'import-export': 'import',
+  backups: 'backup-restore',
+  diagnostics: 'maintenance',
+}
+
 const pills = [
-  { id: 'storage', label: 'Storage', icon: HardDrive },
-  { id: 'import-export', label: 'Import / Export', icon: FileUp },
-  { id: 'backups', label: 'Backups', icon: Cloud },
+  { id: 'import', label: 'Import', icon: FileUp },
+  { id: 'export', label: 'Export', icon: FileDown },
+  { id: 'backup-restore', label: 'Backup & Restore', icon: Cloud },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench },
-  { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
+  { id: 'storage', label: 'Storage', icon: HardDrive },
 ] as const
+const pillIds = new Set<string>(pills.map((p) => p.id))
+
+const storedPill = useLocalStorage<string>('lifelogr-data-backup-pill', 'import')
+const activePill = computed({
+  get: () => {
+    const raw = storedPill.value
+    return legacyPillIds[raw] ?? (pillIds.has(raw) ? raw : 'import')
+  },
+  set: (id: string) => {
+    storedPill.value = id
+  },
+})
 
 function forward(type: ToastType, message: string) {
   emit('toast', type, message)
@@ -54,19 +73,16 @@ function forward(type: ToastType, message: string) {
     </div>
 
     <!-- Panels -->
-    <StoragePanel v-if="activePill === 'storage'" @toast="forward" />
-    <ImportExportPanel
-      v-else-if="activePill === 'import-export'"
+    <ImportPanel v-if="activePill === 'import'" @toast="forward" />
+    <ExportPanel v-else-if="activePill === 'export'" @toast="forward" />
+    <BackupRestorePanel
+      v-else-if="activePill === 'backup-restore'"
       @toast="forward"
     />
-    <BackupTab v-else-if="activePill === 'backups'" @toast="forward" />
     <MaintenancePanel
       v-else-if="activePill === 'maintenance'"
       @toast="forward"
     />
-    <DiagnosticsPanel
-      v-else-if="activePill === 'diagnostics'"
-      @toast="forward"
-    />
+    <StoragePanel v-else-if="activePill === 'storage'" @toast="forward" />
   </div>
 </template>
