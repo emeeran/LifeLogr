@@ -313,6 +313,7 @@ async def _export_entries(
         .options(
             selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
             selectinload(Entry.media),
+            selectinload(Entry.events),
         )
         .order_by(Entry.entry_date, Entry.id)
     )
@@ -322,6 +323,71 @@ async def _export_entries(
         q = q.where(Entry.entry_date <= end_date)
     result = await session.execute(q)
     return list(result.scalars().all())
+
+
+async def _run_note_archive_import(
+    db: AsyncSession, items: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Restore the notes carried in a native archive (v2) after the entries."""
+    from app.services.notes_export_service import NotesExportService
+
+    result = await NotesExportService(db)._import_items(items)
+    logger.info(
+        "Archive notes import: %d imported, %d skipped",
+        result["imported"],
+        result["skipped"],
+    )
+    return result
+
+
+async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
+    """Serialize non-deleted notes for the native archive (v2).
+
+    Mirrors NotesExportService.export_json's item shape (encrypted notes keep
+    their placeholder body) plus a ``media`` list whose ``path`` members point
+    at ``media/<storage_path>`` in the archive; ``ref`` is the export-time id
+    the importer rewrites body URLs to.
+    """
+    from app.models.note import Note, NoteTag
+    from app.services.notes_export_service import _ENCRYPTED_PLACEHOLDER
+
+    res = await session.execute(
+        select(Note)
+        .where(Note.is_deleted.is_(False))
+        .options(
+            selectinload(Note.folder),
+            selectinload(Note.tag_associations).selectinload(NoteTag.tag),
+            selectinload(Note.pages),
+            selectinload(Note.media),
+        )
+        .order_by(Note.created_at)
+    )
+    notes = []
+    for n in res.scalars():
+        notes.append(
+            {
+                "title": n.title,
+                "body": _ENCRYPTED_PLACEHOLDER if n.is_encrypted else (n.body or ""),
+                "is_encrypted": n.is_encrypted,
+                "is_pinned": n.is_pinned,
+                "color": n.color,
+                "folder": n.folder.name if n.folder else None,
+                "tags": [nt.tag.name for nt in n.tag_associations],
+                "pages": [{"title": p.title, "body": p.body} for p in n.pages],
+                "media": [
+                    {
+                        "ref": m.id,
+                        "path": f"media/{m.storage_path}",
+                        "filename": m.filename,
+                        "media_type": m.media_type,
+                        "caption": m.caption,
+                    }
+                    for m in n.media
+                    if (settings.MEDIA_DIR / m.storage_path).is_file()
+                ],
+            }
+        )
+    return notes
 
 
 def _build_markdown_zip_sync(entries: list[Entry], report=None) -> bytes:
@@ -576,21 +642,21 @@ async def export_archive(
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Export entries + media as the native LifeLogr archive ZIP.
+    """Export entries + notes + media as the native LifeLogr archive ZIP.
 
-    Full-fidelity, self-contained: ``lifelogr.json`` (entries with media
-    metadata) plus every referenced media file under ``media/``. Re-imports
-    via ``/import/file`` — media rows are recreated and the body's
-    ``/api/v1/media/{id}/file`` links are rewritten to the new ids.
-    ``as_job=true`` returns ``{job_id}``; download from
-    ``GET /api/v1/jobs/{job_id}/result``.
+    Full-fidelity, self-contained: ``lifelogr.json`` (entries with media and
+    events, notes with folders/pages/attachments) plus every referenced media
+    file under ``media/``. Re-imports via ``/import/file`` — media rows are
+    recreated and body URLs are rewritten to the new ids. ``as_job=true``
+    returns ``{job_id}``; download from ``GET /api/v1/jobs/{job_id}/result``.
     """
     if as_job:
         from app.core.database import async_session
 
         async def _build(report, session):
             entries = await _export_entries(session, start_date, end_date)
-            return await asyncio.to_thread(build_archive, entries, report)
+            notes = await _load_archive_notes(session)
+            return await asyncio.to_thread(build_archive, entries, notes, report)
 
         return start_export_job(
             background_tasks, "export-archive", "lifelogr-archive.zip", _build,
@@ -598,7 +664,8 @@ async def export_archive(
         )
 
     entries = await _export_entries(db, start_date, end_date)
-    buf = io.BytesIO(await asyncio.to_thread(build_archive, entries))
+    notes = await _load_archive_notes(db)
+    buf = io.BytesIO(await asyncio.to_thread(build_archive, entries, notes))
     buf.seek(0)
     return StreamingResponse(
         buf,
@@ -1203,6 +1270,7 @@ async def import_file(
     filename = file.filename or ""
 
     entries_data: list[dict[str, Any]] = []
+    archive_notes: list[dict[str, Any]] = []
 
     upload_path = await _spool_upload(file, settings.MAX_IMPORT_SIZE_BYTES)
     try:
@@ -1255,6 +1323,14 @@ async def import_file(
                                         ),
                                     }
                                 )
+                            events_items = [
+                                {
+                                    "kind": ev.get("kind"),
+                                    "content": ev.get("content"),
+                                    "label": ev.get("label"),
+                                }
+                                for ev in item.get("events", [])
+                            ]
                             entries_data.append(
                                 {
                                     "entry_date": item.get("entry_date"),
@@ -1265,8 +1341,20 @@ async def import_file(
                                     "latitude": item.get("latitude"),
                                     "longitude": item.get("longitude"),
                                     "media": media_items,
+                                    "events": events_items,
                                 }
                             )
+                        # v2 archives carry notes inline (v1 archives simply
+                        # lack the key — same import path either way).
+                        for item in doc.get("notes", []):
+                            for m in item.get("media", []):
+                                member = m.get("path", "")
+                                m["data"] = (
+                                    _read_member(z, member)
+                                    if member in media_names
+                                    else b""
+                                )
+                            archive_notes.append(item)
                 else:
                     with zipfile.ZipFile(upload_path, "r") as z:
                         names = _zip_members(z)
@@ -1348,7 +1436,11 @@ async def import_file(
         upload_path.unlink(missing_ok=True)
 
     if not as_job:
-        return await _run_entry_import(db, entries_data, skip_duplicates)
+        result = await _run_entry_import(db, entries_data, skip_duplicates)
+        if archive_notes:
+            await _run_note_archive_import(db, archive_notes)
+            await db.commit()
+        return result
 
     def _runner(job_report: ProgressReporter) -> Awaitable[str]:
         async def _run() -> str:
@@ -1358,6 +1450,9 @@ async def import_file(
                 result = await _run_entry_import(
                     session, entries_data, skip_duplicates, job_report
                 )
+                if archive_notes:
+                    await _run_note_archive_import(session, archive_notes)
+                    await session.commit()
                 return f"Imported {result['imported']}, skipped {result['skipped']}"
 
         return _run()

@@ -273,6 +273,27 @@ class NotesExportService:
                     await svc.create_page(
                         note.id, NotePageCreate(title=p.get("title"), body=p.get("body") or "")
                     )
+                # Attachments (native archive v2 only — other import paths
+                # never carry media). Bodies reference
+                # /api/v1/notes/{old_note}/media/{old_media}/file; rewrite to
+                # the fresh ids after the rows exist.
+                media_items = it.get("media") or []
+                if media_items:
+                    ref_map = await self._attach_media(note.id, media_items)
+                    if ref_map and note.body:
+                        new_body = note.body
+                        for old_media, (new_note, new_media) in ref_map.items():
+                            # Old note id is unknown (the archive keeps only the
+                            # media ref) — match any note id in the URL.
+                            new_body = re.sub(
+                                rf"/api(/v1)?/notes/\d+/media/{old_media}/file",
+                                f"/api/v1/notes/{new_note}/media/{new_media}/file",
+                                new_body,
+                            )
+                        if new_body != note.body:
+                            note.body = new_body
+                            await self.db.commit()
+                            await self.db.refresh(note)
                 imported += 1
                 note_ids.append(note.id)
             except Exception:
@@ -280,6 +301,57 @@ class NotesExportService:
             if report is not None:
                 report("insert", idx + 1, total)
         return {"imported": imported, "skipped": skipped, "note_ids": note_ids}
+
+    async def _attach_media(
+        self, note_id: int, media_items: list[dict[str, Any]]
+    ) -> dict[int, tuple[int, int]]:
+        """Persist archive note-media payloads; return {old_media_id: (note_id, new_id)}.
+
+        Bytes go through the same size cap and signature check as entry-media
+        imports — an import path must never smuggle blocked file types.
+        """
+        import uuid
+        from pathlib import Path as _Path
+
+        from app.core.config import settings
+        from app.models.note_media import NoteMedia
+
+        ref_map: dict[int, tuple[int, int]] = {}
+        for item in media_items:
+            data = item.get("data") or b""
+            if not data:
+                continue
+            filename = (item.get("filename") or "attachment.bin").strip() or "attachment.bin"
+            if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
+                continue
+            try:
+                from app.services.media_service import MediaService
+
+                MediaService._check_signature(data[:64], filename)
+            except Exception:
+                continue
+            media_type = (item.get("media_type") or "document").lower()
+            if media_type not in ("image", "audio", "video", "document"):
+                media_type = "document"
+            stored_name = f"{uuid.uuid4()}{_Path(filename).suffix.lower()}"
+            dest = settings.MEDIA_DIR / "notes" / stored_name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+            row = NoteMedia(
+                note_id=note_id,
+                filename=filename,
+                media_type=media_type,
+                file_size=len(data),
+                storage_path=f"notes/{stored_name}",
+                caption=item.get("caption") or None,
+            )
+            self.db.add(row)
+            await self.db.flush()
+            try:
+                ref_map[int(item["ref"])] = (note_id, row.id)
+            except (KeyError, TypeError, ValueError):
+                pass
+        return ref_map
 
     async def _resolve_folder(self, name: str | None) -> int | None:
         if not name:

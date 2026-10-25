@@ -104,8 +104,8 @@ async function downloadBlob(
 }
 
 // ── Entries formats (each row states what it carries) ──
-// Native archive: full-fidelity entries + media, re-importable as-is — the
-// portable export (vs the full-instance .tar.gz under Backup & Restore).
+// Native archive: full-fidelity entries + media + notes, re-importable as-is
+// — the portable export (vs the full-instance .tar.gz under Backup & Restore).
 async function downloadArchive() {
   await downloadViaJob(
     entriesApi.exportArchiveUrl(rangeStart.value, rangeEnd.value),
@@ -286,11 +286,11 @@ async function downloadNotesHtml() {
         <div class="min-w-0 flex-1">
           <div class="text-[12px] text-text-primary">
             Archive ZIP
-            <span class="carries">entries · media · tags</span>
+            <span class="carries">entries · media · tags · events · notes</span>
           </div>
           <p class="text-[11px] text-text-muted">
             The complete portable export — re-imports into any lifelogr
-            instance with media links intact.
+            instance with media links, note attachments and events intact.
           </p>
         </div>
         <SButton

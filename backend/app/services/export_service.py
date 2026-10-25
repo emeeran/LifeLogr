@@ -743,20 +743,26 @@ def build_daylio_csv(entries: list[Entry]) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
-# ── Native archive export (entries + media, full fidelity) ──────────────────
+# ── Native archive export (entries + notes + media, full fidelity) ──────────
 # A ZIP carrying the native JSON document plus every referenced media file.
 # Bodies embed media as markdown/HTML URLs of the form
 # `/api/v1/media/{id}/file`; each media record keeps its export-time id in
 # `ref` so the importer can rewrite those URLs to the freshly created ids.
+# v2 adds `notes.json` (notes, folders, pages + note attachments under
+# `media/`) and per-entry `events`; v1 archives still import (keyed on the
+# format field, notes.json simply absent).
 ARCHIVE_FORMAT = "lifelogr-archive"
-ARCHIVE_VERSION = 1
+ARCHIVE_VERSION = 2
 
 
-def build_archive(entries: list[Entry], report=None) -> bytes:
-    """Serialize entries + their media into the native archive ZIP (bytes).
+def build_archive(entries: list[Entry], notes: list[dict] | None = None, report=None) -> bytes:
+    """Serialize entries (+ optionally notes) and their media into the archive ZIP.
 
-    ``entries`` must have ``tag_associations`` and ``media`` loaded. The JSON
-    build and file copies are CPU/IO-bound — run via ``asyncio.to_thread``.
+    ``entries`` must have ``tag_associations``, ``media`` and ``events``
+    loaded. *notes* (optional) is the prebuilt note list from
+    ``app.routers.entries._load_archive_notes`` — dicts with a ``media`` list
+    whose ``path`` members are copied from MEDIA_DIR here. The JSON build and
+    file copies are CPU/IO-bound — run via ``asyncio.to_thread``.
     *report* (optional) gets (phase, done, total) — "media" per file, then
     "finalize" for the JSON document.
     """
@@ -771,6 +777,12 @@ def build_archive(entries: list[Entry], report=None) -> bytes:
         for e in entries
         for m in e.media
         if (settings.MEDIA_DIR / m.storage_path).is_file()
+    )
+    media_total += sum(
+        1
+        for n in notes or []
+        for m in n.get("media", [])
+        if (settings.MEDIA_DIR / m["path"][len("media/"):]).is_file()
     )
     media_done = 0
     if report is not None:
@@ -813,6 +825,10 @@ def build_archive(entries: list[Entry], report=None) -> bytes:
                     "latitude": entry.latitude,
                     "longitude": entry.longitude,
                     "media": media_items,
+                    "events": [
+                        {"kind": ev.kind, "content": ev.content, "label": ev.label}
+                        for ev in getattr(entry, "events", ())
+                    ],
                 }
             )
         doc = {
@@ -820,6 +836,19 @@ def build_archive(entries: list[Entry], report=None) -> bytes:
             "version": ARCHIVE_VERSION,
             "entries": doc_entries,
         }
+        # Note attachment files live under the same media/ tree (their
+        # storage_path is already notes/-prefixed, so it can't collide with
+        # entry media's YYYY/MM paths).
+        for note in notes or []:
+            for m in note.get("media", []):
+                src = settings.MEDIA_DIR / m["path"][len("media/"):]
+                if src.is_file():
+                    zf.write(str(src), m["path"])
+                    media_done += 1
+                    if report is not None:
+                        report("media", media_done, media_total)
+        if notes:
+            doc["notes"] = notes
         if report is not None:
             report("finalize", 1, 1)
         zf.writestr("lifelogr.json", json_mod.dumps(doc, ensure_ascii=False, indent=2))
