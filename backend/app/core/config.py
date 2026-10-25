@@ -296,6 +296,10 @@ class Settings(BaseSettings):
     MEDIA_DIR: Path = Path("")  # derived from DATA_DIR if empty
     DATA_DIR: Path = Path("")  # set by Tauri sidecar or defaults to platform dir
     TTS_CACHE_DIR: Path = Path("")  # derived from DATA_DIR if empty
+    # Opt-in weather auto-fill for geotagged entries (Open-Meteo). Off by
+    # default — the one feature whose network call is tied to location data.
+    WEATHER_ENABLED: bool = False
+    WEATHER_CACHE_DIR: Path = Path("")  # derived from DATA_DIR if empty
     CORS_ORIGINS: str = (
         "http://localhost:5173,tauri://localhost,"
         "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"
@@ -397,6 +401,12 @@ class Settings(BaseSettings):
         if not self.TTS_CACHE_DIR or str(self.TTS_CACHE_DIR) == ".":
             self.TTS_CACHE_DIR = self.DATA_DIR / "tts"
         self.TTS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Derive WEATHER_CACHE_DIR — cached Open-Meteo daily conditions
+        # (services/weather_service.py), keyed by rounded coordinates + date.
+        if not self.WEATHER_CACHE_DIR or str(self.WEATHER_CACHE_DIR) == ".":
+            self.WEATHER_CACHE_DIR = self.DATA_DIR / "weather"
+        self.WEATHER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     @property
     def db_path(self) -> Path:

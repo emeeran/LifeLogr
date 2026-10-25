@@ -19,8 +19,13 @@ export interface StorageInfo {
   entry_count: number
 }
 
+export interface WeatherSettings {
+  enabled: boolean
+}
+
 export interface AppSettings {
   ai: AISettings
+  weather: WeatherSettings
   storage: StorageInfo
   version: string
   app_name: string
@@ -49,6 +54,7 @@ export const getSettings = () => request<AppSettings>('/settings')
 
 export const updateSettings = (data: {
   ai?: Partial<AISettings>
+  weather?: Partial<WeatherSettings>
   /** Explicit consent required by the backend when ollama_base_url is non-loopback. */
   confirm_remote?: boolean
 }) =>

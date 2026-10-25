@@ -9,14 +9,18 @@ import {
   Volume2,
   CheckCircle2,
   AlertTriangle,
+  CloudSun,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
+import SettingRow from '../shared/SettingRow.vue'
+import ToggleSwitch from '../shared/ToggleSwitch.vue'
 import SkeletonCard from '../shared/SkeletonCard.vue'
 import {
   getEgressReport,
   type EgressReport,
   type EgressSurface,
 } from '../../../api/system'
+import { getSettings, updateSettings } from '../../../api/settings'
 import { errMsg } from '../../../utils/errorMessage.ts'
 
 // A surface row in the report. `leavesDevice` is the truth that drives the badge.
@@ -24,12 +28,41 @@ const report = ref<EgressReport | null>(null)
 const loading = ref(true)
 const errorMsg = ref('')
 
+// Weather auto-fill — the one surface tied to location data, so the opt-in
+// lives right here above the report it feeds. Off by default; the backend
+// never contacts Open-Meteo while this is false.
+const weatherEnabled = ref(false)
+const weatherLoading = ref(true)
+const weatherErrorMsg = ref('')
+
+async function loadWeatherSetting() {
+  try {
+    weatherEnabled.value = (await getSettings()).weather.enabled
+  } catch (e: unknown) {
+    weatherErrorMsg.value = errMsg(e)
+  } finally {
+    weatherLoading.value = false
+  }
+}
+
+async function setWeatherEnabled(enabled: boolean) {
+  const previous = weatherEnabled.value
+  weatherEnabled.value = enabled
+  try {
+    await updateSettings({ weather: { enabled } })
+  } catch (e: unknown) {
+    weatherEnabled.value = previous
+    weatherErrorMsg.value = errMsg(e)
+  }
+}
+
 // Keys this tab renders with a bespoke card (icon + copy). Anything else the
 // backend adds to the report — read_aloud today, whatever next — renders through
 // the generic card below instead of being invisible / mislabelled here.
 const BESPOKE_KEYS = ['cloud_ai', 'cloud_backup', 'web_clip', 'ocr', 'embeddings']
 const EXTRA_LABELS: Record<string, string> = {
   read_aloud: 'Read aloud (text-to-speech)',
+  weather: 'Weather auto-fill (geotagged entries)',
 }
 function extraLabel(key: string): string {
   return (
@@ -57,6 +90,7 @@ const extraSurfaces = computed(() => {
 })
 
 onMounted(async () => {
+  loadWeatherSetting()
   try {
     report.value = await getEgressReport()
   } catch (e: unknown) {
@@ -74,6 +108,28 @@ onMounted(async () => {
     description="LifeLogr is privacy-first and local-first by default. Every surface in this report can send data off your device, and none are on unless you turn them on — the list is whatever your build's backend reports."
     setting-key="What leaves your machine"
   >
+    <!-- Weather auto-fill opt-in (off by default) -->
+    <div class="mb-3 rounded-md border border-border bg-surface-hover p-2.5">
+      <SettingRow
+        :icon="CloudSun"
+        label="Weather for geotagged entries"
+        description="When on, saving an entry with coordinates fetches that day's conditions from Open-Meteo (no account). Only the rounded coordinates (~1 km) and the date are sent — never entry text."
+      >
+        <ToggleSwitch
+          :model-value="weatherEnabled"
+          :disabled="weatherLoading"
+          label="Enable weather auto-fill"
+          @update:model-value="setWeatherEnabled"
+        />
+      </SettingRow>
+      <p
+        v-if="weatherErrorMsg"
+        class="mt-1.5 flex items-center gap-1 text-[10.5px] text-red-400"
+      >
+        <AlertTriangle :size="11" /> {{ weatherErrorMsg }}
+      </p>
+    </div>
+
     <template v-if="loading"><SkeletonCard :lines="5" /></template>
     <template v-else-if="report">
       <!-- AI tools -->

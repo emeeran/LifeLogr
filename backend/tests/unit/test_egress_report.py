@@ -23,12 +23,28 @@ async def test_egress_report_schema_is_stable(client: AsyncClient) -> None:
     assert r.status_code == 200
     data = r.json()
 
-    for name in ("cloud_ai", "cloud_backup", "web_clip", "ocr", "embeddings", "read_aloud"):
+    for name in ("cloud_ai", "cloud_backup", "web_clip", "ocr", "embeddings", "read_aloud", "weather"):
         assert name in data, name
 
-    for name in ("cloud_ai", "web_clip", "ocr", "embeddings", "read_aloud"):
+    for name in ("cloud_ai", "web_clip", "ocr", "embeddings", "read_aloud", "weather"):
         assert isinstance(data[name]["leaves_device"], bool), name
         assert isinstance(data[name]["note"], str) and data[name]["note"], name
 
     assert data["web_clip"]["leaves_device"] is False
     assert data["ocr"]["leaves_device"] is False
+
+
+async def test_weather_surface_reflects_toggle(client: AsyncClient, monkeypatch) -> None:
+    """The weather row reports live opt-in state — off by default, on when enabled."""
+    from app.core.config import settings
+
+    assert settings.WEATHER_ENABLED is False
+    r = await client.get("/api/v1/system/egress-report")
+    weather = r.json()["weather"]
+    assert weather["leaves_device"] is False
+    assert "Open-Meteo" in weather.get("provider", "")
+    assert "rounded" in weather["note"]
+
+    monkeypatch.setattr(settings, "WEATHER_ENABLED", True)
+    r = await client.get("/api/v1/system/egress-report")
+    assert r.json()["weather"]["leaves_device"] is True

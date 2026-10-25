@@ -70,6 +70,8 @@ export interface EgressReport {
    *  ones above — the Privacy tab renders whatever the API returns, so it must
    *  stay optional here). */
   read_aloud?: EgressSurface
+  /** Opt-in weather auto-fill for geotagged entries (Open-Meteo). */
+  weather?: EgressSurface & { provider?: string }
   /** Any surface the backend adds later. The Privacy tab iterates these
    *  generically instead of hardcoding the list. */
   [key: string]: unknown

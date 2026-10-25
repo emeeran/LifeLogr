@@ -53,8 +53,17 @@ class StorageInfo(BaseModel):
     entry_count: int
 
 
+class WeatherSettings(BaseModel):
+    enabled: bool
+
+
+class WeatherSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+
+
 class AppSettingsResponse(BaseModel):
     ai: AISettings
+    weather: WeatherSettings
     storage: StorageInfo
     version: str
     app_name: str
@@ -74,6 +83,7 @@ class AISettingsUpdate(BaseModel):
 
 class SettingsUpdateRequest(BaseModel):
     ai: AISettingsUpdate | None = None
+    weather: WeatherSettingsUpdate | None = None
     # Explicit consent for pointing Ollama at a non-loopback host. The Ollama
     # URL receives journal entry/note text, so a remote host must be a decision,
     # never a side effect of pasting a URL.
@@ -114,6 +124,7 @@ async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
     info = await storage_info(db)
     return AppSettingsResponse(
         ai=_get_ai_settings(),
+        weather=WeatherSettings(enabled=settings.WEATHER_ENABLED),
         storage=StorageInfo(**info),
         version=settings.APP_VERSION,
         app_name=settings.APP_NAME,
@@ -160,6 +171,9 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
             val = getattr(data.ai, field, None)
             if val is not None:
                 setattr(settings, attr, val)
+        persist_runtime_settings()
+    if data.weather and data.weather.enabled is not None:
+        settings.WEATHER_ENABLED = data.weather.enabled
         persist_runtime_settings()
     return {"status": "ok"}
 

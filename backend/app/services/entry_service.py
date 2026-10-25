@@ -27,6 +27,7 @@ from app.schemas.entry import (
 )
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
+from app.services.weather_service import WeatherService
 from app.services.hashtag import extract_hashtags, resolve_tag_ids
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,7 @@ class EntryService:
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
             EnrichmentService.schedule(entry.id, entry.title, entry.body)
+            WeatherService.schedule(entry.id, entry.latitude, entry.longitude, entry.entry_date)
         return entry
 
     async def _create_batched(self, data: EntryCreate) -> Entry:
@@ -285,6 +287,7 @@ class EntryService:
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
             EnrichmentService.schedule(entry.id, entry.title, entry.body)
+            WeatherService.schedule(entry.id, entry.latitude, entry.longitude, entry.entry_date)
         return entry
 
     async def soft_delete(self, entry_id: int) -> None:

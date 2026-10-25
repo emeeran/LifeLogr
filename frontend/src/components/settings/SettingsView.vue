@@ -329,6 +329,19 @@ const index: SearchEntry[] = [
       'what leaves',
     ],
   },
+  {
+    tab: 'privacy',
+    label: 'Weather for geotagged entries',
+    keywords: [
+      'weather',
+      'open-meteo',
+      'forecast',
+      'geotagged',
+      'coordinates',
+      'location',
+      'privacy',
+    ],
+  },
 
   // ── Dedication ──
   {

@@ -142,6 +142,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await cancel_pending_tasks()
     except Exception:
         logger.warning("Failed to cancel enrichment tasks", exc_info=True)
+    # Cancel outstanding weather auto-fill tasks
+    try:
+        from app.services.weather_service import cancel_pending as cancel_weather
+
+        await cancel_weather()
+    except Exception:
+        logger.warning("Failed to cancel weather tasks", exc_info=True)
     # Dispose database engine
     try:
         from app.core.database import engine

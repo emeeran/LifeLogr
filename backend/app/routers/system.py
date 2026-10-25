@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.startup_checks import check_app_integrity, get_app_integrity
 
@@ -120,5 +121,16 @@ async def egress_report(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
                 if ai_cloud
                 else "Vector embeddings are generated locally by Ollama."
             ),
+        },
+        # Weather auto-fill is opt-in (off by default) and tied to location
+        # data: the only payload is the rounded coordinates (~1 km) + the entry
+        # date. See services/weather_service.py.
+        "weather": {
+            "leaves_device": bool(settings.WEATHER_ENABLED),
+            "provider": "Open-Meteo",
+            "note": "When enabled, saving a geotagged entry sends only the "
+            "rounded coordinates (~1 km) and the entry date to Open-Meteo for "
+            "daily conditions. Entry text is never sent; responses are cached "
+            "on disk.",
         },
     }
