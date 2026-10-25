@@ -6,7 +6,7 @@
 IDs `DM#`, effort **S** ≤ 1 day / **M** 1–3 days; every task ends with
 `ruff` + `pytest` green, UI tasks also `vitest`.
 
-Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ · DM7 ✅ done — DM8–DM12 pending (2026-10-26).
+Status: DM1–DM12 ✅ done (2026-10-26) — manual Diarium device check pending (see DM12).
 
 ---
 
@@ -98,14 +98,14 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ · DM7 �
 - **Accept:** one integrity endpoint remains; grep shows no orphan callers;
   pytest + vitest green.
 
-### DM8 — Backup/restore completeness tests · **S**
+### DM8 — Backup/restore completeness tests · **S** ✅
 - Round-trip test: seed DB with entries + media + tags + events + notes +
   note attachments → `backup/export` → wipe DATA_DIR → restore → assert all
   rows and media/attachment files byte-identical and FTS rebuilt.
 - **Accept:** test covers entries, notes, note attachments, entry media,
   entry events; also asserts the tarball contains every `media/` file.
 
-### DM9 — Native archive v2: notes + attachments · **M**
+### DM9 — Native archive v2: notes + attachments · **M** ✅
 - Bump `ARCHIVE_FORMAT` to v2: add `notes.json` member + note attachments
   under `media/` in `export_service.build_archive`; importer accepts v1 and
   v2 (keyed on format field), restoring notes + re-attaching files; entry
@@ -114,8 +114,12 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ · DM7 �
 - **Accept:** v2 export → fresh DB import reproduces entries+media+notes+
   note attachments+events; a v1 fixture still imports; schema-upgrade test
   not required (no DB schema change).
+- **Deviation:** notes live in the `lifelogr.json` document (`"notes"` key)
+  rather than a separate `notes.json` member — one parse path, keyed the
+  same way (v1 archives simply lack the key). Events also added to
+  `lifelogr.json` (verification showed they were NOT there).
 
-### DM10 — `.diary` writer fidelity · **M**
+### DM10 — `.diary` writer fidelity · **M** ✅
 - In `export_service._build_diarium_database_sync` (plan §DM-E): real
   local-datetime ticks with collision offset (fixes same-day PK collision);
   write `Events` from `entry_events` (`Type=0` weather; unknown kinds
@@ -126,7 +130,7 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ · DM7 �
 - **Accept:** writer output validated against the format-analysis schema
   (see DM11); two-entries-same-day fixture no longer collides.
 
-### DM11 — `.diary` round-trip + structural validation suite · **M**
+### DM11 — `.diary` round-trip + structural validation suite · **M** ✅
 - New `unit/test_diarium_roundtrip.py`: synthetic `.diary` (existing
   `tests/helpers/diarium_diary.py`, extended for trackers/events/type-2
   media) → lifelogr import → `.diary` export → re-import; assert content
@@ -141,13 +145,19 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ · DM6 ✅ · DM7 �
 
 ## Tier 3
 
-### DM12 — Docs + manual Diarium compatibility check · **S**
+### DM12 — Docs + manual Diarium compatibility check · **S** ✅
 - Update the user manual's Data section (new panel layout, progress UX,
   "what each format carries" matrix), `ARCHITECTURE.md` data-management
   section, and this doc's status line.
 - Manually: open lifelogr's exported `.diary` in Diarium; import the real
   `Diarium.diary` backup again and spot-check media/trackers.
 - **Accept:** docs merged; manual check results recorded here.
+- **Done:** USER_MANUAL §19/§20 (panels, progress UX, carries matrix),
+  API_REFERENCE (`/entries/export/*`, dropped `/settings/integrity-check`),
+  ARCHITECTURE §4.10.
+- **Pending (manual, you):** open a lifelogr-exported `.diary` in Diarium on
+  a real device; re-import the real `Diarium.diary` backup and spot-check
+  media/trackers.
 
 ---
 

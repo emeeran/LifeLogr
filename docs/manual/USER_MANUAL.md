@@ -459,30 +459,46 @@ memory-hard **scrypt** KDF, per-item salt).
 
 ---
 
-## 19. Export & Import
+## 19. Data — Export & Import
 
-- **Export** your journal as **Markdown** (a ZIP of `.md` files, Obsidian-compatible),
-  **Archive ZIP** (native, full fidelity: entries **and** media files;
-  re-import restores everything and rewrites image links), **HTML** (a styled
-  single file), **PDF** (desktop — bundled fpdf2), a
-  **Diarium `.diary` SQLite** database (schema-identical to a real Diarium
-  backup — restore it via Diarium's Settings → Backup), or a **Daylio-format
-  CSV** (Diarium's documented migration import: Settings → Database → Migrate
-  from other app → CSV; carries text, mood and tags).
-- **Import** from **CSV** (incl. Daylio and Diarium exports), **Diarium**
-  (`.diary` backup/JSON — real files with capitalized field names and
-  tick-based ids are recognized; weather, media and tracker tags are skipped),
-  **Day One ZIP**, or **Markdown/ZIP** archives.
-- After importing, run **Deduplicate** (Settings → Data → Maintenance) to find/remove
+The **Settings → Data** tab has five panels: **Import**, **Export**,
+**Backup & Restore**, **Maintenance** and **Storage**. Long operations (large
+imports, exports, backups) show a live progress bar with the current phase —
+parse → media → insert for imports, media → finalize for exports.
+
+### What each export format carries
+
+| Format | Entries | Media | Tags | Trackers | Events | Notes | Re-importable |
+|---|---|---|---|---|---|---|---|
+| **Archive ZIP** (native) | ✅ | ✅ | ✅ | – | ✅ | ✅ + attachments | ✅ any lifelogr |
+| **Diarium `.diary`** | ✅ | ✅ | ✅ | ✅ readings | ✅ weather | – | into Diarium |
+| **Markdown ZIP** | ✅ | ✅ | ✅ | – | – | – | ✅ |
+| **HTML archive** | ✅ | ✅ | – | – | – | – | read-only |
+| **HTML / PDF** | ✅ | – | ✅ / – | – | – | – | read-only |
+| **Daylio CSV** | ✅ | – | ✅ | – | – | – | into Diarium |
+
+The **Archive ZIP** is the *portable* export — it re-imports anywhere with
+media links, note attachments and events intact. The **Local backup** (below)
+is the *full-instance* backup.
+
+### Import
+- **Diarium** `.diary` backups and JSON (weather events, media, person tags
+  and tracker tags with their readings all import).
+- **Day One ZIP**, **Markdown/ZIP** archives, **CSV** (incl. Daylio), and the
+  native **Archive ZIP** (entries *and* notes).
+- After importing, run **Deduplicate** (Maintenance panel) to find/remove
   duplicate entries.
 
-> Exports never include encrypted content in cleartext.
+> Exports never include encrypted content in cleartext; encrypted notes export
+> as a placeholder with an `encrypted: true` flag.
 
 ---
 
 ## 20. Backup & Cloud Sync
 
-Configure in **Settings → Backup**.
+Configure in **Settings → Data → Backup & Restore**. Local, scheduled and
+cloud backups share one **Run now** button and show per-phase progress
+(checkpoint → archive → media → upload).
 
 ### Local backup
 - A full `.tar.gz` of database + media. **Download** to keep a copy, or **Import** to

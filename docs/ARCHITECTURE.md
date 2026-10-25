@@ -323,6 +323,34 @@ started in the lifespan.
   `selectin` batching (≈6 queries, not N+1); M2M writes go through explicit join-table
   inserts after a `_reload`.
 
+### 4.10 Data management (jobs, import/export, backup)
+
+- **Job registry** (`core/jobs.py`, `routers/jobs.py`): long operations
+  (imports, exports, backup/restore) run as background jobs with a
+  `ProgressReporter` callback protocol (`phase, done, total`); services accept
+  it with a no-op default so existing callers stay byte-compatible. The
+  frontend polls `GET /api/v1/jobs/{id}` via `useJobProgress` and renders
+  `OperationProgress.vue` (determinate/indeterminate + error state).
+- **Data tab** (`SettingsView.vue`): Import / Export / Backup & Restore /
+  Maintenance / Storage panels; integrity lives solely in
+  `GET/POST /system/integrity` (+ `rebuild-search-index`); export/import URL
+  builders are consolidated in `api/data.ts`.
+- **Native archive** (`export_service.build_archive`, v2): `lifelogr.json`
+  carries entries (with events) + notes (folders/pages/tags, encrypted
+  placeholder bodies) and every media file under `media/`; the importer
+  restores notes after entries and rewrites body media URLs to the new ids.
+  v1 archives (no `notes` key) import unchanged.
+- **`.diary` writer** (`_build_diarium_database_sync`): schema-identical to a
+  real Diarium backup — tracker tags as `Tags.Type=2` with verbatim
+  `EntryTags.TrackingValue`, `user_version=4`, same-day entries get
+  second-offset distinct ticks. `tests/helpers/diarium_diary.py` builds
+  synthetic `.diary` fixtures and `validate_diary` checks a file against the
+  format analysis (`docs/diarium-format-analysis.md`).
+- **Backup completeness** (`test_backup_roundtrip.py`): entries, tags,
+  tracker readings, events, entry media, notes, note pages and note
+  attachments survive the real `.tar.gz` export → wipe → restore path
+  byte-identically, with FTS serving the restored text.
+
 ---
 
 ## 5. Frontend Deep-Dive

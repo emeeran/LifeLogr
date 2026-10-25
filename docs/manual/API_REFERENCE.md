@@ -65,10 +65,10 @@ enrichment.
 | `POST` | `/entries/import/file` | Import from an uploaded file (`.diary` / `.json` / `.zip`) |
 | `POST` | `/entries/deduplicate` | Find & soft-delete duplicates (by date + title) |
 | `GET` | `/entries/export/markdown` | Export as Markdown ZIP |
-| `GET` | `/entries/export/archive` | Export entries + media as the native LifeLogr archive ZIP (re-importable, media links remapped) |
+| `GET` | `/entries/export/archive` | Export entries + media + notes + events as the native LifeLogr archive ZIP v2 (re-importable, media links remapped) |
 | `GET` | `/entries/export/diarium` | Export as JSON array (tooling interchange; Diarium has no JSON import) |
 | `GET` | `/entries/export/json` | Export as JSON |
-| `GET` | `/entries/export/diarium-db` | Export as a Diarium-native `.diary` SQLite database (real 3.3.x schema) |
+| `GET` | `/entries/export/diarium-db` | Export as a Diarium-native `.diary` SQLite database (real 3.3.x schema, trackers + events) |
 | `GET` | `/entries/export/daylio-csv` | Export as Daylio-format CSV (Diarium's documented migration import) |
 
 ### Create Entry
@@ -528,7 +528,6 @@ The **Settings → Privacy** tab renders this report live.
 | `GET` | `/settings/storage-path` | Storage path info |
 | `POST` | `/settings/storage-path` | Relocate the data directory |
 | `POST` | `/settings/vacuum` | Vacuum the database |
-| `POST` | `/settings/integrity-check` | Run an integrity check |
 
 `GET /settings` is the API-consumer source of truth for the app version (`APP_VERSION`).
 The in-app **About** version is injected at frontend build time (`VITE_APP_VERSION`),

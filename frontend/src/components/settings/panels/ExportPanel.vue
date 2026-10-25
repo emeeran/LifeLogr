@@ -306,7 +306,7 @@ async function downloadNotesHtml() {
         <div class="min-w-0 flex-1">
           <div class="text-[12px] text-text-primary">
             Diarium .diary
-            <span class="carries">entries · media · tags</span>
+            <span class="carries">entries · media · tags · trackers · events</span>
           </div>
           <p class="text-[11px] text-text-muted">
             Native Diarium database — open it directly in the Diarium app.
