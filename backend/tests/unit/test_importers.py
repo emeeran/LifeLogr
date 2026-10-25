@@ -17,6 +17,9 @@ from app.services.importers import (
     parse_dayone_zip,
     parse_markdown_entry,
 )
+from tests.helpers.dayone_zip import PNG_1X1, build_dayone_zip, photo_bytes
+
+MD5_1, _ = photo_bytes()
 
 
 # ── CSV parser ───────────────────────────────────────────────────────────────
@@ -96,6 +99,91 @@ def test_parse_dayone_not_a_dayone_zip():
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("entries.json", json.dumps([{"date": "x"}]))
     assert parse_dayone_zip(buf.getvalue()) == []
+
+
+# ── Day One photo extraction ─────────────────────────────────────────────────
+
+
+def _dayone_photo_entry(**overrides) -> dict:
+    entry = {
+        "creationDate": "2024-02-10T08:00:00Z",
+        "text": "With a photo",
+        "photos": [{"md5": MD5_1, "type": "png", "caption": "The trail"}],
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_parse_dayone_zip_extracts_photo_media():
+    rows = parse_dayone_zip(
+        build_dayone_zip([_dayone_photo_entry()], photos={MD5_1: PNG_1X1})
+    )
+    assert len(rows) == 1
+    media = rows[0]["media"]
+    assert len(media) == 1
+    item = media[0]
+    assert item["media_type"] == "image"
+    assert item["data"] == PNG_1X1
+    assert item["filename"] == f"{MD5_1}.png"
+    assert item["caption"] == "The trail"
+    assert item["is_inline"] is False
+
+
+def test_parse_dayone_zip_photo_only_entry_survives():
+    rows = parse_dayone_zip(
+        build_dayone_zip(
+            [{"creationDate": "2024-02-11T08:00:00Z", "text": "", "photos": [{"md5": MD5_1}]}],
+            photos={MD5_1: PNG_1X1},
+        )
+    )
+    assert len(rows) == 1
+    assert rows[0]["body"] == ""
+    assert len(rows[0]["media"]) == 1
+
+
+def test_parse_dayone_zip_skips_hidden_and_missing_photo_members():
+    md5_missing = "b" * 32
+    rows = parse_dayone_zip(
+        build_dayone_zip(
+            [
+                _dayone_photo_entry(
+                    photos=[{"md5": MD5_1, "hidden": True}, {"md5": md5_missing}]
+                )
+            ],
+            photos={MD5_1: PNG_1X1},
+        )
+    )
+    assert len(rows) == 1  # entry kept…
+    assert rows[0]["media"] == []  # …but both photos dropped
+
+
+def test_parse_dayone_zip_refuses_oversized_photo_member(monkeypatch):
+    from app.services.importers import dayone as dayone_mod
+
+    md5_big = "c" * 32
+    big_photo = PNG_1X1 + b"\x00" * 1024  # payload > the patched cap
+    # Cap sits between the tiny Journal.json and the photo payload sizes, so
+    # only photo members trip it.
+    monkeypatch.setattr(dayone_mod, "_MAX_MEMBER_BYTES", 512)
+    rows = parse_dayone_zip(
+        build_dayone_zip(
+            [_dayone_photo_entry(photos=[{"md5": MD5_1}, {"md5": md5_big}])],
+            photos={MD5_1: big_photo, md5_big: big_photo},
+        )
+    )
+    assert len(rows) == 1  # entry kept…
+    assert rows[0]["media"] == []  # …but every photo over the cap dropped
+
+
+def test_parse_dayone_zip_prefers_full_size_over_thumbnail():
+    thumb_md5 = MD5_1
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Journal.json", json.dumps({"entries": [_dayone_photo_entry()]}))
+        zf.writestr(f"photos/{thumb_md5}-thumb.png", b"thumbnail")
+        zf.writestr(f"photos/{thumb_md5}.png", PNG_1X1)
+    rows = parse_dayone_zip(buf.getvalue())
+    assert rows[0]["media"][0]["data"] == PNG_1X1
 
 
 # ── JSON export round-trip + duplicate skipping (via HTTP) ───────────────────
