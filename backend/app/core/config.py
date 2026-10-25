@@ -300,6 +300,10 @@ class Settings(BaseSettings):
     # default — the one feature whose network call is tied to location data.
     WEATHER_ENABLED: bool = False
     WEATHER_CACHE_DIR: Path = Path("")  # derived from DATA_DIR if empty
+    # Map view online basemap tiles (OpenStreetMap). Off by default: the map is
+    # plot-only until this is on, and enabling it means the tile server sees
+    # the viewed area. Persisted so the egress report reflects the live state.
+    MAP_ONLINE_TILES: bool = False
     CORS_ORIGINS: str = (
         "http://localhost:5173,tauri://localhost,"
         "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"

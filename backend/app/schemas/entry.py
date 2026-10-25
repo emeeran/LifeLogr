@@ -170,6 +170,28 @@ class CalendarEntryResponse(BaseModel):
     tags: list[TagBrief]
 
 
+class GeotagItem(BaseModel):
+    """One mappable entry for the map view (no body leaves the API)."""
+
+    id: int
+    entry_date: date
+    title: str | None
+    latitude: float
+    longitude: float
+    location_name: str | None = None
+    is_encrypted: bool = False
+    media_id: int | None = Field(
+        default=None, description="First image attachment — popup thumbnail via /media/{id}/file"
+    )
+
+
+class GeotagResponse(BaseModel):
+    items: list[GeotagItem]
+    total: int
+    offset: int
+    limit: int
+
+
 class EntryListResponse(BaseModel):
     items: list[EntryListItem]
     total: int

@@ -23,10 +23,10 @@ async def test_egress_report_schema_is_stable(client: AsyncClient) -> None:
     assert r.status_code == 200
     data = r.json()
 
-    for name in ("cloud_ai", "cloud_backup", "web_clip", "ocr", "embeddings", "read_aloud", "weather"):
+    for name in ("cloud_ai", "cloud_backup", "web_clip", "ocr", "embeddings", "read_aloud", "weather", "map_tiles"):
         assert name in data, name
 
-    for name in ("cloud_ai", "web_clip", "ocr", "embeddings", "read_aloud", "weather"):
+    for name in ("cloud_ai", "web_clip", "ocr", "embeddings", "read_aloud", "weather", "map_tiles"):
         assert isinstance(data[name]["leaves_device"], bool), name
         assert isinstance(data[name]["note"], str) and data[name]["note"], name
 
@@ -48,3 +48,18 @@ async def test_weather_surface_reflects_toggle(client: AsyncClient, monkeypatch)
     monkeypatch.setattr(settings, "WEATHER_ENABLED", True)
     r = await client.get("/api/v1/system/egress-report")
     assert r.json()["weather"]["leaves_device"] is True
+
+
+async def test_map_tiles_surface_reflects_toggle(client: AsyncClient, monkeypatch) -> None:
+    """Plot-only default (no egress); the row goes live with the opt-in."""
+    from app.core.config import settings
+
+    assert settings.MAP_ONLINE_TILES is False
+    r = await client.get("/api/v1/system/egress-report")
+    surface = r.json()["map_tiles"]
+    assert surface["leaves_device"] is False
+    assert "plot-only" in surface["note"]
+
+    monkeypatch.setattr(settings, "MAP_ONLINE_TILES", True)
+    r = await client.get("/api/v1/system/egress-report")
+    assert r.json()["map_tiles"]["leaves_device"] is True

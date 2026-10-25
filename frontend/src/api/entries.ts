@@ -9,6 +9,24 @@ import type {
   JournalStats,
 } from '../types'
 
+export interface GeotagItem {
+  id: number
+  entry_date: string
+  title: string | null
+  latitude: number
+  longitude: number
+  location_name: string | null
+  is_encrypted: boolean
+  media_id: number | null
+}
+
+export interface GeotagResponse {
+  items: GeotagItem[]
+  total: number
+  offset: number
+  limit: number
+}
+
 export const entriesApi = {
   create(data: EntryCreate): Promise<EntryResponse> {
     return request('/entries', { method: 'POST', body: JSON.stringify(data) })
@@ -16,6 +34,11 @@ export const entriesApi = {
 
   get(id: number): Promise<EntryResponse> {
     return request(`/entries/${id}`)
+  },
+
+  /** Entries with coordinates, for the map view (lightweight projection). */
+  geotags(offset = 0, limit = 500): Promise<GeotagResponse> {
+    return request(`/entries/geotags?offset=${offset}&limit=${limit}`)
   },
 
   list(params?: EntryListParams): Promise<EntryListResponse> {

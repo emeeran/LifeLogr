@@ -133,4 +133,15 @@ async def egress_report(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
             "daily conditions. Entry text is never sent; responses are cached "
             "on disk.",
         },
+        # Map basemap tiles: plot-only by default; enabling online tiles means
+        # OpenStreetMap's tile servers see the viewed area (possibly enough to
+        # infer a home location). The setting is persisted so this row is live.
+        "map_tiles": {
+            "leaves_device": bool(settings.MAP_ONLINE_TILES),
+            "provider": "OpenStreetMap",
+            "note": "The map view is plot-only by default — no tile requests "
+            "leave the device. When you enable online basemap tiles, the tile "
+            "server sees the areas you view (which could hint at a home "
+            "location).",
+        },
     }

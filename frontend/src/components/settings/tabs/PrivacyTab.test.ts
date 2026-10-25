@@ -30,6 +30,7 @@ vi.mock('../../../api/settings', () => ({
   getSettings: vi.fn(async () => ({
     ai: {},
     weather: { enabled: currentEnabled },
+    map: { online_tiles: false },
     storage: {},
     version: 'test',
     app_name: 'LifeLogr',

@@ -9,6 +9,7 @@ import {
   Settings,
   Bell,
   ImageIcon,
+  Map as MapIcon,
   ChevronsLeft,
   ChevronsRight,
   StickyNote,
@@ -26,6 +27,7 @@ const navItems: { view: ViewType; icon: Component; label: string }[] = [
   { view: 'notes', icon: NotebookPen, label: 'Notes' },
   { view: 'reminders', icon: Bell, label: 'Reminders' },
   { view: 'media', icon: ImageIcon, label: 'Media' },
+  { view: 'map', icon: MapIcon, label: 'Map' },
   { view: 'stats', icon: BarChart3, label: 'Stats' },
 ]
 

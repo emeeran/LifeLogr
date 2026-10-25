@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   CloudSun,
   FolderOpen,
+  Map as MapIcon,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
@@ -38,10 +39,15 @@ const errorMsg = ref('')
 const weatherEnabled = ref(false)
 const weatherLoading = ref(true)
 const weatherErrorMsg = ref('')
+// Map basemap tiles — same treatment: the report must reflect the live state,
+// so the flag is persisted backend-side rather than in localStorage.
+const mapTilesEnabled = ref(false)
 
 async function loadWeatherSetting() {
   try {
-    weatherEnabled.value = (await getSettings()).weather.enabled
+    const settings = await getSettings()
+    weatherEnabled.value = settings.weather.enabled
+    mapTilesEnabled.value = settings.map.online_tiles
   } catch (e: unknown) {
     weatherErrorMsg.value = errMsg(e)
   } finally {
@@ -60,6 +66,17 @@ async function setWeatherEnabled(enabled: boolean) {
   }
 }
 
+async function setMapTilesEnabled(enabled: boolean) {
+  const previous = mapTilesEnabled.value
+  mapTilesEnabled.value = enabled
+  try {
+    await updateSettings({ map: { online_tiles: enabled } })
+  } catch (e: unknown) {
+    mapTilesEnabled.value = previous
+    weatherErrorMsg.value = errMsg(e)
+  }
+}
+
 // Keys this tab renders with a bespoke card (icon + copy). Anything else the
 // backend adds to the report — read_aloud today, whatever next — renders through
 // the generic card below instead of being invisible / mislabelled here.
@@ -67,6 +84,7 @@ const BESPOKE_KEYS = ['cloud_ai', 'cloud_backup', 'web_clip', 'ocr', 'embeddings
 const EXTRA_LABELS: Record<string, string> = {
   read_aloud: 'Read aloud (text-to-speech)',
   weather: 'Weather auto-fill (geotagged entries)',
+  map_tiles: 'Map basemap tiles (OpenStreetMap)',
 }
 function extraLabel(key: string): string {
   return (
@@ -144,6 +162,22 @@ onMounted(async () => {
         <ToggleSwitch
           v-model="uiStore.contextSidebarEnabled"
           label="Enable composer context sidebar"
+        />
+      </SettingRow>
+    </div>
+
+    <!-- Map online basemap tiles opt-in -->
+    <div class="mb-3 rounded-md border border-border bg-surface-hover p-2.5">
+      <SettingRow
+        :icon="MapIcon"
+        label="Online basemap tiles for the map view"
+        description="The map is plot-only by default — markers render with no basemap and nothing leaves the device. Enabling this loads OpenStreetMap tiles, which means the tile server sees the areas you view."
+      >
+        <ToggleSwitch
+          :model-value="mapTilesEnabled"
+          :disabled="weatherLoading"
+          label="Enable online map tiles"
+          @update:model-value="setMapTilesEnabled"
         />
       </SettingRow>
     </div>

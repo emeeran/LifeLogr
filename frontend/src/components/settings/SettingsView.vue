@@ -356,6 +356,19 @@ const index: SearchEntry[] = [
       'privacy',
     ],
   },
+  {
+    tab: 'privacy',
+    label: 'Online basemap tiles for the map view',
+    keywords: [
+      'map',
+      'tiles',
+      'basemap',
+      'openstreetmap',
+      'plot only',
+      'geotagged',
+      'privacy',
+    ],
+  },
 
   // ── Dedication ──
   {

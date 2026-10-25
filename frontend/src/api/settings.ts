@@ -23,9 +23,15 @@ export interface WeatherSettings {
   enabled: boolean
 }
 
+export interface MapSettings {
+  /** Opt-in online basemap tiles (OpenStreetMap) for the map view. */
+  online_tiles: boolean
+}
+
 export interface AppSettings {
   ai: AISettings
   weather: WeatherSettings
+  map: MapSettings
   storage: StorageInfo
   version: string
   app_name: string
@@ -55,6 +61,7 @@ export const getSettings = () => request<AppSettings>('/settings')
 export const updateSettings = (data: {
   ai?: Partial<AISettings>
   weather?: Partial<WeatherSettings>
+  map?: Partial<MapSettings>
   /** Explicit consent required by the backend when ollama_base_url is non-loopback. */
   confirm_remote?: boolean
 }) =>

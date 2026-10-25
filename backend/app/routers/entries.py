@@ -16,7 +16,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_ as sa_or
 from sqlalchemy import select
+from sqlalchemy import func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +35,8 @@ from app.schemas.entry import (
     EntryListResponse,
     EntryResponse,
     EntryUpdate,
+    GeotagItem,
+    GeotagResponse,
     ImportResult,
     ImportSkipReason,
     JournalStatsResponse,
@@ -198,6 +202,73 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
 
     svc = EntryService(db)
     return await svc.get_on_this_day(date_type.today())
+
+
+@router.get("/geotags", response_model=GeotagResponse)
+async def list_geotags(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=5000),
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Entries with coordinates, for the map view.
+
+    Excludes deleted entries and the (0, 0) null-island artifact. Only the
+    lightweight projection is returned — bodies never leave the API for the
+    map; the client links back to the entry for content.
+    """
+    from datetime import date as date_type
+
+    filters = [
+        Entry.is_deleted.is_(False),
+        Entry.latitude.is_not(None),
+        Entry.longitude.is_not(None),
+        sa_or(Entry.latitude != 0, Entry.longitude != 0),
+    ]
+    if start_date:
+        filters.append(Entry.entry_date >= date_type.fromisoformat(start_date))
+    if end_date:
+        filters.append(Entry.entry_date <= date_type.fromisoformat(end_date))
+
+    total = (
+        await db.execute(
+            select(sa_func.count()).select_from(Entry).where(*filters)
+        )
+    ).scalar_one()
+    rows = (
+        (
+            await db.execute(
+                select(Entry)
+                .where(*filters)
+                .options(selectinload(Entry.media))
+                .order_by(Entry.entry_date.desc(), Entry.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    items = []
+    for entry in rows:
+        first_image = next(
+            (m for m in entry.media if m.media_type == "image"), None
+        )
+        items.append(
+            GeotagItem(
+                id=entry.id,
+                entry_date=entry.entry_date,
+                title=entry.title,
+                latitude=entry.latitude,
+                longitude=entry.longitude,
+                location_name=entry.location_name,
+                is_encrypted=entry.is_encrypted,
+                media_id=first_image.id if first_image else None,
+            )
+        )
+    return GeotagResponse(items=items, total=total, offset=offset, limit=limit)
 
 
 @router.get("/search", response_model=EntryListResponse)

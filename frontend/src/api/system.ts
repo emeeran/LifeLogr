@@ -72,6 +72,8 @@ export interface EgressReport {
   read_aloud?: EgressSurface
   /** Opt-in weather auto-fill for geotagged entries (Open-Meteo). */
   weather?: EgressSurface & { provider?: string }
+  /** Opt-in online basemap tiles (OpenStreetMap) for the map view. */
+  map_tiles?: EgressSurface & { provider?: string }
   /** Any surface the backend adds later. The Privacy tab iterates these
    *  generically instead of hardcoding the list. */
   [key: string]: unknown
