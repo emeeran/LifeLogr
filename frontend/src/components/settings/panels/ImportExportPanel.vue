@@ -10,6 +10,7 @@ import {
 } from '../../../api/export'
 import { useEntriesStore } from '../../../stores/entries'
 import { useJobProgress } from '../../../composables/useJobProgress'
+import { jobsApi } from '../../../api/jobs'
 import { saveFile, pickFile } from '../../../utils/fileDialog'
 import {
   Download,
@@ -99,35 +100,49 @@ const rangeEnd = computed(() =>
   exportRange.value === 'range' ? exportTo.value || undefined : undefined,
 )
 
+// Media-carrying exports build as polled jobs (per-file progress), then the
+// finished archive downloads once from the job's result endpoint.
+const exportProgress = useJobProgress()
+const exportLabel = ref('Export')
+
+async function downloadViaJob(
+  url: string,
+  label: string,
+  saveOpts: { defaultName: string; filters: { name: string; extensions: string[] }[] },
+) {
+  exportLabel.value = label
+  const started = await jobsApi.startExport(url)
+  const final = await exportProgress.run(started.job_id)
+  if (!final) return
+  if (final.status !== 'done') {
+    emit('toast', 'error', `${label} failed: ${final.error ?? 'unknown'}`)
+    return
+  }
+  const blob = await jobsApi.result(started.job_id)
+  await saveFile({ data: blob, ...saveOpts })
+  emit('toast', 'success', `${label} saved`)
+}
+
 async function downloadMarkdown() {
   exportMenuOpen.value = false
-  const resp = await fetch(
-    entriesApi.exportMarkdownUrl(rangeStart.value, rangeEnd.value),
-  )
-  const blob = await resp.blob()
-  await saveFile({
-    data: blob,
+  await downloadViaJob(entriesApi.exportMarkdownUrl(rangeStart.value, rangeEnd.value), 'ZIP export', {
     defaultName: 'lifelogr-export.zip',
     filters: [{ name: 'ZIP', extensions: ['zip'] }],
   })
-  emit('toast', 'success', 'ZIP export saved')
 }
 // Native archive: full-fidelity entries + media, re-importable as-is.
 async function downloadArchive() {
   exportMenuOpen.value = false
   exportingArchive.value = true
   try {
-    const resp = await fetch(
+    await downloadViaJob(
       entriesApi.exportArchiveUrl(rangeStart.value, rangeEnd.value),
+      'Archive export',
+      {
+        defaultName: 'lifelogr-archive.zip',
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      },
     )
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const blob = await resp.blob()
-    await saveFile({
-      data: blob,
-      defaultName: 'lifelogr-archive.zip',
-      filters: [{ name: 'ZIP', extensions: ['zip'] }],
-    })
-    emit('toast', 'success', 'Archive export saved')
   } catch (e: unknown) {
     emit('toast', 'error', `Archive export failed: ${errMsg(e)}`)
   } finally {
@@ -170,17 +185,14 @@ async function downloadHtmlZip() {
   exportMenuOpen.value = false
   exportingHtmlZip.value = true
   try {
-    const resp = await fetch(
+    await downloadViaJob(
       entriesApi.exportHtmlZipUrl(rangeStart.value, rangeEnd.value),
+      'HTML archive export',
+      {
+        defaultName: 'lifelogr-export-html.zip',
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      },
     )
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const blob = await resp.blob()
-    await saveFile({
-      data: blob,
-      defaultName: 'lifelogr-export-html.zip',
-      filters: [{ name: 'ZIP', extensions: ['zip'] }],
-    })
-    emit('toast', 'success', 'HTML archive export saved')
   } catch (e: unknown) {
     emit('toast', 'error', `HTML archive export failed: ${errMsg(e)}`)
   } finally {
@@ -220,16 +232,10 @@ async function downloadDiariumDb() {
   exportMenuOpen.value = false
   exportingDiariumDb.value = true
   try {
-    const url = getExportDiariumDbUrl(rangeStart.value, rangeEnd.value)
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const blob = await resp.blob()
-    await saveFile({
-      data: blob,
+    await downloadViaJob(getExportDiariumDbUrl(rangeStart.value, rangeEnd.value), '.diary export', {
       defaultName: 'lifelogr-export.diary',
       filters: [{ name: 'Diarium', extensions: ['diary'] }],
     })
-    emit('toast', 'success', '.diary export saved')
   } catch (e: unknown) {
     emit('toast', 'error', `.diary export failed: ${errMsg(e)}`)
   } finally {
@@ -509,6 +515,11 @@ async function downloadNotesHtml() {
           </button>
         </div>
       </div>
+      <OperationProgress
+        :job="exportProgress.job.value"
+        :label="exportLabel"
+        class="pl-[25px]"
+      />
     </div>
   </SettingsSection>
 

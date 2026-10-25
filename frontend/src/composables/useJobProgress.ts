@@ -1,4 +1,4 @@
-import { computed, onUnmounted, ref, watch, shallowRef } from 'vue'
+import { computed, onUnmounted, ref, watch as watchRef, shallowRef } from 'vue'
 import { jobsApi, type JobState } from '../api/jobs'
 
 const POLL_MS = 1000
@@ -61,10 +61,9 @@ export function useJobProgress() {
    *  (or null if superseded/stopped). Convenience for async handlers. */
   function run(jobId: string): Promise<JobState | null> {
     return new Promise((resolve) => {
-      let stopWatcher: (() => void) | null = null
-      stopWatcher = watch(job, (j) => {
+      const stopWatcher = watchRef(job, (j) => {
         if (!j || j.status === 'running') return
-        stopWatcher?.()
+        stopWatcher()
         resolve(j)
       })
       watch(jobId)

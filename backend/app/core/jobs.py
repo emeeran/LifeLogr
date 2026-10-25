@@ -14,9 +14,12 @@ up the final state, then pruned lazily on the next `create`.
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -47,6 +50,9 @@ class Job:
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     finished_at: float | None = None
+    # Export jobs: the produced file (served once via GET /jobs/{id}/result).
+    result_path: str | None = None
+    result_name: str | None = None
 
     @property
     def percent(self) -> int | None:
@@ -119,6 +125,29 @@ class JobRegistry:
             if detail is not None:
                 job.detail = detail
 
+    def finish_with_result(
+        self, job_id: str, result_path: str | Path, result_name: str, detail: str | None = None
+    ) -> None:
+        """Finish an export job whose payload is a downloadable file."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != "running":
+                return
+            job.status = "done"
+            job.finished_at = time.time()
+            job.result_path = str(result_path)
+            job.result_name = result_name
+            if detail is not None:
+                job.detail = detail
+
+    def take_result(self, job_id: str) -> tuple[str, str] | None:
+        """Return (path, download_name) if the job has a result, else None."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.result_path is None:
+                return None
+            return job.result_path, job.result_name or "export"
+
     def fail(self, job_id: str, error: str) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
@@ -141,7 +170,12 @@ class JobRegistry:
                 for jid, j in self._jobs.items()
                 if j.finished_at is not None and j.finished_at < cutoff
             ]:
-                del self._jobs[jid]
+                job = self._jobs.pop(jid)
+                if job.result_path:
+                    try:
+                        os.unlink(job.result_path)
+                    except OSError:
+                        pass
 
     def reset(self) -> None:
         """Test hook — wipe all jobs."""
@@ -176,3 +210,48 @@ def start_data_job(background_tasks: Any, kind: str, runner: Callable[[ProgressR
 
     background_tasks.add_task(_task)
     return {"job_id": job.id, "kind": kind}
+
+
+def start_export_job(
+    background_tasks: Any,
+    kind: str,
+    filename: str,
+    builder: Callable[[ProgressReporter, Any], Any],
+    session_factory: Callable[[], Any] | None = None,
+) -> dict[str, str]:
+    """Build an export as a polled job; download via GET /jobs/{id}/result.
+
+    *builder* receives ``(report, session)`` and returns the export bytes; the
+    job writes them to a temp file, finishes with the download attached, and
+    the result endpoint deletes the file after serving it. A fresh session is
+    opened per job (pass ``None`` for builders that don't need the DB).
+    """
+    job = jobs.create(kind)
+    report = jobs.reporter(job.id)
+
+    async def _task() -> None:
+        try:
+            if session_factory is not None:
+                async with session_factory() as session:
+                    data = await builder(report, session)
+            else:
+                data = await builder(report, None)
+            fd, tmp = tempfile.mkstemp(suffix=".export", dir=str(_export_tmp_dir()))
+            os.close(fd)
+            Path(tmp).write_bytes(data)
+            jobs.finish_with_result(job.id, tmp, filename, detail=filename)
+        except Exception as exc:
+            logger.exception("Export job %s (%s) failed", job.id, kind)
+            jobs.fail(job.id, str(exc))
+
+    background_tasks.add_task(_task)
+    return {"job_id": job.id, "kind": kind}
+
+
+def _export_tmp_dir() -> Path:
+    """Exports land under DATA_DIR/tmp so big payloads don't hit /tmp limits."""
+    from app.core.config import settings
+
+    tmp_dir = settings.DATA_DIR / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    return tmp_dir

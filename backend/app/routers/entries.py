@@ -35,6 +35,7 @@ from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.core.jobs import start_data_job as _start_data_job
+from app.core.jobs import start_export_job
 from app.models.entry import Entry
 from app.models.media import Media
 from app.models.tag import EntryTag
@@ -300,17 +301,12 @@ async def search_entries(
     )
 
 
-@router.get("/export/markdown")
-async def export_markdown(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
-    """Export entries as Diarium-compatible markdown files in a .zip.
-
-    Each entry becomes one .md file with YAML frontmatter (date, mood, tags).
-    Media files are included in the zip alongside their entries.
-    """
+async def _export_entries(
+    session: AsyncSession,
+    start_date: str | None,
+    end_date: str | None,
+) -> list[Entry]:
+    """Shared export query: non-deleted entries + tags + media, date-filtered."""
     q = (
         select(Entry)
         .where(Entry.is_deleted.is_(False))
@@ -318,73 +314,116 @@ async def export_markdown(
             selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
             selectinload(Entry.media),
         )
-        .order_by(Entry.entry_date)
+        .order_by(Entry.entry_date, Entry.id)
     )
-
     if start_date:
         q = q.where(Entry.entry_date >= start_date)
     if end_date:
         q = q.where(Entry.entry_date <= end_date)
+    result = await session.execute(q)
+    return list(result.scalars().all())
 
-    result = await db.execute(q)
-    entries = list(result.scalars().all())
 
-    def _build_zip() -> bytes:
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for entry in entries:
-                tags = [a.tag.name for a in entry.tag_associations if a.tag]
-                # YAML frontmatter (Diarium-compatible)
-                frontmatter = "---\n"
-                frontmatter += f"date: {entry.entry_date}\n"
-                if entry.title:
-                    frontmatter += f"title: {entry.title}\n"
-                if entry.mood:
-                    frontmatter += f"mood: {entry.mood}\n"
-                if tags:
-                    frontmatter += "tags:\n"
-                    for t in tags:
-                        frontmatter += f"  - {t}\n"
-                # Media manifest — the files sit at media/{storage_path} in this
-                # zip; `ref` is the id bodies reference as /api/v1/media/{ref}/file
-                # so the importer can rewrite those links to the new ids.
-                exportable_media = [
-                    m
-                    for m in entry.media
-                    if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
-                ]
-                if exportable_media:
-                    frontmatter += "media:\n"
-                    for media in exportable_media:
-                        frontmatter += f"  - ref: {media.id}\n"
-                        frontmatter += f"    path: media/{media.storage_path}\n"
-                        frontmatter += f"    filename: {media.filename}\n"
-                        frontmatter += f"    type: {media.media_type}\n"
-                frontmatter += "---\n\n"
+def _build_markdown_zip_sync(entries: list[Entry], report=None) -> bytes:
+    """Diarium-compatible markdown vault ZIP; *report* gets render/media ticks."""
+    buf = io.BytesIO()
+    media_total = sum(
+        1
+        for e in entries
+        for m in e.media
+        if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+    )
+    media_done = 0
+    if report is not None:
+        report("render", 0, len(entries))
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for entry_index, entry in enumerate(entries):
+            tags = [a.tag.name for a in entry.tag_associations if a.tag]
+            # YAML frontmatter (Diarium-compatible)
+            frontmatter = "---\n"
+            frontmatter += f"date: {entry.entry_date}\n"
+            if entry.title:
+                frontmatter += f"title: {entry.title}\n"
+            if entry.mood:
+                frontmatter += f"mood: {entry.mood}\n"
+            if tags:
+                frontmatter += "tags:\n"
+                for t in tags:
+                    frontmatter += f"  - {t}\n"
+            # Media manifest — the files sit at media/{storage_path} in this
+            # zip; `ref` is the id bodies reference as /api/v1/media/{ref}/file
+            # so the importer can rewrite those links to the new ids.
+            exportable_media = [
+                m
+                for m in entry.media
+                if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+            ]
+            if exportable_media:
+                frontmatter += "media:\n"
+                for media in exportable_media:
+                    frontmatter += f"  - ref: {media.id}\n"
+                    frontmatter += f"    path: media/{media.storage_path}\n"
+                    frontmatter += f"    filename: {media.filename}\n"
+                    frontmatter += f"    type: {media.media_type}\n"
+            frontmatter += "---\n\n"
 
-                # Same-day entries used to share one filename and overwrite each
-                # other — suffix the id so every entry survives the round-trip.
-                filename = f"entries/{entry.entry_date}-{entry.id}.md"
-                zf.writestr(filename, frontmatter + entry.body)
+            # Same-day entries used to share one filename and overwrite each
+            # other — suffix the id so every entry survives the round-trip.
+            filename = f"entries/{entry.entry_date}-{entry.id}.md"
+            zf.writestr(filename, frontmatter + entry.body)
+            if report is not None:
+                report("render", entry_index + 1, len(entries))
 
-                # Include media files
-                for media in entry.media:
-                    media_path = Path(settings.MEDIA_DIR) / media.storage_path
-                    if media_path.exists():
-                        zf.write(str(media_path), f"media/{media.storage_path}")
+            # Include media files
+            for media in entry.media:
+                media_path = Path(settings.MEDIA_DIR) / media.storage_path
+                if media_path.exists():
+                    zf.write(str(media_path), f"media/{media.storage_path}")
+                    media_done += 1
+                    if report is not None:
+                        report("media", media_done, media_total)
 
-            # Add manifest
-            manifest = {
-                "format": "diarium-markdown",
-                "version": "1.0",
-                "exported_entries": len(entries),
-            }
-            zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-        buf.seek(0)
-        return buf.getvalue()
+        # Add manifest
+        manifest = {
+            "format": "diarium-markdown",
+            "version": "1.0",
+            "exported_entries": len(entries),
+        }
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+    buf.seek(0)
+    return buf.getvalue()
 
+
+@router.get("/export/markdown")
+async def export_markdown(
+    background_tasks: BackgroundTasks,
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Export entries as Diarium-compatible markdown files in a .zip.
+
+    Each entry becomes one .md file with YAML frontmatter (date, mood, tags).
+    Media files are included in the zip alongside their entries.
+    ``as_job=true`` returns ``{job_id}``; download the finished archive from
+    ``GET /api/v1/jobs/{job_id}/result``.
+    """
+    if as_job:
+        from app.core.database import async_session
+
+        async def _build(report, session):
+            entries = await _export_entries(session, start_date, end_date)
+            return await asyncio.to_thread(_build_markdown_zip_sync, entries, report)
+
+        return start_export_job(
+            background_tasks, "export-markdown", "diarium-export.zip", _build,
+            session_factory=async_session,
+        )
+
+    entries = await _export_entries(db, start_date, end_date)
     # Zip assembly (deflate + copying every media file) is blocking — offload it.
-    data = await asyncio.to_thread(_build_zip)
+    data = await asyncio.to_thread(_build_markdown_zip_sync, entries)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/zip",
@@ -394,22 +433,37 @@ async def export_markdown(
 
 @router.get("/export/html-zip")
 async def export_html_zip(
+    background_tasks: BackgroundTasks,
     start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
     end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
+) -> Any:
     """Export entries as a styled HTML archive ZIP with media attachments.
 
     ``website/index.html`` renders every entry; media live under
     ``attachments/<date>/<filename>`` and are referenced relatively, so the
     unzipped folder browses offline like the Markdown vault export.
+    ``as_job=true`` returns ``{job_id}``; download from
+    ``GET /api/v1/jobs/{job_id}/result``.
     """
-    service = ExportService(db)
     from datetime import date as date_type
 
     start = date_type.fromisoformat(start_date) if start_date else None
     end = date_type.fromisoformat(end_date) if end_date else None
-    payload = await service.export_html_zip(start, end)
+
+    if as_job:
+        from app.core.database import async_session
+
+        async def _build(report, session):
+            return await ExportService(session).export_html_zip(start, end, report=report)
+
+        return start_export_job(
+            background_tasks, "export-html-zip", "lifelogr-export-html.zip", _build,
+            session_factory=async_session,
+        )
+
+    payload = await ExportService(db).export_html_zip(start, end)
     buf = io.BytesIO(payload)
     buf.seek(0)
     return StreamingResponse(
@@ -516,33 +570,34 @@ async def export_daylio_csv(
 
 @router.get("/export/archive")
 async def export_archive(
+    background_tasks: BackgroundTasks,
     start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
     end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
+) -> Any:
     """Export entries + media as the native LifeLogr archive ZIP.
 
     Full-fidelity, self-contained: ``lifelogr.json`` (entries with media
     metadata) plus every referenced media file under ``media/``. Re-imports
     via ``/import/file`` — media rows are recreated and the body's
     ``/api/v1/media/{id}/file`` links are rewritten to the new ids.
+    ``as_job=true`` returns ``{job_id}``; download from
+    ``GET /api/v1/jobs/{job_id}/result``.
     """
-    q = (
-        select(Entry)
-        .where(Entry.is_deleted.is_(False))
-        .options(
-            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-            selectinload(Entry.media),
-        )
-        .order_by(Entry.entry_date, Entry.id)
-    )
-    if start_date:
-        q = q.where(Entry.entry_date >= start_date)
-    if end_date:
-        q = q.where(Entry.entry_date <= end_date)
-    result = await db.execute(q)
-    entries = list(result.scalars().all())
+    if as_job:
+        from app.core.database import async_session
 
+        async def _build(report, session):
+            entries = await _export_entries(session, start_date, end_date)
+            return await asyncio.to_thread(build_archive, entries, report)
+
+        return start_export_job(
+            background_tasks, "export-archive", "lifelogr-archive.zip", _build,
+            session_factory=async_session,
+        )
+
+    entries = await _export_entries(db, start_date, end_date)
     buf = io.BytesIO(await asyncio.to_thread(build_archive, entries))
     buf.seek(0)
     return StreamingResponse(
@@ -607,34 +662,34 @@ async def export_json(
 # .NET DateTime ticks for 0001-01-01 (the epoch Diarium's DiaryEntryId is based on).
 @router.get("/export/diarium-db")
 async def export_diarium_db(
+    background_tasks: BackgroundTasks,
     start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
     end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
-) -> StreamingResponse:
+) -> Any:
     """Export entries as a Diarium-native .diary SQLite database.
 
     Produces the real Diarium schema (Entries keyed by .NET DateTime ticks,
     Tags, EntryTags) so the file can be opened/imported directly by the
     Diarium app or re-imported here via the .diary importer. Media
     attachments are embedded as real Media rows (bytes + name + order).
+    ``as_job=true`` returns ``{job_id}``; download from
+    ``GET /api/v1/jobs/{job_id}/result``.
     """
-    q = (
-        select(Entry)
-        .where(Entry.is_deleted.is_(False))
-        .options(
-            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-            selectinload(Entry.media),
+    if as_job:
+        from app.core.database import async_session
+
+        async def _build(report, session):
+            entries = await _export_entries(session, start_date, end_date)
+            return await build_diarium_database(entries, report=report)
+
+        return start_export_job(
+            background_tasks, "export-diary", "lifelogr-export.diary", _build,
+            session_factory=async_session,
         )
-        .order_by(Entry.entry_date, Entry.id)
-    )
-    if start_date:
-        q = q.where(Entry.entry_date >= start_date)
-    if end_date:
-        q = q.where(Entry.entry_date <= end_date)
 
-    result = await db.execute(q)
-    entries = list(result.scalars().all())
-
+    entries = await _export_entries(db, start_date, end_date)
     # build_diarium_database offloads its SQLite build to a worker thread.
     data = await build_diarium_database(entries)
     return StreamingResponse(

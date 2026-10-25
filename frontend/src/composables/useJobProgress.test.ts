@@ -112,4 +112,20 @@ describe('useJobProgress', () => {
     await vi.advanceTimersByTimeAsync(5000)
     expect(mockedGet).toHaveBeenCalledTimes(1)
   })
+
+  it('run() resolves with the final state once the job completes', async () => {
+    mockedGet
+      .mockResolvedValueOnce(makeJob({ done: 5, total: 10, percent: 50 }))
+      .mockResolvedValue(makeJob({ status: 'done', percent: null }))
+    const { run, job } = useJobProgress()
+    const promise = run('job-1')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(job.value?.percent).toBe(50) // intermediate states still rendered
+
+    await vi.advanceTimersByTimeAsync(1000) // second poll reports done → resolves
+    const final = await promise
+    expect(final?.status).toBe('done')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mockedGet).toHaveBeenCalledTimes(2) // stopped at the terminal state
+  })
 })

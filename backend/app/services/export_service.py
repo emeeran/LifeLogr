@@ -149,7 +149,10 @@ class ExportService:
         return _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
 
     async def export_html_zip(
-        self, start_date: date | None = None, end_date: date | None = None
+        self,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        report=None,
     ) -> bytes:
         """Export entries as an HTML archive ZIP with media attachments.
 
@@ -179,9 +182,9 @@ class ExportService:
 
         # Zip assembly reads every attachment from disk — off the event loop,
         # same as the Markdown vault path.
-        return await asyncio.to_thread(self._build_html_zip, entries)
+        return await asyncio.to_thread(self._build_html_zip, entries, report)
 
-    def _build_html_zip(self, entries: list[Entry]) -> bytes:
+    def _build_html_zip(self, entries: list[Entry], report=None) -> bytes:
         """Synchronously assemble the HTML archive ZIP for ``entries``.
 
         Same-day entries sharing an attachment filename would silently
@@ -196,8 +199,17 @@ class ExportService:
         zip_buffer = io.BytesIO()
         used_attachment_paths: set[str] = set()
         parts: list[str] = []
+        attachment_total = sum(
+            1
+            for e in entries
+            for m in e.media
+            if (settings.MEDIA_DIR / m.storage_path).exists()
+        )
+        attachment_done = 0
+        if report is not None:
+            report("render", 0, len(entries))
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for entry in entries:
+            for entry_index, entry in enumerate(entries):
                 body = entry.body or ""
                 body_html = self._md.render(body)
                 gallery_parts: list[str] = []
@@ -212,6 +224,9 @@ class ExportService:
                         )
                     used_attachment_paths.add(zip_media_path)
                     zip_file.writestr(zip_media_path, local_file_path.read_bytes())
+                    attachment_done += 1
+                    if report is not None:
+                        report("attachments", attachment_done, attachment_total)
 
                     # Skip the gallery for media the body already references
                     # (by filename or by its API URL).
@@ -234,6 +249,8 @@ class ExportService:
                 parts.append(
                     self._entry_fragment(entry, body_html, gallery_html)
                 )
+                if report is not None:
+                    report("render", entry_index + 1, len(entries))
 
             content = "\n".join(parts)
             page = _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
@@ -521,17 +538,17 @@ def _markdown_to_diarium_html(body: str) -> str:
     return "".join(rendered)
 
 
-async def build_diarium_database(entries: list[Entry]) -> bytes:
+async def build_diarium_database(entries: list[Entry], report=None) -> bytes:
     """Build a Diarium-native .diary SQLite database (as bytes) from entries.
 
     ``entries`` must have ``tag_associations`` loaded (selectinload). Returns the
     serialized SQLite file so the caller can wrap it in a StreamingResponse.
     The SQLite build is CPU-bound, so it runs in a worker thread.
     """
-    return await asyncio.to_thread(_build_diarium_database_sync, entries)
+    return await asyncio.to_thread(_build_diarium_database_sync, entries, report)
 
 
-def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
+def _build_diarium_database_sync(entries: list[Entry], report=None) -> bytes:
     """Synchronously serialize ``entries`` into the Diarium SQLite schema."""
     import sqlite3
     import tempfile
@@ -548,7 +565,17 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
         tag_id_map: dict[str, int] = {}
         used_entry_ids: set[int] = set()
 
-        for entry in entries:
+        media_total = sum(
+            1
+            for e in entries
+            for m in e.media
+            if (settings.MEDIA_DIR / m.storage_path).is_file()
+        )
+        media_done = 0
+        if report is not None:
+            report("render", 0, len(entries))
+
+        for entry_index, entry in enumerate(entries):
             ed = entry.entry_date
             if isinstance(ed, str):
                 ed = date_type.fromisoformat(ed[:10])
@@ -623,6 +650,11 @@ def _build_diarium_database_sync(entries: list[Entry]) -> bytes:
                         entry_id,
                     ),
                 )
+                media_done += 1
+                if report is not None:
+                    report("media", media_done, media_total)
+            if report is not None:
+                report("render", entry_index + 1, len(entries))
 
             # Events round-trip back into Diarium's native Events table:
             # weather → Type 0 (the one verified enum value); an imported
@@ -720,17 +752,29 @@ ARCHIVE_FORMAT = "lifelogr-archive"
 ARCHIVE_VERSION = 1
 
 
-def build_archive(entries: list[Entry]) -> bytes:
+def build_archive(entries: list[Entry], report=None) -> bytes:
     """Serialize entries + their media into the native archive ZIP (bytes).
 
     ``entries`` must have ``tag_associations`` and ``media`` loaded. The JSON
     build and file copies are CPU/IO-bound — run via ``asyncio.to_thread``.
+    *report* (optional) gets (phase, done, total) — "media" per file, then
+    "finalize" for the JSON document.
     """
     import io
     import json as json_mod
     import zipfile
 
     from app.core.config import settings
+
+    media_total = sum(
+        1
+        for e in entries
+        for m in e.media
+        if (settings.MEDIA_DIR / m.storage_path).is_file()
+    )
+    media_done = 0
+    if report is not None:
+        report("media", 0, media_total)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -744,6 +788,9 @@ def build_archive(entries: list[Entry]) -> bytes:
                     continue
                 arcname = f"media/{media.storage_path}"
                 zf.write(str(src), arcname)
+                media_done += 1
+                if report is not None:
+                    report("media", media_done, media_total)
                 media_items.append(
                     {
                         # Export-time id: bodies reference
@@ -773,5 +820,7 @@ def build_archive(entries: list[Entry]) -> bytes:
             "version": ARCHIVE_VERSION,
             "entries": doc_entries,
         }
+        if report is not None:
+            report("finalize", 1, 1)
         zf.writestr("lifelogr.json", json_mod.dumps(doc, ensure_ascii=False, indent=2))
     return buf.getvalue()

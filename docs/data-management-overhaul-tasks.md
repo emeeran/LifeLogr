@@ -6,7 +6,7 @@
 IDs `DM#`, effort **S** ≤ 1 day / **M** 1–3 days; every task ends with
 `ruff` + `pytest` green, UI tasks also `vitest`.
 
-Status: DM1 ✅ · DM2 ✅ · DM3 ✅ done (2026-10-25) — DM4–DM12 pending.
+Status: DM1 ✅ · DM2 ✅ · DM3 ✅ · DM4 ✅ · DM5 ✅ done — DM6–DM12 pending (2026-10-26).
 
 ---
 
@@ -52,7 +52,7 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ done (2026-10-25) — DM4–DM12 pending.
   files and asserts monotonic progress events covering all phases; restore
   progress asserted similarly; UI test renders running → done.
 
-### DM4 — Progress for imports · **S**
+### DM4 — Progress for imports · **S** ✅
 - Phases: parse/validate file → stage media (done/total) → insert entries
   (done/total) → enrich/dispatch. Applies to `/entries/import/file`,
   `/entries/import`, notes imports; `ImportExportPanel` shows one progress
@@ -61,7 +61,7 @@ Status: DM1 ✅ · DM2 ✅ · DM3 ✅ done (2026-10-25) — DM4–DM12 pending.
   ≥3 phases with done/total monotonic; failure mid-import reports error on
   the job and leaves DB untouched (existing hardening tests stay green).
 
-### DM5 — Progress for exports · **S**
+### DM5 — Progress for exports · **S** ✅
 - Phases: collect entries/notes → render bodies → write media members
   (done/total) → finalize archive. Applies to archive ZIP, Markdown ZIP,
   HTML zip, and `.diary` writers; export buttons get

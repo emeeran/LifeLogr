@@ -12,9 +12,7 @@ Pins the contract the UI polls:
 from __future__ import annotations
 
 import io
-import json
 import tarfile
-import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,8 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.jobs import jobs
-from app.core.security import encrypt
-from app.models.backup import BackupConfig
 from app.services.backup_service import BackupService
 
 from tests.unit.test_backup_cloud_ops import _FakeProvider, _StreamingProvider, _make_config
