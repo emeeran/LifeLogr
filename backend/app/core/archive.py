@@ -16,12 +16,15 @@ Two concerns live here:
 from __future__ import annotations
 
 import tarfile
-from collections.abc import Callable
 from pathlib import Path
+
+from app.core.jobs import ProgressReporter
 
 # Optional progress callback: (phase, done, total). Phases: "database" then
 # "media". Total counts DB members + media files; None total = unknown.
-ArchiveProgressFn = Callable[[str, int, int | None], None]
+# Same shape as core.jobs.ProgressReporter; aliased so call sites can pass a
+# job reporter or a bare closure interchangeably.
+ArchiveProgressFn = ProgressReporter
 
 
 def _assert_member_name_safe(name: str) -> None:

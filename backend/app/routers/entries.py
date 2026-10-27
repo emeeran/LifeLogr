@@ -234,6 +234,9 @@ async def list_geotags(
     filters = [
         Entry.is_deleted.is_(False),
         Entry.latitude.is_not(None),
+        # GeotagItem (and Leaflet) need both coordinates; a lat-only row would
+        # break the map client anyway, so the filter matches the contract.
+        Entry.longitude.is_not(None),
         Entry.longitude.is_not(None),
         sa_or(Entry.latitude != 0, Entry.longitude != 0),
     ]
@@ -267,6 +270,9 @@ async def list_geotags(
         first_image = next(
             (m for m in entry.media if m.media_type == "image"), None
         )
+        # The query filters both coordinates non-null (and the map client
+        # requires them) — narrow so the strict schema constructor type-checks.
+        assert entry.latitude is not None and entry.longitude is not None
         items.append(
             GeotagItem(
                 id=entry.id,
@@ -390,7 +396,9 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
     return notes
 
 
-def _build_markdown_zip_sync(entries: list[Entry], report=None) -> bytes:
+def _build_markdown_zip_sync(
+    entries: list[Entry], report: ProgressReporter = noop_reporter
+) -> bytes:
     """Diarium-compatible markdown vault ZIP; *report* gets render/media ticks."""
     buf = io.BytesIO()
     media_total = sum(
@@ -478,7 +486,7 @@ async def export_markdown(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report, session):
+        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
             entries = await _export_entries(session, start_date, end_date)
             return await asyncio.to_thread(_build_markdown_zip_sync, entries, report)
 
@@ -521,7 +529,7 @@ async def export_html_zip(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report, session):
+        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
             return await ExportService(session).export_html_zip(start, end, report=report)
 
         return start_export_job(
@@ -653,7 +661,7 @@ async def export_archive(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report, session):
+        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
             entries = await _export_entries(session, start_date, end_date)
             notes = await _load_archive_notes(session)
             return await asyncio.to_thread(build_archive, entries, notes, report)
@@ -747,7 +755,7 @@ async def export_diarium_db(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report, session):
+        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
             entries = await _export_entries(session, start_date, end_date)
             return await build_diarium_database(entries, report=report)
 

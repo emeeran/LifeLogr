@@ -181,14 +181,14 @@ async def run_configured_backup_now(
     scheduled_path = active.backup_path or ""
     scheduled_retention = active.retention
 
-    def _runner(report: ProgressReporter) -> Awaitable[str]:
+    def _local_runner(report: ProgressReporter) -> Awaitable[str]:
         async def _run() -> str:
             archive = await _run_backup(scheduled_path, scheduled_retention, report=report)
             return f"Backup written to {archive}"
 
         return _run()
 
-    return _start_data_job(background_tasks, "backup-local", _runner)
+    return _start_data_job(background_tasks, "backup-local", _local_runner)
 
 
 @router.get("/snapshots")

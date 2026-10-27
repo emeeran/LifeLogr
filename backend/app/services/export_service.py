@@ -13,6 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from typing import Any
+
+from app.core.jobs import ProgressReporter, noop_reporter
 from app.models.entry import Entry
 from app.models.tag import EntryTag
 
@@ -152,7 +155,7 @@ class ExportService:
         self,
         start_date: date | None = None,
         end_date: date | None = None,
-        report=None,
+        report: ProgressReporter = noop_reporter,
     ) -> bytes:
         """Export entries as an HTML archive ZIP with media attachments.
 
@@ -184,7 +187,7 @@ class ExportService:
         # same as the Markdown vault path.
         return await asyncio.to_thread(self._build_html_zip, entries, report)
 
-    def _build_html_zip(self, entries: list[Entry], report=None) -> bytes:
+    def _build_html_zip(self, entries: list[Entry], report: ProgressReporter = noop_reporter) -> bytes:
         """Synchronously assemble the HTML archive ZIP for ``entries``.
 
         Same-day entries sharing an attachment filename would silently
@@ -538,7 +541,9 @@ def _markdown_to_diarium_html(body: str) -> str:
     return "".join(rendered)
 
 
-async def build_diarium_database(entries: list[Entry], report=None) -> bytes:
+async def build_diarium_database(
+    entries: list[Entry], report: ProgressReporter = noop_reporter
+) -> bytes:
     """Build a Diarium-native .diary SQLite database (as bytes) from entries.
 
     ``entries`` must have ``tag_associations`` loaded (selectinload). Returns the
@@ -548,7 +553,9 @@ async def build_diarium_database(entries: list[Entry], report=None) -> bytes:
     return await asyncio.to_thread(_build_diarium_database_sync, entries, report)
 
 
-def _build_diarium_database_sync(entries: list[Entry], report=None) -> bytes:
+def _build_diarium_database_sync(
+    entries: list[Entry], report: ProgressReporter = noop_reporter
+) -> bytes:
     """Synchronously serialize ``entries`` into the Diarium SQLite schema."""
     import sqlite3
     import tempfile
@@ -761,7 +768,11 @@ ARCHIVE_FORMAT = "lifelogr-archive"
 ARCHIVE_VERSION = 2
 
 
-def build_archive(entries: list[Entry], notes: list[dict] | None = None, report=None) -> bytes:
+def build_archive(
+    entries: list[Entry],
+    notes: list[dict[str, Any]] | None = None,
+    report: ProgressReporter = noop_reporter,
+) -> bytes:
     """Serialize entries (+ optionally notes) and their media into the archive ZIP.
 
     ``entries`` must have ``tag_associations``, ``media`` and ``events``

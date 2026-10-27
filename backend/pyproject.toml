@@ -53,9 +53,10 @@ testpaths = ["tests"]
 source = ["app"]
 
 [tool.coverage.report]
-# Floor set just under the measured baseline (63%) so the gate catches
-# regression without flaking. Ratchet up as coverage improves.
-fail_under = 62
+# Floor set just under the measured baseline so the gate catches regression
+# without flaking. Ratchet up whenever measured coverage exceeds the floor by
+# more than a point (last ratcheted 2026-10-28: measured 79%).
+fail_under = 78
 show_missing = true
 
 [tool.ruff]

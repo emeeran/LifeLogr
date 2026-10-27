@@ -128,6 +128,7 @@ def parse_ics(text: str) -> dict[str, Any]:
         if "DTSTART" not in props:
             return  # a VEVENT without a start is not renderable
         start_iso, all_day = _parse_dt(*props["DTSTART"])
+        end_iso: str | None
         if "DTEND" in props:
             end_iso, _ = _parse_dt(*props["DTEND"])
         else:

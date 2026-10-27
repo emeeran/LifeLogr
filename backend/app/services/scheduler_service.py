@@ -860,7 +860,8 @@ async def _on_this_day_count(session: Any) -> int:
             sa_func.strftime("%m-%d", Entry.entry_date).in_(patterns),
         )
     )
-    return (await session.execute(q)).scalar_one()
+    total: int = (await session.execute(q)).scalar_one()
+    return total
 
 
 async def _fire_reminder(reminder_id: int, mark_fired: bool = True) -> None:

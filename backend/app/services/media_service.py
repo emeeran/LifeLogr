@@ -512,7 +512,8 @@ class MediaService:
         from PIL import Image, ImageOps
 
         thumb_path.parent.mkdir(parents=True, exist_ok=True)
-        with Image.open(full_path) as img:
+        with Image.open(full_path) as source:
+            img: Image.Image = source
             if hasattr(img, "transpose"):
                 img = ImageOps.exif_transpose(img)
             if max(img.size) > _THUMB_MAX_DIMENSION:

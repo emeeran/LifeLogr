@@ -7,6 +7,8 @@ import os
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 
+from typing import Any
+
 from app.core.exceptions import NotFoundError
 from app.core.jobs import jobs
 
@@ -14,7 +16,7 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 
 @router.get("/{job_id}")
-async def get_job(job_id: str) -> dict:
+async def get_job(job_id: str) -> dict[str, Any]:
     job = jobs.get(job_id)
     if job is None:
         raise NotFoundError(f"Job {job_id} not found")

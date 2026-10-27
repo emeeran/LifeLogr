@@ -33,6 +33,7 @@ import logging
 import os
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -170,7 +171,7 @@ async def _get_lock(key: str) -> asyncio.Lock:
         return lock
 
 
-async def _fetch(lat: float, lng: float, day: date, dest) -> tuple[str, str] | None:
+async def _fetch(lat: float, lng: float, day: date, dest: Path) -> tuple[str, str] | None:
     """Fetch conditions from Open-Meteo and atomically cache them at *dest*."""
     params = _request_params(lat, lng, day)
     if params is None:

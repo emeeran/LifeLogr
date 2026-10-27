@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.jobs import ProgressReporter, noop_reporter
 from app.models.note import Note, NoteFolder, NoteTag
 
 _ENCRYPTED_PLACEHOLDER = "[encrypted — body not exported]"
@@ -196,10 +197,12 @@ class NotesExportService:
                 items.append(self._parse_md(zf.read(name).decode("utf-8", "ignore")))
         return items
 
-    async def import_json(self, raw: bytes, report=None) -> dict[str, Any]:
+    async def import_json(self, raw: bytes, report: ProgressReporter = noop_reporter) -> dict[str, Any]:
         return await self._import_items(self.parse_json(raw), report=report)
 
-    async def import_markdown_zip(self, raw: bytes, report=None) -> dict[str, Any]:
+    async def import_markdown_zip(
+        self, raw: bytes, report: ProgressReporter = noop_reporter
+    ) -> dict[str, Any]:
         return await self._import_items(self.parse_markdown_zip(raw), report=report)
 
     async def import_single_markdown(self, raw: bytes) -> dict[str, Any]:
@@ -239,7 +242,7 @@ class NotesExportService:
         }
 
     async def _import_items(
-        self, items: list[dict[str, Any]], report=None
+        self, items: list[dict[str, Any]], report: ProgressReporter = noop_reporter
     ) -> dict[str, Any]:
         from app.schemas.note import NoteCreate, NotePageCreate
         from app.services.note_service import NoteService

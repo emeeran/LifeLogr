@@ -20,7 +20,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -34,8 +34,17 @@ def noop_reporter(
     """Default reporter — services stay callable without a job context."""
 
 
-# The callback shape services accept; transport-agnostic and optional.
-ProgressReporter = Callable[[str, int, int | None, str | None], None]
+class ProgressReporter(Protocol):
+    """The callback shape services accept; transport-agnostic and optional.
+
+    A protocol (not a ``Callable`` alias) because trailing args carry defaults
+    at every call site — ``report("upload")`` is as valid as
+    ``report("render", i, n)`` — which a fixed-arity ``Callable`` forbids.
+    """
+
+    def __call__(
+        self, phase: str, done: int = 0, total: int | None = None, detail: str | None = None
+    ) -> None: ...
 
 
 @dataclass
