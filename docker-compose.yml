@@ -14,8 +14,10 @@ services:
       - ./data:/app/backend/data
     env_file:
       # Optional so a fresh clone (no backend/.env yet) still composes.
-      # APP_ENV=production makes the app refuse to boot until .env sets a real
-      # SECRET_KEY and keeps the loopback-bind validation — by design.
+      # APP_ENV=production keeps boot validation enabled (loopback-bind check).
+      # DATA_DIR marks this as a managed local run, so a stable SECRET_KEY is
+      # auto-generated into ./data/.secret_key unless backend/.env sets one —
+      # the app never runs on the public default key.
       - path: ./backend/.env
         required: false
     environment:

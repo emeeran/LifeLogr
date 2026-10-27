@@ -45,7 +45,9 @@ VOLUME ["/app/backend/data"]
 EXPOSE 8000
 
 # /health is the fast liveness path; APP_ENV=production keeps the boot-time
-# SECRET_KEY / bind-host validations enabled (set both in backend/.env).
+# bind-host validation enabled. DATA_DIR (set below) marks a managed local run:
+# a stable SECRET_KEY is auto-generated into the data dir unless backend/.env
+# provides one.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8000/health >/dev/null 2>&1 || exit 1
 

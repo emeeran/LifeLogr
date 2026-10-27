@@ -23,7 +23,7 @@ DEFAULT_SECRET_KEY: Final[str] = "change-me-before-production"
 
 
 def _default_data_dir() -> Path:
-    """Platform-standard data directory when DIARI_DATA_DIR is not set."""
+    """Platform-standard data directory when no DATA_DIR env/override is set."""
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     elif sys.platform == "darwin":
@@ -285,6 +285,8 @@ class Settings(BaseSettings):
     # LAN/server deployment can set it to require ``Authorization: Bearer …``
     # on every API call. Accepts either the plain or the LIFEOGRF_-prefixed name.
     API_TOKEN: str = Field(
+        # LIFEOGRF_API_TOKEN: historic misspelling shipped in an early release
+        # and kept so existing .env files keep working (commit c279ecb era).
         default="", validation_alias=AliasChoices("API_TOKEN", "LIFEOGRF_API_TOKEN")
     )
     DATABASE_URL: str = ""  # derived from DATA_DIR if empty

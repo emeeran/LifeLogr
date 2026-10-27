@@ -355,11 +355,13 @@ async def _preflight_db_file() -> None:
 
 async def init_db() -> None:
     """Create all tables (for dev/bootstrap; desktop uses inline migrations)."""
-    # Enforce the SECRET_KEY guard for any *server* (non-desktop) deployment.
-    # Desktop/Tauri sidecar runs locally with no external access and sets
-    # DATA_DIR, so we skip validation there. Tying the guard to the production
-    # env (rather than the presence of DATA_DIR) ensures a misconfigured server
-    # that forgot DATA_DIR still fails fast.
+    # DATA_DIR marks a managed local run — the Tauri desktop sidecar AND the
+    # Docker image both set it. For those, a stable SECRET_KEY is auto-generated
+    # into the data dir (config._resolve_secret_key) and the bind host stays
+    # loopback, so the production guard's two checks are already satisfied by
+    # construction; skip it. A *server* deployment that sets neither DATA_DIR
+    # nor APP_ENV=production ... still gets the guard the moment it claims
+    # production (settings.is_production), so misconfigured servers fail fast.
     import os
 
     is_desktop_sidecar = bool(os.environ.get("DATA_DIR"))
@@ -573,6 +575,9 @@ async def _drop_removed_feature_tables(conn: Any) -> None:
         "plugin_hooks",
         "plugins",
     ):
+        # f-string is safe by construction: `table` comes from the hardcoded
+        # teardown list above, never from user input. Don't copy this pattern
+        # for anything interpolated from data.
         await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
 
