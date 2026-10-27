@@ -506,7 +506,6 @@ from app.routers.recordings import router as recordings_router  # noqa: E402
 from app.routers.reminders import router as reminders_router  # noqa: E402
 from app.routers.search import router as search_router  # noqa: E402
 from app.routers.settings import router as settings_router  # noqa: E402
-from app.routers.sync import router as sync_router  # noqa: E402
 from app.routers.system import router as system_router  # noqa: E402
 from app.routers.context import router as context_router  # noqa: E402
 from app.routers.tags import router as tags_router  # noqa: E402
@@ -534,7 +533,6 @@ app.include_router(encryption_notes_router)
 app.include_router(export_router)
 app.include_router(reminders_router)
 app.include_router(search_router)
-app.include_router(sync_router)
 app.include_router(templates_router)
 app.include_router(video_router)
 app.include_router(settings_router)

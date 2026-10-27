@@ -297,7 +297,6 @@ class TestProviderDispatch:
 
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-        import app.routers.sync as sync_router
         from app.core import security
         from app.core.security import decrypt
 
@@ -315,51 +314,13 @@ class TestProviderDispatch:
         await db_session.refresh(config)
         assert token_version(config.credentials_encrypted) == 1  # legacy token in place
 
-        provider = await sync_router._get_provider(db_session, "dropbox")
+        provider = BackupService(db_session)._cloud_provider_for(
+            config, json.loads(legacy_creds)
+        )
         await provider._on_token_refresh("new-token", "9999")
 
         assert token_version(config.credentials_encrypted) == 2
         assert json.loads(decrypt(config.credentials_encrypted))["access_token"] == "new-token"
-
-    async def test_sync_and_backup_share_one_construction(
-        self, db_session: AsyncSession
-    ) -> None:
-        """sync's provider comes from BackupService._cloud_provider_for."""
-        import app.routers.sync as sync_router
-        from app.services.cloud_sync_service import NextcloudProvider
-
-        await _make_config(db_session, provider="webdav")
-        shared = NextcloudProvider(
-            base_url="https://dav.example.com", username="u", password="p"
-        )
-        with patch.object(
-            BackupService, "_cloud_provider_for", return_value=shared
-        ) as spy:
-            provider = await sync_router._get_provider(db_session, "webdav")
-            assert provider is shared
-            spy.assert_called_once()
-
-    async def test_unknown_provider_over_sync_endpoint_is_400(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """A config row with an unknown provider is a client error, not a 500.
-
-        The old sync dispatch raised a bare ``ValueError``, which escaped as a
-        500 with a stack trace for what is a bad request.
-        """
-        db_session.add(
-            BackupConfig(
-                provider="floppydisk",
-                credentials_encrypted=encrypt(json.dumps({"refresh_token": "rt"})),
-            )
-        )
-        await db_session.commit()
-
-        r = await client.post(
-            "/api/v1/sync/cloud/push", json={"provider": "floppydisk", "passphrase": None}
-        )
-
-        assert r.status_code == 400
 
     async def test_delete_backup_uses_the_shared_dispatch(self, db_session) -> None:
         from app.models.backup import BackupSnapshot
