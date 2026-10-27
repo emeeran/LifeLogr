@@ -124,8 +124,23 @@ class TagSuggestionResponse(BaseModel):
 # ── Writer's block ─────────────────────────────────────────────────────
 
 
+class EntryContextIn(BaseModel):
+    """Metadata of the currently open entry, sent in the system channel.
+
+    Absent fields stay ``None``/empty and are transmitted to the model as
+    ``unset`` (spec §10 AI2) — never omitted silently.
+    """
+
+    date: str | None = Field(default=None, description="Entry local date (e.g. 2026-10-27)")
+    title: str | None = Field(default=None, description="Entry title")
+    mood: str | None = Field(default=None, description="Entry mood label")
+    tags: list[str] = Field(default_factory=list, description="Entry tag names")
+
+
 class ContinueWritingRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000)
+    entry_context: EntryContextIn | None = None
+    attempt: int = Field(default=0, ge=0, le=10)
 
 
 class ContinueWritingResponse(BaseModel):
@@ -223,7 +238,13 @@ class RewriteForClarityResponse(BaseModel):
 class GenericToolRequest(BaseModel):
     text: str = Field(min_length=1, max_length=50000, description="Text to process")
     param: str | None = Field(
-        default=None, description="Optional tool parameter (e.g. target language)"
+        default=None, description="Optional tool parameter (e.g. target language or mode)"
+    )
+    entry_context: EntryContextIn | None = Field(
+        default=None, description="Metadata of the currently open entry (system channel)"
+    )
+    attempt: int = Field(
+        default=0, ge=0, le=10, description="Retry attempt number (bumps temperature)"
     )
 
 

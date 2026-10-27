@@ -44,7 +44,7 @@ L.Icon.Default.mergeOptions({
 function popupHtml(entry: GeotagItem): string {
   const title = entry.title ?? entry.location_name ?? 'Journal entry'
   const media = entry.media_id
-    ? `<img src="${API_ORIGIN}/api/v1/media/${entry.media_id}/file" alt="" style="max-width:160px;border-radius:4px;margin-bottom:4px" /><br/>`
+    ? `<img src="${API_ORIGIN}/api/v1/media/${entry.media_id}/thumb" alt="" style="max-width:160px;border-radius:4px;margin-bottom:4px" /><br/>`
     : ''
   return (
     `${media}<strong>${escapeHtml(title)}</strong><br/>` +

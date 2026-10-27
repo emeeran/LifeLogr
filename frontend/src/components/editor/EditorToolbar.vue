@@ -4,6 +4,10 @@
  * editors. Presentational: props in, `@action(name)` out (the shell maps names
  * to `core.actions[name]`). The `mode` prop controls which tool groups are
  * visible so each editor shows only its relevant tools.
+ *
+ * Spec §9: one heading set (H1–H4 + paragraph) in both editors; no alignment
+ * group; table/hr live in the context menu; the shared emoji picker is the only
+ * emoji entry point; font family and size are single dropdowns.
  */
 import {
   Bold,
@@ -12,6 +16,8 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
+  Pilcrow,
   List,
   ListOrdered,
   Quote,
@@ -21,18 +27,12 @@ import {
   ImagePlus,
   Video,
   Music,
-  Minus,
   Undo2,
   Redo2,
   Search,
   Type,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  AlignJustify,
   Highlighter,
   Smile,
-  Table,
   CheckSquare,
   Focus,
   Layout,
@@ -58,7 +58,6 @@ defineProps<{
 
 const emit = defineEmits<{
   action: [name: string]
-  quickEmoji: [emoji: string]
   toggleEmoji: []
   toggleFind: []
   toggleFocus: []
@@ -76,10 +75,11 @@ const FONT_FAMILIES: { label: string; value: string }[] = [
   { label: 'Sans', value: "'Segoe UI', sans-serif" },
   { label: 'Serif', value: 'Lora, serif' },
   { label: 'Mono', value: "'JetBrains Mono', monospace" },
+  { label: 'Merriweather', value: "'Merriweather', serif" },
+  { label: 'Inter', value: "'Inter', sans-serif" },
+  { label: 'Roboto', value: "'Roboto', sans-serif" },
 ]
-
-// Curated journaling markers — one-click insert into the editor body (journal only).
-const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
+const FONT_SIZES = [12, 13, 14, 15, 16, 18, 20, 22, 24]
 </script>
 
 <template>
@@ -94,30 +94,22 @@ const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
       <select
         class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors"
         :value="ui.fontFamily"
+        aria-label="Font family"
         @change="ui.setFontFamily(($event.target as HTMLSelectElement).value)"
       >
         <option v-for="f in FONT_FAMILIES" :key="f.value" :value="f.value">
           {{ f.label }}
         </option>
-        <option value="'Merriweather', serif">Merriweather</option>
-        <option value="'Inter', sans-serif">Inter</option>
-        <option value="'Roboto', sans-serif">Roboto</option>
-        <option value="monospace">Monospace</option>
       </select>
       <select
         class="bg-surface border border-border rounded px-1 py-0.5 text-[11px] text-text-primary outline-none cursor-pointer hover:border-accent transition-colors"
         :value="ui.fontSize"
+        aria-label="Font size"
         @change="
           ui.setFontSize(Number(($event.target as HTMLSelectElement).value))
         "
       >
-        <option
-          v-for="s in [12, 13, 14, 15, 16, 18, 20, 22, 24]"
-          :key="s"
-          :value="s"
-        >
-          {{ s }}px
-        </option>
+        <option v-for="s in FONT_SIZES" :key="s" :value="s">{{ s }}px</option>
       </select>
       <span class="w-px h-4 bg-border mx-0.5" />
       <button
@@ -303,10 +295,10 @@ const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
         <Search :size="13" />
       </button>
     </div>
-    <!-- Row 2: Block formatting + Alignment + insert tools -->
+    <!-- Row 2: Headings + block formatting (identical in both editors, spec §9 ED1) -->
     <div
       role="toolbar"
-      aria-label="Block formatting and alignment"
+      aria-label="Block formatting"
       class="flex items-center gap-0.5 px-1.5 py-0.5 flex-wrap"
     >
       <button
@@ -336,7 +328,6 @@ const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
         <Heading2 :size="13" />
       </button>
       <button
-        v-if="mode === 'notes'"
         class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
         :class="
           activeFormats.has('h3')
@@ -348,6 +339,22 @@ const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
         @click="fire('h3')"
       >
         <Heading3 :size="13" />
+      </button>
+      <button
+        class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors text-text-secondary hover:text-text-primary"
+        title="Heading 4"
+        aria-label="Heading 4"
+        @click="fire('h4')"
+      >
+        <Heading4 :size="13" />
+      </button>
+      <button
+        class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors text-text-secondary hover:text-text-primary"
+        title="Paragraph (remove heading)"
+        aria-label="Paragraph (remove heading)"
+        @click="fire('paragraph')"
+      >
+        <Pilcrow :size="13" />
       </button>
       <span class="w-px h-4 bg-border mx-0.5" />
       <button
@@ -402,62 +409,7 @@ const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
       >
         <Quote :size="13" />
       </button>
-      <span class="w-px h-4 bg-border mx-0.5" />
       <button
-        class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
-        :class="
-          activeFormats.has('alignLeft')
-            ? 'bg-accent/20 text-accent'
-            : 'text-text-secondary hover:text-text-primary'
-        "
-        title="Align left"
-        aria-label="Align left"
-        @click="fire('alignLeft')"
-      >
-        <AlignLeft :size="13" />
-      </button>
-      <button
-        class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
-        :class="
-          activeFormats.has('alignCenter')
-            ? 'bg-accent/20 text-accent'
-            : 'text-text-secondary hover:text-text-primary'
-        "
-        title="Align center"
-        aria-label="Align center"
-        @click="fire('alignCenter')"
-      >
-        <AlignCenter :size="13" />
-      </button>
-      <button
-        class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
-        :class="
-          activeFormats.has('alignRight')
-            ? 'bg-accent/20 text-accent'
-            : 'text-text-secondary hover:text-text-primary'
-        "
-        title="Align right"
-        aria-label="Align right"
-        @click="fire('alignRight')"
-      >
-        <AlignRight :size="13" />
-      </button>
-      <button
-        class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
-        :class="
-          activeFormats.has('alignJustify')
-            ? 'bg-accent/20 text-accent'
-            : 'text-text-secondary hover:text-text-primary'
-        "
-        title="Align justify"
-        aria-label="Align justify"
-        @click="fire('alignJustify')"
-      >
-        <AlignJustify :size="13" />
-      </button>
-      <span class="w-px h-4 bg-border mx-0.5" />
-      <button
-        v-if="mode === 'journal'"
         class="p-1 rounded hover:bg-surface-hover cursor-pointer transition-colors"
         :class="
           activeFormats.has('highlight')
@@ -469,45 +421,6 @@ const journalEmojis = ['📝', '💭', '✨', '🙏', '🩺', '💡']
         @click="fire('highlight')"
       >
         <Highlighter :size="13" />
-      </button>
-      <button
-        class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
-        title="Table"
-        aria-label="Table"
-        @click="fire('table')"
-      >
-        <Table :size="13" />
-      </button>
-      <button
-        v-if="mode === 'journal'"
-        class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
-        title="Horizontal rule"
-        aria-label="Horizontal rule"
-        @click="fire('hr')"
-      >
-        <Minus :size="13" />
-      </button>
-    </div>
-    <!-- Row 3: Journal quick-insert emojis (journal only) -->
-    <div
-      v-if="mode === 'journal'"
-      role="toolbar"
-      aria-label="Journal quick inserts"
-      class="flex items-center gap-0.5 px-1.5 py-0.5 border-t border-border/50"
-    >
-      <span
-        class="text-[9px] uppercase tracking-wider text-text-muted font-semibold mr-1 select-none"
-        >Journal</span
-      >
-      <button
-        v-for="emoji in journalEmojis"
-        :key="emoji"
-        class="w-6 h-6 flex items-center justify-center text-base hover:bg-surface-hover rounded cursor-pointer transition-colors"
-        :title="`Insert ${emoji}`"
-        :aria-label="`Insert ${emoji}`"
-        @click="emit('quickEmoji', emoji)"
-      >
-        {{ emoji }}
       </button>
     </div>
   </div>

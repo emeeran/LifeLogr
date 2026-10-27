@@ -46,6 +46,9 @@ _CONVERTIBLE_IMAGE_TYPES = {
 # Max dimension for image resizing
 _MAX_IMAGE_DIMENSION = 2048
 
+# Max dimension for cached timeline thumbnails (see ``get_thumbnail_path``)
+_THUMB_MAX_DIMENSION = 640
+
 # Chunk size for spooling an upload to disk (see ``spool_upload``).
 _SPOOL_CHUNK_BYTES = 1024 * 1024
 
@@ -469,12 +472,70 @@ class MediaService:
             content_type = "image/webp"
         return full_path, content_type, media.filename
 
+    @staticmethod
+    def _thumb_path_for(media: Media) -> Path:
+        return (
+            settings.MEDIA_DIR
+            / "thumbs"
+            / f"{media.media_type}-{Path(media.storage_path).name}.webp"
+        )
+
+    async def get_thumbnail_path(self, media_id: int) -> tuple[Path, str]:
+        """Return (thumb_path, content_type) for an image, generating on demand.
+
+        The first request renders a ≤640px WebP next to the original and caches
+        it on disk; later requests serve the cached file. Timeline grids load
+        dozens of images per page — serving full originals there decoded
+        gigabytes in WebKit and OOM-killed the machine (2026-10-27).
+        """
+        media = await self.get(media_id)
+        if media.media_type != "image":
+            raise NotFoundError(f"Media {media_id} is not an image")
+        full_path = settings.MEDIA_DIR / media.storage_path
+        if not full_path.is_file():
+            raise NotFoundError(f"Media file for {media_id} missing on disk")
+        thumb_path = self._thumb_path_for(media)
+        if not thumb_path.is_file():
+            try:
+                await asyncio.to_thread(self._write_thumbnail, full_path, thumb_path)
+            except Exception:
+                # A corrupt/undecodable image must never 500 the timeline grid —
+                # fall back to streaming the original instead.
+                logger.warning("Thumbnail generation failed for media %s", media_id, exc_info=True)
+                return full_path, self._content_type_from_ext(
+                    media.storage_path, media.media_type
+                )
+        return thumb_path, "image/webp"
+
+    @staticmethod
+    def _write_thumbnail(full_path: Path, thumb_path: Path) -> None:
+        from PIL import Image, ImageOps
+
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(full_path) as img:
+            if hasattr(img, "transpose"):
+                img = ImageOps.exif_transpose(img)
+            if max(img.size) > _THUMB_MAX_DIMENSION:
+                resampling = getattr(Image, "Resampling", Image)
+                img.thumbnail((_THUMB_MAX_DIMENSION, _THUMB_MAX_DIMENSION), resampling.LANCZOS)
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+            # Write to a unique temp name then rename: two concurrent first
+            # requests must not see each other's half-written file.
+            tmp = thumb_path.with_name(f".{uuid.uuid4().hex}.tmp")
+            try:
+                img.save(tmp, format="WEBP", quality=80, method=4)
+                tmp.replace(thumb_path)
+            finally:
+                tmp.unlink(missing_ok=True)
+
     async def delete(self, media_id: int) -> None:
         """Delete media record and remove file from disk."""
         media = await self.get(media_id)
         full_path = settings.MEDIA_DIR / media.storage_path
         if full_path.exists():
             full_path.unlink()
+        self._thumb_path_for(media).unlink(missing_ok=True)
         await self.db.delete(media)
         await self.db.commit()
 

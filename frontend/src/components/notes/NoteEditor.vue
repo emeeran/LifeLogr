@@ -22,6 +22,7 @@ import { useTauriDragDrop } from '../../composables/useTauriDragDrop'
 import { useRichTextEditor } from '../../composables/useRichTextEditor'
 import { useDraftRecovery } from '../../composables/useDraftRecovery'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
+import EmojiPicker from '../common/EmojiPicker.vue'
 import { useLocalStorage } from '@vueuse/core'
 import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
 import EditorToolbar from '../editor/EditorToolbar.vue'
@@ -321,13 +322,13 @@ async function saveNow() {
 
 async function selectPage(id: number | null) {
   // Autosave is OFF, so guard against silently dropping unsaved edits: confirm
-  // before switching away from a dirty page.
+  // before switching away from a dirty page (modal, spec §9 ED9).
   if (isDirty.value) {
-    const discard = confirm(
-      'You have unsaved changes on this page.\n\n' +
-        'Click "Cancel" to stay and save them, or "OK" to discard.',
-    )
-    if (!discard) return
+    const proceed = await askConfirm({
+      title: 'Discard unsaved changes?',
+      message: `The ${activePage.value?.title?.trim() || 'page'} has edits that were not saved.`,
+    })
+    if (!proceed) return
   }
   activePageId.value = id
 }
@@ -340,7 +341,11 @@ async function addPage() {
 }
 
 async function removePage(id: number) {
-  if (!confirm('Delete this page?')) return
+  const proceed = await askConfirm({
+    title: 'Delete this page?',
+    message: 'The page and its text will be removed.',
+  })
+  if (!proceed) return
   const wasActive = activePageId.value === id
   await store.deletePage(id)
   if (wasActive) activePageId.value = null
@@ -442,77 +447,14 @@ async function toggleSpeak() {
 }
 
 // ── Notes toolbar state ──
+// Spec §9 ED6: collapsed by default in both editors, same expand affordance.
 const ribbonExpanded = useLocalStorage<boolean>(
   'lifelogr-notes-ribbon-expanded',
-  true,
+  false,
 )
 
-// ── Emoji picker ─────────────────────────────────────────────────────────────
+// ── Emoji: the shared picker is the only entry point (spec §9 ED4) ──
 const showEmoji = ref(false)
-const EMOJI = [
-  '😀',
-  '😁',
-  '😂',
-  '🤣',
-  '😊',
-  '😍',
-  '😘',
-  '😎',
-  '🤔',
-  '😴',
-  '🙄',
-  '😱',
-  '👍',
-  '👎',
-  '👏',
-  '🙏',
-  '💪',
-  '✌️',
-  '🤝',
-  '👋',
-  '👌',
-  '✋',
-  '❤️',
-  '🔥',
-  '✨',
-  '⭐',
-  '💯',
-  '🎉',
-  '🎊',
-  '🎁',
-  '💡',
-  '⚡',
-  '✅',
-  '❌',
-  '⚠️',
-  '❓',
-  '❗',
-  '📌',
-  '📍',
-  '📎',
-  '🔗',
-  '🎯',
-  '☀️',
-  '🌙',
-  '☕',
-  '🍕',
-  '🍔',
-  '🍰',
-  '🍺',
-  '⚽',
-  '🏀',
-  '🎵',
-  '🚀',
-  '💻',
-  '📱',
-  '📷',
-  '🏠',
-  '✈️',
-  '🌱',
-  '🌈',
-  '🏆',
-  '💎',
-]
 function insertEmoji(e: string) {
   applyText(e)
   showEmoji.value = false
@@ -814,8 +756,27 @@ async function onEncryptionChange() {
   await store.selectNote(props.note.id)
   syncFromActive()
 }
+// ── Modal confirm gate (spec §9 ED9 — no native window.confirm) ──
+const confirmReq = ref<{ title: string; message: string } | null>(null)
+let confirmResolve: ((proceed: boolean) => void) | null = null
+function askConfirm(req: { title: string; message: string }): Promise<boolean> {
+  confirmReq.value = req
+  return new Promise((resolve) => {
+    confirmResolve = resolve
+  })
+}
+function settleConfirm(proceed: boolean) {
+  confirmReq.value = null
+  confirmResolve?.(proceed)
+  confirmResolve = null
+}
+
 async function deleteNote() {
-  if (!confirm('Delete this note? It can be restored later.')) return
+  const proceed = await askConfirm({
+    title: 'Delete this note?',
+    message: 'It can be restored later from the trash.',
+  })
+  if (!proceed) return
   await store.deleteNote(props.note.id)
   emit('deleted')
 }
@@ -970,6 +931,33 @@ function onToolbarAction(name: string) {
   core.actions[name]?.()
 }
 
+// Spec §9 ED1: one heading set (H1–H4 + paragraph) in both editors. The shared
+// core ships H1–H3, so the shell completes the set — core.actions is the record
+// the toolbar and context menu dispatch into.
+core.actions.h4 = () => core.prependLine('#### ')
+core.actions.paragraph = () => {
+  const el = textarea.value
+  if (!el) return
+  const pos = el.selectionStart
+  const lineStart = body.value.lastIndexOf('\n', pos - 1) + 1
+  const lineEnd = body.value.indexOf('\n', pos)
+  const old = body.value.slice(lineStart, lineEnd < 0 ? undefined : lineEnd)
+  const next = old.replace(/^\s{0,3}#{1,6}\s+/, '')
+  if (next === old) return // already a paragraph line
+  body.value =
+    body.value.slice(0, lineStart) +
+    next +
+    body.value.slice(lineEnd < 0 ? body.value.length : lineEnd)
+  core.onInput()
+  void nextTick(() => {
+    el.focus()
+    el.selectionStart = el.selectionEnd = Math.max(
+      lineStart,
+      pos - (old.length - next.length),
+    )
+  })
+}
+
 // Re-wrap embedded media as resizable nodes whenever the preview renders.
 watch([renderedPreview, showPreview], () => {
   if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value))
@@ -1026,8 +1014,17 @@ defineExpose({ isDirty })
       </button>
     </div>
 
-    <!-- Shared formatting toolbar (notes mode) — foldable -->
+    <!-- Shared formatting toolbar (notes mode) — collapsed by default, same
+         "Formatting" toggle row as the journal editor (spec §9 ED6) -->
     <div class="ribbon-wrap relative">
+      <button
+        class="flex items-center gap-1 w-full px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+        @click="ribbonExpanded = !ribbonExpanded"
+      >
+        <ChevronDown v-if="!ribbonExpanded" :size="10" />
+        <ChevronUp v-else :size="10" />
+        Formatting
+      </button>
       <div v-if="ribbonExpanded">
         <EditorToolbar
           mode="notes"
@@ -1042,50 +1039,14 @@ defineExpose({ isDirty })
           @toggle-emoji="showEmoji = !showEmoji"
           @toggle-find="core.showFind.value = !core.showFind.value"
         />
-        <div
-          class="flex items-center justify-end px-2 py-0.5 border-t border-border/50"
-        >
-          <button
-            class="rbtn"
-            title="Hide toolbar"
-            aria-label="Hide formatting toolbar"
-            @click="ribbonExpanded = false"
-          >
-            <ChevronUp :size="13" />
-          </button>
-        </div>
-        <!-- Emoji picker (notes-local popover) -->
-        <div
+        <!-- Shared emoji picker (spec §9 ED4 — the only emoji entry point) -->
+        <EmojiPicker
           v-if="showEmoji"
-          class="fixed inset-0 z-30"
-          @click="showEmoji = false"
+          class="absolute right-2 top-full z-40"
+          @select="insertEmoji"
+          @close="showEmoji = false"
         />
-        <div
-          v-if="showEmoji"
-          class="absolute right-2 top-full z-40 emoji-pop"
-          @click.stop
-        >
-          <button
-            v-for="e in EMOJI"
-            :key="e"
-            class="emoji-item"
-            @click="insertEmoji(e)"
-          >
-            {{ e }}
-          </button>
-        </div>
       </div>
-      <button
-        v-else
-        class="ribbon-collapsed"
-        title="Show formatting toolbar"
-        aria-label="Show formatting toolbar"
-        @click="ribbonExpanded = true"
-      >
-        <ChevronDown :size="13" /><span class="ml-1 text-[11px] text-text-muted"
-          >Formatting</span
-        >
-      </button>
     </div>
 
     <!-- Page tabs (EPIM-style leaves with CRUD) -->
@@ -1344,6 +1305,8 @@ defineExpose({ isDirty })
       @cut="cutSelection"
       @bold="core.actions.bold()"
       @italic="core.actions.italic()"
+      @table="core.actions.table()"
+      @hr="core.actions.hr()"
       @run-ai-tool="(mode: string) => core.runAiTool(mode)"
       @open-ai-drawer="showAi = true"
       @ai-result-replace="core.aiResultReplace"
@@ -1413,6 +1376,15 @@ defineExpose({ isDirty })
       @cancel="drafts.discard()"
     />
 
+    <!-- Delete / discard confirmations (spec §9 ED9 — no native confirm) -->
+    <ConfirmDialog
+      v-if="confirmReq"
+      :title="confirmReq.title"
+      :message="confirmReq.message"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
+    />
+
     <!-- Single inline media opened by double-click from the preview -->
     <MediaViewer
       v-if="inlineViewer"
@@ -1433,68 +1405,9 @@ defineExpose({ isDirty })
 </template>
 
 <style scoped>
-/* ── Ribbon ────────────────────────────────────────────────────────────────── */
+/* ── Ribbon ────────────────────────────────────────────────────────────────────────── */
 .ribbon-wrap {
   border-bottom: 1px solid var(--color-border);
-}
-.ribbon-collapsed {
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-  justify-content: center;
-  padding: 0.3rem;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-editor));
-  transition: color 0.15s;
-}
-.ribbon-collapsed:hover {
-  color: var(--color-accent);
-}
-.emoji-pop {
-  position: absolute;
-  top: 30px;
-  right: 0;
-  z-index: 40;
-  width: 220px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  padding: 0.4rem;
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 0.15rem;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.emoji-item {
-  font-size: 16px;
-  padding: 0.2rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  line-height: 1;
-  transition: background-color 0.12s;
-}
-.emoji-item:hover {
-  background: var(--color-surface-hover);
-}
-.rbtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 0.35rem;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    color 0.15s;
-}
-.rbtn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text-primary);
 }
 
 /* ── Page tabs ──────────────────────────────────────────────────────────────── */

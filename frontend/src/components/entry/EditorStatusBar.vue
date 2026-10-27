@@ -1,23 +1,14 @@
 <script setup lang="ts">
-import {
-  AlignLeft,
-  Clock,
-  Check,
-  Loader,
-  Pencil,
-  AlertCircle,
-  Target,
-} from 'lucide-vue-next'
+import { AlignLeft, Check, Loader, Pencil, AlertCircle, Target } from 'lucide-vue-next'
 import type { SaveState } from '../../composables/useAutoSave'
 
+/**
+ * EditorStatusBar — spec §9 ED7: word count, daily-goal progress (journal)
+ * and save state. Character / line / paragraph / read-time counts are
+ * deliberately not shown.
+ */
 defineProps<{
-  stats: {
-    chars: number
-    words: number
-    lines: number
-    paragraphs: number
-    readMins: number
-  }
+  words: number
   saveState: SaveState
   hasContent: boolean
   /** Today's running total vs the daily goal — the chip only shows when a
@@ -34,7 +25,7 @@ defineProps<{
     class="flex items-center gap-3 px-3 py-0.5 text-[10px] text-text-muted bg-editor/30"
   >
     <span class="flex items-center gap-0.5"
-      ><AlignLeft :size="10" /> {{ stats.words }} words</span
+      ><AlignLeft :size="10" /> {{ words }} words</span
     >
     <span
       v-if="daily && daily.goal > 0"
@@ -46,12 +37,6 @@ defineProps<{
       today: {{ daily.words }} / {{ daily.goal }}
       <Check v-if="daily.words >= daily.goal" :size="10" />
     </span>
-    <span>{{ stats.chars }} chars</span>
-    <span class="hidden sm:inline">{{ stats.lines }} lines</span>
-    <span class="hidden sm:inline">{{ stats.paragraphs }} paragraphs</span>
-    <span class="flex items-center gap-0.5"
-      ><Clock :size="10" /> {{ stats.readMins }} min read</span
-    >
     <span class="flex-1" />
     <!-- Save status with clear visual feedback -->
     <span

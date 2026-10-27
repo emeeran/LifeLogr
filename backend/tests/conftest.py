@@ -11,10 +11,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 os.environ["APP_ENV"] = "test"
+# Pin the data dir to a throwaway dir before app.core.config is imported.
+# LIFELOGR_DATA_DIR is required, not just DATA_DIR: config precedence puts the
+# persisted storage override (~/.config/lifelogr/data-location.json) ABOVE the
+# DATA_DIR env, so on a machine with a relocated data dir the old pin silently
+# lost and media-writing tests trashed the user's actual files.
+_test_data_dir = tempfile.mkdtemp(prefix="lifelogr-test-data-")
+os.environ["LIFELOGR_DATA_DIR"] = _test_data_dir
+os.environ.setdefault("DATA_DIR", _test_data_dir)
 
-from app.core.database import Base, get_db
-from app.core.fts import FTS_BASE_TABLES, fts_populate_sql, fts_trigger_ddl
-from app.main import app
+from app.core.database import Base, get_db  # noqa: E402
+from app.core.fts import FTS_BASE_TABLES, fts_populate_sql, fts_trigger_ddl  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 @pytest_asyncio.fixture

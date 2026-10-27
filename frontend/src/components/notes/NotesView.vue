@@ -7,6 +7,7 @@
  * that expand the same way. Selecting a leaf opens it in the editor on the
  * right. Search collapses the tree into a flat results list.
  */
+import ConfirmDialog from '../common/ConfirmDialog.vue'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import {
   Plus,
@@ -318,10 +319,11 @@ async function selectNote(id: number) {
   // Notes autosave is OFF — switching notes with unsaved edits used to drop
   // them silently. Same discard confirm the page tabs already use.
   if (noteEditorIsDirty()) {
-    const discard = confirm(
-      'You have unsaved changes in this note.\n\n' +
-        'Click "Cancel" to stay and save them, or "OK" to discard.',
-    )
+    const discard = await askConfirm({
+      title: 'Unsaved changes',
+      message:
+        'You have unsaved changes in this note. Discard them and switch?',
+    })
     if (!discard) return
   }
   await store.selectNote(id)
@@ -446,7 +448,13 @@ async function commitRenameNote() {
 }
 async function deleteNoteInline(n: NoteListItem) {
   const label = n.title?.trim() || 'this untitled note'
-  if (!confirm(`Delete “${label}”? It can be restored later.`)) return
+  if (
+    !(await askConfirm({
+      title: 'Delete note',
+      message: `Delete “${label}”? It can be restored later.`,
+    }))
+  )
+    return
   try {
     await store.deleteNote(n.id)
   } catch {
@@ -456,13 +464,29 @@ async function deleteNoteInline(n: NoteListItem) {
 
 async function removeFolder(id: number, name: string) {
   if (
-    !confirm(
-      `Delete notebook "${name}"? Its notes will be un-filed, not deleted.`,
-    )
+    !(await askConfirm({
+      title: 'Delete notebook',
+      message: `Delete notebook "${name}"? Its notes will be un-filed, not deleted.`,
+    }))
   )
     return
   await store.deleteFolder(id)
   await store.fetchNotes()
+}
+
+// ── Modal confirm gate (spec §9 ED9 — no native window.confirm) ──
+const confirmReq = ref<{ title: string; message: string } | null>(null)
+let confirmResolve: ((proceed: boolean) => void) | null = null
+function askConfirm(req: { title: string; message: string }): Promise<boolean> {
+  confirmReq.value = req
+  return new Promise((resolve) => {
+    confirmResolve = resolve
+  })
+}
+function settleConfirm(proceed: boolean) {
+  confirmReq.value = null
+  confirmResolve?.(proceed)
+  confirmResolve = null
 }
 
 // Debounced full-text search (notes-only FTS). `searchSeq` invalidates the
@@ -834,6 +858,13 @@ onMounted(async () => {
       </div>
     </div>
   </div>
+  <ConfirmDialog
+    v-if="confirmReq"
+    :title="confirmReq.title"
+    :message="confirmReq.message"
+    @confirm="settleConfirm(true)"
+    @cancel="settleConfirm(false)"
+  />
 </template>
 
 <style scoped>

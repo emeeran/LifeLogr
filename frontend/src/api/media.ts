@@ -43,6 +43,11 @@ export const mediaApi = {
     return `${API_ORIGIN}/api/v1/media/${id}/file`
   },
 
+  /** Cached ≤640px WebP thumbnail — use for grid/timeline <img>, never the viewer. */
+  thumbUrl(id: number): string {
+    return `${API_ORIGIN}/api/v1/media/${id}/thumb`
+  },
+
   delete(id: number): Promise<void> {
     return request(`/media/${id}`, { method: 'DELETE' })
   },

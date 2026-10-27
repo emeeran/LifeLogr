@@ -254,7 +254,7 @@ class EntryService:
             entry.body = data.body
         if data.title is not None:
             entry.title = data.title
-        if data.mood is not None:
+        if "mood" in data.model_fields_set:
             entry.mood = data.mood
         if data.latitude is not None:
             entry.latitude = data.latitude

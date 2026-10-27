@@ -20,7 +20,7 @@ help:
 	@echo "  make fe-build     Frontend production build"
 	@echo "  make check        Everything CI runs (backend + frontend)"
 	@echo "  make run          Start dev server"
-	@echo "  make bump V=x    Bump version in all 4 places"
+	@echo "  make bump V=x    Bump version in all 5 places"
 	@echo "  make check-version  Verify all 4 version sources match"
 	@echo "  make docs-check     Verify docs don't reference a stale version"
 	@echo "  make clean        Remove __pycache__ and .pytest_cache"
@@ -61,7 +61,9 @@ clean:
 
 bump:
 	@if [ -z "$(V)" ]; then echo "Usage: make bump V=0.3.0"; exit 1; fi
-	@echo "Bumping version to $(V) in 4 places..."
+	@echo "Bumping version to $(V) in 5 places..."
+	@# 0. frontend/package.json
+	sed -i 's/"version": "[0-9.]*"/"version": "$(V)"/' frontend/package.json
 	@# 1. backend/pyproject.toml
 	sed -i 's/^version = ".*"/version = "$(V)"/' backend/pyproject.toml
 	@# 2. backend/app/core/config.py (APP_VERSION)

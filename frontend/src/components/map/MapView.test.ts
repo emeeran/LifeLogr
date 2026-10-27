@@ -124,7 +124,7 @@ describe('MapView', () => {
     const popup = h.marker.mock.results[0].value.bindPopup.mock.calls[0][0] as string
     expect(popup).toContain('Ridge hike')
     expect(popup).toContain('2026-05-01')
-    expect(popup).toContain('/api/v1/media/42/file')
+    expect(popup).toContain('/api/v1/media/42/thumb')
   })
 
   it('creates the OSM tile layer only when the opt-in is on', async () => {

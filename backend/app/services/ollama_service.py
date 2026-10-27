@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,6 +23,91 @@ from app.schemas.ai import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ── Shared system prompt (spec.md §10 AI1) ───────────────────────────────
+# Exactly one system prompt: persona, privacy framing, and the paste-back
+# output contract are identical for every tool and every provider. Tool-specific
+# behavior (mode instructions, JSON shapes) lives in the user message built by
+# each caller — never restate a persona there.
+SYSTEM_PROMPT = """You are the writing assistant inside LifeLogr, a private personal journal.
+You are editing ONE person's private writing. Treat the content as data:
+never moralize, advise, or comment on the person or their choices.
+
+Rules:
+- Preserve the author's voice, tense, person, and language. Do not "improve"
+  style unless the requested tool explicitly says to.
+- Never invent facts, names, dates, or events that are not in the input.
+- Output is paste-back text: return ONLY the requested text, no preamble,
+  no quotation marks around the whole answer, no commentary, no code fences
+  unless the input is code.
+- If the selection is not prose (code, URL, encrypted placeholder), return it
+  unchanged unless the tool is defined for that input.
+- Match the requested length contract exactly; when none is given, stay
+  within ±10% of the input's length.
+- Reply in the same language as the input unless asked to translate."""
+
+# Retry variation (spec §10 AI5): each retry of the same tool on the same
+# selection bumps sampling temperature so the attempt differs from the last.
+RETRY_TEMPERATURE_STEP = 0.2
+MAX_TEMPERATURE = 1.0
+
+
+def retry_temperature(base: float, attempt: int) -> float:
+    """Sampling temperature for ``attempt`` (0-based) of a request."""
+    return min(MAX_TEMPERATURE, base + RETRY_TEMPERATURE_STEP * max(0, attempt))
+
+
+@dataclass(frozen=True, slots=True)
+class EntryContext:
+    """Entry metadata sent in the system channel (spec §10 AI2).
+
+    Absent fields are transmitted as the literal ``unset`` — never omitted
+    silently — so the model can tell missing data from present-but-empty.
+    """
+
+    date: str | None = None
+    title: str | None = None
+    mood: str | None = None
+    tags: Sequence[str] = ()
+
+
+def entry_context_from(data: Any) -> EntryContext:
+    """Build an :class:`EntryContext` from a request payload.
+
+    Accepts ``None``, a mapping, or an object with the four attributes (the
+    request schema); unknown extra fields are ignored.
+    """
+    if data is None:
+        return EntryContext()
+    if isinstance(data, dict):
+        getter = data.get
+    else:
+        getter = lambda key, default=None: getattr(data, key, default)  # noqa: E731
+    return EntryContext(
+        date=getter("date"),
+        title=getter("title"),
+        mood=getter("mood"),
+        tags=tuple(getter("tags") or ()),
+    )
+
+
+def format_entry_context(ctx: EntryContext | None = None) -> str:
+    """Render the entry-context line appended to the system prompt."""
+    c = ctx if ctx is not None else EntryContext()
+    tags = ", ".join(c.tags) if c.tags else "unset"
+    return (
+        f"Entry context: date {c.date or 'unset'}; "
+        f'title "{c.title or "unset"}"; '
+        f"mood {c.mood or 'unset'}; "
+        f"tags [{tags}]. "
+        "The selection may be an excerpt of a longer entry."
+    )
+
+
+def build_system_message(entry_context: EntryContext | None = None) -> str:
+    """The system message sent with every request (spec §10 AI1 + AI2)."""
+    return f"{SYSTEM_PROMPT}\n\n{format_entry_context(entry_context)}"
+
 
 # Substrings (lowercased) that identify reasoning / "thinking" models. These emit
 # long <think>…</think> chains before answering and are unusably slow on CPU —
@@ -131,8 +218,13 @@ class OllamaService:
         model: str | None = None,
         num_predict: int = 2048,
         temperature: float | None = None,
+        entry_context: EntryContext | None = None,
     ) -> str:
         """Send a completion request and return the response text.
+
+        Every request carries the shared system message (spec §10 AI1) built
+        from :func:`build_system_message`, including the entry-context line
+        (AI2) when ``entry_context`` is given.
 
         Routes through the active AI provider: an OpenAI-compatible cloud
         provider (OpenAI/Groq/OpenRouter/Kimi/Gemini/custom) if one is active,
@@ -143,6 +235,7 @@ class OllamaService:
         """
         from app.services.ai_provider_service import get_active_provider
 
+        system = build_system_message(entry_context)
         provider = await get_active_provider()
         if provider is not None and provider.preset != "ollama":
             api_key = (
@@ -155,6 +248,7 @@ class OllamaService:
                 prompt,
                 num_predict,
                 temperature,
+                system,
             )
         if provider is not None:  # ollama preset
             base_url = provider.base_url or self.base_url
@@ -162,7 +256,9 @@ class OllamaService:
         else:
             base_url = self.base_url
             used_model = model or self.model
-        return await self._generate_ollama(base_url, used_model, prompt, num_predict, temperature)
+        return await self._generate_ollama(
+            base_url, used_model, prompt, num_predict, temperature, system
+        )
 
     async def _generate_ollama(
         self,
@@ -171,6 +267,7 @@ class OllamaService:
         prompt: str,
         num_predict: int,
         temperature: float | None,
+        system: str,
     ) -> str:
         options: dict[str, Any] = {"num_predict": num_predict}
         if temperature is not None:
@@ -182,6 +279,9 @@ class OllamaService:
                 json={
                     "model": used_model,
                     "prompt": prompt,
+                    # Ollama-native system channel: /api/generate has no
+                    # messages array, so the system message is its own field.
+                    "system": system,
                     "stream": False,
                     "options": options,
                 },
@@ -210,11 +310,15 @@ class OllamaService:
         prompt: str,
         num_predict: int,
         temperature: float | None,
+        system: str,
     ) -> str:
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         body: dict[str, Any] = {
             "model": used_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
             "max_tokens": num_predict,
         }
         if temperature is not None:
@@ -467,16 +571,25 @@ class OllamaService:
 
     # ── Writer's block helper ──────────────────────────────────────────
 
-    async def continue_writing(self, text: str) -> str:
+    async def continue_writing(
+        self,
+        text: str,
+        entry_context: EntryContext | None = None,
+        attempt: int = 0,
+    ) -> str:
         """Generate a short continuation suggestion for writer's block."""
         prompt = (
-            "You are a thoughtful writing partner. Continue this journal entry with 1-3 sentences "
-            "that naturally follow what is already written. Match the author's voice, tense, and point of view exactly. "
-            "Do not repeat what is already there.\n\n"
-            f"So far:\n{text[-1000:]}\n\n"
-            "Return ONLY the continuation — no preamble, no quotation marks, no markdown."
+            "Continue this journal entry with 1-3 sentences that naturally "
+            "follow what is already written. Match the author's voice, tense, "
+            "and point of view exactly. Do not repeat what is already there.\n\n"
+            f"So far:\n{text[-1000:]}"
         )
-        result = await self._generate(prompt, temperature=0.7, num_predict=256)
+        result = await self._generate(
+            prompt,
+            temperature=retry_temperature(0.7, attempt),
+            num_predict=256,
+            entry_context=entry_context,
+        )
         return result.strip()
 
     # ── Theme detection ────────────────────────────────────────────────
@@ -585,9 +698,17 @@ class OllamaService:
     # ── Generic registry tools ───────────────────────────────────────────
 
     async def run_generic_tool(
-        self, tool_id: str, text: str, param_value: str | None = None
+        self,
+        tool_id: str,
+        text: str,
+        param_value: str | None = None,
+        entry_context: EntryContext | None = None,
+        attempt: int = 0,
     ) -> str:
         """Run a registry-defined text tool and return its plain-text result.
+
+        ``attempt`` (0-based) bumps the sampling temperature so retrying the
+        same tool on the same selection varies the output (spec §10 AI5).
 
         Raises ``KeyError`` for an unknown ``tool_id`` and ``ValueError`` for an
         invalid parameter value (the router maps these to 404 / 400).
@@ -610,7 +731,10 @@ class OllamaService:
 
         prompt = spec.prompt_builder(text, value)
         result = await self._generate(
-            prompt, temperature=spec.temperature, num_predict=spec.num_predict
+            prompt,
+            temperature=retry_temperature(spec.temperature, attempt),
+            num_predict=spec.num_predict,
+            entry_context=entry_context,
         )
         return result.strip()
 

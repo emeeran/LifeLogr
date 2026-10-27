@@ -40,7 +40,23 @@ class TestRunGenericTool:
 
     async def test_paramless_tool_ignores_param(self):
         """A tool without a param spec accepts (and ignores) any param value."""
-        with patch.object(OllamaService, "_generate", return_value="summary"):
+        with patch.object(OllamaService, "_generate", return_value="expanded"):
             svc = OllamaService()
-            result = await svc.run_generic_tool("summarize", "text", "ignored")
-        assert result == "summary"
+            result = await svc.run_generic_tool("expand", "text", "ignored")
+        assert result == "expanded"
+
+    async def test_rewrite_mode_param(self):
+        """The folded rewrite tool exposes its mode as the param."""
+        with patch.object(OllamaService, "_generate", return_value="rewritten") as mock_generate:
+            svc = OllamaService()
+            result = await svc.run_generic_tool("rewrite", "text", "casual")
+        assert result == "rewritten"
+        assert "casual" in mock_generate.call_args.args[0]
+        with pytest.raises(ValueError):
+            await svc.run_generic_tool("rewrite", "text", "poetic")
+
+    async def test_summarize_modes(self):
+        with patch.object(OllamaService, "_generate", return_value="- a\n- b") as mock_generate:
+            svc = OllamaService()
+            await svc.run_generic_tool("summarize", "text", "bullets")
+        assert "- " in mock_generate.call_args.args[0]

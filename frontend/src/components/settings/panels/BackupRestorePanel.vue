@@ -108,6 +108,16 @@ async function handleBackupDownload() {
 async function handleBackupRestore() {
   const file = await pickFile({ accept: '.tar.gz,.tgz' })
   if (!file) return
+  // Restore REPLACES the journal — unlike entry import, there is no merge.
+  // Without this guard an older archive silently deletes everything added
+  // since it was taken (entries and media).
+  if (
+    !confirm(
+      `Restore “${file.name}”? The current journal will be REPLACED by this ` +
+        `archive — entries and media added after it was taken will be lost. Continue?`,
+    )
+  )
+    return
   importing.value = true
   try {
     // Upload happens synchronously (the request itself carries the bytes);

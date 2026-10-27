@@ -12,9 +12,15 @@ import {
   Loader,
   RefreshCw,
   GripHorizontal,
+  Minus,
+  Table,
   X,
 } from 'lucide-vue-next'
-import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
+import {
+  AI_TOOLS,
+  AI_TOOL_BY_ID,
+  type AiTruncation,
+} from '../../composables/aiToolRegistry'
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +29,7 @@ const props = withDefaults(
     aiLoading: boolean
     aiResult: string | null
     aiResultMode: string | null
+    aiTruncation?: AiTruncation | null
     aiParamValue: string
     selectedText: string
     /** Show the Encrypt/Decrypt menu item (journal yes, notes no). */
@@ -42,6 +49,8 @@ const emit = defineEmits<{
   cut: []
   bold: []
   italic: []
+  table: []
+  hr: []
   encrypt: []
   runAiTool: [mode: string]
   openAiDrawer: []
@@ -212,6 +221,19 @@ onUnmounted(onDragUp)
     >
       <Italic :size="12" /> Italic
     </button>
+    <!-- Table + horizontal rule: context-menu only (spec §9 ED3 — no toolbar buttons) -->
+    <button
+      @click="emit('table'); emit('close')"
+      class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+    >
+      <Table :size="12" /> Insert table
+    </button>
+    <button
+      @click="emit('hr'); emit('close')"
+      class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover flex items-center gap-2"
+    >
+      <Minus :size="12" /> Insert horizontal rule
+    </button>
     <button
       v-if="enableEncrypt"
       @click="emit('encrypt'); emit('close')"
@@ -273,6 +295,14 @@ onUnmounted(onDragUp)
         {{ aiLoading ? 'Running...' : 'Result' }}
       </span>
       <span class="flex-1" />
+      <!-- Non-silent truncation notice (spec AI3) -->
+      <span
+        v-if="aiTruncation"
+        class="text-[10px] font-normal text-amber-300 normal-case tracking-normal"
+      >
+        {{ aiTruncation.total.toLocaleString() }} chars selected — first
+        {{ aiTruncation.sent.toLocaleString() }} sent
+      </span>
       <button
         class="p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary cursor-pointer transition-colors"
         @click="emit('closeResult')"

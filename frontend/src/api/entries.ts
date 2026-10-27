@@ -114,6 +114,11 @@ export const entriesApi = {
     return request(`/entries/calendar/${year}/${month}`)
   },
 
+  /** Prior years' entries sharing today's month/day, for the composer strip. */
+  onThisDay(): Promise<CalendarEntryResponse[]> {
+    return request('/entries/on-this-day')
+  },
+
   stats(weeks = 12): Promise<JournalStats> {
     return request(`/entries/stats?weeks=${weeks}`)
   },

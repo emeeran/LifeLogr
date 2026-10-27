@@ -13,7 +13,7 @@ import tempfile
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.models.entry_event import event_kind_for_type
 
@@ -82,8 +82,32 @@ def parse_diarium_json_entry(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
-    """Parse a Diarium ``.diary`` SQLite database (as bytes) into import dicts.
+def _media_blob_loader(db_path: Path, rowid: int) -> Callable[[], bytes]:
+    """Return a callable that reads one Media blob from *db_path* on demand.
+
+    A fresh read-only connection per call keeps the parser's own connection
+    (and the caller's temp file lifetime) out of the insert loop's concerns.
+    """
+
+    def load() -> bytes:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT Data FROM Media WHERE rowid = ?", (rowid,)).fetchone()
+            return row[0] if row and row[0] else b""
+        finally:
+            conn.close()
+
+    return load
+
+
+def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
+    """Parse a Diarium ``.diary`` SQLite database into import dicts.
+
+    Accepts a path to the file (the import router spools uploads to disk) or
+    raw bytes (tests). Media blobs are NOT materialised here: each item
+    carries a ``load`` callable that reads one blob from the file on demand,
+    so a multi-gigabyte backup never sits in RAM (it crashed the process on
+    real devices).
 
     Diarium stores ``DiaryEntryId`` as .NET ``DateTime.Ticks`` (100-nanosecond
     intervals since 0001-01-01); the offset ``621355968000000000`` converts that
@@ -99,11 +123,16 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
     shape, parsed at read time, never at import).
     """
     entries: list[dict[str, Any]] = []
-    tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
-    try:
-        tmp.write(data)
+    if isinstance(source, bytes):
+        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
+        tmp.write(source)
         tmp.close()
-        conn = sqlite3.connect(tmp.name)
+        db_path = Path(tmp.name)
+    else:
+        db_path = Path(source)
+    owned_tmp = isinstance(source, bytes)
+    try:
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT e.DiaryEntryId, e.Heading, e.Text, e.Rating, e.Latitude, e.Longitude "
@@ -133,20 +162,26 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
         _MEDIA_TYPE_FROM_DIARIUM = {0: "image", 1: "audio", 2: "document", 3: "document", 4: "video"}
         media_map: dict[int, list[dict[str, Any]]] = {}
         try:
+            # Metadata only — with a path source the blob comes out one at a
+            # time via ``load`` so the whole backup's media never sits in
+            # memory at once. Bytes callers already hold the whole file in RAM
+            # (and their temp copy dies with this call), so they load eagerly.
+            eager = isinstance(source, bytes)
             for mr in conn.execute(
-                'SELECT DiaryEntryId, Type, Data, Name, FileEnding FROM Media '
-                'ORDER BY DiaryEntryId, "Index"'
+                'SELECT rowid, DiaryEntryId, Type, Name, FileEnding, length(Data) AS Size '
+                'FROM Media ORDER BY DiaryEntryId, "Index"'
             ).fetchall():
-                data = mr["Data"] or b""
-                if not data:
+                if not mr["Size"]:
                     continue
+                load = _media_blob_loader(db_path, mr["rowid"])
                 media_map.setdefault(mr["DiaryEntryId"], []).append(
                     {
                         "filename": f"{mr['Name']}{mr['FileEnding'] or ''}",
                         "media_type": _MEDIA_TYPE_FROM_DIARIUM.get(
                             mr["Type"] if mr["Type"] is not None else 3, "document"
                         ),
-                        "data": data,
+                        "data": load() if eager else None,
+                        "load": None if eager else load,
                     }
                 )
         except sqlite3.OperationalError:
@@ -207,13 +242,14 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
                 body_text = re.sub(r"</?p>", "\n", body_text)
                 body_text = re.sub(r"<[^>]+>", "", body_text).strip()
 
-            if not body_text and not media_map.get(row["DiaryEntryId"]):
-                # Photo-only entries (empty text) survive via their media; a
-                # truly empty entry is noise.
-                continue
-
             if heading == "Today's Summary":
+                # Diarium's auto-generated placeholder — never content.
                 heading = None
+            elif not body_text and not media_map.get(row["DiaryEntryId"]):
+                # Photo-only entries (empty text) survive via their media; a
+                # truly empty, unheaded entry is noise. A real heading
+                # (anniversary, event) is content even with an empty body.
+                continue
 
             mood_val = None
             rating = row["Rating"]
@@ -236,5 +272,6 @@ def parse_diarium_sqlite(data: bytes) -> list[dict[str, Any]]:
             )
         conn.close()
     finally:
-        Path(tmp.name).unlink(missing_ok=True)
+        if owned_tmp:
+            db_path.unlink(missing_ok=True)
     return entries

@@ -45,7 +45,11 @@ class TestDefaultSecretKeyConstant:
         monkeypatch.setattr(settings, "SECRET_KEY", DEFAULT_SECRET_KEY)
         assert settings.SECRET_KEY == DEFAULT_SECRET_KEY
 
-    def test_production_validation_uses_it(self) -> None:
+    def test_production_validation_uses_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # conftest pins DATA_DIR (managed-run), which would auto-resolve a real
+        # key and defeat the assertion; this test needs the unmanaged default.
+        monkeypatch.delenv("DATA_DIR", raising=False)
+        monkeypatch.delenv("LIFELOGR_DATA_DIR", raising=False)
         s = Settings(APP_ENV="production", SECRET_KEY=DEFAULT_SECRET_KEY, DATABASE_URL="sqlite://")
         with pytest.raises(RuntimeError, match="SECRET_KEY"):
             s.validate_production()

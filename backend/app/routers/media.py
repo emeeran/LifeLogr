@@ -191,6 +191,18 @@ async def download_media(media_id: int, db: AsyncSession = Depends(get_db)) -> R
     )
 
 
+@router.get("/{media_id}/thumb")
+async def get_media_thumbnail(media_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+    """Serve a cached ≤640px WebP thumbnail for an image (generated on demand).
+
+    Grids and timelines request this instead of ``/file`` so the renderer
+    decodes small bitmaps rather than full originals.
+    """
+    svc = MediaService(db)
+    path, content_type = await svc.get_thumbnail_path(media_id)
+    return FileResponse(path=str(path), media_type=content_type, content_disposition_type="inline")
+
+
 @router.delete("/{media_id}", status_code=204)
 async def delete_media(media_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """Delete a media attachment and its file."""

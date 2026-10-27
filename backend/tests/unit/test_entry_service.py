@@ -105,6 +105,13 @@ class TestEntryUpdate:
         r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"mood": "happy"})
         assert r.json()["mood"] == "happy"
 
+    async def test_clear_mood(self, client: AsyncClient):
+        # spec §9 ED10: unset mood is a valid state; an explicit null clears it.
+        entry = await _create_entry(client, mood="happy")
+        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"mood": None})
+        assert r.status_code == 200
+        assert r.json()["mood"] is None
+
 
 class TestEntryDelete:
     async def test_soft_delete(self, client: AsyncClient):

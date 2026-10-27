@@ -67,7 +67,7 @@ function openViewer(idx: number) {
         <!-- Image -->
         <img
           v-if="isImage(m.media_type)"
-          :src="mediaApi.fileUrl(m.id)"
+          :src="mediaApi.thumbUrl(m.id)"
           :alt="m.filename"
           class="w-full h-full object-cover"
           loading="lazy"

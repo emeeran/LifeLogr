@@ -142,3 +142,53 @@ def test_validator_rejects_corrupted_export():
 
     with pytest.raises(AssertionError, match="sqlite_sequence"):
         validate_diary(corrupt(stale_sequence))
+
+
+async def test_path_import_streams_media(db_session, tmp_path):
+    """Path source: blobs load lazily (never materialised at parse time) and
+    still land in the database through the shared import loop."""
+    from sqlalchemy import func, select
+
+    from app.models.media import Media
+
+    path = tmp_path / "device.diary"
+    path.write_bytes(build_diary(_SPEC, include_media=True))
+
+    parsed = parse_diarium_sqlite(path)
+    media = [m for e in parsed for m in e["media"]]
+    assert media
+    assert all(m["data"] is None and callable(m["load"]) for m in media)
+    assert path.exists()  # the parser must not delete the caller's file
+
+    result = await _run_entry_import(db_session, parsed, skip_duplicates=False)
+    assert result["skipped"] == 0, result["skip_reasons"]
+    total = (await db_session.execute(select(func.sum(Media.file_size)))).scalar()
+    assert total  # the lazy loads fetched real bytes onto disk
+
+
+async def test_duplicate_import_backfills_missing_media_and_events(db_session):
+    """A duplicate entry still gets back the media/events an older-backup
+    restore dropped — and a repeat import must not double-attach."""
+    from sqlalchemy import delete, func, select
+
+    from app.models.entry_event import EntryEvent
+    from app.models.media import Media
+
+    data = build_diary(_SPEC, include_media=True)
+    await _import(db_session, data)  # first pass: entries + media + events
+
+    # Simulate the restore-from-older-backup loss: rows gone, text remains.
+    await db_session.execute(delete(EntryEvent))
+    await db_session.execute(delete(Media))
+    await db_session.commit()
+
+    result = await _run_entry_import(db_session, parse_diarium_sqlite(data), True)
+    assert result["imported"] == 0
+    assert result["media_backfilled"] == 2  # the two blobs on the "Hike day" entry
+    assert (await db_session.execute(select(func.count()).select_from(Media))).scalar() == 2
+    assert (await db_session.execute(select(func.count()).select_from(EntryEvent))).scalar() == 2
+
+    # Idempotent: everything already present → nothing attached again.
+    again = await _run_entry_import(db_session, parse_diarium_sqlite(data), True)
+    assert again["media_backfilled"] == 0
+    assert (await db_session.execute(select(func.count()).select_from(Media))).scalar() == 2

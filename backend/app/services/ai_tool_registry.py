@@ -1,9 +1,16 @@
 """Registry of generic, registry-driven AI text tools.
 
-Each tool is a pure prompt builder plus generation settings. The tools here are
-the "new productive tools" (summarize, translate, …) exposed through the single
-generic endpoint ``POST /api/v1/ai/tool/{tool_id}``. They return plain text, so
-unlike grammar/analyze they do NOT route through the JSON parser.
+Each tool is a pure prompt builder plus generation settings. Per spec §10 the
+persona, journal-privacy framing, and paste-back output contract live in the
+shared system prompt (:data:`app.services.ollama_service.SYSTEM_PROMPT`) that
+every provider path attaches; the builders here carry ONLY tool-specific
+behavior in the user message and must not restate a persona.
+
+The menu presents the folded 8-tool contract set (spec.md §10 / impl-contract):
+rewrite-style operations are one ``rewrite`` tool with a ``mode`` parameter,
+and summarize/key-points/actions fold into one ``summarize`` tool with a mode
+parameter. ``define`` stays reachable through its dedicated backend endpoint
+but is not part of this registry.
 
 Adding a new tool = add one ``AiToolSpec`` to :data:`REGISTRY` and one entry to
 the frontend registry that targets ``/ai/tool/<id>``.
@@ -14,8 +21,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+# Backend maximum accepted selection length for registry tools (chars). The
+# frontend truncates against the same number and MUST surface the truncation
+# to the user (spec AI3) — never cut silently.
+MAX_TOOL_TEXT_CHARS = 4000
+
 # A prompt builder takes the selected text and an optional parameter value
-# (e.g. target language) and returns the full prompt string.
+# (e.g. target language or mode) and returns the user-message prompt string.
 PromptBuilder = Callable[[str, str | None], str]
 
 
@@ -39,94 +51,102 @@ class AiToolSpec:
     param: AiToolParamSpec | None = None
 
 
-# ── Prompt builders ──────────────────────────────────────────────────────
+# ── Prompt builders (tool-specific behavior only — no persona) ───────────
+
+_REWRITE_INSTRUCTIONS: dict[str, str] = {
+    "as-is": (
+        "Rewrite the text to improve flow and readability without changing its "
+        "style, register, or meaning."
+    ),
+    "polish": (
+        "Improve the word choice, sentence flow, and rhythm. Fix awkward or "
+        "repetitive phrasing without changing the subject."
+    ),
+    "clarity": (
+        "Rewrite for maximum clarity: split long sentences, remove ambiguity, "
+        "and prefer concrete words. Preserve meaning and formality."
+    ),
+    "simplify": (
+        "Rewrite in plain language at about a 5th-grade reading level, keeping "
+        "the meaning and all key information."
+    ),
+    "formal": (
+        "Rewrite in a formal register. Keep the same meaning and facts; adjust "
+        "only the style, register, and word choice."
+    ),
+    "casual": (
+        "Rewrite in a casual, conversational register. Keep the same meaning "
+        "and facts; adjust only the style, register, and word choice."
+    ),
+}
+
+_SUMMARIZE_INSTRUCTIONS: dict[str, str] = {
+    "sentences": (
+        "Summarize the text in 2-3 sentences that capture the core message. "
+        "Do not add new information."
+    ),
+    "bullets": (
+        "Extract the 3-7 most important points as a markdown bullet list "
+        "(each line starts with '- '). Keep each point concise and faithful."
+    ),
+    "actions": (
+        "Extract only the actionable to-dos implied by the text as a markdown "
+        "checklist (each line '- [ ] task'), phrased as concrete startable "
+        "actions. If there are none, return exactly '- [ ] No action items "
+        "found.'"
+    ),
+}
 
 
-def _summarize_prompt(text: str, _: str | None) -> str:
+def _rewrite_prompt(text: str, mode: str | None) -> str:
+    mode = mode or "as-is"
     return (
-        "You are an editor. Summarize the text in 2-3 sentences that capture the core message. "
-        "Preserve the author's intent and do not add new information.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the summary — no preamble, no quotation marks, no markdown."
+        f"{_REWRITE_INSTRUCTIONS[mode]}\n\n"
+        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
     )
 
 
-def _key_points_prompt(text: str, _: str | None) -> str:
+def _summarize_prompt(text: str, mode: str | None) -> str:
+    mode = mode or "sentences"
     return (
-        "You are an editor. Extract the 3-7 most important points from the text as a markdown "
-        "bullet list (each line starts with '- '). Keep each point concise and faithful to the text.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the bullet list — no preamble, no extra commentary."
+        f"{_SUMMARIZE_INSTRUCTIONS[mode]}\n\n"
+        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
     )
 
 
-def _action_items_prompt(text: str, _: str | None) -> str:
+def _expand_prompt(text: str, _: str | None) -> str:
     return (
-        "You are a productivity coach. Extract only the actionable to-dos implied by the text and "
-        "return them as a markdown checklist (each line '- [ ] task'). Phrase each as a concrete, "
-        "startable action.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "If there are no actionable items, return exactly '- [ ] No action items found.'. "
-        "Return ONLY the checklist — no preamble, no commentary."
+        "Expand and elaborate on the text, adding vivid detail, sensory "
+        "description, and emotional depth. Do not change the subject or "
+        "introduce unrelated facts.\n\n"
+        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
     )
 
 
 def _shorten_prompt(text: str, _: str | None) -> str:
     return (
-        "You are an editor. Condense the text to roughly half its length while keeping all key "
-        "information, the original meaning, and the tone. Do not drop important detail.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the shortened text — no preamble, no quotation marks, no markdown."
+        "Condense the text to roughly half its length while keeping all key "
+        "information, the original meaning, and the tone. Do not drop "
+        "important detail.\n\n"
+        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
     )
 
 
-def _simplify_prompt(text: str, _: str | None) -> str:
+def _title_prompt(text: str, _: str | None) -> str:
     return (
-        "You are an editor. Rewrite the text in plain language at about a 5th-grade reading level "
-        "(ELI5). Keep the meaning and all key information; do not remove content. "
-        "Prefer common words and short sentences.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the simplified text — no preamble, no quotation marks, no markdown."
-    )
-
-
-def _polish_prompt(text: str, _: str | None) -> str:
-    return (
-        "You are an editor. Improve the word choice, sentence flow, and rhythm of the text. "
-        "Fix awkward or repetitive phrasing while preserving the meaning and the author's voice. "
-        "Do not change the subject or add new facts.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the polished text — no preamble, no quotation marks, no markdown."
+        "Generate a concise, descriptive title for the text (at most 8 "
+        "words). Capture the main idea; avoid clickbait and filler words.\n\n"
+        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
     )
 
 
 def _translate_prompt(text: str, language: str | None) -> str:
     target = language or "Spanish"
     return (
-        f"You are a translator. Translate the text into {target}. "
-        "Preserve the meaning, tone, names, and proper nouns. "
-        "Do not add explanations unless a term has no equivalent.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the translation — no preamble, no quotation marks, no markdown."
-    )
-
-
-def _add_structure_prompt(text: str, _: str | None) -> str:
-    return (
-        "You are an editor. Reorganize the text using markdown headings (#) and bullet points where "
-        "they help readability. Group related ideas under clear headings. Keep all content and the "
-        "original meaning; do not invent new information.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the restructured markdown — no preamble, no commentary."
-    )
-
-
-def _title_prompt(text: str, _: str | None) -> str:
-    return (
-        "You are an editor. Generate a concise, descriptive title for the text (at most 8 words). "
-        "Capture the main idea; avoid clickbait and filler words.\n\n"
-        f"Text:\n{text[:4000]}\n\n"
-        "Return ONLY the title — no preamble, no quotation marks, no trailing punctuation."
+        f"Translate the text into {target}. Preserve the meaning, tone, "
+        "names, and proper nouns. Do not add explanations unless a term has "
+        "no equivalent.\n\n"
+        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
     )
 
 
@@ -146,12 +166,23 @@ _LANGUAGE_OPTIONS: tuple[str, ...] = (
 )
 
 REGISTRY: dict[str, AiToolSpec] = {
-    "summarize": AiToolSpec("summarize", _summarize_prompt, 0.3, 512),
-    "key-points": AiToolSpec("key-points", _key_points_prompt, 0.3, 768),
-    "action-items": AiToolSpec("action-items", _action_items_prompt, 0.3, 768),
+    "rewrite": AiToolSpec(
+        "rewrite",
+        _rewrite_prompt,
+        0.5,
+        2048,
+        AiToolParamSpec("mode", tuple(_REWRITE_INSTRUCTIONS), "as-is"),
+    ),
+    "summarize": AiToolSpec(
+        "summarize",
+        _summarize_prompt,
+        0.3,
+        768,
+        AiToolParamSpec("mode", tuple(_SUMMARIZE_INSTRUCTIONS), "sentences"),
+    ),
+    "expand": AiToolSpec("expand", _expand_prompt, 0.7, 2048),
     "shorten": AiToolSpec("shorten", _shorten_prompt, 0.4, 2048),
-    "simplify": AiToolSpec("simplify", _simplify_prompt, 0.4, 2048),
-    "polish": AiToolSpec("polish", _polish_prompt, 0.5, 2048),
+    "title": AiToolSpec("title", _title_prompt, 0.5, 64),
     "translate": AiToolSpec(
         "translate",
         _translate_prompt,
@@ -159,8 +190,6 @@ REGISTRY: dict[str, AiToolSpec] = {
         2048,
         AiToolParamSpec("language", _LANGUAGE_OPTIONS, "Spanish"),
     ),
-    "add-structure": AiToolSpec("add-structure", _add_structure_prompt, 0.4, 2048),
-    "title": AiToolSpec("title", _title_prompt, 0.5, 64),
 }
 
 

@@ -25,7 +25,9 @@ import {
   CalendarClock,
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
+import ConfirmDialog from '../common/ConfirmDialog.vue'
 import { isTauri } from '../../api/client'
+import { entriesApi } from '../../api/entries'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import EditorStatusBar from './EditorStatusBar.vue'
 import EditorContextMenu from '../editor/EditorContextMenu.vue'
@@ -37,7 +39,12 @@ import EmojiPicker from '../common/EmojiPicker.vue'
 import { useTemplatesStore } from '../../stores/templates'
 import { aiStatus, suggestTags } from '../../api/ai'
 import { mediaApi } from '../../api/media'
-import type { MediaResponse } from '../../types'
+import type {
+  CalendarEntryResponse,
+  EntryCreate,
+  EntryUpdate,
+  MediaResponse,
+} from '../../types'
 import { encryptText, decryptText } from '../../api/encryption'
 import {
   isoToDDMMYYYYInput,
@@ -141,6 +148,31 @@ function setEntryDate(iso: string) {
   dateDisplay.value = isoToDDMMYYYYInput(iso)
   dateInvalid.value = false
 }
+// ── Mood (spec §9 ED10) ──
+// Same bounded scale the model and statistics use (StatsView / MoodBars order).
+// '' = unset and stays a valid state; it is only sent as null on write.
+const MOODS = ['awful', 'bad', 'meh', 'good', 'great'] as const
+const mood = ref('')
+
+/** Persist a mood change for an existing entry immediately (like the notes
+ *  folder select). New entries carry the value in the create payload. */
+async function onMoodChange(e: Event) {
+  const value = (e.target as HTMLSelectElement).value
+  mood.value = value
+  if (!hasEntry.value) return
+  try {
+    const payload: EntryUpdate & { mood?: string | null } = {
+      mood: value || null,
+    }
+    const entry = await entriesApi.update(ui.editingEntryId!, payload)
+    if (entries.currentEntry?.id === ui.editingEntryId)
+      entries.currentEntry = entry
+    entries.refreshAll()
+  } catch (err: unknown) {
+    toast.error(`Could not save mood: ${errorMessage(err)}`)
+  }
+}
+
 const showPreview = ref(false)
 // OCR language + busy flag for inline image OCR (parity with the Note editor).
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
@@ -194,6 +226,7 @@ const {
   getSelection,
   applyToSelection,
   insertAtCursor,
+  prependLine,
   actions,
   activeFormats,
   undoStack,
@@ -213,6 +246,7 @@ const {
   aiLoading,
   aiResult,
   aiResultMode,
+  aiTruncation,
   aiParamValue,
   runAiTool,
   aiResultReplace,
@@ -227,6 +261,27 @@ const {
   onChange: markChanged,
   onSave: save,
 })
+
+// Spec §9 ED1: one heading set (H1–H4 + paragraph) in both editors. The shared
+// core ships H1–H3, so the shell completes the set — `actions` is the same
+// record the toolbar dispatches into.
+actions.h4 = () => prependLine('#### ')
+actions.paragraph = () => {
+  const el = textarea.value
+  if (!el) return
+  const pos = el.selectionStart
+  const lineStart = body.value.lastIndexOf('\n', pos - 1) + 1
+  const lineEnd = body.value.indexOf('\n', pos)
+  const old = body.value.slice(lineStart, lineEnd < 0 ? undefined : lineEnd)
+  const next = old.replace(/^\s{0,3}#{1,6}\s+/, '')
+  if (next === old) return // already a paragraph line
+  body.value = body.value.slice(0, lineStart) + next + body.value.slice(lineEnd < 0 ? body.value.length : lineEnd)
+  onInput()
+  nextTick(() => {
+    el.focus()
+    el.selectionStart = el.selectionEnd = Math.max(lineStart, pos - (old.length - next.length))
+  })
+}
 
 // ── Inline #tag autocomplete. Tags live in the body: typing `#` opens a popover
 //    of existing tags; picking one writes `#name` into the text and the backend
@@ -344,6 +399,8 @@ function snapshot() {
   })
   dirty.value = false
   ui.editorIsDirty = false
+  // Content just persisted — it is the new crash-recovery baseline.
+  draftBaseline = { title: title.value, body: body.value }
 }
 
 function isDirty(): boolean {
@@ -356,19 +413,148 @@ function isDirty(): boolean {
   return current !== savedSnapshot.value
 }
 
+// ── Modal prompt (spec §9 ED9 — native window.prompt is banned here) ──
+// One small in-editor dialog serves the credential/title prompts: entry title
+// on create, encryption passphrases. Resolves null on cancel.
+interface PromptRequest {
+  title: string
+  message?: string
+  placeholder?: string
+  password?: boolean
+}
+const promptReq = ref<PromptRequest | null>(null)
+const promptValue = ref('')
+const promptInput = ref<HTMLInputElement | null>(null)
+let promptResolve: ((value: string | null) => void) | null = null
+
+function askPrompt(req: PromptRequest): Promise<string | null> {
+  promptValue.value = ''
+  promptReq.value = req
+  void nextTick(() => promptInput.value?.focus())
+  return new Promise((resolve) => {
+    promptResolve = resolve
+  })
+}
+function submitPrompt() {
+  const value = promptValue.value
+  promptReq.value = null
+  promptResolve?.(value)
+  promptResolve = null
+}
+function cancelPrompt() {
+  promptReq.value = null
+  promptResolve?.(null)
+  promptResolve = null
+}
+
+// ── Crash-recovery draft (spec §9 ED11) ──
+// Same contract as the notes editor's crash mirror: a debounced localStorage
+// mirror, restore/discard prompt, encrypted bodies never mirrored, clean
+// saves/closes discard the draft — only unclean exits offer restore. It lives
+// in this file (not useDraftRecovery) because the journal editor stays mounted
+// across entries: the mirror is per-entry, rescan runs on every load, and the
+// close path here must suppress the unmount flush.
+const ENTRY_DRAFTS_KEY = 'lifelogr-entry-drafts'
+interface EntryDraft {
+  title: string
+  body: string
+  savedAt: number
+}
+const pendingDraft = ref<EntryDraft | null>(null)
+let draftBaseline = { title: '', body: '' }
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+/** Set by close() so the unmount flush can't resurrect a discarded draft. */
+let draftCleanExit = false
+
+function draftId(): string {
+  return String(ui.editingEntryId ?? -1)
+}
+function readDrafts(): Record<string, EntryDraft> {
+  try {
+    const raw = localStorage.getItem(ENTRY_DRAFTS_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, EntryDraft>)
+      : {}
+  } catch {
+    return {} // corrupt/unavailable storage must never block the editor
+  }
+}
+function writeDraft(id: string, draft: EntryDraft | null) {
+  try {
+    const all = readDrafts()
+    if (draft) all[id] = draft
+    else delete all[id]
+    localStorage.setItem(ENTRY_DRAFTS_KEY, JSON.stringify(all))
+  } catch {
+    /* quota / privacy mode — keep writing */
+  }
+}
+function draftIsUnsaved(): boolean {
+  return (
+    title.value !== draftBaseline.title || body.value !== draftBaseline.body
+  )
+}
+/** Mirror the buffers now (no debounce) — before a buffer swap / unmount.
+ *  Takes the id explicitly: callers that flush a *switching-out* entry run
+ *  after ui.editingEntryId already moved, so the default would misfile the
+ *  outgoing buffers under the incoming entry's key. */
+function flushDraft(id: string = draftId()) {
+  if (isEncrypted.value || !draftIsUnsaved()) return
+  if (!title.value && !body.value) return
+  writeDraft(id, {
+    title: title.value,
+    body: body.value,
+    savedAt: Date.now(),
+  })
+}
+/** Called after the buffers are (re)loaded or saved — this is the baseline the
+ *  differ compares against, so a stored draft that matches it is not a loss. */
+function rescanDraft() {
+  draftBaseline = { title: title.value, body: body.value }
+  if (isEncrypted.value) {
+    writeDraft(draftId(), null)
+    pendingDraft.value = null
+    return
+  }
+  const stored = readDrafts()[draftId()]
+  pendingDraft.value =
+    stored && (stored.title || stored.body) && draftIsUnsaved() ? stored : null
+}
+function discardDraft() {
+  pendingDraft.value = null
+  writeDraft(draftId(), null)
+}
+function restoreDraft() {
+  const draft = pendingDraft.value
+  if (!draft) return
+  discardDraft()
+  title.value = draft.title
+  body.value = draft.body
+  markChanged()
+  pushHistory()
+  void nextTick(() => textarea.value?.focus())
+}
+// Debounced mirror while typing (covers the autosave window — a crash between
+// keystroke and persisted entry must not lose more than a few seconds).
+watch([title, body], () => {
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => {
+    draftTimer = null
+    if (pendingDraft.value) return // prompt unresolved — don't overwrite it
+    if (draftIsUnsaved()) flushDraft()
+    else writeDraft(draftId(), null) // saved/undone → mirror obsolete
+  }, 1000)
+})
+
 // ── Undo / Redo history ── (extracted to useEditorHistory composable)
 // ── Find & Replace ── (extracted to useFindReplace composable)
 
 // ── Stats ──
-const stats = computed(() => {
-  const text = body.value
-  const chars = text.length
-  const words = countWords(text)
-  const lines = text ? text.split('\n').length : 0
-  const paragraphs = text.trim() ? text.trim().split(/\n\s*\n/).length : 0
-  const readMins = Math.max(1, Math.ceil(words / 200))
-  return { chars, words, lines, paragraphs, readMins }
-})
+// Only the word count is surfaced (spec §9 ED7); chars/lines/paragraphs/
+// read-time are no longer computed.
+const stats = computed(() => ({ words: countWords(body.value) }))
 
 // ── Daily goal ──
 // Today's total = the stored word counts of every entry dated today (from the
@@ -391,6 +577,29 @@ const daily = computed(() => {
   }
   if (entryDate.value === today) words += stats.value.words
   return { words, goal }
+})
+
+// Goal nudge: celebrate the moment today's count crosses the goal (once per
+// crossing — the chip stays green after).
+watch(daily, (now, prev) => {
+  if (!now || !prev) return
+  if (prev.words < prev.goal && now.words >= now.goal)
+    toast.success('Daily goal reached 🎉')
+})
+
+// ── On this day (spec §9: surface past same-date entries while writing) ──
+const onThisDayEntries = ref<CalendarEntryResponse[]>([])
+const showOnThisDay = ref(true)
+onMounted(async () => {
+  try {
+    // The endpoint is "today's" month/day; the composer only shows it while
+    // today's entry is being written, so one fetch on mount is enough.
+    onThisDayEntries.value = (await entriesApi.onThisDay()).filter(
+      (e) => e.id !== ui.editingEntryId,
+    )
+  } catch {
+    onThisDayEntries.value = []
+  }
 })
 
 const { renderedPreview } = useMarkdownPreview(
@@ -459,6 +668,7 @@ async function loadEntry() {
   body.value = ''
   title.value = ''
   tagIds.value = []
+  mood.value = ''
   selectedTemplateId.value = null
   dateInvalid.value = false
 
@@ -512,6 +722,7 @@ async function loadEntry() {
         tts.prewarmEntry(entry.id)
       }
       tagIds.value = entry.tags.map((t) => t.id)
+      mood.value = entry.mood ?? ''
       setEntryDate(entry.entry_date)
       selectedTemplateId.value = entry.template_id
     }
@@ -520,6 +731,7 @@ async function loadEntry() {
   pushHistory()
   snapshot()
   loadAttachments()
+  rescanDraft() // offer a crash draft for the entry we just loaded (ED11)
 }
 
 /** Window-level click: dismiss the context menu / AI result and decrypt an
@@ -538,17 +750,25 @@ function onWindowClick(e: MouseEvent) {
   if (target.classList.contains('enc-block')) {
     const enc = target.getAttribute('data-enc')
     if (!enc) return
-    const passphrase = prompt('Enter passphrase to decrypt:')
-    if (!passphrase) return
-    void decryptText(enc, passphrase)
-      .then((res) => {
-        target.textContent = res.decrypted
-        target.classList.remove('bg-accent/10', 'text-accent')
-        target.classList.add('bg-surface-hover', 'text-text-primary')
-      })
-      .catch(() => {
-        toast.error('Decryption failed — wrong passphrase?')
-      })
+    void decryptEncBlock(enc, target)
+  }
+}
+
+async function decryptEncBlock(enc: string, target: HTMLElement) {
+  const passphrase = await askPrompt({
+    title: 'Decrypt selection',
+    message: 'Enter the passphrase to decrypt this block.',
+    placeholder: 'Passphrase',
+    password: true,
+  })
+  if (!passphrase) return
+  try {
+    const res = await decryptText(enc, passphrase)
+    target.textContent = res.decrypted
+    target.classList.remove('bg-accent/10', 'text-accent')
+    target.classList.add('bg-surface-hover', 'text-text-primary')
+  } catch {
+    toast.error('Decryption failed — wrong passphrase?')
   }
 }
 
@@ -559,11 +779,18 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('click', onWindowClick)
+  if (draftTimer) clearTimeout(draftTimer)
+  // Unclean exit → keep the mirror fresh; a clean close() already discarded it
+  // and flags draftCleanExit so this flush can't resurrect the draft (ED11).
+  if (!draftCleanExit) flushDraft()
   // The buffers die with the component — a stale shared dirty flag would make
   // the router guard prompt for edits that no longer exist anywhere.
   ui.editorIsDirty = false
 })
-watch([() => ui.editingEntryId, () => ui.newEntryDate], () => {
+watch([() => ui.editingEntryId, () => ui.newEntryDate], (next, prev) => {
+  // Mirror the outgoing entry before the buffers swap (same as the notes
+  // editor's page switch) — the debounced write may not have fired yet.
+  if (next[0] !== prev[0]) flushDraft(String(prev[0] ?? -1))
   void loadEntry()
   loadAttachments()
 })
@@ -595,6 +822,18 @@ function onGlobalKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
 
   // Close active overlays in priority order
+  if (promptReq.value) {
+    cancelPrompt()
+    return
+  }
+  if (showDeleteConfirm.value) {
+    showDeleteConfirm.value = false
+    return
+  }
+  if (pendingDraft.value) {
+    discardDraft()
+    return
+  }
   if (showTemplates.value) {
     showTemplates.value = false
     return
@@ -675,7 +914,8 @@ defineExpose({
 
 // ── Save ──
 /** Persist the entry. Resolves `true` only when it actually saved — callers
- *  that act on the result (AppShell's pending switch) must check it. */
+ *  that act on the result (AppShell's pending switch) must check it.
+ *  Spec §9 ED8: Save persists WITHOUT closing — closing is the X control. */
 async function save(): Promise<boolean> {
   // Cancel any pending debounced autosave so it can't race this manual save
   // (two concurrent updateEntry calls with different snapshots lose data).
@@ -690,23 +930,34 @@ async function save(): Promise<boolean> {
         return false
       }
       if (!title.value.trim()) {
-        const t = prompt('Title for this entry:')
+        const t = await askPrompt({
+          title: 'Title this entry',
+          message: 'Give the entry a title before saving.',
+          placeholder: 'Title',
+        })
         if (t === null) return false
         title.value = t
       }
-      const entry = await entries.createEntry({
+      const payload: EntryCreate & { mood?: string | null } = {
         entry_date: entryDate.value,
         title: title.value || null,
         body: body.value,
         tag_ids: tagIds.value.length ? tagIds.value : undefined,
         template_id: selectedTemplateId.value,
-      })
+        mood: mood.value || null,
+      }
+      const entry = await entriesApi.create(payload)
       snapshot()
+      // The just-saved content is persisted — drop the pre-create draft so the
+      // next blank editor doesn't offer already-saved text as "recovery".
+      discardDraft()
       entries.refreshAll()
       entries.currentEntry = entry
       if (!isEncrypted.value) tts.prewarmEntry(entry.id)
       ui.detailPanelOpen = true
-      ui.startEditing(null)
+      // Keep editing the entry we just created (ED8) — same transition the
+      // autosave uses, so the load watcher re-syncs the buffers from the API.
+      ui.editingEntryId = entry.id
       return true
     } else {
       // Allow empty body if a title is present (title-only / recording-only entries).
@@ -714,15 +965,16 @@ async function save(): Promise<boolean> {
         toast.info('Add a title or some text before saving')
         return false
       }
-      await entries.updateEntry(ui.editingEntryId!, {
+      const payload: EntryUpdate & { mood?: string | null } = {
         title: title.value || null,
         body: body.value,
         tag_ids: tagIds.value,
-      })
+        mood: mood.value || null,
+      }
+      await entries.updateEntry(ui.editingEntryId!, payload)
       if (!isEncrypted.value) tts.prewarmEntry(ui.editingEntryId!)
       snapshot()
       entries.refreshAll()
-      ui.startEditing(null)
       return true
     }
   } catch (e: unknown) {
@@ -733,6 +985,9 @@ async function save(): Promise<boolean> {
 }
 
 function close() {
+  // A deliberate close is a clean exit — discard the crash draft (ED11).
+  draftCleanExit = true
+  discardDraft()
   entries.refreshAll()
   ui.startEditing(null)
 }
@@ -956,7 +1211,12 @@ async function encryptDecryptSelection() {
   const encMatch = text.match(/^<!--ENC\{(.+)\}-->$/s)
   if (encMatch) {
     // Decrypt mode
-    const passphrase = prompt('Enter passphrase to decrypt:')
+    const passphrase = await askPrompt({
+      title: 'Decrypt selection',
+      message: 'Enter the passphrase to decrypt the selected block.',
+      placeholder: 'Passphrase',
+      password: true,
+    })
     if (!passphrase) return
     try {
       const res = await decryptText(encMatch[1], passphrase)
@@ -966,7 +1226,12 @@ async function encryptDecryptSelection() {
     }
   } else {
     // Encrypt mode
-    const passphrase = prompt('Enter a passphrase to encrypt this selection:')
+    const passphrase = await askPrompt({
+      title: 'Encrypt selection',
+      message: 'Choose a passphrase to encrypt the selected text.',
+      placeholder: 'Passphrase',
+      password: true,
+    })
     if (!passphrase) return
     try {
       const res = await encryptText(text, passphrase)
@@ -995,9 +1260,15 @@ async function toggleTTS() {
   }
 }
 
-async function handleDelete() {
+const showDeleteConfirm = ref(false)
+
+function handleDelete() {
   if (isNew.value) return
-  if (!confirm('Delete this entry?')) return
+  showDeleteConfirm.value = true
+}
+
+async function confirmDelete() {
+  showDeleteConfirm.value = false
   try {
     await entries.deleteEntry(ui.editingEntryId!)
   } catch {
@@ -1089,6 +1360,22 @@ async function applySuggestedTag(name: string) {
         placeholder="Title"
         @input="onInput"
       />
+      <!-- Mood (spec §9 ED10): same bounded scale as the statistics; unset is valid -->
+      <select
+        :value="mood"
+        class="bg-surface border rounded px-1 py-0.5 text-[11px] shrink-0 cursor-pointer transition-colors"
+        :class="
+          mood
+            ? 'border-border text-text-primary'
+            : 'border-border text-text-muted'
+        "
+        aria-label="Mood"
+        title="Mood"
+        @change="onMoodChange"
+      >
+        <option value="">Mood…</option>
+        <option v-for="m in MOODS" :key="m" :value="m">{{ m }}</option>
+      </select>
       <input
         :value="dateDisplay"
         inputmode="numeric"
@@ -1144,6 +1431,32 @@ async function applySuggestedTag(name: string) {
       </div>
     </div>
 
+    <!-- On this day: prior years' entries for this month/day (spec §9) -->
+    <div
+      v-if="showOnThisDay && onThisDayEntries.length && !focusMode"
+      class="flex items-center gap-2 px-3 py-1 border-b border-border text-[11px] text-text-secondary overflow-x-auto"
+    >
+      <CalendarClock :size="12" class="shrink-0 text-accent" />
+      <span class="shrink-0 font-medium">On this day</span>
+      <button
+        v-for="e in onThisDayEntries"
+        :key="e.id"
+        class="shrink-0 rounded px-1.5 py-0.5 hover:bg-surface-hover hover:text-text-primary cursor-pointer transition-colors truncate max-w-56"
+        :title="`${e.entry_date} · ${e.word_count} words${e.mood ? ' · ' + e.mood : ''}`"
+        @click="ui.requestEdit(e.id, e.entry_date)"
+      >
+        {{ e.entry_date.slice(0, 4) }} · {{ e.title || 'Untitled' }}
+      </button>
+      <button
+        class="ml-auto p-0.5 shrink-0 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary cursor-pointer transition-colors"
+        title="Dismiss"
+        aria-label="Dismiss on-this-day strip"
+        @click="showOnThisDay = false"
+      >
+        <X :size="11" />
+      </button>
+    </div>
+
     <!-- Formatting toolbar (collapsible, closed by default) -->
     <div v-if="!showPreview && !focusMode" class="border-b border-border">
       <button
@@ -1171,7 +1484,6 @@ async function applySuggestedTag(name: string) {
             :typewriter-mode="typewriterMode"
             :ui="ui"
             @action="(name: string) => actions[name]?.()"
-            @quick-emoji="onEmojiSelect"
             @toggle-emoji="showEmoji = !showEmoji"
             @toggle-find="showFind = !showFind"
             @toggle-focus="focusMode = !focusMode"
@@ -1315,7 +1627,7 @@ async function applySuggestedTag(name: string) {
     <div class="border-t border-border" v-if="!focusMode">
       <!-- Stats bar -->
       <EditorStatusBar
-        :stats="stats"
+        :words="stats.words"
         :save-state="saveActive"
         :has-content="!!body.trim()"
         :daily="daily"
@@ -1542,6 +1854,63 @@ async function applySuggestedTag(name: string) {
       @close="showTemplates = false"
     />
 
+    <!-- Crash-recovery prompt (spec §9 ED11): a stored draft differs from the
+         persisted entry — offer restore (only unclean exits get here). -->
+    <ConfirmDialog
+      v-if="pendingDraft"
+      title="Recover unsaved changes?"
+      :message="`Unsaved changes from ${new Date(pendingDraft.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — restore them?`"
+      @confirm="restoreDraft"
+      @cancel="discardDraft"
+    />
+
+    <!-- Delete confirmation (spec §9 ED9 — no native confirm) -->
+    <ConfirmDialog
+      v-if="showDeleteConfirm"
+      title="Delete this entry?"
+      message="The entry and its media will be removed."
+      @confirm="confirmDelete"
+      @cancel="showDeleteConfirm = false"
+    />
+
+    <!-- Title / passphrase prompt (spec §9 ED9 — no native window.prompt) -->
+    <div
+      v-if="promptReq"
+      class="fixed inset-0 z-[220] flex items-center justify-center bg-black/50"
+      @click.self="cancelPrompt"
+    >
+      <div class="bg-surface rounded-lg shadow-xl w-80 border border-border p-4">
+        <h3 class="text-sm font-semibold text-text-primary mb-2">
+          {{ promptReq.title }}
+        </h3>
+        <p v-if="promptReq.message" class="text-xs text-text-secondary mb-3">
+          {{ promptReq.message }}
+        </p>
+        <input
+          ref="promptInput"
+          v-model="promptValue"
+          :type="promptReq.password ? 'password' : 'text'"
+          :placeholder="promptReq.placeholder ?? ''"
+          class="w-full bg-surface-hover border border-border rounded px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent mb-3"
+          @keydown.enter.prevent="submitPrompt"
+        />
+        <div class="flex justify-end gap-2">
+          <button
+            class="px-3 py-1.5 rounded text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+            @click="cancelPrompt"
+          >
+            Cancel
+          </button>
+          <button
+            class="px-3 py-1.5 rounded bg-accent text-white text-xs cursor-pointer hover:bg-accent-hover transition-colors"
+            @click="submitPrompt"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Context Menu / AI Result Panel -->
     <EditorContextMenu
       :visible="showContextMenu"
@@ -1549,6 +1918,7 @@ async function applySuggestedTag(name: string) {
       :ai-loading="aiLoading"
       :ai-result="aiResult"
       :ai-result-mode="aiResultMode"
+      :ai-truncation="aiTruncation"
       :ai-param-value="aiParamValue"
       :selected-text="getSelection()"
       @close="showContextMenu = false"
@@ -1556,6 +1926,8 @@ async function applySuggestedTag(name: string) {
       @cut="cutToClipboard"
       @bold="actions.bold()"
       @italic="actions.italic()"
+      @table="actions.table()"
+      @hr="actions.hr()"
       @encrypt="encryptDecryptSelection()"
       @open-ai-drawer="ui.toggleDrawer('ai')"
       @run-ai-tool="(mode: string) => runAiTool(mode)"

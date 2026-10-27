@@ -1162,7 +1162,8 @@ async def _attach_imported_media(
 
     Payloads come from the native archive (bytes read from the ZIP), Diarium
     ``.diary`` Media blobs, or Markdown ZIP members — each item is
-    ``{filename, media_type, data, caption?, is_inline?, ref?}``. Returns
+    ``{filename, media_type, data | load, caption?, is_inline?, ref?}``
+    (``data`` bytes or a ``load`` callable returning them). Returns
     ``{ref: new_id}`` for body-URL remapping. Bytes go through the same
     signature and size checks as uploads: an import path must never become a
     way to smuggle blocked file types past MediaService.
@@ -1170,6 +1171,11 @@ async def _attach_imported_media(
     ref_map: dict[int, int] = {}
     for item in media_items:
         data = item.get("data") or b""
+        if not data:
+            # .diary imports carry a lazy ``load`` instead of the bytes, so the
+            # backup's media is pulled one blob at a time, not held in RAM.
+            load = item.get("load")
+            data = load() if callable(load) else b""
         if not data:
             continue
         filename = (item.get("filename") or "attachment.bin").strip() or "attachment.bin"
@@ -1273,10 +1279,16 @@ async def import_file(
     archive_notes: list[dict[str, Any]] = []
 
     upload_path = await _spool_upload(file, settings.MAX_IMPORT_SIZE_BYTES)
+    # .diary media blobs are read lazily from the spooled file during the
+    # insert loop, so it is unlinked only after the import finishes (see the
+    # .diary branch); every other format is fully parsed below and can go now.
+    is_diary = filename.endswith(".diary")
     try:
-        if filename.endswith(".diary"):
-            # Diarium .diary SQLite database — parsing lives in the importers service.
-            entries_data.extend(parse_diarium_sqlite(upload_path.read_bytes()))
+        if is_diary:
+            # Diarium .diary SQLite database — parsing lives in the importers
+            # service. The path (not the bytes) is handed over: reading a
+            # multi-gigabyte backup into memory crashed the process.
+            entries_data.extend(parse_diarium_sqlite(upload_path))
         else:
             content = upload_path.read_bytes()
 
@@ -1433,27 +1445,36 @@ async def import_file(
                         }
                     entries_data.append(parsed)
     finally:
-        upload_path.unlink(missing_ok=True)
+        if not is_diary:
+            upload_path.unlink(missing_ok=True)
 
     if not as_job:
-        result = await _run_entry_import(db, entries_data, skip_duplicates)
-        if archive_notes:
-            await _run_note_archive_import(db, archive_notes)
-            await db.commit()
-        return result
+        try:
+            result = await _run_entry_import(db, entries_data, skip_duplicates)
+            if archive_notes:
+                await _run_note_archive_import(db, archive_notes)
+                await db.commit()
+            return result
+        finally:
+            if is_diary:
+                upload_path.unlink(missing_ok=True)
 
     def _runner(job_report: ProgressReporter) -> Awaitable[str]:
         async def _run() -> str:
             from app.core.database import async_session
 
-            async with async_session() as session:
-                result = await _run_entry_import(
-                    session, entries_data, skip_duplicates, job_report
-                )
-                if archive_notes:
-                    await _run_note_archive_import(session, archive_notes)
-                    await session.commit()
-                return f"Imported {result['imported']}, skipped {result['skipped']}"
+            try:
+                async with async_session() as session:
+                    result = await _run_entry_import(
+                        session, entries_data, skip_duplicates, job_report
+                    )
+                    if archive_notes:
+                        await _run_note_archive_import(session, archive_notes)
+                        await session.commit()
+                    return f"Imported {result['imported']}, skipped {result['skipped']}"
+            finally:
+                if is_diary:
+                    upload_path.unlink(missing_ok=True)
 
         return _run()
 
@@ -1507,6 +1528,7 @@ async def _run_entry_import(
             )
 
     imported = 0
+    backfilled = 0
     skipped = 0
     skip_reasons: list[ImportSkipReason] = []
     since_commit = 0
@@ -1516,7 +1538,7 @@ async def _run_entry_import(
 
     async def _commit_batch() -> None:
         """Commit the in-flight chunk, then release its enrichment jobs."""
-        if not imported and not to_enrich:
+        if not imported and not backfilled and not to_enrich:
             return
         await db.commit()
         for entry_id, title, body in to_enrich:
@@ -1528,10 +1550,14 @@ async def _run_entry_import(
     report("insert", 0, total)
     for idx, entry in enumerate(entries_data):
         # An empty body is legal when the entry carries media (photo-only
-        # Diarium entries) or a mood (Daylio mood-only check-ins); only truly
-        # empty records are skipped.
+        # Diarium entries), a mood (Daylio mood-only check-ins), or a title
+        # (Diarium anniversary/event entries); only truly empty records are
+        # skipped.
         if not entry.get("entry_date") or (
-            not entry.get("body") and not entry.get("media") and not entry.get("mood")
+            not entry.get("body")
+            and not entry.get("media")
+            and not entry.get("mood")
+            and not entry.get("title")
         ):
             skipped += 1
             skip_reasons = _record_skip(
@@ -1557,11 +1583,16 @@ async def _run_entry_import(
                 ).hexdigest(),
             )
             if skip_duplicates and sig in existing_sigs:
+                backfilled += await _backfill_duplicate_extras(db, ed, entry)
                 skipped += 1
                 skip_reasons = _record_skip(
                     skip_reasons, idx, str(ed), entry.get("title"), "duplicate of existing entry"
                 )
                 report("insert", idx + 1, total)
+                since_commit += 1
+                if since_commit >= _IMPORT_COMMIT_CHUNK:
+                    await _commit_batch()
+                    since_commit = 0
                 continue
 
             # Resolve tag names to IDs (create tags if needed)
@@ -1666,4 +1697,58 @@ async def _run_entry_import(
 
     await _commit_batch()
     report("enrich", 0, total)
-    return {"imported": imported, "skipped": skipped, "skip_reasons": skip_reasons}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "media_backfilled": backfilled,
+        "skip_reasons": skip_reasons,
+    }
+
+
+async def _backfill_duplicate_extras(db: AsyncSession, ed: Any, entry: dict[str, Any]) -> int:
+    """Attach media/events a duplicate entry is missing (no-op if it has any).
+
+    Re-importing the same file after an older backup was restored must recover
+    what the import originally added — entry text survives the restore, but the
+    media and event rows created after the backup are gone, and plain dedup
+    would skip them forever. Fills only from zero, so repeat imports don't
+    double-attach. Returns the number of media items attached.
+    """
+    import sqlalchemy as sa
+
+    from app.models.entry_event import EntryEvent
+
+    mood = entry.get("mood")
+    q = (
+        select(Entry.id)
+        .where(
+            Entry.entry_date == ed,
+            ~Entry.is_deleted,
+            sa.func.substr(Entry.body, 1, 1000) == (entry.get("body") or "")[:1000],
+            Entry.mood.is_(None) if not mood else Entry.mood == mood,
+        )
+        .limit(1)
+    )
+    entry_id = (await db.execute(q)).scalar()
+    if entry_id is None:
+        return 0
+    row = await db.get(Entry, entry_id)
+    if row is None:
+        return 0
+
+    attached = 0
+    if entry.get("media") and not (
+        await db.execute(
+            select(sa.func.count()).select_from(Media).where(Media.entry_id == entry_id)
+        )
+    ).scalar():
+        attached = len(entry["media"])
+        # Diarium bodies carry no /media/{id}/file refs, so no URL remap here.
+        await _attach_imported_media(db, row, entry["media"])
+    if entry.get("events") and not (
+        await db.execute(
+            select(sa.func.count()).select_from(EntryEvent).where(EntryEvent.entry_id == entry_id)
+        )
+    ).scalar():
+        await _attach_imported_events(db, row, entry["events"])
+    return attached

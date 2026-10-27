@@ -2,33 +2,32 @@
  * Single source of truth for the editor's AI tools.
  *
  * Every consumer — the AI drawer, the right-click context menu, and the
- * useAiTools composable — iterates `AI_TOOLS`. Adding a tool is now a data
- * change here (plus its backend prompt builder for `/ai/tool/<id>` tools).
+ * useAiTools composable — iterates `AI_TOOLS`. The menu presents the folded
+ * 8-tool contract set (spec.md §10 AI4): rewrite-style operations are one
+ * "Rewrite" tool with a mode parameter, and summarize/key-points/actions fold
+ * into one "Summarize" tool with a mode parameter. `define` is dropped from
+ * the menu (its backend endpoint remains).
+ *
+ * Adding a tool is a data change here (plus its backend prompt builder for
+ * `/ai/tool/<id>` tools).
  */
 import type { Component } from 'vue'
 import {
-  ArrowRightLeft,
-  Baby,
-  BookOpen,
-  CheckSquare,
-  Eye,
   FileText,
-  Gem,
   Heading,
   Languages,
-  ListChecks,
-  ListTree,
   Maximize2,
-  MessageCircle,
   Minimize2,
+  PenLine,
   Type,
   Wand2,
 } from 'lucide-vue-next'
+import { useEntriesStore } from '../stores/entries'
 
 export type ToolKind = 'grammar'
 
 export interface AiToolParam {
-  /** UI key for the parameter (tone | voice | language). */
+  /** UI key for the parameter (mode | language). */
   name: string
   /** Request-body field the parameter value is sent under. */
   bodyKey: string
@@ -53,27 +52,21 @@ export interface AiToolDef {
   kind?: ToolKind
 }
 
-export type AiToneStyle =
-  | 'formal'
-  | 'casual'
-  | 'friendly'
-  | 'professional'
-  | 'emphatic'
-  | 'humorous'
-  | 'poetic'
-
-export const AI_TONE_OPTIONS: readonly AiToneStyle[] = [
-  'formal',
-  'casual',
-  'friendly',
-  'professional',
-  'emphatic',
-  'humorous',
-  'poetic',
-]
-
 /** Tool mode is a tool id (kept loose so the registry can grow). */
 export type AiToolMode = string
+
+const LANGUAGE_OPTIONS = [
+  'Spanish',
+  'French',
+  'German',
+  'Italian',
+  'Portuguese',
+  'Japanese',
+  'Chinese',
+  'Hindi',
+  'Arabic',
+  'English',
+] as const
 
 export const AI_TOOLS: readonly AiToolDef[] = [
   {
@@ -88,61 +81,14 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     id: 'rewrite',
     label: 'Rewrite',
     icon: Wand2,
-    endpoint: '/ai/rewrite',
-    resultField: 'rewritten_text',
+    endpoint: '/ai/tool/rewrite',
+    resultField: 'result',
     param: {
-      name: 'tone',
-      bodyKey: 'style',
-      options: AI_TONE_OPTIONS,
-      default: 'formal',
+      name: 'mode',
+      bodyKey: 'param',
+      options: ['as-is', 'polish', 'clarity', 'simplify', 'formal', 'casual'],
+      default: 'as-is',
     },
-  },
-  {
-    id: 'expand',
-    label: 'Expand',
-    icon: Maximize2,
-    endpoint: '/ai/expand',
-    resultField: 'expanded_text',
-  },
-  {
-    id: 'tone',
-    label: 'Tone',
-    icon: MessageCircle,
-    endpoint: '/ai/change-tone',
-    resultField: 'changed_text',
-    param: {
-      name: 'tone',
-      bodyKey: 'tone',
-      options: AI_TONE_OPTIONS,
-      default: 'formal',
-    },
-  },
-  {
-    id: 'define',
-    label: 'Define',
-    icon: BookOpen,
-    endpoint: '/ai/define-text',
-    resultField: 'definition',
-  },
-  {
-    id: 'voice',
-    label: 'Voice',
-    icon: ArrowRightLeft,
-    endpoint: '/ai/change-voice',
-    resultField: 'changed_text',
-    param: {
-      name: 'voice',
-      bodyKey: 'voice',
-      options: ['active', 'passive'],
-      default: 'active',
-    },
-  },
-  {
-    id: 'clarity',
-    label: 'Clarity',
-    icon: Eye,
-    endpoint: '/ai/rewrite-for-clarity',
-    resultField: 'rewritten_text',
   },
   {
     id: 'summarize',
@@ -150,19 +96,18 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     icon: FileText,
     endpoint: '/ai/tool/summarize',
     resultField: 'result',
+    param: {
+      name: 'mode',
+      bodyKey: 'param',
+      options: ['sentences', 'bullets', 'actions'],
+      default: 'sentences',
+    },
   },
   {
-    id: 'key-points',
-    label: 'Key Points',
-    icon: ListChecks,
-    endpoint: '/ai/tool/key-points',
-    resultField: 'result',
-  },
-  {
-    id: 'action-items',
-    label: 'Actions',
-    icon: CheckSquare,
-    endpoint: '/ai/tool/action-items',
+    id: 'expand',
+    label: 'Expand',
+    icon: Maximize2,
+    endpoint: '/ai/tool/expand',
     resultField: 'result',
   },
   {
@@ -173,17 +118,10 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     resultField: 'result',
   },
   {
-    id: 'simplify',
-    label: 'Simplify',
-    icon: Baby,
-    endpoint: '/ai/tool/simplify',
-    resultField: 'result',
-  },
-  {
-    id: 'polish',
-    label: 'Polish',
-    icon: Gem,
-    endpoint: '/ai/tool/polish',
+    id: 'title',
+    label: 'Title',
+    icon: Heading,
+    endpoint: '/ai/tool/title',
     resultField: 'result',
   },
   {
@@ -195,37 +133,65 @@ export const AI_TOOLS: readonly AiToolDef[] = [
     param: {
       name: 'language',
       bodyKey: 'param',
-      options: [
-        'Spanish',
-        'French',
-        'German',
-        'Italian',
-        'Portuguese',
-        'Japanese',
-        'Chinese',
-        'Hindi',
-        'Arabic',
-        'English',
-      ],
+      options: LANGUAGE_OPTIONS,
       default: 'Spanish',
     },
   },
   {
-    id: 'add-structure',
-    label: 'Structure',
-    icon: ListTree,
-    endpoint: '/ai/tool/add-structure',
-    resultField: 'result',
-  },
-  {
-    id: 'title',
-    label: 'Title',
-    icon: Heading,
-    endpoint: '/ai/tool/title',
-    resultField: 'result',
+    id: 'continue',
+    label: 'Continue',
+    icon: PenLine,
+    endpoint: '/ai/continue-writing',
+    resultField: 'continuation',
   },
 ]
 
 export const AI_TOOL_BY_ID: Record<string, AiToolDef> = Object.fromEntries(
   AI_TOOLS.map((t) => [t.id, t]),
 )
+
+// ── Request enrichment shared by every AI caller ─────────────────────────
+
+/**
+ * Backend maximum accepted selection length (chars) — mirrors
+ * `MAX_TOOL_TEXT_CHARS` in backend/app/services/ai_tool_registry.py. Longer
+ * selections are truncated and the truncation MUST be surfaced (spec AI3).
+ */
+export const AI_MAX_TEXT_CHARS = 4000
+
+export interface AiTruncation {
+  sent: number
+  total: number
+}
+
+/** Truncate an over-long selection and describe what was cut (spec AI3). */
+export function truncateForAi(text: string): {
+  text: string
+  truncation: AiTruncation | null
+} {
+  if (text.length <= AI_MAX_TEXT_CHARS) return { text, truncation: null }
+  return {
+    text: text.slice(0, AI_MAX_TEXT_CHARS),
+    truncation: { sent: AI_MAX_TEXT_CHARS, total: text.length },
+  }
+}
+
+/** Metadata of the currently open entry, sent in the AI system channel. */
+export interface AiEntryContext {
+  date: string | null
+  title: string | null
+  mood: string | null
+  tags: string[]
+}
+
+/** Read the entry context from the currently open journal entry, if any. */
+export function currentEntryContext(): AiEntryContext | null {
+  const entry = useEntriesStore().currentEntry
+  if (!entry) return null
+  return {
+    date: entry.entry_date ?? null,
+    title: entry.title ?? null,
+    mood: entry.mood ?? null,
+    tags: (entry.tags ?? []).map((t) => t.name),
+  }
+}

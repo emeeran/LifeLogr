@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Assert the app version is consistent across all four source-of-truth files.
+"""Assert the app version is consistent across all five source-of-truth files.
 
-LifeLogr's version is duplicated in four places (see ``make bump``); a manual
+LifeLogr's version is duplicated in five places (see ``make bump``); a manual
 edit to any one drifts silently and ships a mismatched bundle. This script
 extracts each and exits non-zero if they disagree, so CI catches the drift
 before release. Run locally with ``make check-version``.
@@ -48,12 +48,20 @@ def _tauri_conf_version() -> str:
     return str(data["version"])
 
 
+def _frontend_version() -> str:
+    data = json.loads((ROOT / "frontend" / "package.json").read_text())
+    if "version" not in data:
+        raise RuntimeError("Could not find version in frontend/package.json")
+    return str(data["version"])
+
+
 def main() -> int:
     sources = {
         "backend/pyproject.toml": _pyproject_version(),
         "backend/app/core/config.py": _config_version(),
         "desktop/src-tauri/Cargo.toml": _cargo_version(),
         "desktop/src-tauri/tauri.conf.json": _tauri_conf_version(),
+        "frontend/package.json": _frontend_version(),
     }
     print("Version sources:")
     for name, value in sources.items():
@@ -62,11 +70,11 @@ def main() -> int:
     if len(versions) != 1:
         print(
             "\n✘ Version drift detected — run `make bump V=<version>` to sync "
-            "all four sources.",
+            "all five sources.",
             file=sys.stderr,
         )
         return 1
-    print(f"\n✔ All four sources agree: {next(iter(versions))}")
+    print(f"\n✔ All five sources agree: {next(iter(versions))}")
     return 0
 
 

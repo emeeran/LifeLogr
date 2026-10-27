@@ -4,12 +4,14 @@ import { createPinia } from 'pinia'
 import EditorToolbar from './EditorToolbar.vue'
 
 /**
- * EditorToolbar — accessibility + wiring guard.
+ * EditorToolbar — accessibility + wiring guard, plus the spec §9 ED1–ED5
+ * toolbar item-set contract.
  *
- * The toolbar is presentational (props in, `@action(name)` out), so the
- * interesting assertions are: it mounts in both editor modes, every control
- * exposes an accessible name (the icon-only buttons carry `aria-label`), and a
- * click on a formatting button emits the matching `action`.
+ * The toolbar is presentational (props in, `@action(name)` out). §9 requires
+ * one heading set (H1–H4 + paragraph) in BOTH editors (ED1), no alignment
+ * group (ED2), no table/hr buttons — they live in the context menu (ED3), no
+ * emoji shortcut row — the shared picker is the only emoji surface (ED4), and
+ * exactly one font-family / one font-size dropdown (ED5).
  */
 
 const PROPS = {
@@ -21,7 +23,10 @@ const PROPS = {
   ui: {} as never,
 }
 
-function mountToolbar(mode: 'journal' | 'notes', extra: Record<string, unknown> = {}) {
+function mountToolbar(
+  mode: 'journal' | 'notes',
+  extra: Record<string, unknown> = {},
+) {
   return mount(EditorToolbar, {
     props: { mode, ...PROPS, ...extra },
     global: { plugins: [createPinia()] },
@@ -38,18 +43,35 @@ function accessibleName(button: DOMWrapper<Element>): string {
   )
 }
 
+const HEADING_TITLES = [
+  'Heading 1',
+  'Heading 2',
+  'Heading 3',
+  'Heading 4',
+  'Paragraph (remove heading)',
+]
+const BANNED_TITLES = [
+  'Align left',
+  'Align center',
+  'Align right',
+  'Align justify',
+  'Table',
+  'Horizontal rule',
+]
+
 describe('EditorToolbar', () => {
-  it('mounts in journal mode with named toolbar rows', async () => {
+  it('mounts in journal mode with named toolbar rows', () => {
     const wrapper = mountToolbar('journal')
     expect(wrapper.element).toBeTruthy()
 
     const rows = wrapper.findAll('[role="toolbar"]')
-    expect(rows.length).toBe(3)
+    // ED4 removed the quick-emoji row — both modes now have the same two rows.
+    expect(rows.length).toBe(2)
     for (const row of rows) expect(row.attributes('aria-label')).toBeTruthy()
     wrapper.unmount()
   })
 
-  it('mounts in notes mode with named toolbar rows', async () => {
+  it('mounts in notes mode with named toolbar rows', () => {
     const wrapper = mountToolbar('notes', { isDesktop: true })
     expect(wrapper.element).toBeTruthy()
 
@@ -59,7 +81,7 @@ describe('EditorToolbar', () => {
     wrapper.unmount()
   })
 
-  it('gives every button an accessible name', async () => {
+  it('gives every button an accessible name', () => {
     for (const mode of ['journal', 'notes'] as const) {
       const wrapper = mountToolbar(mode, { isDesktop: true })
       const buttons = wrapper.findAll('button')
@@ -76,6 +98,28 @@ describe('EditorToolbar', () => {
     }
   })
 
+  // ── spec §9 ED1–ED5: the toolbar item set ──
+  for (const mode of ['journal', 'notes'] as const) {
+    it(`${mode}: shows the full heading set and no alignment/table/hr buttons`, () => {
+      const wrapper = mountToolbar(mode)
+      const titles = wrapper
+        .findAll('button')
+        .map((b) => b.attributes('title'))
+      for (const t of HEADING_TITLES) expect(titles).toContain(t)
+      for (const t of BANNED_TITLES) expect(titles).not.toContain(t)
+      wrapper.unmount()
+    })
+
+    it(`${mode}: has one font-family and one font-size dropdown`, () => {
+      const wrapper = mountToolbar(mode)
+      const selects = wrapper.findAll('select')
+      expect(selects).toHaveLength(2)
+      expect(selects[0].attributes('aria-label')).toBe('Font family')
+      expect(selects[1].attributes('aria-label')).toBe('Font size')
+      wrapper.unmount()
+    })
+  }
+
   it('emits action when a formatting button is clicked', async () => {
     const wrapper = mountToolbar('journal')
     await wrapper.find('button[aria-label="Bold (Ctrl+B)"]').trigger('click')
@@ -86,21 +130,9 @@ describe('EditorToolbar', () => {
 
   it('emits action from the notes-only insert tools', async () => {
     const wrapper = mountToolbar('notes', { isDesktop: true })
-    await wrapper
-      .find('button[aria-label="Clip web page"]')
-      .trigger('click')
+    await wrapper.find('button[aria-label="Clip web page"]').trigger('click')
 
     expect(wrapper.emitted('action')).toEqual([['clipWeb']])
-    wrapper.unmount()
-  })
-
-  it('emits quickEmoji from the journal quick-insert row', async () => {
-    const wrapper = mountToolbar('journal')
-    await wrapper
-      .find('button[aria-label="Insert 📝"]')
-      .trigger('click')
-
-    expect(wrapper.emitted('quickEmoji')).toEqual([['📝']])
     wrapper.unmount()
   })
 })

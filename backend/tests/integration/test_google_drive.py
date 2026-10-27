@@ -8,6 +8,7 @@ import pytest
 import respx
 import httpx
 
+from app.core.config import settings
 from app.core.security import encrypt, decrypt
 from app.models.backup import BackupConfig
 from app.services.cloud_sync_service import GoogleDriveProvider
@@ -233,13 +234,14 @@ async def test_oauth_auth_url_endpoint(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_oauth_auth_url_follows_request_port(client):
+async def test_oauth_auth_url_follows_request_port(client, monkeypatch):
     """The loopback redirect URI uses the port the caller actually reached.
 
     dev.sh binds a random free port, so the redirect can't be the hardcoded
     18765 — Google must send the browser back to whichever host:port reached
     this backend or the callback lands on a port nothing listens on.
     """
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "env-client-id")
     response = await client.get(
         "/api/v1/backup/google-drive/auth-url", headers={"Host": "127.0.0.1:8123"}
     )
@@ -249,8 +251,9 @@ async def test_oauth_auth_url_follows_request_port(client):
 
 
 @pytest.mark.asyncio
-async def test_oauth_auth_url_rejects_non_loopback_host(client):
+async def test_oauth_auth_url_rejects_non_loopback_host(client, monkeypatch):
     """A spoofed non-loopback Host header falls back to the configured bind."""
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "env-client-id")
     response = await client.get(
         "/api/v1/backup/google-drive/auth-url", headers={"Host": "evil.example.com:8123"}
     )
@@ -417,6 +420,16 @@ async def test_backup_service_run_backup_gdrive(db_session):
 
     respx.get(url__startswith="https://www.googleapis.com/drive/v3/files").mock(
         side_effect=_gdrive_get
+    )
+    # Backups stream via the resumable upload path (init POST → session URI →
+    # streamed PUT); small archives take the buffered multipart create instead.
+    respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable").mock(
+        return_value=httpx.Response(
+            200, headers={"Location": "https://www.googleapis.com/upload/session-xyz"}
+        )
+    )
+    respx.put("https://www.googleapis.com/upload/session-xyz").mock(
+        return_value=httpx.Response(200, json={"id": "backup-file-id"})
     )
     respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart").mock(
         return_value=httpx.Response(200, json={"id": "backup-file-id"})

@@ -1,5 +1,5 @@
 import { request } from './client'
-import type { AiToolDef } from '../composables/aiToolRegistry'
+import type { AiEntryContext, AiToolDef } from '../composables/aiToolRegistry'
 import type {
   AIStatusResponse,
   ExpandResponse,
@@ -51,6 +51,13 @@ export interface AiToolResult {
   suggestions: GrammarSuggestion[]
 }
 
+export interface AiToolOptions {
+  /** 0-based retry attempt — bumps backend sampling temperature (spec AI5). */
+  attempt?: number
+  /** Metadata of the open entry, sent in the system channel (spec AI2). */
+  entryContext?: AiEntryContext | null
+}
+
 /**
  * Run any AI tool by its registry definition. Builds the request body from the
  * def's `param.bodyKey`, POSTs to the def's endpoint, and reads the result text
@@ -60,11 +67,14 @@ export const callAiTool = async (
   def: AiToolDef,
   text: string,
   paramValue?: string,
+  options?: AiToolOptions,
 ): Promise<AiToolResult> => {
-  const body: Record<string, string> = { text }
+  const body: Record<string, unknown> = { text }
   if (def.param) {
     body[def.param.bodyKey] = paramValue ?? def.param.default
   }
+  if (options?.attempt) body.attempt = options.attempt
+  if (options?.entryContext) body.entry_context = options.entryContext
   const res = await request<Record<string, unknown>>(def.endpoint, {
     method: 'POST',
     body: JSON.stringify(body),

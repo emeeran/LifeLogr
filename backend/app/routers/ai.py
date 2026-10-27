@@ -63,7 +63,19 @@ from app.services.ai_provider_service import (
     list_models,
     test_connection,
 )
-from app.services.ollama_service import OllamaService
+from app.services.ollama_service import EntryContext, OllamaService
+
+
+def _service_entry_context(data: Any) -> EntryContext | None:
+    """Convert the request's optional entry-context payload for the service."""
+    if data is None:
+        return None
+    return EntryContext(
+        date=data.date,
+        title=data.title,
+        mood=data.mood,
+        tags=tuple(data.tags),
+    )
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
@@ -130,7 +142,9 @@ async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(ge
 async def continue_writing(data: ContinueWritingRequest) -> Any:
     """Generate a short continuation suggestion."""
     svc = OllamaService()
-    continuation = await svc.continue_writing(data.text)
+    continuation = await svc.continue_writing(
+        data.text, entry_context=_service_entry_context(data.entry_context), attempt=data.attempt
+    )
     return ContinueWritingResponse(continuation=continuation)
 
 
@@ -240,7 +254,13 @@ async def run_generic_tool(
     """Run a registry-defined AI text tool (summarize, translate, …)."""
     svc = OllamaService()
     try:
-        result = await svc.run_generic_tool(tool_id, data.text, data.param)
+        result = await svc.run_generic_tool(
+            tool_id,
+            data.text,
+            data.param,
+            entry_context=_service_entry_context(data.entry_context),
+            attempt=data.attempt,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown AI tool: {tool_id}") from None
     except ValueError as exc:

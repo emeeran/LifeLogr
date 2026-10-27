@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { aiStatus, callAiTool } from '../../api/ai'
-import { AI_TOOLS, AI_TOOL_BY_ID } from '../../composables/aiToolRegistry'
+import {
+  AI_TOOLS,
+  AI_TOOL_BY_ID,
+  currentEntryContext,
+  truncateForAi,
+  type AiTruncation,
+} from '../../composables/aiToolRegistry'
 import { getEgressReport } from '../../api/system'
 import type { GrammarSuggestion } from '../../types'
 import {
@@ -31,7 +37,11 @@ const suggestions = ref<GrammarSuggestion[]>([])
 const mode = ref<string>('grammar')
 const error = ref('')
 const available = ref<boolean | null>(null)
-const selectedParam = ref<string>('formal')
+const selectedParam = ref<string>('')
+/** Non-null when the selection was cut to the backend limit (spec AI3). */
+const truncation = ref<AiTruncation | null>(null)
+/** 0-based retry attempt; each retry bumps backend temperature (spec AI5). */
+const attempt = ref(0)
 
 const activeTool = computed(() => AI_TOOL_BY_ID[mode.value])
 const paramOptions = computed(() => activeTool.value?.param?.options ?? [])
@@ -59,28 +69,37 @@ onMounted(async () => {
   }
 })
 
-async function runTool(toolId: string) {
+async function runTool(toolId: string, nextAttempt = 0) {
   const def = AI_TOOL_BY_ID[toolId]
   if (!def) return
-  const text = props.getSelection()
-  if (!text) {
+  const selected = props.getSelection()
+  if (!selected.trim()) {
     error.value = 'Please select some text in the editor first.'
     return
   }
 
   mode.value = toolId
   if (def.param) selectedParam.value = def.param.default
+  // Non-silent truncation (spec AI3): visible while the tool runs, before the
+  // result renders.
+  const sent = truncateForAi(selected)
+  truncation.value = sent.truncation
+  attempt.value = nextAttempt
   loading.value = true
   error.value = ''
   suggestions.value = []
   result.value = ''
-  originalText.value = text
+  originalText.value = selected
 
   try {
     const { text: out, suggestions: sugg } = await callAiTool(
       def,
-      text,
+      sent.text,
       selectedParam.value,
+      {
+        attempt: nextAttempt,
+        entryContext: currentEntryContext(),
+      },
     )
     result.value = out
     suggestions.value = sugg
@@ -89,6 +108,10 @@ async function runTool(toolId: string) {
   } finally {
     loading.value = false
   }
+}
+
+function retryTool() {
+  if (mode.value) runTool(mode.value, attempt.value + 1)
 }
 
 function applyResult() {
@@ -103,6 +126,7 @@ function clearResult() {
   result.value = ''
   originalText.value = ''
   error.value = ''
+  truncation.value = null
 }
 
 const copied = ref(false)
@@ -200,6 +224,18 @@ function copyResult() {
           }}</span>
         </div>
 
+        <!-- Non-silent truncation notice (spec AI3) -->
+        <div
+          v-if="truncation"
+          class="p-2 bg-amber-400/10 border border-amber-400/20 rounded"
+        >
+          <span class="text-[10px] text-amber-300 leading-tight">
+            Selection is {{ truncation.total.toLocaleString() }} characters —
+            only the first {{ truncation.sent.toLocaleString() }} were sent to
+            the model.
+          </span>
+        </div>
+
         <!-- Result -->
         <div v-if="result" class="space-y-2">
           <div class="flex items-center justify-between">
@@ -253,6 +289,12 @@ function copyResult() {
               <Check v-if="copied" :size="10" class="text-green-400" />
               <Copy v-else :size="10" />
               {{ copied ? 'Done' : 'Copy' }}
+            </button>
+            <button
+              @click="retryTool"
+              class="px-2.5 py-1.5 bg-surface-hover text-text-secondary rounded text-[10px] font-medium hover:text-text-primary transition-colors"
+            >
+              Retry
             </button>
             <button
               @click="clearResult"

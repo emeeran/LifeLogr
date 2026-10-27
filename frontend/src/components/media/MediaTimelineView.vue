@@ -262,7 +262,7 @@ watch(() => filter.value, load)
               <!-- Image -->
               <img
                 v-if="isImage(item.media_type)"
-                :src="mediaApi.fileUrl(item.id)"
+                :src="mediaApi.thumbUrl(item.id)"
                 :alt="item.filename"
                 class="w-full h-full object-cover"
                 loading="lazy"

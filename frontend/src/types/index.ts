@@ -39,6 +39,7 @@ export interface EntryResponse {
   title: string | null
   body: string
   summary: string | null
+  mood?: string | null
   is_deleted: boolean
   is_encrypted: boolean
   tags: TagBrief[]
@@ -97,12 +98,14 @@ export interface EntryCreate {
   body: string
   tag_ids?: number[]
   template_id?: number | null
+  mood?: string | null
 }
 
 export interface EntryUpdate {
   title?: string | null
   body?: string | null
   tag_ids?: number[] | null
+  mood?: string | null
 }
 
 // ── Notes ──────────────────────────────────────────────────────────────

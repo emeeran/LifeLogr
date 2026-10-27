@@ -237,8 +237,14 @@ async def rate_limiter(request: Request, call_next: Any) -> Response:
     # user's own bulk imports/enrichment is actively harmful.
     if not settings.is_production:
         return await call_next(request)  # type: ignore[no-any-return]
-    # Skip rate limiting for static assets, health, and tests
-    if request.url.path.startswith(("/static", "/health", "/favicon")):
+    # Skip rate limiting for static assets, health, tests, and media file/thumb
+    # streaming: the media timeline loads ~50 files per page, so counting them
+    # against a 60/min budget 429s the user's own thumbnails (the packaged
+    # sidecar runs with APP_ENV=production).
+    if request.url.path.startswith(("/static", "/health", "/favicon")) or (
+        request.url.path.startswith("/api/v1/media/")
+        and request.url.path.endswith(("/file", "/thumb"))
+    ):
         return await call_next(request)  # type: ignore[no-any-return]
 
     client_ip = request.client.host if request.client else "unknown"

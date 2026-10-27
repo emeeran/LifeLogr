@@ -11,6 +11,7 @@ vi.mock('../../api/media', () => ({
     listAll: vi.fn(async () => ({ items: [], total: 0 })),
     listByEntry: vi.fn(async () => []),
     fileUrl: vi.fn(() => ''),
+    thumbUrl: vi.fn(() => ''),
     upload: vi.fn(),
     uploadFromPath: vi.fn(),
     extractText: vi.fn(),
