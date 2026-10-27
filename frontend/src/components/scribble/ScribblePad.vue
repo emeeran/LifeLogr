@@ -32,6 +32,8 @@ const emit = defineEmits<{ close: [] }>()
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <div class="h-full flex flex-col bg-surface border-r border-border">
     <!-- Header -->
     <div

@@ -21,7 +21,9 @@ withDefaults(
   {
     variant: 'ghost',
     size: 'sm',
+    icon: undefined,
     disabled: false,
+    title: undefined,
     type: 'button',
   },
 )

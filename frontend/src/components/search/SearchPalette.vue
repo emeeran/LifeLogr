@@ -131,6 +131,8 @@ const showHistory = computed(
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <div
     class="fixed inset-0 z-[300] flex items-start justify-center pt-[15vh] bg-black/40"
     @click.self="ui.closeSearchPalette()"

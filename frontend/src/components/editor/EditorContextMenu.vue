@@ -35,7 +35,7 @@ const props = withDefaults(
     /** Show the Encrypt/Decrypt menu item (journal yes, notes no). */
     enableEncrypt?: boolean
   }>(),
-  { enableEncrypt: true },
+  { aiTruncation: undefined, enableEncrypt: true },
 )
 
 const activeTool = computed(() =>

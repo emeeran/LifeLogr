@@ -1324,6 +1324,8 @@ async function applySuggestedTag(name: string) {
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <div
     class="flex flex-col h-full relative"
     :class="[

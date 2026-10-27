@@ -189,9 +189,9 @@ async function onExtractText(id: number) {
       v-show="!showDrawer && !ui.zenMode"
       class="flex-1 flex flex-col min-w-0 bg-surface relative"
     >
-      <router-view v-slot="{ Component }">
+      <router-view v-slot="{ Component: RouteComponent }">
         <Transition name="route-fade" mode="out-in">
-          <component :is="Component" />
+          <component :is="RouteComponent" />
         </Transition>
       </router-view>
 

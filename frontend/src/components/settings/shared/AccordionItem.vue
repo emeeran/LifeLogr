@@ -11,6 +11,8 @@ const props = withDefaults(
     defaultOpen?: boolean
   }>(),
   {
+    icon: undefined,
+    description: undefined,
     defaultOpen: false,
   },
 )

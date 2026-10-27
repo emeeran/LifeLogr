@@ -116,6 +116,8 @@ watch(
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <div v-if="entry" class="flex flex-col h-full">
     <EntryHeader
       :date-str="entry.entry_date"

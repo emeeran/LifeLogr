@@ -30,6 +30,8 @@ function close() {
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <Transition name="fade">
     <div
       v-if="modelValue"

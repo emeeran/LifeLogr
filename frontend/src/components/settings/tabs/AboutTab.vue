@@ -155,6 +155,8 @@ onMounted(() => {
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <!-- App Identity Hero -->
   <section
     class="relative overflow-hidden rounded-lg border border-border bg-surface"

@@ -971,6 +971,8 @@ defineExpose({ isDirty })
 </script>
 
 <template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
   <div
     class="relative flex flex-col h-full bg-surface"
     @dragenter="dragHandlers.onDragenter"
