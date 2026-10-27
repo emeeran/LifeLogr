@@ -1,0 +1,51 @@
+app/services/ics_service.py:134: error:(B Incompatible types in assignment (expression has type (B"str | None"(B, variable has type (B"str"(B)  (B[assignment](B
+app/core/jobs.py:95: error:(B Cannot infer type of lambda  (B[misc](B
+app/services/weather_service.py:173: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/export_service.py:151: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/export_service.py:187: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/export_service.py:541: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/export_service.py:551: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/export_service.py:764: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/export_service.py:764: error:(B Missing type arguments for generic type (B"dict"(B  (B[type-arg](B
+app/services/media_service.py:517: error:(B Incompatible types in assignment (expression has type (B"Image"(B, variable has type (B"ImageFile"(B)  (B[assignment](B
+app/services/media_service.py:522: error:(B Incompatible types in assignment (expression has type (B"Image"(B, variable has type (B"ImageFile"(B)  (B[assignment](B
+app/routers/jobs.py:17: error:(B Missing type arguments for generic type (B"dict"(B  (B[type-arg](B
+app/services/entry_service.py:405: error:(B Item (B"Connection"(B of (B"Any | Engine | Connection"(B has no attribute (B"url"(B  (B[union-attr](B
+app/services/notes_export_service.py:199: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/notes_export_service.py:202: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/services/notes_export_service.py:241: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/routers/entries.py:275: error:(B Argument (B"latitude"(B to (B"GeotagItem"(B has incompatible type (B"float | None"(B; expected (B"float"(B  (B[arg-type](B
+app/routers/entries.py:276: error:(B Argument (B"longitude"(B to (B"GeotagItem"(B has incompatible type (B"float | None"(B; expected (B"float"(B  (B[arg-type](B
+app/routers/entries.py:393: error:(B Function is missing a type annotation for one or more parameters  (B[no-untyped-def](B
+app/routers/entries.py:481: error:(B Function is missing a type annotation  (B[no-untyped-def](B
+app/routers/entries.py:524: error:(B Function is missing a type annotation  (B[no-untyped-def](B
+app/routers/entries.py:656: error:(B Function is missing a type annotation  (B[no-untyped-def](B
+app/routers/entries.py:750: error:(B Function is missing a type annotation  (B[no-untyped-def](B
+app/routers/entries.py:1018: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1031: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1053: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1059: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1549: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1550: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1570: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1591: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1692: error:(B Too few arguments  (B[call-arg](B
+app/routers/entries.py:1699: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:203: error:(B Argument (B"report"(B to (B"add_backup_members"(B has incompatible type (B"Callable[[str, int, int | None, str | None], None]"(B; expected (B"Callable[[str, int, int | None], None] | None"(B  (B[arg-type](B
+app/services/backup_service.py:290: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:299: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:320: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:328: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:484: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:496: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:501: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:511: error:(B Too few arguments  (B[call-arg](B
+app/services/backup_service.py:524: error:(B Too few arguments  (B[call-arg](B
+app/services/scheduler_service.py:801: error:(B Argument (B"report"(B to (B"add_backup_members"(B has incompatible type (B"Callable[[str, int, int | None, str | None], None] | None"(B; expected (B"Callable[[str, int, int | None], None] | None"(B  (B[arg-type](B
+app/services/scheduler_service.py:807: error:(B Too few arguments  (B[call-arg](B
+app/services/scheduler_service.py:863: error:(B Returning Any from function declared to return (B"int"(B  (B[no-any-return](B
+app/routers/backup.py:184: error:(B Name (B"_runner"(B already defined on line 136  (B[no-redef](B
+app/routers/backup.py:395: error:(B Too few arguments  (B[call-arg](B
+app/routers/backup.py:408: error:(B Too few arguments  (B[call-arg](B
+app/routers/backup.py:424: error:(B Too few arguments  (B[call-arg](B
+Found 50 errors in 12 files (checked 110 source files)(B
