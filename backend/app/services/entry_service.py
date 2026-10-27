@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Connection, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
@@ -301,14 +301,26 @@ class EntryService:
 
         media_result = await self.db.execute(select(Media).where(Media.entry_id == entry_id))
         media_list = media_result.scalars().all()
-        if media_list:
-            for media in media_list:
-                full_path = settings.MEDIA_DIR / media.storage_path
-                if full_path.exists():
-                    full_path.unlink()
-                await self.db.delete(media)
+        for media in media_list:
+            await self.db.delete(media)
 
+        # Commit BEFORE unlinking files: if the commit failed after the files
+        # were gone, the DB would reference media that no longer exists (and
+        # restore() could never bring them back). A failed unlink after a
+        # successful commit only orphans a file, which is recoverable.
         await self.db.commit()
+        for media in media_list:
+            full_path = settings.MEDIA_DIR / media.storage_path
+            if full_path.exists():
+                try:
+                    full_path.unlink()
+                except OSError:
+                    logger.warning(
+                        "Could not remove media file %s for soft-deleted entry %s",
+                        full_path,
+                        entry_id,
+                        exc_info=True,
+                    )
         invalidate_stats_cache()
         # Best-effort: drop from the vector cache now (ensure_fresh reloads on
         # any divergence anyway, so a miss here self-heals on the next search).
@@ -402,7 +414,10 @@ class EntryService:
         calendar's counts; bodies are read but never leave the server.
         """
         bind = self.db.get_bind()
-        cache_key = str(getattr(bind, "engine", bind).url)
+        # A Connection exposes .engine; an Engine is already what we want. The
+        # getattr dance is untyped — narrow explicitly for mypy and readers.
+        engine = bind.engine if isinstance(bind, Connection) else bind
+        cache_key = str(engine.url)
         now = time.monotonic()
         hit = _stats_cache.get(cache_key)
         if hit is not None and now - hit[0] < _STATS_CACHE_TTL:
