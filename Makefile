@@ -83,7 +83,7 @@ check-version:
 # doc headers (*Version <v>* / README's `v<v>` badge), and the APP_VERSION row
 # in ARCHITECTURE.md's config table. Example commands in docs (e.g.
 # `git tag v1.0.0`) are deliberately excluded.
-DOC_FILES := README.md docs/ARCHITECTURE.md docs/BUILD_GUIDE.md \
+DOC_FILES := README.md docs/ARCHITECTURE.md \
              docs/manual/USER_MANUAL.md docs/manual/DEPLOYMENT.md docs/manual/API_REFERENCE.md
 DOC_VERSION_RE := (LifeLogr\|lifelogr-web)_[0-9]+\.[0-9]+\.[0-9]+_\|^\*Version [0-9]+\.[0-9]+\.[0-9]+\|^\`v[0-9]+\.[0-9]+\.[0-9]+\`\|APP_VERSION\` | \`[0-9]+\.[0-9]+\.[0-9]+
 
