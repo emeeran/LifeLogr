@@ -24,33 +24,39 @@ The mypy gate below is the closest thing — see High #1.
 
 ## High priority
 
-- [ ] `backend/app/services/`, `routers/` (12 files, 50 errors) — **mypy strict
-  gate is red**. `uv run mypy app/` exits 1 (worst offenders:
+- [ ] `backend/app/services/`, `routers/` (12 files, 50 errors) — \*\*mypy strict
+
+  gate is red\*\*. `uv run mypy app/` exits 1 (worst offenders:
   `app/routers/entries.py` 17, `app/services/backup_service.py` 10,
   `app/services/export_service.py` 6). Baseline recorded at
   `.pipeline/baseline-mypy.txt`. Fix the errors, or temporarily scope mypy to
   the clean files and ratchet outward — the current state means CI cannot
   block anything, including real regressions.
 - [ ] `.pipeline/baseline-mypy.txt` + `.pipeline/baseline-test-results.txt` —
+
   once mypy is green again, delete the baselines; they are pipeline scaffolding
   and will rot.
 
 ## Medium priority
 
 - [ ] `backend/pyproject.toml:58` (`fail_under = 62`) — coverage floor sits
+
   just under the measured 63% baseline. Comment says "ratchet up"; nothing
   schedules that. Fine to ship; pick a ratchet cadence.
-- [ ] `backend/app/core/database.py:576` — `text(f"DROP TABLE IF EXISTS
-  {table}")`: f-string SQL, but the table names come from a hardcoded
+- [ ] `backend/app/core/database.py:576` — \`text(f"DROP TABLE IF EXISTS
+
+  {table}")\`: f-string SQL, but the table names come from a hardcoded
   module-level teardown list, never user input. Verified safe; a comment there
   saying so would prevent future copy-paste of the pattern.
 - [ ] 13 eslint warnings tolerated by the lint gate: 7 × `vue/no-v-html` (all
+
   fed by the sanitized `utils/markdown.ts` pipeline or a `['mark']`-allowlisted
   DOMPurify call at `SearchPalette.vue:117` — verified sanitized), 5 ×
   `vue/require-default-prop` on shared settings components, 1 ×
   `no-template-shadow` in `AppShell.vue`. Either fix or move to the eslint
   config as explicit overrides so the warning count reads zero-by-policy.
 - [ ] `backend/app/core/config.py:288` — env alias `LIFEOGRF_API_TOKEN`
+
   (missing the "g") is accepted alongside `API_TOKEN`. If it's deliberate
   backward-compat for a historic typo, say so in a comment; if not, it's a
   confusing second spelling to keep forever.
@@ -59,7 +65,7 @@ The mypy gate below is the closest thing — see High #1.
 
 - `backend/app/core/config.py` — `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` read like
   PostgreSQL leftovers but are genuinely wired to the SQLite QueuePool and
-  enforced by `startup_checks.py` (pool_size > 1). Kept deliberately.
+  enforced by `startup_checks.py` (pool\_size &gt; 1). Kept deliberately.
 - `backend/tests/` — no trivial/padding tests found; naming is behavioral
   throughout. Nothing to prune.
 - Docstrings are uniformly prose-with-reST-cross-references; error handling
@@ -73,7 +79,10 @@ The mypy gate below is the closest thing — see High #1.
   the CSRF/origin guard chain in `main.py` exists precisely because CORS alone
   can't stop form-spoofing POSTs. `API_TOKEN` exists for anyone exposing it
   further.
-- **WebKitWebProcess memory** — the renderer can balloon (~5 GB) and OOM the
+
+
+
+- **WebKitWebProcess memory** — the renderer can balloon (\~5 GB) and OOM the
   machine under heavy media use. Known, machine-specific, not addressable in
   this repo's code.
 - **`.deb` sidecar freshness** — the deb can ship a stale PyInstaller sidecar
@@ -83,3 +92,74 @@ The mypy gate below is the closest thing — see High #1.
   restore once rolled back freshly imported media; recovered via a 0.13.2
   re-import. Operational lesson (restore before import, or after a backup),
   not a code defect identified here.
+
+
+---
+
+# Phase 5 — Blind Review Reconciliation (2026-10-27)
+
+A sanitized, context-blind reviewer (cold due-diligence framing; no knowledge of
+this pipeline or audit) reviewed the source trees and wrote
+`.pipeline/blind-review.md` (verbatim; see its addendum for the honest limits of
+this method). Findings reconciled against this audit:
+
+## Agreed by both reviews (higher confidence)
+
+- **mypy gate red** — this audit's High #1 ≡ blind review H1. Both note the
+  "baseline" file is wired into no tooling. Still the top action.
+- **13 tolerated eslint warnings**, **coverage floor at just-below-baseline**,
+  **`LIFEOGRF_API_TOKEN` typo alias** — all appeared in both Medium lists.
+
+## Missed by pipeline, caught by blind review
+
+- [ ] **HIGH — Production validation silently bypassed in Docker**
+  (`backend/app/core/database.py:365`): `init_db` treats the mere presence of
+  `DATA_DIR` as "desktop sidecar" and skips `validate_production()`. But
+  `Dockerfile:36-37` sets `APP_ENV=production` *and* `DATA_DIR`, so the
+  `docker-compose.yml:17-18` comment ("refuses to boot until .env sets a real
+  SECRET_KEY") is false — a key is auto-generated instead. Docs and code
+  disagree; Phase 4's config dimension read the comments, not this path.
+  Fix: tie the skip to an explicit desktop marker, or fix the docs.
+- [ ] **HIGH — Soft delete destroys media before commit**
+  (`backend/app/services/entry_service.py:293-311`): media files are
+  `unlink()`ed, *then* `db.commit()` runs. A failed commit leaves the DB
+  referencing deleted files; `restore()` confirms attachments are gone. A
+  data-loss footgun in a local-first journal. Fix: unlink after commit, or
+  move to a trash directory. (Notably violates the project's own AGENTS.md
+  rule that soft delete must clean up media — the rule is followed, just in
+  the wrong order.)
+- [ ] **MEDIUM — `/api/v1/sync` is a dead, unauthenticated, DB-writing
+  surface** (`backend/app/routers/sync.py` + `services/cloud_sync_service.py`,
+  ~2k lines, 5 provider adapters): zero callers anywhere in `frontend/src/`.
+  Phase 2's dead-symbol sweep compared backend symbols against backend
+  callers only — it never cross-checked routers against frontend consumers.
+  Human decision required: build the UI or remove the surface.
+- [ ] **MEDIUM — Port story is contradictory** (`desktop/src-tauri/src/main.rs:123`):
+  launch runs `fuser -k 18765/tcp`, killing whatever holds the port, while the
+  backend's dynamic-port fallback can't work anyway — `frontend/src/api/client.ts:4`
+  and the Tauri CSP hardcode 18765. Write the port story down in one place.
+- [ ] **LOW — Dead-product naming in format contracts**: backup archives name
+  the DB `diarium.diarium` (`core/archive.py:91`, restored at
+  `routers/backup.py:401`); `DIARI_DATA_DIR` docstring (`config.py:26`). The
+  app started life as a Diarium companion; the name survives in on-disk
+  contracts where renaming costs compatibility.
+- [ ] **META — Comments documenting behavior the code doesn't have**: the
+  reviewer's sharpest observation — paragraph-length justifying comments are
+  mostly accurate, but in all three high-severity cases the comment described
+  the intended, not the actual, behavior. Implication for future reviews:
+  trust diffs, not docstrings.
+
+## Surfaced to the human (not silently resolved)
+
+1. **Sidecar staleness (accepted-risk entry above) is stale on the CI path:**
+   the blind reviewer found `build.yml:64-72` re-runs PyInstaller and copies a
+   fresh binary into the sidecar slot before packaging — confirmed. The
+   historical risk (recorded in project memory) now applies only to local/
+   manual builds. AUDIT's accepted-risk wording above should be read with
+   that qualifier.
+2. **`/api/v1/sync`: feature or dead code?** Both reviews agree it's unused;
+   only the human can say whether E2E Nextcloud sync is a roadmap feature or
+   ~2k removable lines.
+3. **Verdict delta:** this audit said "ready with fixes"; the blind reviewer's
+   framing was harsher ("treat CI as decorative" until mypy is fixed). Same
+   facts, different emphasis — the fixes list is identical.
