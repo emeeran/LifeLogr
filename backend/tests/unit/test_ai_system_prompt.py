@@ -16,7 +16,6 @@ from app.services.ollama_service import (
     EntryContext,
     OllamaService,
     build_system_message,
-    entry_context_from,
     format_entry_context,
     retry_temperature,
 )
@@ -130,11 +129,6 @@ class TestEntryContext:
         assert 'title "Trip"' in system
         assert "mood unset" in system
 
-    def test_entry_context_from_payload(self):
-        payload = {"date": "2026-10-27", "title": "T", "mood": None, "tags": ["a"]}
-        ctx = entry_context_from(payload)
-        assert ctx == EntryContext(date="2026-10-27", title="T", mood=None, tags=("a",))
-        assert entry_context_from(None) == EntryContext()
 
 
 class TestRetryTemperature:

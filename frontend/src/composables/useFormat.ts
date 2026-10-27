@@ -1,16 +1,4 @@
 /**
- * Format an ISO date string (YYYY-MM-DD) as a locale string.
- * Appends T00:00:00 to avoid UTC offset issues.
- */
-export function formatEntryDate(
-  iso: string,
-  options?: Intl.DateTimeFormatOptions,
-): string {
-  const d = new Date(iso + 'T00:00:00')
-  return d.toLocaleDateString('en-US', options)
-}
-
-/**
  * Journal date display standard: dd-mm-yyyy. Storage and the API stay ISO
  * (YYYY-MM-DD); only what the user sees is converted.
  */

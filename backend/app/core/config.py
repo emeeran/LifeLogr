@@ -212,11 +212,6 @@ def is_loopback_host(host: str) -> bool:
         return False
 
 
-def _is_loopback(host: str) -> bool:
-    """Backwards-compatible alias for :func:`is_loopback_host`."""
-    return is_loopback_host(host)
-
-
 def _migrate_existing_db(target_db: Path, target_data_dir: Path) -> None:
     """Copy an existing database (and media) into *target_data_dir* on first desktop run.
 
@@ -346,9 +341,6 @@ class Settings(BaseSettings):
     AI_ENABLE_SUMMARIZATION: bool = True
     AI_ENABLE_REFLECTION_PROMPTS: bool = True
     AI_ENABLE_WRITER_BLOCK_HELPER: bool = True
-
-    # OCR
-    OCR_ENGINE: str = "tesseract"
 
     # Connection pool (for production PostgreSQL)
     DB_POOL_SIZE: int = Field(default=5, ge=1)

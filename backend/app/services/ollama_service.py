@@ -71,26 +71,6 @@ class EntryContext:
     tags: Sequence[str] = ()
 
 
-def entry_context_from(data: Any) -> EntryContext:
-    """Build an :class:`EntryContext` from a request payload.
-
-    Accepts ``None``, a mapping, or an object with the four attributes (the
-    request schema); unknown extra fields are ignored.
-    """
-    if data is None:
-        return EntryContext()
-    if isinstance(data, dict):
-        getter = data.get
-    else:
-        getter = lambda key, default=None: getattr(data, key, default)  # noqa: E731
-    return EntryContext(
-        date=getter("date"),
-        title=getter("title"),
-        mood=getter("mood"),
-        tags=tuple(getter("tags") or ()),
-    )
-
-
 def format_entry_context(ctx: EntryContext | None = None) -> str:
     """Render the entry-context line appended to the system prompt."""
     c = ctx if ctx is not None else EntryContext()
