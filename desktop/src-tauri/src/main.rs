@@ -17,6 +17,10 @@ use tauri_plugin_global_shortcut::{Builder as ShortcutBuilder, GlobalShortcutExt
 use tauri_plugin_shell::ShellExt;
 
 /// Read backend port from DIARI_PORT env var, defaulting to 18765.
+///
+/// 18765 is baked into the frontend API client (`client.ts`) and the Tauri
+/// CSP (`tauri.conf.json`), so DIARI_PORT is a dev/test override only —
+/// anything other than the default silently breaks the webview's fetches.
 fn backend_port() -> u16 {
     std::env::var("DIARI_PORT")
         .ok()
@@ -120,9 +124,41 @@ fn port_is_listening(port: u16) -> bool {
 /// cause of "405 Method Not Allowed" on new endpoints). Single-instance is
 /// enforced, so anything on our port at startup is stale — kill it before
 /// spawning ours. Best-effort and no-op when the port is already free.
+/// True if whatever answers on `port` speaks LifeLogr's /health contract.
+///
+/// `reclaim_port` kills the process holding our port, so it must never fire on
+/// a *foreign* listener (a user's unrelated service that happens to squat
+/// 18765). Only a stale own sidecar answers /health with 200 + "ok".
+fn port_is_lifelogr(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{port}");
+    let Ok(mut stream) =
+        TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300))
+    else {
+        return false;
+    };
+    let req = format!(
+        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 512];
+    use std::io::Read;
+    let n = stream.read(&mut buf).unwrap_or(0);
+    let resp = String::from_utf8_lossy(&buf[..n]);
+    resp.contains("200") && resp.contains("ok")
+}
+
 fn reclaim_port(port: u16) {
     if !port_is_listening(port) {
         return; // port free — nothing to reclaim
+    }
+    if !port_is_lifelogr(port) {
+        error!(
+            "Port {port} is held by a process that does not answer LifeLogr's \
+             /health — NOT killing it. Free the port manually or set DIARI_PORT."
+        );
+        return;
     }
     warn!(
         "Port {port} is already in use — reclaiming it from a stale backend sidecar"
