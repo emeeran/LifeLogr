@@ -167,8 +167,9 @@ onMounted(load)
           variant="ghost"
           :icon="FolderOpen"
           @click="editingPath = true"
-          >Change…</SButton
         >
+          Change…
+        </SButton>
         <SButton
           v-if="editingPath"
           variant="primary"

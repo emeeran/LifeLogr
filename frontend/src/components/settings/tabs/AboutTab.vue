@@ -351,9 +351,9 @@ onMounted(() => {
             Delete all entries, tags, and media.
           </div>
         </div>
-        <SButton variant="danger-soft" @click="showResetConfirm = true"
-          >Reset</SButton
-        >
+        <SButton variant="danger-soft" @click="showResetConfirm = true">
+          Reset
+        </SButton>
       </div>
       <div
         v-if="showResetConfirm"
@@ -367,7 +367,7 @@ onMounted(() => {
         <input
           v-model="resetConfirmText"
           class="w-full px-2 py-1 bg-surface border border-danger/40 rounded-md text-[12px] text-text-primary placeholder-text-muted outline-none focus:border-danger transition-colors"
-          placeholder='Type "RESET" to confirm'
+          placeholder="Type &quot;RESET&quot; to confirm"
         />
         <div class="flex items-center gap-2">
           <SButton
@@ -381,8 +381,9 @@ onMounted(() => {
           <SButton
             variant="ghost"
             @click="showResetConfirm = false; resetConfirmText = ''"
-            >Cancel</SButton
           >
+            Cancel
+          </SButton>
         </div>
       </div>
     </div>

@@ -342,7 +342,7 @@ class Settings(BaseSettings):
     AI_ENABLE_REFLECTION_PROMPTS: bool = True
     AI_ENABLE_WRITER_BLOCK_HELPER: bool = True
 
-    # Connection pool (for production PostgreSQL)
+    # Connection pool sizing (SQLite QueuePool; startup_checks enforces > 1)
     DB_POOL_SIZE: int = Field(default=5, ge=1)
     DB_MAX_OVERFLOW: int = Field(default=10, ge=0)
 

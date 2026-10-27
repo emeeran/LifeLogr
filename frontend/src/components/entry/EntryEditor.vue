@@ -584,7 +584,7 @@ const daily = computed(() => {
 watch(daily, (now, prev) => {
   if (!now || !prev) return
   if (prev.words < prev.goal && now.words >= now.goal)
-    toast.success('Daily goal reached 🎉')
+    toast.success('Daily goal reached')
 })
 
 // ── On this day (spec §9: surface past same-date entries while writing) ──
