@@ -189,6 +189,24 @@ async function downloadDaylioCsv() {
   })
 }
 
+// Day One ZIP — Diarium's "Migrate from other app → Day One" is the only
+// import route that carries attachments (matched by md5-named archive members).
+const dayoneScope = ref<'new' | 'all'>('new')
+async function downloadDayOne() {
+  await downloadViaJob(
+    entriesApi.exportDayOneUrl(
+      rangeStart.value,
+      rangeEnd.value,
+      dayoneScope.value,
+    ),
+    'Day One export',
+    {
+      defaultName: 'lifelogr-dayone.zip',
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    },
+  )
+}
+
 // ── Notes formats ──
 async function downloadNotesMarkdown() {
   exportLabel.value = 'Notes ZIP export'
@@ -318,6 +336,35 @@ async function downloadNotesHtml() {
           @click="guard('.diary export', downloadDiariumDb)"
         >
           <Database :size="12" /> Export
+        </SButton>
+      </div>
+
+      <div class="format-row">
+        <div class="min-w-0 flex-1">
+          <div class="text-[12px] text-text-primary">
+            Day One ZIP (Diarium push)
+            <span class="carries">entries · media · tags</span>
+          </div>
+          <p class="text-[11px] text-text-muted">
+            Import via Diarium's <em>Migrate from other app → Day One</em> — the
+            one route that carries photos and attachments. "Only new" skips days
+            Diarium already has.
+          </p>
+        </div>
+        <select
+          v-model="dayoneScope"
+          class="settings-input w-24 text-[11px]"
+          :disabled="exportDisabled"
+        >
+          <option value="new">Only new</option>
+          <option value="all">All</option>
+        </select>
+        <SButton
+          variant="ghost"
+          :disabled="exportDisabled"
+          @click="guard('Day One export', downloadDayOne)"
+        >
+          <FileDown :size="12" /> Export
         </SButton>
       </div>
 

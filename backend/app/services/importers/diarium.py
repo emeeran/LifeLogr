@@ -79,6 +79,9 @@ def parse_diarium_json_entry(item: dict[str, Any]) -> dict[str, Any]:
         "body": body,
         "mood": mood,
         "tags": tags,
+        # Diarium's own identity for this entry; absent in our interchange shape.
+        "external_source": "diarium" if ticks else None,
+        "external_id": str(ticks) if ticks else None,
     }
 
 
@@ -131,6 +134,17 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
     else:
         db_path = Path(source)
     owned_tmp = isinstance(source, bytes)
+    # Diarium has no per-entry modified column, so the backup file's mtime is
+    # the freshest signal available about the source side. Stored naive-UTC to
+    # match the DateTime columns it is written into.
+    backup_mtime: datetime | None = None
+    if not owned_tmp:
+        try:
+            backup_mtime = datetime.fromtimestamp(
+                db_path.stat().st_mtime, tz=timezone.utc
+            ).replace(tzinfo=None)
+        except OSError:
+            backup_mtime = None
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -245,7 +259,7 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
             if heading == "Today's Summary":
                 # Diarium's auto-generated placeholder — never content.
                 heading = None
-            elif not body_text and not media_map.get(row["DiaryEntryId"]):
+            if not body_text and not media_map.get(row["DiaryEntryId"]) and not heading:
                 # Photo-only entries (empty text) survive via their media; a
                 # truly empty, unheaded entry is noise. A real heading
                 # (anniversary, event) is content even with an empty body.
@@ -268,6 +282,14 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
                     "longitude": row["Longitude"] if row["Longitude"] else None,
                     "media": media_map.get(row["DiaryEntryId"], []),
                     "events": events_map.get(row["DiaryEntryId"], []),
+                    # The entry's own identity, preserved verbatim so a later
+                    # import of a newer backup updates this row instead of
+                    # appending a copy of it.
+                    "external_source": "diarium",
+                    "external_id": str(row["DiaryEntryId"]),
+                    # Diarium drops the column that would say "modified"; the
+                    # backup file's mtime is the only freshness signal it has.
+                    "external_updated_at": backup_mtime,
                 }
             )
         conn.close()

@@ -472,6 +472,18 @@ _COLUMN_MIGRATIONS = [
         "tracking_value",
         "ALTER TABLE entry_tags ADD COLUMN tracking_value VARCHAR(500)",
     ),
+    # File-based sync (Diarium .diary pull): the source's own entry identity,
+    # the source file's mtime, and the text fingerprint at the last import.
+    # Diarium has no LastModified column, so ``sync_hash`` is the only way to
+    # tell an unchanged row from one edited locally in LifeLogr.
+    ("entries", "external_source", "ALTER TABLE entries ADD COLUMN external_source VARCHAR(20)"),
+    ("entries", "external_id", "ALTER TABLE entries ADD COLUMN external_id VARCHAR(32)"),
+    (
+        "entries",
+        "external_updated_at",
+        "ALTER TABLE entries ADD COLUMN external_updated_at DATETIME",
+    ),
+    ("entries", "sync_hash", "ALTER TABLE entries ADD COLUMN sync_hash VARCHAR(64)"),
 ]
 
 _INDEX_MIGRATIONS = [
@@ -543,6 +555,13 @@ _INDEX_MIGRATIONS = [
     (
         "ix_backup_snapshots_config_id",
         "CREATE INDEX IF NOT EXISTS ix_backup_snapshots_config_id ON backup_snapshots (config_id)",
+    ),
+    # One row per source entry. Partial so the 1393 legacy rows imported before
+    # identity tracking (external_id IS NULL) never collide with each other.
+    (
+        "ix_entries_external",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_entries_external "
+        "ON entries (external_source, external_id) WHERE external_id IS NOT NULL",
     ),
 ]
 
@@ -630,7 +649,7 @@ async def _migrate_schema(conn: Any) -> None:
 # migration run, so a partial/crashed run stays detectable on the next startup
 # (the previous, lower stamp remains; the idempotent migrations then re-run and
 # heal). NOTE: ``PRAGMA user_version`` is reserved for FTS-index rebuild tracking.
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 async def _stamp_schema_version(conn: Any) -> None:

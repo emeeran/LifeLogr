@@ -11,7 +11,9 @@ import secrets
 import tempfile
 import uuid
 import zipfile
+from collections import Counter
 from collections.abc import Awaitable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -60,8 +62,9 @@ from app.services.export_service import (
     ARCHIVE_FORMAT,
     ExportService,
     build_archive,
-    build_diarium_database,
     build_daylio_csv,
+    build_dayone_zip,
+    build_diarium_database,
 )
 from app.services.importers import (
     parse_csv,
@@ -88,6 +91,11 @@ _MAX_SKIP_REASONS = 100
 # disk. 100 keeps any single transaction (and its lock) small while amortising
 # the cost ~100x.
 _IMPORT_COMMIT_CHUNK = 100
+
+# Import modes. "merge" reconciles with rows already imported (source identity
+# first, date+body prefix as the fallback) and fills in missing media/events;
+# "append" keeps the old always-insert behaviour.
+_IMPORT_MODES = ("merge", "append")
 
 
 def _to_response(entry: Entry) -> EntryResponse:
@@ -311,8 +319,16 @@ async def _export_entries(
     session: AsyncSession,
     start_date: str | None,
     end_date: str | None,
+    *,
+    only_new: bool = False,
 ) -> list[Entry]:
-    """Shared export query: non-deleted entries + tags + media, date-filtered."""
+    """Shared export query: non-deleted entries + tags + media, date-filtered.
+
+    ``only_new`` keeps just the entries a Diarium push has not covered yet: rows
+    with no source identity, on days Diarium does not already have. Days it does
+    have are skipped because Diarium's migration import matches on date/time —
+    pushing a date-only entry onto a day it already holds would duplicate it.
+    """
     q = (
         select(Entry)
         .where(Entry.is_deleted.is_(False))
@@ -323,6 +339,11 @@ async def _export_entries(
         )
         .order_by(Entry.entry_date, Entry.id)
     )
+    if only_new:
+        diarium_days = select(Entry.entry_date).where(
+            Entry.external_id.is_not(None), Entry.is_deleted.is_(False)
+        )
+        q = q.where(Entry.external_id.is_(None), Entry.entry_date.not_in(diarium_days))
     if start_date:
         q = q.where(Entry.entry_date >= start_date)
     if end_date:
@@ -772,6 +793,135 @@ async def export_diarium_db(
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="lifelogr-export.diary"'},
     )
+
+
+@router.get("/export/dayone-zip")
+async def export_dayone_zip(
+    background_tasks: BackgroundTasks,
+    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    scope: str = Query(
+        "new",
+        description=(
+            "new (default): only entries Diarium has not received — no source "
+            "identity, and no entry on a day Diarium already has. all: everything."
+        ),
+    ),
+    as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Export entries as a Day One JSON ZIP — Diarium's attachment-capable import.
+
+    Diarium reads this via Settings → Migrate from other app → Day One, which
+    **adds** entries it has not seen and skips date/times that already exist, so
+    this is the push half of a file-based sync. Media are written as
+    ``photos/<md5>.<ext>`` — the naming Diarium resolves attachments by.
+    Encrypted entries are skipped (their body is ciphertext) and counted in
+    ``Journal.json``'s metadata. ``as_job=true`` returns ``{job_id}``; download
+    from ``GET /api/v1/jobs/{job_id}/result``.
+    """
+    if scope not in ("new", "all"):
+        raise HTTPException(
+            status_code=400, detail=f"Unknown scope {scope!r}; expected 'new' or 'all'."
+        )
+    only_new = scope == "new"
+    if as_job:
+        from app.core.database import async_session
+
+        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+            entries = await _export_entries(session, start_date, end_date, only_new=only_new)
+            return await build_dayone_zip(entries, report=report)
+
+        return start_export_job(
+            background_tasks, "export-dayone", "lifelogr-dayone.zip", _build,
+            session_factory=async_session,
+        )
+
+    entries = await _export_entries(db, start_date, end_date, only_new=only_new)
+    data = await build_dayone_zip(entries)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="lifelogr-dayone.zip"'},
+    )
+
+
+@router.post("/backfill-titles", response_model=dict)
+async def backfill_titles(
+    dry_run: bool = Query(
+        True, description="Report what would change without writing (default)."
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Derive titles for untitled entries from their first meaningful line.
+
+    Mirrors the editor's auto-title rule (`services/title_service.py`). Dry run
+    by default — the UI shows the count and samples first. A backfilled title
+    also refreshes `sync_hash`, otherwise the next Diarium pull would treat our
+    own title as a local edit and report a conflict forever.
+    """
+    from sqlalchemy import update
+
+    from app.services.title_service import derive_title
+
+    rows = (
+        await db.execute(
+            select(
+                Entry.id,
+                Entry.body,
+                Entry.mood,
+                Entry.latitude,
+                Entry.longitude,
+                Entry.sync_hash,
+            )
+            .where(
+                ~Entry.is_deleted,
+                sa_func.trim(sa_func.coalesce(Entry.title, "")) == "",
+            )
+            .order_by(Entry.entry_date)
+            .limit(5000)
+        )
+    ).all()
+
+    candidates: list[tuple[int, str, str, Any, Any, Any, Any]] = []
+    for entry_id, body, mood, latitude, longitude, sync_hash in rows:
+        derived = derive_title(body)
+        if derived:
+            candidates.append(
+                (entry_id, derived, body, mood, latitude, longitude, sync_hash)
+            )
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "candidates": len(candidates),
+            "updated": 0,
+            "samples": [
+                {"id": entry_id, "title": derived}
+                for entry_id, derived, *_ in candidates[:5]
+            ],
+        }
+
+    updated = 0
+    for entry_id, derived, body, mood, latitude, longitude, sync_hash in candidates:
+        values: dict[str, Any] = {"title": derived}
+        if sync_hash is not None:
+            values["sync_hash"] = _entry_text_hash(
+                derived, body, mood, latitude, longitude
+            )
+        await db.execute(update(Entry).where(Entry.id == entry_id).values(**values))
+        updated += 1
+    await db.commit()
+    logger.info("Backfilled %d entry titles", updated)
+    return {
+        "dry_run": False,
+        "candidates": len(candidates),
+        "updated": updated,
+        "samples": [
+            {"id": entry_id, "title": derived}
+            for entry_id, derived, *_ in candidates[:5]
+        ],
+    }
 
 
 @router.post("/deduplicate", response_model=dict)
@@ -1262,6 +1412,14 @@ async def import_file(
     skip_duplicates: bool = Query(
         True, description="Skip entries already present (same date + body)"
     ),
+    mode: str = Query(
+        "merge",
+        description=(
+            "merge (default): match entries already imported — by source id "
+            "(Diarium DiaryEntryId) first, else date + body — and attach any "
+            "missing media/events. append: always insert new rows."
+        ),
+    ),
     as_job: bool = Query(False, description="Insert as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -1281,6 +1439,16 @@ async def import_file(
     ``as_job=true`` runs the insert loop as a job and returns 202
     ``{job_id}`` — poll ``GET /api/v1/jobs/{job_id}`` for insert progress.
     """
+    if mode not in _IMPORT_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown import mode {mode!r}; expected one of {_IMPORT_MODES}.",
+        )
+    # append is the old always-insert behaviour and overrides dedup entirely;
+    # merge needs the dedup index, so skip_duplicates=false degrades to append.
+    if mode == "append":
+        skip_duplicates = False
+
     filename = file.filename or ""
 
     entries_data: list[dict[str, Any]] = []
@@ -1458,7 +1626,7 @@ async def import_file(
 
     if not as_job:
         try:
-            result = await _run_entry_import(db, entries_data, skip_duplicates)
+            result = await _run_entry_import(db, entries_data, skip_duplicates, mode=mode)
             if archive_notes:
                 await _run_note_archive_import(db, archive_notes)
                 await db.commit()
@@ -1474,12 +1642,18 @@ async def import_file(
             try:
                 async with async_session() as session:
                     result = await _run_entry_import(
-                        session, entries_data, skip_duplicates, job_report
+                        session, entries_data, skip_duplicates, job_report, mode=mode
                     )
                     if archive_notes:
                         await _run_note_archive_import(session, archive_notes)
                         await session.commit()
-                    return f"Imported {result['imported']}, skipped {result['skipped']}"
+                    detail = (
+                        f"Imported {result['imported']}, updated {result['updated']}, "
+                        f"skipped {result['skipped']}, media {result['media_backfilled']}"
+                    )
+                    if result["conflicts"]:
+                        detail += f", conflicts {result['conflicts']}"
+                    return detail
             finally:
                 if is_diary:
                     upload_path.unlink(missing_ok=True)
@@ -1494,11 +1668,22 @@ async def _run_entry_import(
     entries_data: list[dict[str, Any]],
     skip_duplicates: bool,
     report: ProgressReporter = noop_reporter,
+    *,
+    mode: str = "merge",
 ) -> dict[str, Any]:
-    """Insert parsed entries: dedup, tags/trackers, media, events, enrichment.
+    """Insert or reconcile parsed entries: dedup, tags/trackers, media, events.
 
     Shared by /import/file's sync and job paths (and shaped for reuse); *report*
     phases: insert (done/total per parsed record).
+
+    In ``merge`` mode a record is matched to an existing row by the source's own
+    id (Diarium ``DiaryEntryId``) first, then by ``date + body[:1000] + mood``
+    for rows imported before identity tracking existed. Matched rows get their
+    missing media/events/tags attached — media compared by content hash, so a
+    partial loss is repaired, not just a total one — and their text is updated
+    only when the local copy is provably untouched since the previous import
+    (``sync_hash``). Anything ambiguous becomes a conflict: local text wins and
+    the pull is reported, never silently overwritten.
     """
     import hashlib
     from datetime import date as date_type
@@ -1507,46 +1692,69 @@ async def _run_entry_import(
 
     from app.models.tag import Tag
 
+    merge = mode == "merge" and skip_duplicates
     svc = EntryService(db)
     # Pre-load all existing tags to avoid N+1 lookups
     existing_tags_result = await db.execute(select(Tag))
     tag_cache: dict[str, Tag] = {t.name: t for t in existing_tags_result.scalars().all()}
 
-    # Duplicate detection: (entry_date, sha256(body[:1000] + mood)) of existing
-    # rows. Only the first 1000 body characters are pulled from SQL (``substr``),
-    # so the full body of every entry is never materialised just to fingerprint
-    # it. The mood suffix keeps same-day mood-only check-ins distinct.
-    existing_sigs: set[tuple[str, str]] = set()
+    # Duplicate detection: (entry_date, sha256(body[:1000] + mood)) → entry id.
+    # Only the first 1000 body characters are pulled from SQL (``substr``), so
+    # the full body of every entry is never materialised just to fingerprint it.
+    # The mood suffix keeps same-day mood-only check-ins distinct.
+    existing_sigs: dict[tuple[str, str], int] = {}
+    # Source identity → entry id. Deliberately includes soft-deleted rows: the
+    # unique index still owns that id, and re-importing must not resurrect a
+    # row the user deleted.
+    external_index: dict[str, int] = {}
     if skip_duplicates:
         _rows = await db.execute(
             select(
+                Entry.id,
                 Entry.entry_date,
                 sa_func.substr(Entry.body, 1, 1000),
                 Entry.mood,
             ).where(~Entry.is_deleted)
         )
-        for _ed, _prefix, _mood in _rows.all():
-            existing_sigs.add(
+        for _id, _ed, _prefix, _mood in _rows.all():
+            existing_sigs[
                 (
                     str(_ed),
                     hashlib.sha256(
                         ((_prefix or "") + "\x00" + (_mood or "")).encode()
                     ).hexdigest(),
                 )
+            ] = _id
+
+        incoming_external_ids = sorted(
+            {str(e["external_id"]) for e in entries_data if e.get("external_id")}
+        )
+        for start in range(0, len(incoming_external_ids), 400):
+            chunk = incoming_external_ids[start : start + 400]
+            _ext_rows = await db.execute(
+                select(Entry.id, Entry.external_id).where(Entry.external_id.in_(chunk))
             )
+            for _id, _ext in _ext_rows.all():
+                if _ext:
+                    external_index[str(_ext)] = _id
 
     imported = 0
+    updated = 0
     backfilled = 0
+    conflicts = 0
     skipped = 0
     skip_reasons: list[ImportSkipReason] = []
     since_commit = 0
+    # Entry id → digest multiset of its media blobs, built lazily so only
+    # entries that already own media pay the file reads.
+    media_hashes: dict[int, Counter[str]] = {}
     # Enrichment is queued only for rows that are already committed — the
     # workers use their own sessions and can't see uncommitted rows.
     to_enrich: list[tuple[int, str | None, str]] = []
 
     async def _commit_batch() -> None:
         """Commit the in-flight chunk, then release its enrichment jobs."""
-        if not imported and not backfilled and not to_enrich:
+        if not imported and not updated and not backfilled and not to_enrich:
             return
         await db.commit()
         for entry_id, title, body in to_enrich:
@@ -1590,12 +1798,62 @@ async def _run_entry_import(
                     ((entry["body"] or "")[:1000] + "\x00" + (entry.get("mood") or "")).encode()
                 ).hexdigest(),
             )
-            if skip_duplicates and sig in existing_sigs:
-                backfilled += await _backfill_duplicate_extras(db, ed, entry)
-                skipped += 1
-                skip_reasons = _record_skip(
-                    skip_reasons, idx, str(ed), entry.get("title"), "duplicate of existing entry"
-                )
+
+            # Source identity wins over the (lossy) text fingerprint. The
+            # fingerprint is only a fallback for rows imported before identity
+            # tracking existed, so the first merge after upgrading adopts them
+            # instead of duplicating them.
+            ext_id = str(entry["external_id"]) if merge and entry.get("external_id") else None
+            matched_row: Entry | None = None
+            if ext_id and ext_id in external_index:
+                matched_row = await db.get(Entry, external_index[ext_id])
+            elif merge and sig in existing_sigs:
+                candidate = await db.get(Entry, existing_sigs[sig])
+                # Same text but a different source entry: keep both rather than
+                # collapsing two distinct Diarium entries into one.
+                if candidate is not None and (
+                    not ext_id or not candidate.external_id or candidate.external_id == ext_id
+                ):
+                    matched_row = candidate
+
+            if matched_row is not None:
+                existing_sigs[sig] = matched_row.id
+                if ext_id:
+                    external_index[ext_id] = matched_row.id
+                if matched_row.is_deleted:
+                    skipped += 1
+                    skip_reasons = _record_skip(
+                        skip_reasons,
+                        idx,
+                        str(ed),
+                        entry.get("title"),
+                        "matches an entry deleted in LifeLogr",
+                    )
+                else:
+                    outcome = await _merge_existing_entry(
+                        db, matched_row, entry, tag_cache, media_hashes
+                    )
+                    backfilled += outcome["media"]
+                    conflicts += int(outcome["conflict"])
+                    if outcome["updated"]:
+                        updated += 1
+                        if not matched_row.is_encrypted:
+                            to_enrich.append(
+                                (matched_row.id, matched_row.title, matched_row.body or "")
+                            )
+                    else:
+                        skipped += 1
+                        skip_reasons = _record_skip(
+                            skip_reasons,
+                            idx,
+                            str(ed),
+                            entry.get("title"),
+                            (
+                                "duplicate of existing entry (conflict: kept the local edit)"
+                                if outcome["conflict"]
+                                else "duplicate of existing entry (merged)"
+                            ),
+                        )
                 report("insert", idx + 1, total)
                 since_commit += 1
                 if since_commit >= _IMPORT_COMMIT_CHUNK:
@@ -1681,9 +1939,22 @@ async def _run_entry_import(
                         )
                         .values(tracking_value=str(value)[:500])
                     )
+            if merge:
+                created.external_source = entry.get("external_source") or (
+                    "diarium" if ext_id else None
+                )
+                created.external_id = ext_id
+                created.external_updated_at = _coerce_datetime(
+                    entry.get("external_updated_at")
+                )
+                created.sync_hash = _entry_text_hash(
+                    created.title, created.body, created.mood, created.latitude, created.longitude
+                )
+                if ext_id:
+                    external_index[ext_id] = created.id
             if not created.is_encrypted:
                 to_enrich.append((created.id, created.title, created.body))
-            existing_sigs.add(sig)
+            existing_sigs[sig] = created.id
             imported += 1
         except Exception as e:
             logger.warning(
@@ -1707,56 +1978,245 @@ async def _run_entry_import(
     report("enrich", 0, total)
     return {
         "imported": imported,
+        "updated": updated,
         "skipped": skipped,
         "media_backfilled": backfilled,
+        "conflicts": conflicts,
         "skip_reasons": skip_reasons,
     }
 
 
-async def _backfill_duplicate_extras(db: AsyncSession, ed: Any, entry: dict[str, Any]) -> int:
-    """Attach media/events a duplicate entry is missing (no-op if it has any).
+def _entry_text_hash(
+    title: str | None,
+    body: str | None,
+    mood: str | None,
+    latitude: float | None,
+    longitude: float | None,
+) -> str:
+    """Fingerprint the fields a source pull can change on an entry.
 
-    Re-importing the same file after an older backup was restored must recover
-    what the import originally added — entry text survives the restore, but the
-    media and event rows created after the backup are gone, and plain dedup
-    would skip them forever. Fills only from zero, so repeat imports don't
-    double-attach. Returns the number of media items attached.
+    Tags and media are reconciled additively, so they are deliberately excluded:
+    a tag-only difference must not look like a text conflict. ``0`` means
+    "unset" in Diarium's schema, so it hashes as empty.
     """
-    import sqlalchemy as sa
+    import hashlib
+
+    lat = f"{float(latitude):.6f}" if latitude else ""
+    lon = f"{float(longitude):.6f}" if longitude else ""
+    payload = "\x00".join([(title or "").strip(), body or "", mood or "", lat, lon])
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    """Accept a datetime (SQLite source) or an ISO string (JSON source)."""
+    if value is None or isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+async def _entry_media_hashes(db: AsyncSession, entry_id: int) -> Counter[str]:
+    """Content digests of an entry's stored media, for attachment-level dedupe.
+
+    Files are hashed from disk because Diarium's blob identity (``DiaryMediaId``)
+    does not survive a re-export; the bytes do. A row whose file vanished still
+    counts as absent, so a later pull can restore it. Counted (not a set) so two
+    deliberately identical photos in one entry survive a re-import.
+    """
+    import hashlib
+
+    paths = (
+        (await db.execute(select(Media.storage_path).where(Media.entry_id == entry_id)))
+        .scalars()
+        .all()
+    )
+    digests: Counter[str] = Counter()
+    for storage_path in paths:
+        try:
+            digests[
+                hashlib.sha256(
+                    (Path(settings.MEDIA_DIR) / storage_path).read_bytes()
+                ).hexdigest()
+            ] += 1
+        except OSError:
+            logger.warning("Imported media missing on disk, cannot fingerprint: %s", storage_path)
+    return digests
+
+
+async def _merge_existing_entry(
+    db: AsyncSession,
+    row: Entry,
+    entry: dict[str, Any],
+    tag_cache: dict[str, Any],
+    media_hashes: dict[int, Counter[str]],
+) -> dict[str, Any]:
+    """Fold one source record into an already-imported entry (idempotent).
+
+    Adds only what is missing — media by content hash (a partially lost entry is
+    repaired, not just a totally empty one), events by (kind, content, label),
+    tags/trackers additively — and updates the text only when ``sync_hash``
+    proves the local copy is untouched since the previous import. Otherwise the
+    local text wins and the caller reports a conflict.
+    """
+    import hashlib
 
     from app.models.entry_event import EntryEvent
-
-    mood = entry.get("mood")
-    q = (
-        select(Entry.id)
-        .where(
-            Entry.entry_date == ed,
-            ~Entry.is_deleted,
-            sa.func.substr(Entry.body, 1, 1000) == (entry.get("body") or "")[:1000],
-            Entry.mood.is_(None) if not mood else Entry.mood == mood,
-        )
-        .limit(1)
-    )
-    entry_id = (await db.execute(q)).scalar()
-    if entry_id is None:
-        return 0
-    row = await db.get(Entry, entry_id)
-    if row is None:
-        return 0
+    from app.models.tag import Tag
 
     attached = 0
-    if entry.get("media") and not (
-        await db.execute(
-            select(sa.func.count()).select_from(Media).where(Media.entry_id == entry_id)
-        )
-    ).scalar():
-        attached = len(entry["media"])
-        # Diarium bodies carry no /media/{id}/file refs, so no URL remap here.
-        await _attach_imported_media(db, row, entry["media"])
-    if entry.get("events") and not (
-        await db.execute(
-            select(sa.func.count()).select_from(EntryEvent).where(EntryEvent.entry_id == entry_id)
-        )
-    ).scalar():
-        await _attach_imported_events(db, row, entry["events"])
-    return attached
+    media_items = entry.get("media") or []
+    if media_items:
+        known = media_hashes.get(row.id)
+        if known is None:
+            known = await _entry_media_hashes(db, row.id)
+            media_hashes[row.id] = known
+        fresh: list[dict[str, Any]] = []
+        for item in media_items:
+            data = item.get("data") or b""
+            if not data:
+                load = item.get("load")
+                data = load() if callable(load) else b""
+            if not data:
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            if known[digest] > 0:
+                # One stored copy already matches these bytes; consume it so a
+                # second identical attachment in the same entry is still added.
+                known[digest] -= 1
+                continue
+            fresh.append({**item, "data": data, "load": None})
+        if fresh:
+            await _attach_imported_media(db, row, fresh)
+            attached = len(fresh)
+
+    events = entry.get("events") or []
+    if events:
+        seen_events = {
+            (kind, content, label)
+            for kind, content, label in (
+                await db.execute(
+                    select(EntryEvent.kind, EntryEvent.content, EntryEvent.label).where(
+                        EntryEvent.entry_id == row.id
+                    )
+                )
+            ).all()
+        }
+        fresh_events: list[dict[str, Any]] = []
+        for ev in events:
+            content = str(ev.get("content") or "").strip()
+            if not content:
+                continue
+            key = (
+                str(ev.get("kind") or "unknown:?"),
+                content,
+                str(ev["label"]) if ev.get("label") else None,
+            )
+            if key in seen_events:
+                continue
+            seen_events.add(key)
+            fresh_events.append(ev)
+        if fresh_events:
+            await _attach_imported_events(db, row, fresh_events)
+
+    # Tags and tracker readings are additive: a pull must never drop a
+    # LifeLogr-side #hashtag. Only fill in what the entry is missing.
+    existing_tags = {
+        tag_id: value
+        for tag_id, value in (
+            await db.execute(
+                select(EntryTag.tag_id, EntryTag.tracking_value).where(
+                    EntryTag.entry_id == row.id
+                )
+            )
+        ).all()
+    }
+    assigned = set(existing_tags)
+    for tr in entry.get("trackers") or []:
+        name = (tr.get("name") or "").strip()
+        if not name:
+            continue
+        tag = tag_cache.get(name)
+        if tag is None:
+            tag = Tag(name=name, is_tracker=True)
+            tag_cache[name] = tag
+            db.add(tag)
+            await db.flush()
+        elif not tag.is_tracker:
+            tag.is_tracker = True
+        value = tr.get("value")
+        if tag.id not in assigned:
+            db.add(EntryTag(entry_id=row.id, tag_id=tag.id, tracking_value=None))
+            assigned.add(tag.id)
+            existing_tags[tag.id] = None
+        if value is not None and existing_tags.get(tag.id) != str(value):
+            from sqlalchemy import update as sa_update
+
+            await db.execute(
+                sa_update(EntryTag)
+                .where(EntryTag.entry_id == row.id, EntryTag.tag_id == tag.id)
+                .values(tracking_value=str(value)[:500])
+            )
+            existing_tags[tag.id] = str(value)
+    for name in entry.get("tags") or []:
+        if not name:
+            continue
+        tag = tag_cache.get(name)
+        if tag is None:
+            tag = Tag(name=name)
+            tag_cache[name] = tag
+            db.add(tag)
+            await db.flush()
+        if tag.id not in assigned:
+            db.add(EntryTag(entry_id=row.id, tag_id=tag.id))
+            assigned.add(tag.id)
+
+    incoming_hash = _entry_text_hash(
+        entry.get("title"),
+        entry.get("body"),
+        entry.get("mood"),
+        entry.get("latitude"),
+        entry.get("longitude"),
+    )
+    current_hash = _entry_text_hash(row.title, row.body, row.mood, row.latitude, row.longitude)
+    updated = False
+    conflict = False
+
+    if row.external_id is None and entry.get("external_id"):
+        row.external_source = entry.get("external_source") or "diarium"
+        row.external_id = str(entry["external_id"])
+
+    if row.sync_hash is None:
+        # Pre-identity row (the 1393 imported before identity tracking) or the
+        # first pull for this row: adopt it and record the source content as
+        # the baseline WITHOUT touching local text. Fields the older import
+        # never captured (geo, mood, title) are filled only when missing, so
+        # they neither count as a text conflict nor overwrite anything.
+        if row.title is None and entry.get("title"):
+            row.title = entry.get("title")
+        if row.mood is None and entry.get("mood"):
+            row.mood = entry.get("mood")
+        if row.latitude is None and entry.get("latitude"):
+            row.latitude = entry.get("latitude")
+        if row.longitude is None and entry.get("longitude"):
+            row.longitude = entry.get("longitude")
+        row.sync_hash = incoming_hash
+    elif row.sync_hash == current_hash:
+        if incoming_hash != current_hash:
+            row.title = entry.get("title")
+            row.body = entry.get("body") or ""
+            row.mood = entry.get("mood")
+            row.latitude = entry.get("latitude")
+            row.longitude = entry.get("longitude")
+            updated = True
+        row.sync_hash = incoming_hash
+    else:
+        conflict = True
+
+    source_updated_at = _coerce_datetime(entry.get("external_updated_at"))
+    if source_updated_at is not None:
+        row.external_updated_at = source_updated_at
+
+    await db.flush()
+    return {"media": attached, "updated": updated, "conflict": conflict}

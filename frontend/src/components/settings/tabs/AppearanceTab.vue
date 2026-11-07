@@ -129,6 +129,9 @@ const autoOcrImages = useLocalStorage<boolean>(
   'lifelogr-auto-ocr-images',
   false,
 )
+// Fill an empty title from the body's first meaningful line on save. Never
+// overwrites a title the user typed or deliberately cleared.
+const autoTitle = useLocalStorage<boolean>('lifelogr-auto-title', true)
 
 // ── Read aloud (TTS) ──
 const ttsSpeed = useLocalStorage<number>('lifelogr-tts-speed', 1.0)
@@ -321,6 +324,13 @@ onMounted(() => {
           placeholder="e.g. Daily Journal"
           class="settings-input w-44"
         />
+      </SettingRow>
+      <SettingRow
+        :icon="Type"
+        label="Auto-title from first line"
+        description="When the title is empty, use the body's first meaningful line (markdown stripped). A title you typed is never overwritten."
+      >
+        <ToggleSwitch v-model="autoTitle" label="Auto-title from first line" />
       </SettingRow>
       <SettingRow
         :icon="Target"

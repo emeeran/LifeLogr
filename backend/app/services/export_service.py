@@ -704,6 +704,173 @@ def _build_diarium_database_sync(
         conn.close()
 
 
+# ── Day One JSON export (Diarium's attachment-capable migration import) ─────
+# Diarium has no generic JSON import: "Migrate from other app" reads the formats
+# of the apps it lists, and its developer points scripted imports at Day One
+# explicitly because it is the only one carrying attachments. The JSON names
+# each file by md5 and Diarium copies the archive members whose filenames start
+# with that value, so media are written as ``photos/<md5>.<ext>``.
+#
+# Entries are stamped at noon UTC: LifeLogr stores a date, not a time, and noon
+# cannot roll into the previous/next day when Diarium converts to local time.
+_DAYONE_TIME = "T12:00:00Z"
+_DAYONE_TIMEZONE = "UTC"
+# Day One names the container by media kind, not by MIME type.
+_DAYONE_TYPE_BY_EXT = {
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+    "png": "png",
+    "gif": "gif",
+    "heic": "heic",
+    "webp": "webp",
+    "tif": "tiff",
+    "tiff": "tiff",
+    "mp4": "mp4",
+    "mov": "mov",
+    "m4v": "mp4",
+    "m4a": "m4a",
+    "mp3": "mp3",
+    "wav": "wav",
+    "ogg": "ogg",
+    "opus": "opus",
+    "pdf": "pdf",
+}
+_DAYONE_TYPE_BY_MEDIA = {"image": "jpeg", "audio": "mp3", "video": "mp4", "document": "pdf"}
+
+
+def _dayone_photo_type(media: Any) -> tuple[str, str]:
+    """Return ``(extension, dayone_type)`` for one media row."""
+    filename = media.filename or ""
+    _, dot, ext = filename.rpartition(".")
+    ext = ext.lower() if dot and ext else ""
+    kind = (media.media_type or "").lower()
+    if not ext:
+        ext = {"image": "jpg", "audio": "mp3", "video": "mp4", "document": "pdf"}.get(
+            kind, "bin"
+        )
+    return ext, _DAYONE_TYPE_BY_EXT.get(ext, _DAYONE_TYPE_BY_MEDIA.get(kind, ext))
+
+
+async def build_dayone_zip(
+    entries: list[Entry], report: ProgressReporter = noop_reporter
+) -> bytes:
+    """Build a Day One JSON export ZIP (as bytes) for Diarium's migration import.
+
+    ``entries`` must have ``tag_associations`` and ``media`` loaded. Diarium
+    imports this via Settings → Migrate from other app → Day One, which **adds**
+    entries and skips any whose date/time already exists — so a repeated push
+    is safe, if wasteful. Encrypted entries are skipped (their body is
+    ciphertext) and counted in ``Journal.json``'s metadata.
+    """
+    return await asyncio.to_thread(_build_dayone_zip_sync, entries, report)
+
+
+def _build_dayone_zip_sync(
+    entries: list[Entry], report: ProgressReporter = noop_reporter
+) -> bytes:
+    import hashlib
+    import io
+    import json
+    import zipfile
+    from uuid import NAMESPACE_URL, uuid5
+
+    from app.core.config import settings
+
+    media_total = sum(
+        1
+        for e in entries
+        if not e.is_encrypted
+        for m in e.media
+        if (settings.MEDIA_DIR / m.storage_path).is_file()
+    )
+    media_done = 0
+    skipped_encrypted = 0
+    written_media: set[str] = set()
+    items: list[dict[str, Any]] = []
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for index, entry in enumerate(entries):
+            if entry.is_encrypted:
+                skipped_encrypted += 1
+                continue
+
+            tags = [
+                assoc.tag.name
+                for assoc in entry.tag_associations
+                if getattr(assoc, "tag", None) is not None and assoc.tag.name
+            ]
+            # Stable per-entry UUID: re-exporting the same journal produces the
+            # same identifiers, so a client can recognise entries it has seen.
+            item: dict[str, Any] = {
+                "uuid": str(uuid5(NAMESPACE_URL, f"lifelogr:entry:{entry.id}")),
+                "text": entry.body or "",
+                "creationDate": f"{entry.entry_date.isoformat()}{_DAYONE_TIME}",
+                "timeZone": _DAYONE_TIMEZONE,
+                "starred": False,
+                "tags": sorted(tags),
+            }
+            if entry.title:
+                item["title"] = entry.title
+            if entry.latitude is not None and entry.longitude is not None:
+                location: dict[str, Any] = {
+                    "latitude": entry.latitude,
+                    "longitude": entry.longitude,
+                }
+                if entry.location_name:
+                    location["place"] = entry.location_name
+                item["location"] = location
+
+            photos: list[dict[str, Any]] = []
+            for media in entry.media:
+                src = settings.MEDIA_DIR / media.storage_path
+                if not src.is_file():
+                    logger.warning(
+                        "Media file missing on disk, skipped in Day One export: %s",
+                        media.storage_path,
+                    )
+                    continue
+                blob = src.read_bytes()
+                ext, dayone_type = _dayone_photo_type(media)
+                # Diarium matches archive members by the md5 prefix, so the
+                # digest (not the LifeLogr filename) names the file.
+                digest = hashlib.md5(blob, usedforsecurity=False).hexdigest()
+                member = f"photos/{digest}.{ext}"
+                photo: dict[str, Any] = {
+                    "identifier": f"{digest}.{ext}",
+                    "md5": digest,
+                    "type": dayone_type,
+                    "filename": f"{digest}.{ext}",
+                    "size": len(blob),
+                }
+                if media.caption:
+                    photo["caption"] = media.caption
+                photos.append(photo)
+                if member not in written_media:
+                    zf.writestr(member, blob)
+                    written_media.add(member)
+                media_done += 1
+                report("media", media_done, media_total)
+
+            if photos:
+                item["photos"] = photos
+            items.append(item)
+            report("render", index + 1, len(entries))
+
+        document = {
+            "metadata": {
+                "version": "1.0",
+                "generator": "LifeLogr",
+                "skipped_encrypted": skipped_encrypted,
+            },
+            "entries": items,
+        }
+        zf.writestr(
+            "Journal.json", json.dumps(document, indent=2, ensure_ascii=False).encode("utf-8")
+        )
+    return buf.getvalue()
+
+
 # ── Daylio CSV export (Diarium's supported migration import) ────────────────
 # Diarium has no generic JSON import; its documented migration path for CSV is
 # Settings → Database → Migrate from other app, which reads the Daylio export

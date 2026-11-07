@@ -39,6 +39,7 @@ const urlBuilders = {
   exportHtmlZipUrl: vi.fn(() => '/entries/export/html-zip'),
   exportJsonUrl: vi.fn(() => '/entries/export/json'),
   exportDaylioCsvUrl: vi.fn(() => '/entries/export/daylio-csv'),
+  exportDayOneUrl: vi.fn(() => '/entries/export/dayone-zip'),
 }
 vi.mock('../../../api/entries', () => ({ entriesApi: urlBuilders }))
 vi.mock('../../../api/data', () => ({
@@ -79,6 +80,8 @@ describe('ExportPanel mount', () => {
     // Entries formats
     expect(text).toContain('Archive ZIP')
     expect(text).toContain('Diarium .diary')
+    expect(text).toContain('Day One ZIP (Diarium push)')
+    expect(text).toContain('Migrate from other app')
     expect(text).toContain('Markdown ZIP')
     expect(text).toContain('HTML archive')
     expect(text).toContain('Diarium CSV (Daylio)')

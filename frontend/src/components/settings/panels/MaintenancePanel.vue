@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
+  Type,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
@@ -51,6 +52,38 @@ async function handleDeduplicate() {
     deduplicating.value = false
   }
 }
+// ── Fill missing titles (auto-title backfill) ──
+// Two-step on purpose: the first click only reports how many entries would gain
+// a title, the second writes. Titles never overwrite a non-empty one.
+const titlesBusy = ref(false)
+const titlesPending = ref<number | null>(null)
+
+async function handleBackfillTitles() {
+  titlesBusy.value = true
+  try {
+    if (titlesPending.value == null) {
+      const preview = await entriesApi.backfillTitles(true)
+      titlesPending.value = preview.candidates
+      if (preview.candidates === 0) {
+        emit('toast', 'info', 'Every titled entry already has one')
+        titlesPending.value = null
+      }
+      return
+    }
+    const result = await entriesApi.backfillTitles(false)
+    emit(
+      'toast',
+      'success',
+      `Filled ${result.updated} title${result.updated === 1 ? '' : 's'}`,
+    )
+    titlesPending.value = null
+  } catch (e: unknown) {
+    emit('toast', 'error', `Title backfill failed: ${errMsg(e)}`)
+  } finally {
+    titlesBusy.value = false
+  }
+}
+
 async function handleVacuum() {
   vacuuming.value = true
   try {
@@ -115,6 +148,30 @@ async function rebuildIndex() {
         >
           <Loader v-if="deduplicating" :size="12" class="animate-spin" />
           {{ deduplicating ? 'Scanning…' : 'Deduplicate' }}
+        </SButton>
+      </SettingRow>
+    </div>
+    <div class="p-3">
+      <SettingRow
+        :icon="Type"
+        label="Fill missing titles"
+        :description="
+          titlesPending == null
+            ? 'Use the first meaningful line of the body as the title where none is set. Never overwrites an existing title.'
+            : `${titlesPending} entr${titlesPending === 1 ? 'y' : 'ies'} would gain a title — click again to apply.`
+        "
+      >
+        <SButton
+          variant="ghost"
+          :disabled="titlesBusy"
+          @click="handleBackfillTitles"
+        >
+          <Loader v-if="titlesBusy" :size="12" class="animate-spin" />
+          <template v-if="titlesBusy">Working…</template>
+          <template v-else-if="titlesPending != null">
+            Apply to {{ titlesPending }}
+          </template>
+          <template v-else>Preview</template>
         </SButton>
       </SettingRow>
     </div>

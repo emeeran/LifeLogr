@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -36,6 +36,16 @@ class Entry(Base):
     latitude: Mapped[float | None] = mapped_column(nullable=True)
     longitude: Mapped[float | None] = mapped_column(nullable=True)
     location_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Provenance for file-based sync (Diarium .diary / Day One). ``external_id``
+    # is the source's own identity — for Diarium that is ``DiaryEntryId``, the
+    # .NET tick timestamp, stored as a string because it exceeds JS int safety.
+    # ``sync_hash`` is the fingerprint of the text as it stood at the last
+    # import, so a later pull can tell "LifeLogr edited this" from "unchanged"
+    # (Diarium has no LastModified column to compare against).
+    external_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sync_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Which template this entry was created from (null = none/blank). Set at
     # creation; SET NULL if the template is ever deleted (templates are
     # hard-deleted in template_service). Enables the Timeline template filter.
@@ -52,6 +62,15 @@ class Entry(Base):
     __table_args__ = (
         Index("ix_entries_deleted_date", "is_deleted", "entry_date"),
         Index("ix_entries_deleted_mood", "is_deleted", "mood"),
+        # Partial: legacy rows imported before identity tracking have a NULL
+        # external_id and must not collide with one another.
+        Index(
+            "ix_entries_external",
+            "external_source",
+            "external_id",
+            unique=True,
+            sqlite_where=text("external_id IS NOT NULL"),
+        ),
     )
 
     tag_associations: Mapped[list["EntryTag"]] = relationship(  # noqa: F821

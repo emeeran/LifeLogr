@@ -110,6 +110,18 @@ export const entriesApi = {
     return request('/entries/deduplicate', { method: 'POST' })
   },
 
+  /** Fill empty titles from the body's first line. Dry run by default. */
+  backfillTitles(dryRun = true): Promise<{
+    dry_run: boolean
+    candidates: number
+    updated: number
+    samples: { id: number; title: string }[]
+  }> {
+    return request(`/entries/backfill-titles?dry_run=${dryRun}`, {
+      method: 'POST',
+    })
+  },
+
   calendarMonth(year: number, month: number): Promise<CalendarEntryResponse[]> {
     return request(`/entries/calendar/${year}/${month}`)
   },
@@ -159,6 +171,21 @@ export const entriesApi = {
     if (endDate) sp.set('end_date', endDate)
     const qs = sp.toString()
     return `${API_ORIGIN}/api/v1/entries/export/daylio-csv${qs ? `?${qs}` : ''}`
+  },
+
+  /** Day One ZIP — the format Diarium's "Migrate from other app" imports with
+   *  attachments. ``scope=new`` (default) pushes only entries Diarium lacks. */
+  exportDayOneUrl(
+    startDate?: string,
+    endDate?: string,
+    scope: 'new' | 'all' = 'new',
+  ): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    if (scope !== 'new') sp.set('scope', scope)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/dayone-zip${qs ? `?${qs}` : ''}`
   },
 
   exportArchiveUrl(startDate?: string, endDate?: string): string {
