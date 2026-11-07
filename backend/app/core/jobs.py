@@ -105,6 +105,12 @@ class JobRegistry:
             job_id, phase, done, total, detail
         )
 
+    def running(self) -> list[Job]:
+        """Snapshot of jobs still in flight (used by the shutdown guard)."""
+        self._cleanup()
+        with self._lock:
+            return [job for job in self._jobs.values() if job.status == "running"]
+
     def update(
         self,
         job_id: str,

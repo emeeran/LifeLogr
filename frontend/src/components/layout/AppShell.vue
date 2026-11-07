@@ -15,6 +15,7 @@ const ContextDrawerPanel = defineAsyncComponent(
   () => import('../entry/ContextDrawerPanel.vue'),
 )
 import SearchPalette from '../search/SearchPalette.vue'
+import ErrorBoundary from '../common/ErrorBoundary.vue'
 import { useToastStore } from '../../stores/toast'
 import ScribblePad from '../scribble/ScribblePad.vue'
 const WhatsNewDialog = defineAsyncComponent(
@@ -189,11 +190,13 @@ async function onExtractText(id: number) {
       v-show="!showDrawer && !ui.zenMode"
       class="flex-1 flex flex-col min-w-0 bg-surface relative"
     >
-      <router-view v-slot="{ Component: RouteComponent }">
-        <Transition name="route-fade" mode="out-in">
-          <component :is="RouteComponent" />
-        </Transition>
-      </router-view>
+      <ErrorBoundary>
+        <router-view v-slot="{ Component: RouteComponent }">
+          <Transition name="route-fade" mode="out-in">
+            <component :is="RouteComponent" />
+          </Transition>
+        </router-view>
+      </ErrorBoundary>
 
       <!-- Save prompt overlay -->
       <Transition name="prompt">

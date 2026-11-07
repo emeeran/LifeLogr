@@ -36,4 +36,28 @@ describe('renderMarkdown() — the shared pipeline', () => {
   it('leaves ordinary markdown untouched by the ENC substitution', () => {
     expect(renderMarkdown('plain **bold**')).toContain('<strong>bold</strong>')
   })
+
+  it('renders preview images from the thumbnail endpoint', () => {
+    const html = renderMarkdown('![A lake](/api/v1/media/7/file)')
+    expect(html).toContain('src="/api/v1/media/7/thumb"')
+    expect(html).toContain('alt="A lake"')
+    expect(html).toContain('loading="lazy"')
+    expect(html).toContain('decoding="async"')
+  })
+
+  it('keeps the full source only when the requested width exceeds the thumbnail', () => {
+    const wide = renderMarkdown('![A lake](/api/v1/media/7/file?w=800&h=450)')
+    expect(wide).toContain('src="/api/v1/media/7/file?w=800&amp;h=450"')
+    expect(wide).not.toContain('/thumb')
+  })
+
+  it('uses the thumbnail for small requested sizes (the insert cap)', () => {
+    const html = renderMarkdown('![A lake](/api/v1/media/7/file?w=480&h=320)')
+    expect(html).toContain('src="/api/v1/media/7/thumb"')
+  })
+
+  it('leaves note media (no thumbnail route) on the original URL', () => {
+    const html = renderMarkdown('![Scan](/api/v1/notes/1/media/2/file)')
+    expect(html).toContain('src="/api/v1/notes/1/media/2/file"')
+  })
 })

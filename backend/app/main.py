@@ -16,6 +16,7 @@ except ImportError:
 
     logging.getLogger(__name__).debug("pysqlite3 not available; using stdlib sqlite3")
 
+import asyncio
 import logging
 import secrets
 import time
@@ -128,42 +129,43 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("Startup app-integrity check failed", exc_info=True)
     yield
     logger.info("Shutting down...")
-    # Stop backup scheduler
-    try:
-        from app.services.scheduler_service import SchedulerService
+    # Every teardown step shares one deadline. The desktop shell gives the
+    # sidecar a fixed grace window; one hung step (a scheduler waiting for a
+    # backup job, a slow engine dispose) must not consume all of it and make a
+    # normal window close feel stuck.
+    deadline = time.monotonic() + 2.0
 
-        await SchedulerService.shutdown()
-    except Exception:
-        logger.warning("Failed to stop backup scheduler", exc_info=True)
-    # Cancel outstanding background enrichment tasks
-    try:
-        from app.services.enrichment_service import cancel_pending_tasks
+    async def _step(name: str, factory: Any) -> None:
+        remaining = deadline - time.monotonic()
+        started = time.monotonic()
+        if remaining <= 0:
+            logger.warning("Shutdown step %s skipped (deadline spent)", name)
+            return
+        try:
+            await asyncio.wait_for(factory(), timeout=remaining)
+        except TimeoutError:
+            logger.warning("Shutdown step %s timed out after %.1fs", name, remaining)
+        except Exception:
+            logger.warning("Shutdown step %s failed", name, exc_info=True)
+        finally:
+            logger.info(
+                "Shutdown step %s took %.2fs", name, time.monotonic() - started
+            )
 
-        await cancel_pending_tasks()
-    except Exception:
-        logger.warning("Failed to cancel enrichment tasks", exc_info=True)
-    # Cancel outstanding weather auto-fill tasks
-    try:
-        from app.services.weather_service import cancel_pending as cancel_weather
+    from app.core.database import engine
+    from app.services.enrichment_service import cancel_pending_tasks
+    from app.services.ollama_service import close_shared_client
+    from app.services.scheduler_service import SchedulerService
+    from app.services.weather_service import cancel_pending as cancel_weather
 
-        await cancel_weather()
-    except Exception:
-        logger.warning("Failed to cancel weather tasks", exc_info=True)
-    # Dispose database engine
-    try:
-        from app.core.database import engine
-
-        await engine.dispose()
-        logger.info("Database engine disposed")
-    except Exception:
-        logger.warning("Failed to dispose database engine", exc_info=True)
-    # Close shared Ollama HTTP client
-    try:
-        from app.services.ollama_service import close_shared_client
-
-        await close_shared_client()
-    except Exception:
-        logger.warning("Failed to close Ollama client", exc_info=True)
+    for _name, _factory in (
+        ("scheduler", SchedulerService.shutdown),
+        ("enrichment", cancel_pending_tasks),
+        ("weather", cancel_weather),
+        ("database", engine.dispose),
+        ("ollama", close_shared_client),
+    ):
+        await _step(_name, _factory)
 
 
 app = FastAPI(

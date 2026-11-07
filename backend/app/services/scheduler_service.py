@@ -325,7 +325,9 @@ class SchedulerService:
         """Stop the global scheduler."""
         sched = SchedulerService.get_scheduler()
         if sched.running:
-            sched.shutdown()
+            # wait=False: a running backup job is long, and the process is
+            # already on its way out (the app's shutdown guard has decided).
+            sched.shutdown(wait=False)
             logger.info("Backup scheduler stopped")
 
     async def schedule_backup(

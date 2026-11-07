@@ -2,8 +2,9 @@
 
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use log::{error, info, warn};
 use tauri::{Emitter, Manager, RunEvent};
@@ -12,6 +13,20 @@ use tauri::{Emitter, Manager, RunEvent};
 /// (PID-correct) instead of matching by name with `pkill -f lifelogr-backend`,
 /// which could hit an unrelated process sharing that token.
 struct SidecarChild(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
+
+/// Set by the "Close anyway" button while the shutdown guard is waiting for an
+/// in-flight backup. The wait loop polls it (300 ms) and gives up.
+struct ExitState(AtomicBool);
+
+/// Called from the shutdown overlay. Merely stops waiting — teardown and exit
+/// still go through the same path, so the sidecar is never orphaned.
+#[tauri::command]
+fn exit_now(force: bool, state: tauri::State<ExitState>) {
+    if force {
+        info!("Shutdown guard: user asked to stop waiting");
+        state.0.store(true, Ordering::SeqCst);
+    }
+}
 use tauri::ipc::Response;
 use tauri_plugin_global_shortcut::{Builder as ShortcutBuilder, GlobalShortcutExt, ShortcutState};
 use tauri_plugin_shell::ShellExt;
@@ -191,50 +206,144 @@ fn reclaim_port(port: u16) {
     warn!("Port {port} still in use after reclaim attempt");
 }
 
-/// Max time (ms) to wait for the backend to exit on SIGTERM before SIGKILL.
-const SIDECAR_GRACE_MS: u64 = 5_000;
+/// Max time to wait for the backend to close its socket after SIGTERM.
+/// The backend's own teardown is bounded to 2 s, so this leaves headroom.
+const SIDECAR_GRACE: Duration = Duration::from_millis(2_500);
 
-/// Gracefully stop the backend sidecar on app exit.
-///
-/// Complement to [`reclaim_port`]: that runs at *startup* to clear a sidecar
-/// left by a previous crashed/killed instance; this runs at *shutdown* so a
-/// normal window close actually terminates the backend instead of orphaning it
-/// (reparented to systemd --user) holding port 18765 and ~90 MB of RAM. We send
-/// SIGTERM first so the backend's FastAPI lifespan teardown runs (stop
-/// scheduler, dispose engine), then fall back to SIGKILL if it hasn't exited
-/// within the grace window. The listening socket only closes once teardown
-/// finishes, so [`port_is_listening`] returning false is the proof that graceful
-/// shutdown genuinely completed. Best-effort — `reclaim_port` on the next launch
-/// reaps anything still lingering (e.g. if SIGTERM isn't forwarded).
-fn shutdown_sidecar(port: u16) {
-    if !port_is_listening(port) {
-        return; // backend already gone
+/// How long the close guard will wait for an in-flight backup before giving up.
+const BACKUP_WAIT_LIMIT: Duration = Duration::from_secs(120);
+
+/// `signal(pid, SIGTERM/SIGKILL)` without pulling in a process-name match.
+const SIGTERM: i32 = 15;
+const SIGKILL: i32 = 9;
+
+#[cfg(unix)]
+fn signal(pid: u32, sig: i32) {
+    unsafe {
+        libc::kill(pid as i32, sig);
     }
-    info!("Stopping backend sidecar on port {port} (SIGTERM)");
-    let _ = std::process::Command::new("pkill")
-        .args(["-TERM", "-f", "lifelogr-backend"])
-        .status();
-    for _ in 0..(SIDECAR_GRACE_MS / 100) {
+}
+
+#[cfg(not(unix))]
+fn signal(_pid: u32, _sig: i32) {}
+
+/// Minimal HTTP GET against the local backend. Returns the response body.
+fn http_get(port: u16, path: &str) -> Option<String> {
+    use std::io::Read;
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().ok()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(1_500))).ok()?;
+    stream
+        .set_write_timeout(Some(Duration::from_millis(1_500)))
+        .ok()?;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).ok()?;
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).ok()?;
+    raw.split("\r\n\r\n").nth(1).map(str::to_string)
+}
+
+/// Whether the backend reports un-interruptible work (backup/import/restore).
+/// Unreachable backend => not busy: there is nothing left to protect.
+fn backend_busy_state(port: u16) -> Option<serde_json::Value> {
+    let body = http_get(port, "/api/v1/system/shutdown-state")?;
+    serde_json::from_str(&body).ok()
+}
+
+/// Stop the sidecar precisely and boundedly.
+///
+/// In a PyInstaller one-file build the bootloader and the Python process are
+/// different PIDs, and only the Python one runs FastAPI's lifespan teardown.
+/// The process that owns the listening socket is that process, so SIGTERM goes
+/// there first (PID-correct — never a name match); the spawned child handle is
+/// a fallback for builds where `lsof` is missing.
+fn stop_backend(app: &tauri::AppHandle, port: u16) {
+    let mut child = app
+        .try_state::<SidecarChild>()
+        .and_then(|state| state.0.lock().ok()?.take());
+
+    let owner = port_owner_pid(port);
+    if let Some(pid) = owner {
+        info!("Stopping backend (pid {pid}) with SIGTERM");
+        signal(pid, SIGTERM);
+    }
+    if let Some(c) = child.as_mut() {
+        signal(c.pid(), SIGTERM);
+    }
+
+    let deadline = Instant::now() + SIDECAR_GRACE;
+    while Instant::now() < deadline {
         if !port_is_listening(port) {
-            info!("Backend sidecar stopped gracefully");
-            return;
+            info!("Backend stopped gracefully");
+            break;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    warn!(
-        "Backend sidecar did not exit within {SIDECAR_GRACE_MS} ms — sending SIGKILL"
-    );
-    let _ = std::process::Command::new("pkill")
-        .args(["-KILL", "-f", "lifelogr-backend"])
-        .status();
-    for _ in 0..20 {
-        if !port_is_listening(port) {
-            info!("Backend sidecar killed");
-            return;
+
+    if port_is_listening(port) {
+        warn!("Backend did not exit within {:?} — sending SIGKILL", SIDECAR_GRACE);
+        if let Some(pid) = port_owner_pid(port).or(owner) {
+            signal(pid, SIGKILL);
         }
-        std::thread::sleep(Duration::from_millis(150));
+        if let Some(c) = child.take() {
+            let _ = c.kill();
+        }
     }
-    warn!("Backend sidecar still on port {port} after SIGKILL (next launch will reclaim it)");
+
+    // The handle is consumed by kill(); dropping the Option otherwise is
+    // enough — we exit immediately afterwards.
+    drop(child);
+}
+
+#[cfg(not(target_os = "linux"))]
+fn port_owner_pid(_port: u16) -> Option<u32> {
+    None
+}
+
+/// Close sequence: wait for protected work, hide the window, stop the backend,
+/// exit. Runs on its own thread so the UI never blocks on teardown.
+fn begin_shutdown(app: tauri::AppHandle) {
+    let port = backend_port();
+    let mut state = backend_busy_state(port).unwrap_or_default();
+
+    if state
+        .get("busy")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        info!("Close guard: protected work in flight — waiting");
+        let _ = app.emit("shutdown-pending", &state);
+        let deadline = Instant::now() + BACKUP_WAIT_LIMIT;
+        loop {
+            let forced = app.state::<ExitState>().0.load(Ordering::SeqCst);
+            if forced {
+                info!("Close guard: wait cancelled by the user");
+                break;
+            }
+            if Instant::now() >= deadline {
+                warn!("Close guard: wait limit reached — closing anyway");
+                break;
+            }
+            state = backend_busy_state(port).unwrap_or_default();
+            if !state
+                .get("busy")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                info!("Close guard: protected work finished");
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    stop_backend(&app, port);
+    std::process::exit(0);
 }
 
 /// Best-effort PID owning a TCP port, via `lsof`. `None` if lsof is unavailable
@@ -282,13 +391,113 @@ fn init_logging(data_dir: &std::path::Path) {
     info!("Logging initialised — writing to {}", log_path.display());
 }
 
-/// Capture the first available monitor as a PNG byte buffer.
+/// True when the current session is Wayland (where GNOME has no screencopy
+/// protocol and xcap cannot capture).
+#[cfg(all(feature = "snip-wayland", target_os = "linux"))]
+fn is_wayland_session() -> bool {
+    match std::env::var("XDG_SESSION_TYPE") {
+        Ok(value) => value.eq_ignore_ascii_case("wayland"),
+        Err(_) => std::env::var_os("WAYLAND_DISPLAY").is_some(),
+    }
+}
+
+/// Capture through `org.freedesktop.portal.Screenshot` (version 2 on GNOME).
 ///
-/// We grab the first monitor rather than detecting "primary" so the call works
-/// across xcap versions whose monitor-selection API differs. For the typical
-/// single-monitor setup this is the whole screen.
+/// Non-interactive returns the whole screen, which feeds the existing crop
+/// overlay unchanged. Interactive is the fallback when the portal requires a
+/// grant: GNOME shows its own region UI, and the returned image is already
+/// cropped (the app's overlay then crops within it — mildly redundant but
+/// harmless, and better than failing).
+#[cfg(all(feature = "snip-wayland", target_os = "linux"))]
+fn portal_screenshot(interactive: bool) -> Result<Vec<u8>, String> {
+    use ashpd::desktop::screenshot::Screenshot;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("portal runtime: {e}"))?;
+    runtime.block_on(async move {
+        let response = Screenshot::request()
+            .interactive(interactive)
+            .modal(true)
+            .send()
+            .await
+            .map_err(|e| format!("portal request failed: {e}"))?
+            .response()
+            .map_err(|e| format!("portal capture failed: {e}"))?;
+        let parsed = url::Url::parse(response.uri().as_str())
+            .map_err(|e| format!("portal returned an invalid URI: {e}"))?;
+        let path = parsed
+            .to_file_path()
+            .map_err(|_| "portal returned a non-file URI".to_string())?;
+        std::fs::read(&path).map_err(|e| format!("read portal screenshot: {e}"))
+    })
+}
+
+/// Last-resort fallback for systems where the portal is missing but the GNOME
+/// helper is installed. Writes to a private temp file and removes it again.
+#[cfg(all(feature = "snip-wayland", target_os = "linux"))]
+fn gnome_screenshot_png() -> Result<Vec<u8>, String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = std::env::temp_dir().join(format!(
+        "lifelogr-snip-{}-{stamp}.png",
+        std::process::id()
+    ));
+    let status = std::process::Command::new("gnome-screenshot")
+        .args(["-f", &path.to_string_lossy()])
+        .status()
+        .map_err(|e| format!("gnome-screenshot not available: {e}"))?;
+    if !status.success() {
+        return Err("gnome-screenshot exited with an error".to_string());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("read screenshot: {e}"))?;
+    let _ = std::fs::remove_file(&path);
+    Ok(bytes)
+}
+
+/// Capture the screen as a PNG byte buffer.
+///
+/// On Wayland this goes through the desktop portal; elsewhere it grabs the
+/// first available monitor with xcap. The first monitor is used rather than
+/// detecting "primary" so the call works across xcap versions whose
+/// monitor-selection API differs — for the typical single-monitor setup it is
+/// the whole screen.
 #[cfg(feature = "snip")]
 fn capture_primary_monitor_png() -> Result<Vec<u8>, String> {
+    // On Wayland the portal is the only supported route: xcap needs
+    // zwlr_screencopy_manager_v1, which GNOME deliberately does not implement.
+    #[cfg(all(feature = "snip-wayland", target_os = "linux"))]
+    if is_wayland_session() {
+        let mut failures: Vec<String> = Vec::new();
+        match portal_screenshot(false) {
+            Ok(png) => return Ok(png),
+            Err(e) => failures.push(format!("portal: {e}")),
+        }
+        match portal_screenshot(true) {
+            Ok(png) => return Ok(png),
+            Err(e) => failures.push(format!("portal (interactive): {e}")),
+        }
+        if std::process::Command::new("gnome-screenshot")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            match gnome_screenshot_png() {
+                Ok(png) => return Ok(png),
+                Err(e) => failures.push(format!("gnome-screenshot: {e}")),
+            }
+        }
+        return Err(format!(
+            "Wayland screen capture failed ({}). GNOME does not implement the \
+             wlr-screencopy protocol xcap needs; install xdg-desktop-portal-gnome \
+             and approve the screenshot prompt.",
+            failures.join("; ")
+        ));
+    }
+
     use image::ImageFormat;
     let monitors = xcap::Monitor::all().map_err(|e| format!("enumerate monitors: {e}"))?;
     let monitor = monitors
@@ -337,6 +546,7 @@ async fn capture_screen(_app: tauri::AppHandle) -> Result<Response, String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(ExitState(AtomicBool::new(false)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {
             // Another instance tried to open — focus existing window
@@ -356,7 +566,12 @@ fn main() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![check_deps, run_setup, capture_screen])
+        .invoke_handler(tauri::generate_handler![
+            check_deps,
+            run_setup,
+            capture_screen,
+            exit_now
+        ])
         .setup(|app| {
             // Resolve data directory
             let data_dir = app
@@ -476,30 +691,13 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let RunEvent::ExitRequested { .. } = event {
-                info!("Exit requested — shutting down backend sidecar");
-                let port = backend_port();
-                // Preferred: kill the exact child we spawned (PID-correct).
-                let killed = app_handle
-                    .try_state::<SidecarChild>()
-                    .and_then(|state| state.0.lock().ok()?.take())
-                    .map(|child| {
-                        let _ = child.kill();
-                        true
-                    })
-                    .unwrap_or(false);
-                if killed {
-                    for _ in 0..(SIDECAR_GRACE_MS / 100) {
-                        if !port_is_listening(port) {
-                            info!("Backend sidecar stopped via child handle");
-                            return;
-                        }
-                        std::thread::sleep(Duration::from_millis(100));
-                    }
-                    warn!("Sidecar child killed but port {port} still listening");
-                }
-                // Fallback: pattern-based graceful shutdown (SIGTERM → SIGKILL).
-                shutdown_sidecar(port);
+            if let RunEvent::ExitRequested { api, .. } = event {
+                // Never tear down on the event loop: a backup can take minutes
+                // and a 5 s blocking poll made a normal close look frozen.
+                api.prevent_exit();
+                info!("Exit requested — starting the close guard");
+                let handle = app_handle.clone();
+                std::thread::spawn(move || begin_shutdown(handle));
             }
         });
 }

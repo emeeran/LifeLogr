@@ -15,7 +15,44 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
-marked.use({ gfm: true, breaks: true })
+/**
+ * Entry media has a cached ≤640 px thumbnail endpoint. Preview images are
+ * decoded at intrinsic size otherwise, and a long media-heavy entry can push
+ * WebKitWebProcess into the gigabytes (a blank window on the desktop build).
+ * An explicit `?w=` above the thumbnail size opts out — the user asked for a
+ * larger rendering, so the full source is what they get. Sizes at or below 640
+ * still use the thumbnail (that is what new inserts get).
+ */
+function previewImageSrc(href: string): string {
+  const requested = /[?&]w=(\d+)/.exec(href)
+  if (requested && Number(requested[1]) > 640) return href
+  return href.replace(/\/api\/v1\/media\/(\d+)\/file(\?.*)?$/, '/api/v1/media/$1/thumb')
+}
+
+function escAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+marked.use({
+  gfm: true,
+  breaks: true,
+  renderer: {
+    image({ href, title, text }) {
+      const attrs = [
+        `src="${escAttr(previewImageSrc(href))}"`,
+        `alt="${escAttr(text ?? '')}"`,
+        'loading="lazy"',
+        'decoding="async"',
+      ]
+      if (title) attrs.push(`title="${escAttr(title)}"`)
+      return `<img ${attrs.join(' ')}>`
+    },
+  },
+})
 
 function encChip(enc: string): string {
   return `<span class="enc-block cursor-pointer bg-accent/10 text-accent px-1.5 py-0.5 rounded border border-accent/20 text-[11px] font-medium" data-enc="${enc}">🔒 Decrypt selection</span>`
@@ -28,5 +65,7 @@ export function renderMarkdown(src: string): string {
   // Both forms must become the chip.
   html = html.replace(/&lt;!--ENC\{([^}]+)\}--&gt;/g, (_, enc) => encChip(enc))
   html = html.replace(/<!--ENC\{([^}]+)\}-->/g, (_, enc) => encChip(enc))
-  return DOMPurify.sanitize(html, { ADD_ATTR: ['data-enc'] })
+  return DOMPurify.sanitize(html, {
+    ADD_ATTR: ['data-enc', 'loading', 'decoding'],
+  })
 }

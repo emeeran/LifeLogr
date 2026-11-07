@@ -4,6 +4,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { installExternalLinkInterceptor } from './utils/externalLink'
 import AppShell from './components/layout/AppShell.vue'
 import ToasterHost from './components/common/ToasterHost.vue'
+import ShutdownOverlay from './components/common/ShutdownOverlay.vue'
 import SplashScreen from './components/layout/SplashScreen.vue'
 import SystemHealthBanner from './components/common/SystemHealthBanner.vue'
 import { useSystemHealthStore } from './stores/systemHealth'
@@ -34,6 +35,7 @@ onUnmounted(() => {
   <AppShell />
   <ToasterHost />
   <SystemHealthBanner />
+  <ShutdownOverlay />
   <Transition name="splash-fade">
     <SplashScreen v-if="showSplash" @done="showSplash = false" />
   </Transition>

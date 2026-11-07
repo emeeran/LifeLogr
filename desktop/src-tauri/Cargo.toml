@@ -15,25 +15,34 @@ tauri-plugin-fs = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
 xcap = { version = "0.9", optional = true }
+# XDG desktop portal screenshot (Wayland). GNOME implements the portal but not
+# wlr-screencopy, so xcap alone cannot capture on the default Ubuntu session.
+ashpd = { version = "0.14", optional = true, features = ["screenshot"] }
+url = { version = "2", optional = true }
 image = "0.25"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "net", "io-util"] }
 log = "0.4"
 env_logger = "0.11"
+libc = "0.2"
 
 [features]
 # `devtools` is intentionally NOT in `default`: Tauri auto-enables the webview
 # inspector in debug builds, so excluding it here keeps devtools out of release
 # bundles (the inspector must not be reachable in a shipped privacy-first app).
 # Pass `--features devtools` only for an explicit release-with-devtools build.
-default = ["snip"]
+default = ["snip", "snip-wayland"]
 devtools = ["tauri/devtools"]
 # Screen-region snip requires xcap, which needs libpipewire-0.3-dev to build on
 # Linux. Off => the capture_screen command returns a friendly error (web-clip
 # image capture and the text fallback still work). Build without it with
 # `--no-default-features`.
 snip = ["dep:xcap"]
+# Wayland capture through the XDG desktop portal (the only route GNOME offers).
+# Separate so a minimal Linux build can keep xcap only, and so non-Linux builds
+# never pull the portal dependency in.
+snip-wayland = ["dep:ashpd", "dep:url"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0"

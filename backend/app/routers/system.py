@@ -6,9 +6,14 @@ POST re-runs the battery live for the Diagnostics panel's "Re-check" button.
 
 from __future__ import annotations
 
+import hashlib
+import logging
+import time
+from collections import deque
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +21,116 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.startup_checks import check_app_integrity, get_app_integrity
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
+
+# Job kinds that must not be interrupted by a window close. Exports are safe to
+# abort (they only write a temp file); imports, restores and backups are not.
+_SHUTDOWN_BLOCKING_JOB_KINDS = frozenset({"import", "restore", "backup"})
+
+# Renderer-error reporting is best-effort and unauthenticated by design (a crash
+# must be reportable before any auth state exists), so it is strictly capped and
+# deduplicated: a render loop that throws every frame must not flood the log.
+_CLIENT_ERROR_WINDOW_S = 60.0
+_CLIENT_ERROR_MAX_PER_WINDOW = 20
+_client_error_times: deque[float] = deque()
+_client_error_seen: dict[str, float] = {}
+
+
+class ClientErrorReport(BaseModel):
+    """A renderer error. Never carries entry or note text."""
+
+    message: str = Field(max_length=500)
+    stack: str | None = Field(default=None, max_length=4000)
+    component: str | None = Field(default=None, max_length=120)
+    url: str | None = Field(default=None, max_length=300)
+    view: str | None = Field(default=None, max_length=40)
+    app_version: str | None = Field(default=None, max_length=40)
+
+
+@router.post("/client-errors", status_code=204)
+async def report_client_error(payload: ClientErrorReport) -> Response:
+    """Record a renderer error in the backend log.
+
+    The desktop UI talks to a devtools-less webview, so a component crash or an
+    unhandled rejection is otherwise completely invisible. Deliberately narrow:
+    message/stack/component/url/view only. Query strings and fragments are
+    stripped, and duplicates within the window are dropped.
+    """
+    now = time.monotonic()
+    while _client_error_times and now - _client_error_times[0] > _CLIENT_ERROR_WINDOW_S:
+        _client_error_times.popleft()
+    for key, seen_at in list(_client_error_seen.items()):
+        if now - seen_at > _CLIENT_ERROR_WINDOW_S:
+            del _client_error_seen[key]
+
+    digest = hashlib.sha256(
+        (payload.message + "\x00" + (payload.stack or "")[:800]).encode()
+    ).hexdigest()
+    if digest in _client_error_seen:
+        return Response(status_code=204)
+    if len(_client_error_times) >= _CLIENT_ERROR_MAX_PER_WINDOW:
+        raise HTTPException(status_code=429, detail="Too many client error reports")
+
+    _client_error_times.append(now)
+    _client_error_seen[digest] = now
+
+    location = (payload.url or "").split("?", 1)[0].split("#", 1)[0]
+    logger.warning(
+        "Renderer error [%s%s] %s | at %s%s",
+        payload.component or "ui",
+        f" ({payload.view})" if payload.view else "",
+        payload.message,
+        location or "unknown",
+        f" | app {payload.app_version}" if payload.app_version else "",
+    )
+    if payload.stack:
+        logger.warning("Renderer stack: %s", payload.stack[:1500])
+    return Response(status_code=204)
+
+
+async def _busy_state(db: AsyncSession) -> dict[str, Any]:
+    """Work that a window close must not interrupt."""
+    from app.core.jobs import jobs
+    from app.models.backup import BackupSnapshot
+
+    in_progress = (
+        (
+            await db.execute(
+                select(BackupSnapshot.config_id).where(
+                    BackupSnapshot.status == "in_progress"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    blocking = [
+        {"id": job.id, "kind": job.kind, "phase": job.phase}
+        for job in jobs.running()
+        if job.kind in _SHUTDOWN_BLOCKING_JOB_KINDS
+    ]
+    reasons: set[str] = set()
+    if in_progress:
+        reasons.add("backup")
+    reasons.update(job["kind"] for job in blocking)
+    return {
+        "busy": bool(reasons),
+        "reasons": sorted(reasons),
+        "backups_in_progress": len(in_progress),
+        "jobs": blocking,
+    }
+
+
+@router.get("/shutdown-state")
+async def shutdown_state(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Whether an in-flight backup/import/restore should delay app exit.
+
+    The desktop shell polls this before tearing down the sidecar so a close
+    during a backup does not truncate an upload (see the CLOSE tasks).
+    """
+    return await _busy_state(db)
 
 
 @router.get("/integrity")
