@@ -1,60 +1,51 @@
 # LifeLogr — pending tasks
 
-Exported 2026-11-07 from `docs/plans/2026-11-07-modify-idea-tasks.md` (the
-full plan; IDs and decision context live there). Everything below is what
-remains open after the security wave landed in `4079fe9` and `3f2ee5f`.
+Updated 2026-11-07 after the batch on the `feature/pending-tasks-batch`
+branch (DND-3 remainder, SEC-MEDIA-7 export notes, BLANK-8 + RESIZE-7 e2e,
+DEC-5 issues). IDs and decision context live in
+`docs/plans/2026-11-07-modify-idea-tasks.md`; per-wave tracking now also
+lives in issues #19–#22 on `emeeran/LifeLogr`.
 
-## Needs the real desktop GUI
+## Needs the real desktop GUI (manual)
 
 - [ ] **MIC-6** Manual width check of the mic-in-bottom-bar at 380 px, 720 px and
-      fullscreen: no overlap with the editor body.
+      fullscreen: no overlap with the editor body. (#19)
 - [ ] **CLOSE-6** Verify shutdown timings on a real desktop run against the §9
       targets. Use `scripts/close-timing.sh`; `scripts/snip-smoke.sh` covers the
-      related capture checklist.
+      related capture checklist. (#20)
 - [ ] **SEC (design §12, manual acceptance)** On a copy of the data dir: run the
       Migration "Encrypt attachments of encrypted items", then a `strings`-on-media
-      check shows no decodable image for encrypted items' attachments or thumbs.
+      check shows no decodable image for encrypted items' attachments or thumbs. (#22)
+- [ ] **Wave-3 manual pass** Move 10 notes and 3 notebooks in a real session
+      without losing one; check the resize grip's **pointer** path on WebKitGTK —
+      the grip shares its corner with the UA's native CSS-resize handle, which
+      intercepts real pointer events in Chromium (the keyboard path works; if
+      WebKit behaves the same, move the grip inward). (#21)
 
 ## Deferred by design
 
 - [ ] **BLANK-7** Renderer heartbeat (5 s `/health`, two missed beats → reload
       overlay). A crashed/killed renderer cannot detect itself — the honest fix
-      is a native watchdog in the Tauri shell; needs its own small design.
+      is a native watchdog in the Tauri shell; needs its own small design. (#20)
 
-## Needs new infrastructure (Playwright e2e harness)
+## Known unrelated debt
 
-Both blocked on the same prerequisite: install Playwright + browsers and a way
-to boot the stack for tests. Build the harness once, then both specs are small.
+- `tests/unit/test_main_misc.py::TestSpaCatchAll` — 2 failures introduced by the
+  `e0204e5` stability commit (SPA catch-all returns 404 for client routes);
+  pre-dates the security wave and needs a separate fix.
+- `tests/settings.spec.ts` "Data tab" e2e fails in this environment (Export
+  button never appears) on the unmodified baseline too — needs triage with the
+  dev stack, possibly an overlay/timing issue rather than a regression.
 
-- [ ] **BLANK-8** `tests/e2e/blank-screen.spec.ts` — a throwing view renders the
-      ErrorBoundary (reload + copy details), not a blank page.
-- [ ] **RESIZE-7** Paste → drag grip → reload → size identical (`?w=&h=` persisted);
-      downsize to 320 px decodes only the `/thumb` source.
+## Done in this batch (was open in the previous export)
 
-## Feature-sized (start fresh)
-
-- [ ] **DND-3 (remainder)** Between-row insertion line for drag-reordering in the
-      notes rail. Notes have no `sort_order` column (inline migration in
-      `core/database.py:_migrate_schema`); folder reordering needs N sequential
-      PATCHes unless a batch endpoint is added. Already done: drop onto Unfiled /
-      Notebooks header un-files / moves to top level.
-- [ ] **SEC-MEDIA-7 follow-ups** (only if wanted): Markdown export frontmatter for
-      encrypted entries currently notes the omission; HTML/PDF could surface a
-      similar note inline. Low priority.
-
-## Process
-
-- [ ] **DEC-5** Create one issue per wave on `emeeran/LifeLogr`, each linking
-      `docs/plans/2026-11-07-modify-idea-tasks.md`. (Awaiting go-ahead; not yet
-      opened.)
-
-## Not tracked as tasks (done or resolved)
-
-Waves 0–3 and the SEC-* wave are otherwise complete — see the checked items and
-the decisions log in `2026-11-07-modify-idea-tasks.md`, plus
-`docs/plans/2026-11-07-modify-idea-plan.md` for rationale.
-
-Known unrelated debt (not part of this plan): `tests/unit/test_main_misc.py::
-TestSpaCatchAll` — 2 failures introduced by the `e0204e5` stability commit
-(SPA catch-all returns 404 for client routes); pre-dates the security wave and
-needs a separate fix.
+- **DND-3 remainder** — `notes.sort_order` (inline migration, `_SCHEMA_VERSION`
+  4), batch `POST /notes/reorder` + `POST /notes/folders/reorder`, between-row
+  insertion line in the rail; never-reordered sections keep recent-first.
+- **SEC-MEDIA-7 follow-ups** — HTML/PDF exports note the omitted attachments of
+  encrypted entries inline (one shared sentence with the Markdown frontmatter).
+- **BLANK-8 + RESIZE-7** — e2e specs in `frontend/tests/`, in CI. RESIZE-7
+  caught a real bug: the `/thumb` rewrite dropped `?w=&h=`, so resizing a
+  downsized image never persisted (fixed; CHANGELOG under Fixed).
+- **DEC-5** — one issue per wave: #19 (Wave 1), #20 (Wave 2), #21 (Wave 3),
+  #22 (Wave 4), each linking the plan doc.
