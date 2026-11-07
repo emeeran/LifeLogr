@@ -176,16 +176,20 @@ export function applyMediaSize(
     return body
   }
   const { bare } = splitUrl(src)
+  // The preview renders downsized media from `/api/v1/media/<id>/thumb`
+  // (BLANK-4); the body token is always the `/file` URL, so match — and
+  // rewrite — through the file URL the thumb was derived from.
+  const bodyBare = bare.replace(/\/thumb$/, '/file')
   const sized = (tail: string | undefined) =>
-    withSizeParams(`${bare}${tail ?? ''}`, w, h)
+    withSizeParams(`${bodyBare}${tail ?? ''}`, w, h)
   let changed = false
   const finish = (out: string): string => {
     if (!changed)
-      console.warn('[markdownMedia] media token not found for size update:', bare)
+      console.warn('[markdownMedia] media token not found for size update:', bodyBare)
     return out
   }
   const mdRe = new RegExp(
-    `(!\\[[^\\]]*\\]\\()${escapeRe(bare)}(\\?[^)]*)?(\\))`,
+    `(!\\[[^\\]]*\\]\\()${escapeRe(bodyBare)}(\\?[^)]*)?(\\))`,
     'g',
   )
   const afterMd = body.replace(mdRe, (_m, pre, tail, post) => {
@@ -193,7 +197,7 @@ export function applyMediaSize(
     return `${pre}${sized(tail)}${post}`
   })
   const htmlRe = new RegExp(
-    `(<(?:img|video)\\b[^>]*?\\ssrc\\s*=\\s*)(["'])${escapeRe(bare)}(\\?[^"']*)?\\2`,
+    `(<(?:img|video)\\b[^>]*?\\ssrc\\s*=\\s*)(["'])${escapeRe(bodyBare)}(\\?[^"']*)?\\2`,
     'gi',
   )
   return finish(

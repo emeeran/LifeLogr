@@ -117,6 +117,16 @@ describe('applyMediaSize', () => {
     )
   })
 
+  it('matches the body /file token through a /thumb preview src', () => {
+    // The preview renders downsized media from /api/v1/media/<id>/thumb;
+    // a settled resize keyed on that DOM src must still rewrite the
+    // markdown body's /file URL.
+    const body = '![dot](/api/v1/media/7/file?w=320&h=200)'
+    expect(
+      applyMediaSize(body, '/api/v1/media/7/thumb?w=320&h=200', 440, 280),
+    ).toBe('![dot](/api/v1/media/7/file?w=440&h=280)')
+  })
+
   it('rewrites the raw-HTML video form, leaving other attributes intact', () => {
     const body =
       '\n<video controls preload="metadata" src="u.mp4" style="max-width:100%"></video>\n'

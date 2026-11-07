@@ -102,6 +102,7 @@ jobs:
       - name: Start backend
         working-directory: backend
         env:
+          LIFELOGR_DATA_DIR: /tmp/lifelogr-e2e
           DATA_DIR: /tmp/lifelogr-e2e
         run: |
           uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 &
@@ -118,7 +119,7 @@ jobs:
         # settings = UI smoke; entries = create→search round-trip; recordings =
         # type → autosave → recorder arms — all through the real backend, so a
         # dead/wrong backend fails the suite.
-        run: npx playwright test tests/settings.spec.ts tests/entries.spec.ts tests/recordings.spec.ts --reporter=line
+        run: npx playwright test tests/settings.spec.ts tests/entries.spec.ts tests/recordings.spec.ts tests/blank-screen.spec.ts tests/media-resize.spec.ts --reporter=line
 
   # Version is duplicated in 4 source files (see `make bump`); fail the build on
   # drift so a manual edit to one can't ship a mismatched bundle.

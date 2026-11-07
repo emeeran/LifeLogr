@@ -16,6 +16,7 @@ const ContextDrawerPanel = defineAsyncComponent(
 )
 import SearchPalette from '../search/SearchPalette.vue'
 import ErrorBoundary from '../common/ErrorBoundary.vue'
+import CrashProbe from '../common/CrashProbe.vue'
 import { useToastStore } from '../../stores/toast'
 import ScribblePad from '../scribble/ScribblePad.vue'
 const WhatsNewDialog = defineAsyncComponent(
@@ -35,6 +36,7 @@ import {
   onMounted,
   defineAsyncComponent,
 } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   AlertTriangle,
   Save,
@@ -53,6 +55,10 @@ import { useHotkey } from '../../composables/useHotkey'
 const ui = useUiStore()
 const entries = useEntriesStore()
 const toast = useToastStore()
+// e2e hook (BLANK-8): ?crash=1 swaps the routed view for a component that
+// throws, proving the ErrorBoundary catches it (see CrashProbe.vue).
+const route = useRoute()
+const crashProbe = computed(() => route.query.crash === '1')
 const editorRef = ref<InstanceType<typeof EntryEditor> | null>(null)
 // OCR language from Settings → Appearance (same key the settings tab writes).
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
@@ -193,7 +199,8 @@ async function onExtractText(id: number) {
       <ErrorBoundary>
         <router-view v-slot="{ Component: RouteComponent }">
           <Transition name="route-fade" mode="out-in">
-            <component :is="RouteComponent" />
+            <CrashProbe v-if="crashProbe" />
+            <component :is="RouteComponent" v-else />
           </Transition>
         </router-view>
       </ErrorBoundary>

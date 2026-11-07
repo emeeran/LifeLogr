@@ -53,7 +53,10 @@ describe('renderMarkdown() — the shared pipeline', () => {
 
   it('uses the thumbnail for small requested sizes (the insert cap)', () => {
     const html = renderMarkdown('![A lake](/api/v1/media/7/file?w=480&h=320)')
-    expect(html).toContain('src="/api/v1/media/7/thumb"')
+    // The size query survives the rewrite: the resize composable reads the
+    // wrapper's encoded size from the DOM src, and applyMediaSize matches the
+    // body's /file token through it (thumb -> file normalization).
+    expect(html).toContain('src="/api/v1/media/7/thumb?w=480&amp;h=320"')
   })
 
   it('leaves note media (no thumbnail route) on the original URL', () => {

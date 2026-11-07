@@ -132,6 +132,12 @@ offline at any time.
   Stop) stays a popover above the bar.
 
 ### Fixed
+- **Resizing a downsized image now persists.** The preview renders media at
+  ≤ 640 px from the thumbnail endpoint, but the rewrite dropped the image's
+  size from the URL — so the resize grip started from the wrong size and a
+  settled drag could never find its markdown token to save into. The thumbnail
+  URL now carries the `?w=&h=` query (the backend ignores it) and the size
+  writer matches the body's file URL through it.
 - **Screen snip works on Wayland.** `xcap` needs `zwlr_screencopy_manager_v1`,
   which GNOME does not implement, so capture always failed with "Cannot find
   required wayland protocol". Capture now goes through

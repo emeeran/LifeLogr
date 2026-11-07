@@ -26,7 +26,10 @@ import DOMPurify from 'dompurify'
 function previewImageSrc(href: string): string {
   const requested = /[?&]w=(\d+)/.exec(href)
   if (requested && Number(requested[1]) > 640) return href
-  return href.replace(/\/api\/v1\/media\/(\d+)\/file(\?.*)?$/, '/api/v1/media/$1/thumb')
+  // Keep the query: the resize composable reads the wrapper's encoded size
+  // from the DOM src, and applyMediaSize resolves the body's /file token
+  // through it (the backend serve routes ignore query params).
+  return href.replace(/\/api\/v1\/media\/(\d+)\/file(\?.*)?$/, '/api/v1/media/$1/thumb$2')
 }
 
 function escAttr(value: string): string {
