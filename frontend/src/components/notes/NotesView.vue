@@ -35,14 +35,173 @@ import { notesApi } from '../../api/notes'
 import { pickFile } from '../../utils/fileDialog'
 import { tagsApi } from '../../api/tags'
 import NoteEditor from './NoteEditor.vue'
+import NoteColorPicker from './NoteColorPicker.vue'
+import FolderMovePicker from './FolderMovePicker.vue'
 import { errorMessage } from '../../utils/errorMessage'
 import { useToastStore } from '../../stores/toast'
+import { noteColorLabel, noteColorValue } from '../../utils/noteColors'
+import {
+  resolveDrop,
+  type DropTarget,
+  type TreeDragItem,
+} from '../../composables/useNotesTreeDrag'
 import type { NoteListItem, NoteFolderResponse, TagResponse } from '../../types'
 
 const store = useNotesStore()
 const ui = useUiStore()
 const toast = useToastStore()
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null)
+
+// ── Drag & drop in the rail ─────────────────────────────────────────────────
+// The rail is virtualized, so a drop target is identified by the row's model
+// (TreeItem), never by DOM index. `dragging` must be a ref: WebKit refuses to
+// read dataTransfer during dragover, so the highlight needs local state.
+const dragging = ref<TreeDragItem | null>(null)
+const dropTarget = ref<DropTarget | null>(null)
+const dropBusy = ref(false)
+
+function startRowDrag(event: DragEvent, item: TreeDragItem) {
+  dragging.value = item
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(
+      'application/x-lifelogr-tree',
+      JSON.stringify(item),
+    )
+    // Plain-text fallback keeps the drag recognisable to the OS/other targets.
+    event.dataTransfer.setData('text/plain', `${item.kind}:${item.id}`)
+  }
+}
+
+function endRowDrag() {
+  dragging.value = null
+  dropTarget.value = null
+  scheduleExpand(null)
+}
+
+/** Where a `tree-row` may accept a drop (null = not a drop target). */
+function rowTarget(row: TreeItem): DropTarget | null {
+  if (row.folderId != null) return { kind: 'folder', id: row.folderId }
+  if (row.key === 'unfiled') return { kind: 'unfiled' }
+  return null
+}
+
+function sameTarget(a: DropTarget | null, b: DropTarget | null): boolean {
+  if (!a || !b) return a === b
+  if (a.kind !== b.kind) return false
+  return a.kind !== 'folder' || b.kind !== 'folder' || a.id === b.id
+}
+
+function markDrop(event: DragEvent, target: DropTarget | null) {
+  if (!target || !dragging.value) return
+  if (dragging.value.kind === 'folder' && target.kind === 'folder') {
+    if (dragging.value.id === target.id) return // cannot drop on itself
+  }
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTarget.value = target
+  // Hovering a collapsed notebook springs it open, so a nested target is
+  // reachable without dropping first.
+  scheduleExpand(
+    target.kind === 'folder' && !isExpanded(String(target.id))
+      ? String(target.id)
+      : null,
+  )
+}
+
+let expandTimer: ReturnType<typeof setTimeout> | null = null
+let expandPending: string | null = null
+
+/** Expand a collapsed notebook after a short hover during a drag. */
+function scheduleExpand(key: string | null) {
+  if (key === expandPending) return
+  if (expandTimer) {
+    clearTimeout(expandTimer)
+    expandTimer = null
+  }
+  expandPending = key
+  if (!key) return
+  expandTimer = setTimeout(() => {
+    expandTimer = null
+    expandPending = null
+    if (!expanded.value.has(key)) {
+      expanded.value = new Set([...expanded.value, key])
+    }
+  }, 600)
+}
+
+/** Parent of a notebook, for the keyboard "Move to…" menu. */
+function folderParent(folderId: number | null | undefined): number | null {
+  if (folderId == null) return null
+  return store.folders.find((f) => f.id === folderId)?.parent_id ?? null
+}
+
+async function moveFolder(folderId: number, parentId: number | null) {
+  try {
+    if (parentId == null) {
+      await store.updateFolder(folderId, { clear_parent: true })
+    } else {
+      await store.updateFolder(folderId, { parent_id: parentId })
+    }
+  } catch {
+    /* the store already toasted the failure */
+  }
+}
+
+/** Clear the highlight only when the pointer actually leaves the row. */
+function clearDropIfLeft(event: DragEvent) {
+  const element = event.currentTarget as HTMLElement | null
+  const next = event.relatedTarget as Node | null
+  if (element && next && element.contains(next)) return
+  dropTarget.value = null
+}
+
+async function applyDrop(event: DragEvent, target: DropTarget | null) {
+  event.preventDefault()
+  event.stopPropagation()
+  const item = dragging.value
+  endRowDrag()
+  if (!item || !target) return
+
+  const note =
+    item.kind === 'note' ? store.notes.find((n) => n.id === item.id) : null
+  const decision = resolveDrop(item, target, {
+    noteFolder: note ? (note.folder_id ?? null) : null,
+    folders: store.folders.map((f) => ({ id: f.id, parent_id: f.parent_id })),
+  })
+
+  if (decision.action === 'noop') {
+    if (decision.reason) toast.info(decision.reason)
+    return
+  }
+  if (decision.action === 'cycle') {
+    toast.error(decision.reason)
+    return
+  }
+
+  dropBusy.value = true
+  try {
+    if (decision.action === 'note-to-folder') {
+      await store.updateNote(decision.noteId, { folder_id: decision.folderId })
+    } else if (decision.action === 'note-to-unfiled') {
+      await store.updateNote(decision.noteId, {
+        folder_id: null,
+        clear_folder: true,
+      })
+    } else if (decision.action === 'folder-to-parent') {
+      await store.updateFolder(decision.folderId, {
+        parent_id: decision.parentId,
+      })
+    } else {
+      await store.updateFolder(decision.folderId, { clear_parent: true })
+    }
+  } catch {
+    /* the store already toasted the failure; nothing moved */
+  } finally {
+    dropBusy.value = false
+  }
+}
+
 
 /** Read the editor's `isDirty` through the exposed instance. Vue unwraps refs
  *  on the public instance, but handle both shapes so this guard can't no-op. */
@@ -158,6 +317,34 @@ function notesIn(folderId: number): NoteListItem[] {
 }
 function leafLabel(n: NoteListItem): string {
   return n.title?.trim() || 'Untitled note'
+}
+
+// ── Colour labels (Note.color / NoteFolder.color) ──
+/** Raw stored colour of a notebook (hex or null). */
+function folderColorRaw(folderId: number | null | undefined): string | null {
+  if (folderId == null) return null
+  return store.folders.find((f) => f.id === folderId)?.color ?? null
+}
+/** Resolved tint for a notebook row. */
+function folderTint(folderId: number | null | undefined): string | null {
+  return noteColorValue(folderColorRaw(folderId))
+}
+/** A note's own colour, falling back to its notebook's. */
+function noteTint(note: NoteListItem): string | null {
+  return noteColorValue(note.color) ?? folderTint(note.folder_id)
+}
+/** Add the colour name to a row's accessible name — colour is never the only
+ *  signal (the shape/tooltip carries it too). */
+function withColour(base: string, tint: string | null): string {
+  const label = noteColorLabel(tint)
+  return label ? `${base} (${label})` : base
+}
+async function setFolderColor(folderId: number, value: string | null) {
+  try {
+    await store.updateFolder(folderId, { color: value })
+  } catch {
+    /* the store already toasted the failure */
+  }
 }
 
 // Flatten the whole rail (search list OR the expand/collapse tree) into one
@@ -583,6 +770,7 @@ onMounted(async () => {
         ref="treeScrollEl"
         role="tree"
         aria-label="Notebooks and notes"
+        :aria-busy="dropBusy"
         class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 py-2"
         @keydown="onTreeKeydown"
       >
@@ -613,21 +801,51 @@ onMounted(async () => {
             <!-- tree-row (expandable group) -->
             <div
               v-else-if="flatTree[vr.index].kind === 'tree-row'"
-              class="group flex items-center gap-0.5"
+              class="group flex items-center gap-0.5 rounded"
+              :class="{
+                'drop-into':
+                  dropTarget &&
+                  sameTarget(dropTarget, rowTarget(flatTree[vr.index])),
+              }"
               :style="rowIndent(flatTree[vr.index].depth)"
+              @dragover="markDrop($event, rowTarget(flatTree[vr.index]))"
+              @drop="applyDrop($event, rowTarget(flatTree[vr.index]))"
+              @dragleave="clearDropIfLeft"
             >
               <button
                 class="tree-row flex-1"
                 role="treeitem"
                 :data-tree-key="flatTree[vr.index].key"
+                :draggable="flatTree[vr.index].folderId != null"
+                @dragstart="
+                  flatTree[vr.index].folderId != null &&
+                    startRowDrag($event, {
+                      kind: 'folder',
+                      id: flatTree[vr.index].folderId!,
+                    })
+                "
+                @dragend="endRowDrag"
                 :aria-expanded="flatTree[vr.index].expanded"
                 :aria-selected="
                   store.currentNote?.folder_id === flatTree[vr.index].folderId
                 "
                 :aria-level="(flatTree[vr.index].depth ?? 0) + 1"
-                :aria-label="flatTree[vr.index].label"
+                :aria-label="
+                  withColour(
+                    flatTree[vr.index].label!,
+                    folderTint(flatTree[vr.index].folderId),
+                  )
+                "
                 @click="toggleExpand(flatTree[vr.index].key!)"
               >
+                <span
+                  v-if="folderTint(flatTree[vr.index].folderId)"
+                  class="folder-stripe"
+                  :style="{
+                    background: folderTint(flatTree[vr.index].folderId)!,
+                  }"
+                  aria-hidden="true"
+                />
                 <ChevronRight
                   :size="13"
                   class="chevron shrink-0"
@@ -662,11 +880,32 @@ onMounted(async () => {
               >
                 <Trash2 :size="11" />
               </button>
+              <NoteColorPicker
+                v-if="flatTree[vr.index].folderId != null"
+                :model-value="folderColorRaw(flatTree[vr.index].folderId)"
+                noun="notebook"
+                class="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                @update:model-value="
+                  setFolderColor(flatTree[vr.index].folderId!, $event)
+                "
+              />
+              <FolderMovePicker
+                v-if="flatTree[vr.index].folderId != null"
+                :folder-id="flatTree[vr.index].folderId!"
+                :parent-id="folderParent(flatTree[vr.index].folderId)"
+                :folders="store.folders"
+                class="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                @move="moveFolder(flatTree[vr.index].folderId!, $event)"
+              />
             </div>
             <!-- section (Notebooks label + new-folder button) -->
             <div
               v-else-if="flatTree[vr.index].kind === 'section'"
               class="flex items-center justify-between px-1 pb-1 pt-3"
+              :class="{ 'drop-into': dropTarget?.kind === 'root' }"
+              @dragover="markDrop($event, { kind: 'root' })"
+              @drop="applyDrop($event, { kind: 'root' })"
+              @dragleave="clearDropIfLeft"
             >
               <span
                 class="text-[9px] font-bold uppercase tracking-wider text-text-muted"
@@ -753,13 +992,34 @@ onMounted(async () => {
                 <button
                   class="note-leaf-main"
                   role="treeitem"
+                  draggable="true"
+                  @dragstart="
+                    startRowDrag($event, {
+                      kind: 'note',
+                      id: flatTree[vr.index].note!.id,
+                    })
+                  "
+                  @dragend="endRowDrag"
                   :aria-selected="store.currentNote?.id === flatTree[vr.index].note!.id"
                   :aria-level="(flatTree[vr.index].depth ?? 0) + 1"
                   :title="leafLabel(flatTree[vr.index].note!)"
-                  :aria-label="leafLabel(flatTree[vr.index].note!)"
+                  :aria-label="
+                    withColour(
+                      leafLabel(flatTree[vr.index].note!),
+                      noteTint(flatTree[vr.index].note!),
+                    )
+                  "
                   @click="selectNote(flatTree[vr.index].note!.id)"
                   @dblclick="startRenameNote(flatTree[vr.index].note!)"
                 >
+                  <span
+                    v-if="noteTint(flatTree[vr.index].note!)"
+                    class="note-dot"
+                    :style="{
+                      background: noteTint(flatTree[vr.index].note!)!,
+                    }"
+                    aria-hidden="true"
+                  />
                   <FileText
                     :size="12"
                     class="shrink-0"
@@ -885,6 +1145,26 @@ onMounted(async () => {
 .tree-row:hover {
   background: var(--color-surface-hover);
   color: var(--color-text-primary);
+}
+/* Drop target highlight while a note/notebook is dragged over a row. */
+.drop-into {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+/* Colour label: a 3px stripe on notebooks, a dot on notes. Presentational
+   only — the row's aria-label names the colour, so it is never the sole cue. */
+.folder-stripe {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  margin-right: 1px;
+}
+.note-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
 }
 .chevron {
   color: var(--color-text-muted);

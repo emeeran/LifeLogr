@@ -1,10 +1,28 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   applyMediaSize,
+  fitMediaSize,
   getMediaSize,
   insertOcrBelowImage,
   withSizeParams,
 } from './markdownMedia'
+
+describe('fitMediaSize', () => {
+  it('caps wide images at the limit and keeps the aspect ratio', () => {
+    expect(fitMediaSize(4000, 3000)).toEqual({ w: 480, h: 360 })
+    expect(fitMediaSize(1920, 1080, 640)).toEqual({ w: 640, h: 360 })
+  })
+
+  it('leaves images that already fit untouched', () => {
+    expect(fitMediaSize(480, 300)).toBeNull()
+    expect(fitMediaSize(320, 200)).toBeNull()
+  })
+
+  it('ignores unusable dimensions', () => {
+    expect(fitMediaSize(0, 300)).toBeNull()
+    expect(fitMediaSize(4000, Number.NaN)).toBeNull()
+  })
+})
 
 describe('insertOcrBelowImage', () => {
   it('inserts the OCR text as a blockquote directly below the image token', () => {

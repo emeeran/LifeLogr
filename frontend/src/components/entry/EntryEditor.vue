@@ -23,6 +23,8 @@ import {
   Loader,
   Pause,
   CalendarClock,
+  Mic,
+  Square,
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
@@ -59,13 +61,16 @@ import { useRichTextEditor } from '../../composables/useRichTextEditor'
 import { useInlineTags } from '../../composables/useInlineTags'
 import { extractHashtags } from '../../utils/tags'
 import { countWords } from '../../utils/text'
+import { deriveTitle } from '../../utils/autoTitle'
 import { useAttachments } from '../../composables/useAttachments'
 import { usePasteMedia } from '../../composables/usePasteMedia'
 import { useResizableMedia } from '../../composables/useResizableMedia'
 import { useTauriDragDrop } from '../../composables/useTauriDragDrop'
 import {
   applyMediaSize,
+  initialMediaSize,
   insertOcrBelowImage,
+  withSizeParams,
 } from '../../utils/markdownMedia'
 import { useAutoSave } from '../../composables/useAutoSave'
 import {
@@ -102,6 +107,13 @@ const recordingsState = useRecordings(
   ensureSavedForRecording,
 )
 provideRecordings(recordingsState)
+// Toolbar trigger: the mic sits next to the read-aloud speaker (bottom bar)
+// instead of floating over the editor. The pill stays a popover above it.
+const {
+  recording: voiceRecording,
+  uploading: voiceUploading,
+  toggleRecord: toggleVoiceRecord,
+} = recordingsState
 const title = ref('')
 const body = ref('')
 const tagIds = ref<number[]>([])
@@ -178,6 +190,13 @@ const showPreview = ref(false)
 const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
 // Auto-OCR images on attach (Settings → Appearance). Off = embed image only.
 const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', false)
+// Auto-title: fills an empty title from the body's first line on save. Cleared
+// while the user is typing a title (or deliberately emptied it).
+const autoTitleEnabled = useLocalStorage<boolean>('lifelogr-auto-title', true)
+const titleTouched = ref(false)
+const titleSuggestion = computed(() =>
+  !title.value.trim() && autoTitleEnabled.value ? deriveTitle(body.value) : '',
+)
 const ocrBusy = ref(false)
 const fullscreen = ref(false)
 const textarea = ref<HTMLTextAreaElement | null>(null)
@@ -624,6 +643,9 @@ const {
 } = useResizableMedia({
   storageKey: 'lifelogr-entry-media-sizes',
   ocrButton: true,
+  // Bound decode memory on long, media-heavy entries: past this many inline
+  // images the preview hides the rest behind a "Show N more" button.
+  maxInline: 12,
   onOcr: (src) => {
     const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
     if (mediaId) void runEntryOcr(mediaId, src)
@@ -667,6 +689,7 @@ async function loadEntry() {
 
   body.value = ''
   title.value = ''
+  titleTouched.value = false
   tagIds.value = []
   mood.value = ''
   selectedTemplateId.value = null
@@ -913,6 +936,31 @@ defineExpose({
 })
 
 // ── Save ──
+/** A title the user typed (or cleared) is theirs — auto-title backs off. */
+function onTitleInput() {
+  titleTouched.value = true
+  onInput()
+}
+
+/** Apply the ghost suggestion from the first body line. */
+function applyTitleSuggestion() {
+  if (!titleSuggestion.value) return
+  title.value = titleSuggestion.value
+  titleTouched.value = true
+  onInput()
+}
+
+/** Fill an empty, untouched title from the body. Safe to call on every save. */
+function autoTitleIfEmpty(): boolean {
+  if (title.value.trim() || titleTouched.value || !autoTitleEnabled.value) {
+    return false
+  }
+  const derived = deriveTitle(body.value)
+  if (!derived) return false
+  title.value = derived
+  return true
+}
+
 /** Persist the entry. Resolves `true` only when it actually saved — callers
  *  that act on the result (AppShell's pending switch) must check it.
  *  Spec §9 ED8: Save persists WITHOUT closing — closing is the X control. */
@@ -929,6 +977,7 @@ async function save(): Promise<boolean> {
       if (!body.value.trim() && !title.value.trim()) {
         return false
       }
+      autoTitleIfEmpty()
       if (!title.value.trim()) {
         const t = await askPrompt({
           title: 'Title this entry',
@@ -960,6 +1009,7 @@ async function save(): Promise<boolean> {
       ui.editingEntryId = entry.id
       return true
     } else {
+      autoTitleIfEmpty()
       // Allow empty body if a title is present (title-only / recording-only entries).
       if (!body.value.trim() && !title.value.trim()) {
         toast.info('Add a title or some text before saving')
@@ -1017,7 +1067,12 @@ function cutToClipboard() {
 async function embedMediaFile(file: File): Promise<MediaResponse | null> {
   try {
     const media = await mediaApi.upload(ui.editingEntryId!, file)
-    const url = mediaApi.fileUrl(media.id)
+    // Cap a large photo's initial width so it does not arrive at full bleed
+    // (and does not decode at full resolution in the preview).
+    const size = await initialMediaSize(file)
+    const url = size
+      ? withSizeParams(mediaApi.fileUrl(media.id), size.w, size.h)
+      : mediaApi.fileUrl(media.id)
     embedMarkdownFor(file.name, file.type, url)
     return media
   } catch (e: unknown) {
@@ -1360,8 +1415,18 @@ async function applySuggestedTag(name: string) {
         v-model="title"
         class="flex-1 bg-transparent text-base font-semibold text-text-primary placeholder-text-muted/70 outline-none min-w-0"
         placeholder="Title"
-        @input="onInput"
+        @input="onTitleInput"
       />
+      <!-- Ghost suggestion: the title auto-title would use. Applying it makes
+           the title user-owned, so later body edits never rewrite it. -->
+      <button
+        v-if="titleSuggestion"
+        class="shrink-0 max-w-40 truncate text-[10px] text-text-muted hover:text-accent cursor-pointer transition-colors"
+        :title="`Use as title: ${titleSuggestion}`"
+        @click="applyTitleSuggestion"
+      >
+        Auto: {{ titleSuggestion }}
+      </button>
       <!-- Mood (spec §9 ED10): same bounded scale as the statistics; unset is valid -->
       <select
         :value="mood"
@@ -1799,6 +1864,22 @@ async function applySuggestedTag(name: string) {
         <button
           class="p-1 rounded cursor-pointer transition-colors disabled:opacity-50"
           :class="
+            voiceRecording
+              ? 'bg-danger/20 text-danger'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          :disabled="!hasEntry || voiceUploading"
+          @click="toggleVoiceRecord()"
+          :title="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+          :aria-label="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+        >
+          <Square v-if="voiceRecording" :size="13" />
+          <Loader v-else-if="voiceUploading" :size="13" class="animate-spin" />
+          <Mic v-else :size="13" />
+        </button>
+        <button
+          class="p-1 rounded cursor-pointer transition-colors disabled:opacity-50"
+          :class="
             ttsPlaying
               ? 'bg-accent/20 text-accent'
               : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
@@ -1940,6 +2021,25 @@ async function applySuggestedTag(name: string) {
       @apply-tool-param="(value: string) => applyToolParam(value)"
       @close-result="clearAiResult"
     />
+
+    <!-- Focus mode hides the controls bar; keep the recorder reachable. -->
+    <button
+      v-if="focusMode"
+      class="fixed bottom-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full shadow-lg cursor-pointer transition-all hover:scale-105 disabled:opacity-50"
+      :class="
+        voiceRecording
+          ? 'bg-danger text-white'
+          : 'bg-accent text-white hover:bg-accent-hover'
+      "
+      :disabled="!hasEntry || voiceUploading"
+      :title="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+      :aria-label="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+      @click="toggleVoiceRecord()"
+    >
+      <Square v-if="voiceRecording" :size="16" />
+      <Loader v-else-if="voiceUploading" :size="16" class="animate-spin" />
+      <Mic v-else :size="18" />
+    </button>
 
     <!-- Floating voice recorder + playback player -->
     <FloatingRecorder v-if="!focusMode" />

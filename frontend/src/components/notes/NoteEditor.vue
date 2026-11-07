@@ -21,7 +21,9 @@ import { useResizableMedia } from '../../composables/useResizableMedia'
 import { useTauriDragDrop } from '../../composables/useTauriDragDrop'
 import { useRichTextEditor } from '../../composables/useRichTextEditor'
 import { useDraftRecovery } from '../../composables/useDraftRecovery'
+import { deriveTitle } from '../../utils/autoTitle'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
+import NoteColorPicker from './NoteColorPicker.vue'
 import EmojiPicker from '../common/EmojiPicker.vue'
 import { useLocalStorage } from '@vueuse/core'
 import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
@@ -42,7 +44,9 @@ import { useTagsStore } from '../../stores/tags'
 import { extractHashtags } from '../../utils/tags'
 import {
   applyMediaSize,
+  initialMediaSize,
   insertOcrBelowImage,
+  withSizeParams,
 } from '../../utils/markdownMedia'
 import { noteSavePayload } from '../../utils/noteEditorDiff'
 import { errorMessage } from '../../utils/errorMessage'
@@ -86,6 +90,14 @@ const body = ref('')
 // isDirty so we can warn before unsaved edits are lost on a page/note switch.
 const loadedTitle = ref('')
 const loadedBody = ref('')
+
+// Auto-title (Settings → Appearance): fill an empty, untouched title from the
+// body's first meaningful line on save. Never replaces a title the user typed.
+const autoTitleEnabled = useLocalStorage<boolean>('lifelogr-auto-title', true)
+const titleTouched = ref(false)
+const titleSuggestion = computed(() =>
+  !title.value.trim() && autoTitleEnabled.value ? deriveTitle(body.value) : '',
+)
 
 // True when the buffers differ from what was last loaded/saved — i.e. the user
 // has typed something not yet persisted. Notes have autosave OFF by design, so
@@ -204,6 +216,7 @@ function syncFromActive() {
   }
   loadedTitle.value = title.value
   loadedBody.value = body.value
+  titleTouched.value = false
   // Fresh undo stack per source — undo never crosses a note/page boundary.
   core.resetHistory()
 }
@@ -258,7 +271,36 @@ watch(
 // Switching pages with unsaved edits now prompts (selectPage), and closing the
 // tab/window warns (beforeunload), so edits are never silently lost.
 
+/** A title the user typed (or cleared) is theirs — auto-title backs off. */
+function onTitleInput() {
+  titleTouched.value = true
+}
+
+/** Apply the ghost suggestion from the first body line. */
+function applyTitleSuggestion() {
+  if (!titleSuggestion.value) return
+  title.value = titleSuggestion.value
+  titleTouched.value = true
+}
+
+/** Fill an empty, untouched title from the body before persisting. */
+function autoTitleIfEmpty(): void {
+  if (title.value.trim() || titleTouched.value || !autoTitleEnabled.value) return
+  const derived = deriveTitle(body.value)
+  if (derived) title.value = derived
+}
+
+/** Colour label lives on the note (the tree falls back to its notebook). */
+async function setColor(value: string | null) {
+  try {
+    await store.updateNote(props.note.id, { color: value })
+  } catch {
+    /* the store already toasted the failure */
+  }
+}
+
 async function doSave() {
+  autoTitleIfEmpty()
   if (isMain.value) {
     // Diff against the loaded snapshot, not props.note: an external rename
     // moves the prop, and diffing against it would treat the rename as a
@@ -482,7 +524,11 @@ async function embedFile(file: File): Promise<NoteMediaResponse | null> {
     const url = notesApi.mediaFileUrl(props.note.id, media.id)
     const name = file.name.replace(/\.[^.]+$/, '') || 'media'
     if (t.startsWith('image/')) {
-      applyText(`![${name}](${url})`)
+      // Cap the initial width (and therefore the preview decode) for large
+      // photos; the user can grow it with the resize grip.
+      const size = await initialMediaSize(file)
+      const src = size ? withSizeParams(url, size.w, size.h) : url
+      applyText(`![${name}](${src})`)
       showPreview.value = true
       if (autoOcr.value) await runOcr(media.id, url)
     } else if (t.startsWith('audio/')) {
@@ -632,9 +678,9 @@ async function startSnip() {
     snipSrc.value = URL.createObjectURL(blob)
     snipping.value = true
   } catch (e: unknown) {
-    toast.error(
-      `Screen capture failed: ${errorMessage(e)}. On Wayland, approve the portal request or run under X11.`,
-    )
+    // The backend now names the failing path (portal denied / missing / X11),
+    // so surface it verbatim instead of repeating generic Wayland advice.
+    toast.error(`Screen capture failed: ${errorMessage(e)}`)
   }
 }
 
@@ -867,6 +913,8 @@ const {
 } = useResizableMedia({
   storageKey: 'lifelogr-note-media-sizes',
   ocrButton: true,
+  // Same inline-media cap as the journal: long notes stay cheap to render.
+  maxInline: 12,
   onOcr: (src) => {
     // Note media URLs: /api/v1/notes/{noteId}/media/{mediaId}/file
     const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
@@ -1004,6 +1052,20 @@ defineExpose({ isDirty })
         :placeholder="isMain ? 'Untitled note' : 'Page title'"
         :disabled="isMain && note.is_encrypted"
         class="flex-1 bg-transparent text-sm font-semibold text-text-primary outline-none placeholder:text-text-muted disabled:opacity-70"
+        @input="onTitleInput"
+      />
+      <button
+        v-if="titleSuggestion"
+        class="shrink-0 max-w-36 truncate text-[10px] text-text-muted hover:text-accent cursor-pointer transition-colors"
+        :title="`Use as title: ${titleSuggestion}`"
+        @click="applyTitleSuggestion"
+      >
+        Auto: {{ titleSuggestion }}
+      </button>
+      <NoteColorPicker
+        :model-value="note.color"
+        noun="note"
+        @update:model-value="setColor"
       />
       <button
         @click="togglePin"

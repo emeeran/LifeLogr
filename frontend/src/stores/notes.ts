@@ -4,6 +4,7 @@ import type {
   NoteResponse,
   NoteListItem,
   NoteFolderResponse,
+  NoteFolderUpdate,
   NoteCreate,
   NoteUpdate,
   NoteListParams,
@@ -160,6 +161,18 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  async function updateFolder(id: number, data: NoteFolderUpdate) {
+    error.value = null
+    try {
+      const folder = await notesApi.updateFolder(id, data)
+      await fetchFolders()
+      return folder
+    } catch (e: unknown) {
+      fail('Failed to update notebook', e)
+      throw e
+    }
+  }
+
   async function deleteFolder(id: number) {
     error.value = null
     try {
@@ -255,6 +268,7 @@ export const useNotesStore = defineStore('notes', () => {
     deleteNote,
     togglePin,
     createFolder,
+    updateFolder,
     deleteFolder,
     createPage,
     updatePage,

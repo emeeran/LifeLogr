@@ -97,6 +97,60 @@ export function withSizeParams(url: string, w: number, h: number): string {
 }
 
 /**
+ * Initial display size for an inserted image: cap the width at *max* and keep
+ * the aspect ratio. Returns null when no cap is needed (or the input is
+ * unusable), in which case the caller keeps the URL untouched.
+ */
+export function fitMediaSize(
+  naturalWidth: number,
+  naturalHeight: number,
+  max = 480,
+): MediaSize | null {
+  if (
+    !Number.isFinite(naturalWidth) ||
+    !Number.isFinite(naturalHeight) ||
+    naturalWidth <= 0 ||
+    naturalHeight <= 0 ||
+    naturalWidth <= max
+  ) {
+    return null
+  }
+  return {
+    w: max,
+    h: Math.max(1, Math.round((naturalHeight * max) / naturalWidth)),
+  }
+}
+
+/**
+ * Measure an image file and return its capped initial size. Decoding happens
+ * once, locally, before upload; failures fall back to the natural size rather
+ * than blocking the insert.
+ */
+export async function initialMediaSize(
+  file: File,
+  max = 480,
+): Promise<MediaSize | null> {
+  if (!file.type.startsWith('image/')) return null
+  let objectUrl = ''
+  try {
+    objectUrl = URL.createObjectURL(file)
+    const natural = await new Promise<{ w: number; h: number } | null>(
+      (resolve) => {
+        const img = new Image()
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = () => resolve(null)
+        img.src = objectUrl
+      },
+    )
+    return natural ? fitMediaSize(natural.w, natural.h, max) : null
+  } catch {
+    return null
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+/**
  * Rewrite the persisted size of the media token(s) matching `src` inside the
  * markdown body — both the `![alt](url)` form and the raw-HTML
  * `<img|video … src="url">` form (not `<audio>`, not plain links). `src` is

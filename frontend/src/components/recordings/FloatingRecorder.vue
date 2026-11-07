@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Mic, Square, Loader } from 'lucide-vue-next'
+import { Square, Loader } from 'lucide-vue-next'
 import { ref, watch, onUnmounted } from 'vue'
 import { useRecordingsInjected, fmtTime } from '../../composables/useRecordings'
 
@@ -147,30 +147,6 @@ onUnmounted(stopMeter)
         <span class="text-[11px] text-text-secondary">Saving…</span>
       </div>
     </Transition>
-
-    <!-- Floating action button: starts / stops capture -->
-    <button
-      class="flex items-center justify-center h-10 w-10 rounded-full shadow-lg cursor-pointer transition-all hover:scale-105"
-      :class="
-        recs.recording.value
-          ? 'bg-danger text-white'
-          : 'bg-accent text-white hover:bg-accent-hover'
-      "
-      :title="
-        recs.hasEntry.value
-          ? 'Record voice memo'
-          : 'Save the entry, then record'
-      "
-      @click="recs.toggleRecord()"
-    >
-      <Square v-if="recs.recording.value" :size="16" />
-      <Loader
-        v-else-if="recs.uploading.value"
-        :size="16"
-        class="animate-spin"
-      />
-      <Mic v-else :size="18" />
-    </button>
   </div>
 </template>
 

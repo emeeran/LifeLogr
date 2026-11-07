@@ -36,6 +36,9 @@ export interface ResizableMediaOptions {
   /** A drag settled at a size differing from the `?w=&h=` encoded in src —
    *  the editor persists it into the markdown body. */
   onResize?: (src: string, w: number, h: number) => void
+  /** Render at most this many inline media at once, with a "Show N more"
+   *  control. Bounds decode memory on long, media-heavy entries. */
+  maxInline?: number
 }
 
 /** Quiet period after the last drag event before the drag counts as over. */
@@ -55,6 +58,7 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
     onOcr,
     onMediaDblClick,
     onResize,
+    maxInline,
   } = opts
   const mediaSizes = useLocalStorage<MediaSizes>(storageKey, {})
   let observers: ResizeObserver[] = []
@@ -198,6 +202,10 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
         wrap.style.width = legacy.w + 'px'
         wrap.style.height = legacy.h + 'px'
       }
+      // One AbortController for every listener on this wrapper (OCR is a real
+      // child node, so it needs none). Declared before the grip handlers.
+      const ctl = new AbortController()
+      controllers.push(ctl)
       if (
         ocrButton &&
         media.tagName === 'IMG' &&
@@ -209,6 +217,111 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
         btn.title = 'Extract text from this image (inserted below it)'
         wrap.appendChild(btn)
       }
+
+      // Explicit grip. WebKit draws no affordance for a CSS `resize: both`
+      // element, so the corner is invisible until someone guesses it is there.
+      // This handle is visible on hover/focus, drives the same settle path,
+      // and adds a keyboard equivalent. The native CSS corner still works.
+      const grip = document.createElement('span')
+      grip.className = 'rmedia-grip'
+      grip.tabIndex = 0
+      grip.setAttribute('role', 'separator')
+      grip.setAttribute('aria-label', 'Resize media')
+      grip.title = 'Drag to resize (focus + arrow keys)'
+      wrap.appendChild(grip)
+      const badge = document.createElement('span')
+      badge.className = 'rmedia-size'
+      const encodedForBadge = getMediaSize(src)
+      if (encodedForBadge) {
+        badge.textContent = `${encodedForBadge.w} × ${encodedForBadge.h}`
+      }
+      wrap.appendChild(badge)
+
+      let gripDrag: { x: number; y: number; w: number; h: number } | null =
+        null
+      const resizeTo = (w: number, h: number) => {
+        wrap.style.width = `${w}px`
+        wrap.style.height = `${h}px`
+        badge.textContent = `${w} × ${h}`
+        recordSize(src, w, h)
+        armSettle(src, w, h)
+      }
+      grip.addEventListener(
+        'pointerdown',
+        (e: PointerEvent) => {
+          e.preventDefault()
+          // Keep the wrapper's own drag-window handler from arming the RO path
+          // for this gesture — the grip writes sizes directly.
+          e.stopPropagation()
+          const r = wrap.getBoundingClientRect()
+          gripDrag = {
+            x: e.clientX,
+            y: e.clientY,
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+          }
+          wrap.classList.add('rmedia-active')
+          try {
+            grip.setPointerCapture(e.pointerId)
+          } catch {
+            /* jsdom / older engines */
+          }
+        },
+        { signal: ctl.signal },
+      )
+      grip.addEventListener(
+        'pointermove',
+        (e: PointerEvent) => {
+          if (!gripDrag) return
+          e.preventDefault()
+          const w = Math.max(
+            MIN_SIZE,
+            Math.round(gripDrag.w + e.clientX - gripDrag.x),
+          )
+          const h = Math.max(
+            MIN_SIZE,
+            Math.round(gripDrag.h + e.clientY - gripDrag.y),
+          )
+          wrap.style.width = `${w}px`
+          wrap.style.height = `${h}px`
+          badge.textContent = `${w} × ${h}`
+          recordSize(src, w, h)
+          armSettle(src, w, h)
+        },
+        { signal: ctl.signal },
+      )
+      const endGrip = (e: PointerEvent) => {
+        if (!gripDrag) return
+        gripDrag = null
+        wrap.classList.remove('rmedia-active')
+        try {
+          grip.releasePointerCapture(e.pointerId)
+        } catch {
+          /* jsdom / older engines */
+        }
+        const r = wrap.getBoundingClientRect()
+        resizeTo(Math.round(r.width), Math.round(r.height))
+      }
+      grip.addEventListener('pointerup', endGrip, { signal: ctl.signal })
+      grip.addEventListener('pointercancel', endGrip, { signal: ctl.signal })
+      grip.addEventListener(
+        'keydown',
+        (e: KeyboardEvent) => {
+          const step = e.shiftKey ? 40 : 10
+          const r = wrap.getBoundingClientRect()
+          let w = Math.round(r.width)
+          let h = Math.round(r.height)
+          if (e.key === 'ArrowLeft') w = Math.max(MIN_SIZE, w - step)
+          else if (e.key === 'ArrowRight') w += step
+          else if (e.key === 'ArrowUp') h = Math.max(MIN_SIZE, h - step)
+          else if (e.key === 'ArrowDown') h += step
+          else return
+          e.preventDefault()
+          e.stopPropagation()
+          resizeTo(w, h)
+        },
+        { signal: ctl.signal },
+      )
       // Only a genuine user drag may write a size. pointerdown on the wrap
       // opens the window; it stays open while pointer events keep arriving
       // (the cursor rides the media during a CSS-resize drag) and closes
@@ -226,8 +339,9 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
         dragTimers.forEach((t) => clearTimeout(t))
         dragTimers = []
       }
-      const ctl = new AbortController()
-      controllers.push(ctl)
+      // Native CSS-corner fallback: pointerdown on the wrap opens a window in
+      // which ResizeObserver ticks count as a user drag (and are persisted).
+      // The grip path above sets its own sizes and never needs this window.
       const opts = { signal: ctl.signal, capture: true } as const
       wrap.addEventListener(
         'pointerdown',
@@ -249,12 +363,16 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
         },
         opts,
       )
-      window.addEventListener('pointerup', () => {
-        if (dragging) {
-          clearIdle()
-          armIdle()
-        }
-      }, opts)
+      window.addEventListener(
+        'pointerup',
+        () => {
+          if (dragging) {
+            clearIdle()
+            armIdle()
+          }
+        },
+        opts,
+      )
       const ro = new ResizeObserver(() => {
         if (!dragging) return
         // Border box: matches the CSS size the `resize: both` handle writes
@@ -270,6 +388,32 @@ export function useResizableMedia(opts: ResizableMediaOptions) {
       ro.observe(wrap)
       observers.push(ro)
     })
+
+    if (maxInline && maxInline > 0) {
+      capInlineMedia(root, maxInline)
+    }
+  }
+
+  /** Hide media past *limit* and offer a one-click reveal for this render. */
+  function capInlineMedia(root: HTMLElement, limit: number) {
+    root.querySelector('.rmedia-more')?.remove()
+    const wraps = Array.from(root.querySelectorAll<HTMLElement>('.rmedia'))
+    wraps.forEach((wrap, index) => {
+      wrap.style.display = index < limit ? '' : 'none'
+    })
+    const hidden = wraps.length - limit
+    if (hidden <= 0) return
+
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'rmedia-more'
+    button.textContent = `Show ${hidden} more`
+    button.addEventListener('click', () => {
+      wraps.forEach((wrap) => (wrap.style.display = ''))
+      button.remove()
+    })
+    const anchor = wraps[limit - 1]
+    anchor.parentElement?.insertBefore(button, anchor.nextSibling)
   }
 
   onUnmounted(disconnect)
