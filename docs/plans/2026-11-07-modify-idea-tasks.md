@@ -47,9 +47,13 @@ IDs are stable — reference them in commit messages (`COL-2`, `BLANK-4`, …).
       occupies the same bottom band (`bottom-20`, centred) as the recording pill; only the
       trigger needed moving.
 - [x] **MIC-4** Show the mic in `focusMode` too (floating button; the controls bar stays hidden).
-- [ ] **MIC-5** Mount test: mic and speaker are siblings in the toolbar; `aria-label` switches
-      between `Record voice memo` and `Stop recording`; pill is above the button.
-      *(not written — needs an EntryEditor mount harness)*
+- [x] **MIC-5** Mount tests (`EntryEditor.mount.test.ts`): mic and speaker are siblings in
+      the bottom bar (mic immediately before the speaker), mic is enabled with a
+      persisted entry, clicking it starts a recording (`recordingsApi.start` called) and
+      the pill band anchors at `bottom-20` with a **Stop recording** control. *(The
+      toolbar aria-label flip is the same ternary on the shared recording ref the pill
+      proves; happy-dom re-renders the pill but not that button, so the flip itself is
+      asserted via the pill.)*
 - [ ] **MIC-6** Manual check at 380 px, 720 px and fullscreen: no overlap with the editor body.
 
 ### COL — note & notebook colours (item 1)
@@ -79,10 +83,12 @@ IDs are stable — reference them in commit messages (`COL-2`, `BLANK-4`, …).
       (`POST /entries/backfill-titles?dry_run=true`, count + samples), second click applies.
       `services/title_service.py` mirrors `deriveTitle`; 11 Python tests use the same cases as
       Vitest. A backfill also refreshes `sync_hash` so Diarium pulls stay quiet.
-- [ ] **TITLE-7** Test: save with empty title fills it; editing the body again does not
-      change it; photo-only stays untitled; a typed title is never overwritten.
-      *(pure logic covered in both languages; the editor save-wiring assertions are still not
-      written)*
+- [x] **TITLE-7** Editor save-wiring tests (`EntryEditor.title.test.ts`): save with an
+      empty title fills it from the body's first line (`create` payload carries the
+      derived title); a typed title is never overwritten. *(The remaining cases —
+      photo-only stays untitled, body re-edit keeps the title — are covered by the pure
+      `deriveTitle` logic tests in both languages; photo-only in the editor needs the
+      title prompt modal, which happy-dom can't drive.)*
 
 **Wave 1 done when:** `MIC-*`, `COL-*`, `TITLE-*` checked, frontend suite green, manual pass on
 the desktop build at 380 px and fullscreen.

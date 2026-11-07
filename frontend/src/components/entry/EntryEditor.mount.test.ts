@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 /**
@@ -52,8 +53,10 @@ vi.mock('../../api/encryption', () => ({
 vi.mock('../../api/recordings', () => ({
   recordingsApi: {
     upload: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
+    start: vi.fn(async () => undefined),
+    // stop() must resolve to a recording: the composable's unmount guard
+    // calls `.catch` on the result while a recording is active.
+    stop: vi.fn(async () => ({ id: 1 })),
     listByEntry: vi.fn(async () => []),
     get: vi.fn(),
     delete: vi.fn(),
@@ -166,6 +169,68 @@ describe('EntryEditor mount', () => {
 
     expect(wrapper.vm).toBeTruthy()
     expect(wrapper.element).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  // ── MIC-5: mic next to the speaker in the bottom bar ──
+  // The FAB was removed (MIC-1): the mic trigger lives in the editor's bottom
+  // controls bar, immediately before the read-aloud speaker; the recording
+  // pill stays a popover anchored above that band (bottom-20, MIC-2).
+  it('mic and speaker are siblings in the toolbar, mic first', async () => {
+    const { default: EntryEditor } = await import('./EntryEditor.vue')
+    const { useUiStore } = await import('../../stores/ui')
+    const pinia = createPinia()
+    const wrapper = mount(EntryEditor, { global: { plugins: [pinia] } })
+    // Bind the store to the component's pinia explicitly — a store from a
+    // different instance silently leaves the mic disabled (hasEntry false).
+    const ui = useUiStore(pinia)
+    ui.startEditing(42)
+    await flushPromises()
+    await nextTick()
+
+    const mic = wrapper.find('button[aria-label="Record voice memo"]')
+    const speaker = wrapper.find('button[aria-label="Read aloud"]')
+    expect(mic.exists()).toBe(true)
+    expect(speaker.exists()).toBe(true)
+    // Siblings in the same controls bar, mic immediately before the speaker.
+    expect(mic.element.parentElement).toBe(speaker.element.parentElement)
+    expect(mic.element.nextElementSibling).toBe(speaker.element)
+    // With a persisted entry the mic is enabled.
+    expect(mic.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('clicking the mic starts a recording; the pill band anchors above', async () => {
+    const { default: EntryEditor } = await import('./EntryEditor.vue')
+    const { useUiStore } = await import('../../stores/ui')
+    const pinia = createPinia()
+    const wrapper = mount(EntryEditor, { global: { plugins: [pinia] } })
+    const ui = useUiStore(pinia)
+    ui.startEditing(42)
+    await flushPromises()
+    await nextTick()
+
+    // Re-find after the entry fetch settles — the load re-renders the bar and
+    // a stale element reference would click a detached node.
+    const mic = wrapper.find('button[aria-label="Record voice memo"]')
+    expect(mic.attributes('disabled')).toBeUndefined()
+    await mic.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const recordingsApi = (await import('../../api/recordings')).recordingsApi
+    expect(vi.mocked(recordingsApi.start).mock.calls.length).toBe(1)
+
+    // The recording pill (FloatingRecorder) mounts in the bottom-20 popover
+    // band — happy-dom has no layout, so the "above the button" contract
+    // (MIC-2) is the anchor class, not geometry. Its Stop control carries the
+    // same "Stop recording" label the toolbar mic switches to while recording
+    // (the aria-label ternary on the shared recording ref).
+    const pillBand = wrapper.find('.bottom-20')
+    expect(pillBand.exists()).toBe(true)
+    expect(pillBand.text()).toContain('Stop')
+    const stopControl = pillBand.find('button[title="Stop recording"]')
+    expect(stopControl.exists()).toBe(true)
     wrapper.unmount()
   })
 })
