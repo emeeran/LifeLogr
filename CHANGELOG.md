@@ -24,6 +24,25 @@ offline at any time.
   a title from their first meaningful line, then apply. Never overwrites an existing
   title, and refreshes the sync fingerprint so a later Diarium pull does not read the
   backfill as a local edit.
+- **Recovery kit** (Settings → Data → Security): wraps the encryption key
+  under a passphrase or a generated 24-character recovery code and saves
+  `lifelogr-recovery.json`. Import verifies the key against a stored
+  credential and an encrypted attachment before installing it — a kit from a
+  different installation is refused, and replacing an active key always asks
+  for confirmation. Settings shows a warning while encryption is in use
+  without a kit. Losing `SECRET_KEY` loses stored cloud credentials and all
+  encrypted attachments — this is the way back.
+- **"Encrypt attachments of encrypted items"** (Maintenance): migrates media
+  that predates the encryption feature. Previews first (counts + bytes), is
+  resumable, atomic per file, and never deletes the only copy — a failed file
+  stays untouched and is named in the report. Also cleans plaintext
+  thumbnails that predate the encrypted thumbnail cache.
+- **Share exports omit attachments of encrypted entries** (HTML, markdown,
+  Diarium, Day One): exporting a decrypted attachment alongside its
+  passphrase-encrypted body would leak exactly the content that was hidden.
+  The native archive (`/export/archive`, backups) still carries them **as
+  ciphertext** so restore keeps working. See `docs/SECURITY.md` for the full
+  what-is/isn't-encrypted picture.
 - **Preview media cap**: a preview renders at most 12 inline images/videos, with a
   "Show N more" control — the second half of the blank-screen memory fix.
 - **New images insert at ≤ 480 px wide** (aspect preserved) instead of full bleed;
@@ -77,6 +96,19 @@ offline at any time.
   the old always-insert behaviour. Run `make test` → `test_import_diarium_merge`.
 
 ### Changed
+- **Attachments of encrypted items can now be encrypted at rest**
+  (`ENCRYPT_MEDIA` rollout flag, default off). When enabled, uploads attached to
+  an encrypted entry or note are stored as chunked AES-256-GCM blobs (1 MiB
+  chunks, random nonce prefix, storage path bound as AAD — see
+  `docs/design/media-encryption.md`), so a photo in a private entry is no
+  longer a decodable file on disk or in backups. Serving decrypts on the fly:
+  `/file` honours HTTP Range requests by decrypting only the chunks the range
+  overlaps (video seeking stays cheap), `/thumb` keeps an **encrypted**
+  thumbnail cache (`.webp.llm1`) and serves decrypted bytes, and OCR reads
+  plaintext from memory only. A blob that fails authentication (wrong key,
+  tampering, copied paths) returns **409** and is never deleted or
+  overwritten. Existing plaintext media migrates via the upcoming Maintenance
+  action.
 - **Preview images load a ≤640 px thumbnail** (`/media/{id}/thumb`) unless the
   body encodes an explicit `?w=&h=` size, and render with `loading="lazy"` /
   `decoding="async"`. Full-resolution decodes of media-heavy entries were the

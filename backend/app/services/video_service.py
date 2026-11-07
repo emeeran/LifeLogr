@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.entry import Entry
 from app.models.video_note import VideoNote
+from app.services import media_crypto
 from app.services.media_service import _BLOCKED_SIGNATURES, read_head
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class VideoService:
         self, entry_id: int, filename: str, content_type: str, data: bytes
     ) -> VideoNote:
         """Upload a video file and create a VideoNote record."""
-        await self._get_entry(entry_id)
+        entry = await self._get_entry(entry_id)
 
         if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
             raise MediaSizeError(f"Video exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
@@ -56,6 +57,11 @@ class VideoService:
         storage_path = self._media_dir / storage_name
         # Writing a clip of up to 25 MB is file I/O — keep it off the event loop.
         await asyncio.to_thread(storage_path.parent.mkdir, parents=True, exist_ok=True)
+        if entry.is_encrypted and settings.ENCRYPT_MEDIA:
+            # Third attachment store, same at-rest rule as media/note media
+            # (docs/design/media-encryption.md §5) — clips of encrypted entries
+            # must not sit in the clear under MEDIA_DIR/videos.
+            data = await asyncio.to_thread(media_crypto.encrypt_media, data, storage_name)
         await asyncio.to_thread(storage_path.write_bytes, data)
 
         note = VideoNote(
@@ -78,7 +84,7 @@ class VideoService:
         consumed (moved) on success — the caller still unlinks it, which is a
         safe no-op afterwards.
         """
-        await self._get_entry(entry_id)
+        entry = await self._get_entry(entry_id)
 
         size = (await asyncio.to_thread(src.stat)).st_size
         if size > settings.MAX_MEDIA_SIZE_BYTES:
@@ -97,7 +103,12 @@ class VideoService:
         storage_name = f"videos/{entry_id}/{uuid.uuid4().hex}{ext}"
         storage_path = self._media_dir / storage_name
         await asyncio.to_thread(storage_path.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(shutil.move, str(src), str(storage_path))
+        if entry.is_encrypted and settings.ENCRYPT_MEDIA:
+            data = await asyncio.to_thread(src.read_bytes)
+            data = await asyncio.to_thread(media_crypto.encrypt_media, data, storage_name)
+            await asyncio.to_thread(storage_path.write_bytes, data)
+        else:
+            await asyncio.to_thread(shutil.move, str(src), str(storage_path))
 
         note = VideoNote(
             entry_id=entry_id,

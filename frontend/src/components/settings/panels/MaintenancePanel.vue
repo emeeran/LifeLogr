@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { entriesApi } from '../../../api/entries'
-import { vacuumDatabase } from '../../../api/settings'
+import {
+  vacuumDatabase,
+  encryptMedia,
+  getSettings,
+  type EncryptMediaReport,
+} from '../../../api/settings'
 import { useSystemHealthStore } from '../../../stores/systemHealth'
 import {
   Database,
@@ -14,6 +19,7 @@ import {
   AlertTriangle,
   AlertCircle,
   Type,
+  Lock,
 } from 'lucide-vue-next'
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
@@ -99,6 +105,53 @@ async function handleVacuum() {
     vacuuming.value = false
   }
 }
+
+// ── Encrypt attachments of encrypted items ──
+// Two-step like the title backfill: preview first, second click writes. Only
+// shown when media encryption is enabled (the ENCRYPT_MEDIA rollout flag) —
+// the backend refuses the job otherwise. Resumable: already-encrypted files
+// are skipped, so a rerun is always safe.
+const mediaEncryptionOn = ref(false)
+const encryptBusy = ref(false)
+const encryptPreview = ref<EncryptMediaReport | null>(null)
+
+async function handleEncryptMedia() {
+  encryptBusy.value = true
+  try {
+    if (encryptPreview.value == null) {
+      const preview = await encryptMedia(true)
+      if (preview.candidates === 0 && preview.stale_thumbs === 0) {
+        emit('toast', 'info', 'Everything is already encrypted')
+      } else {
+        encryptPreview.value = preview
+      }
+      return
+    }
+    const result = await encryptMedia(false)
+    if (result.errors.length > 0) {
+      emit(
+        'toast',
+        'error',
+        `Encrypted ${result.updated} file(s), ${result.errors.length} failed — they were left untouched`,
+      )
+    } else {
+      emit(
+        'toast',
+        'success',
+        `Encrypted ${result.updated} attachment${result.updated === 1 ? '' : 's'}${
+          result.thumbs_purged > 0
+            ? `, cleaned ${result.thumbs_purged} old thumbnail${result.thumbs_purged === 1 ? '' : 's'}`
+            : ''
+        }`,
+      )
+    }
+    encryptPreview.value = null
+  } catch (e: unknown) {
+    emit('toast', 'error', `Encryption failed: ${errMsg(e)}`)
+  } finally {
+    encryptBusy.value = false
+  }
+}
 // ── Startup system check (absorbed from the former Diagnostics pill) ──
 const health = useSystemHealthStore()
 const checks = computed(() => health.report?.checks ?? [])
@@ -108,6 +161,11 @@ const ranAt = computed(() =>
 
 onMounted(() => {
   if (!health.loaded) health.load()
+  getSettings()
+    .then((s) => {
+      mediaEncryptionOn.value = s.security.media_encryption_enabled
+    })
+    .catch(() => mediaEncryptionOn.value = false)
 })
 
 async function recheck() {
@@ -184,6 +242,28 @@ async function rebuildIndex() {
         <SButton variant="ghost" :disabled="vacuuming" @click="handleVacuum">
           <Loader v-if="vacuuming" :size="12" class="animate-spin" />
           {{ vacuuming ? 'Compacting…' : 'Vacuum' }}
+        </SButton>
+      </SettingRow>
+    </div>
+    <div v-if="mediaEncryptionOn" class="p-3">
+      <SettingRow
+        :icon="Lock"
+        label="Encrypt attachments of encrypted items"
+        :description="
+          encryptPreview == null
+            ? 'Encrypts photos, audio and documents attached to encrypted entries and notes so they are unreadable on disk and in backups. Runs a preview first; safe to rerun.'
+            : `${encryptPreview.candidates} file${encryptPreview.candidates === 1 ? '' : 's'} (${formatBytes(encryptPreview.plaintext_bytes)}${
+                encryptPreview.stale_thumbs > 0
+                  ? `, ${encryptPreview.stale_thumbs} old thumbnail${encryptPreview.stale_thumbs === 1 ? '' : 's'}`
+                  : ''
+              }) — click again to apply.`
+        "
+      >
+        <SButton variant="ghost" :disabled="encryptBusy" @click="handleEncryptMedia">
+          <Loader v-if="encryptBusy" :size="12" class="animate-spin" />
+          <template v-if="encryptBusy">Working…</template>
+          <template v-else-if="encryptPreview != null">Apply</template>
+          <template v-else>Preview</template>
         </SButton>
       </SettingRow>
     </div>

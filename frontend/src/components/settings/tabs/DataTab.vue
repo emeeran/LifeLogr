@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-import { HardDrive, FileUp, FileDown, Cloud, Wrench } from 'lucide-vue-next'
+import { HardDrive, FileUp, FileDown, Cloud, Wrench, ShieldCheck } from 'lucide-vue-next'
 import StoragePanel from '../panels/StoragePanel.vue'
 import ImportPanel from '../panels/ImportPanel.vue'
 import ExportPanel from '../panels/ExportPanel.vue'
 import BackupRestorePanel from '../panels/BackupRestorePanel.vue'
 import MaintenancePanel from '../panels/MaintenancePanel.vue'
+import SecurityPanel from '../panels/SecurityPanel.vue'
 
 type ToastType = 'success' | 'error' | 'info'
 const emit = defineEmits<{ toast: [type: ToastType, message: string] }>()
@@ -25,6 +26,7 @@ const pills = [
   { id: 'import', label: 'Import', icon: FileUp },
   { id: 'export', label: 'Export', icon: FileDown },
   { id: 'backup-restore', label: 'Backup & Restore', icon: Cloud },
+  { id: 'security', label: 'Security', icon: ShieldCheck },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench },
   { id: 'storage', label: 'Storage', icon: HardDrive },
 ] as const
@@ -83,6 +85,7 @@ function forward(type: ToastType, message: string) {
       v-else-if="activePill === 'maintenance'"
       @toast="forward"
     />
+    <SecurityPanel v-else-if="activePill === 'security'" @toast="forward" />
     <StoragePanel v-else-if="activePill === 'storage'" @toast="forward" />
   </div>
 </template>

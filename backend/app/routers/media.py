@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,7 @@ from app.schemas.media import (
     MediaTimelineItem,
     MediaTimelineResponse,
 )
-from app.services.media_service import MediaService, spool_upload
+from app.services.media_service import MediaService, media_file_response, spool_upload
 from app.services.ocr_service import OcrLanguageUnavailable, ocr_image_bytes
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
@@ -150,7 +150,13 @@ async def ocr_media(
     if not (media.media_type == "image" or media.media_type.startswith("image/")):
         raise HTTPException(status_code=400, detail="OCR is only available for images.")
 
-    file_data, _content_type, _filename = await svc.get_file(media.id)
+    try:
+        file_data, _content_type, _filename = await svc.get_file(media.id)
+    except ValueError:
+        raise HTTPException(
+            status_code=409,
+            detail="Attachment cannot be decrypted with this installation's key",
+        ) from None
     try:
         text = await asyncio.to_thread(ocr_image_bytes, file_data, lang)
     except ValueError as exc:
@@ -173,21 +179,23 @@ async def ocr_media(
 
 
 @router.get("/{media_id}/file")
-async def download_media(media_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+async def download_media(
+    media_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
     """Stream the raw media file with HTTP range support.
 
     ``FileResponse`` serves from disk and honours ``Range`` requests, which is
-    required for <video>/<audio> playback and seeking. Returning the whole blob
-    as a single ``Response(content=data)`` breaks media playback.
+    required for <video>/<audio> playback and seeking. Encrypted attachments
+    are decrypted through the chunked reader instead (only the requested
+    chunks are touched) — see ``services.media_service.media_file_response``.
     """
     svc = MediaService(db)
     path, content_type, filename = await svc.get_file_path(media_id)
-    return FileResponse(
-        path=str(path),
-        media_type=content_type,
-        filename=filename,
-        # `inline` lets the browser render/play rather than force-download.
-        content_disposition_type="inline",
+    storage_path = path.relative_to(settings.MEDIA_DIR).as_posix()
+    return await media_file_response(
+        path, storage_path, content_type, filename, request.headers.get("range")
     )
 
 
@@ -196,11 +204,15 @@ async def get_media_thumbnail(media_id: int, db: AsyncSession = Depends(get_db))
     """Serve a cached ≤640px WebP thumbnail for an image (generated on demand).
 
     Grids and timelines request this instead of ``/file`` so the renderer
-    decodes small bitmaps rather than full originals.
+    decodes small bitmaps rather than full originals. Thumbs of encrypted
+    attachments are served as decrypted bytes — their cache on disk is an
+    encrypted ``.webp.llm1`` sibling.
     """
     svc = MediaService(db)
-    path, content_type = await svc.get_thumbnail_path(media_id)
-    return FileResponse(path=str(path), media_type=content_type, content_disposition_type="inline")
+    source, content_type = await svc.get_thumbnail(media_id)
+    if isinstance(source, bytes):
+        return Response(source, media_type=content_type, headers={"Cache-Control": "no-store"})
+    return FileResponse(path=str(source), media_type=content_type, content_disposition_type="inline")
 
 
 @router.delete("/{media_id}", status_code=204)

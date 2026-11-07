@@ -410,6 +410,9 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
                         "caption": m.caption,
                     }
                     for m in n.media
+                    # NOTE: encrypted notes' media stays here **as ciphertext** —
+                    # this is the native backup format; restore needs rows and
+                    # files (design §9). Share exports omit them instead.
                     if (settings.MEDIA_DIR / m.storage_path).is_file()
                 ],
             }
@@ -425,6 +428,7 @@ def _build_markdown_zip_sync(
     media_total = sum(
         1
         for e in entries
+        if not e.is_encrypted
         for m in e.media
         if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
     )
@@ -451,7 +455,10 @@ def _build_markdown_zip_sync(
             exportable_media = [
                 m
                 for m in entry.media
-                if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+                # Attachments of an encrypted entry never export (the body is
+                # ciphertext, so the files would be orphaned plaintext).
+                if not entry.is_encrypted
+                and (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
             ]
             if exportable_media:
                 frontmatter += "media:\n"
@@ -471,6 +478,8 @@ def _build_markdown_zip_sync(
 
             # Include media files
             for media in entry.media:
+                if entry.is_encrypted:
+                    continue
                 media_path = Path(settings.MEDIA_DIR) / media.storage_path
                 if media_path.exists():
                     zf.write(str(media_path), f"media/{media.storage_path}")

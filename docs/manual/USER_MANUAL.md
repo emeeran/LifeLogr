@@ -483,14 +483,46 @@ memory-hard **scrypt** KDF, per-item salt).
 > ⚠️ **If you forget the passphrase, encrypted content cannot be recovered.** And never
 > delete `<data-dir>/.secret_key` — it's required for decryption.
 
+### Encrypting attachments
+
+When **Settings → Data → Security → media encryption** is enabled
+(`ENCRYPT_MEDIA`), photos, audio, video and documents attached to an
+encrypted entry or note are stored **encrypted on disk** too — and their
+timeline thumbnails are encrypted as well. Attachments of plaintext items
+stay as plain files (fast and seekable). Serving decrypts transparently; a
+file that cannot be authenticated (wrong key, damaged data) is shown as an
+error and never deleted. See `docs/SECURITY.md` for the full picture.
+
+Media that predates this feature can be migrated from the **Maintenance**
+panel: *Encrypt attachments of encrypted items* previews the files first,
+then encrypts them in place (safe to rerun; it also removes outdated
+plaintext thumbnails).
+
+### Recovery kit
+
+Losing the encryption key (`SECRET_KEY`) means losing stored cloud
+credentials **and** every encrypted attachment. **Settings → Data →
+Security → Export recovery kit** wraps that key under a passphrase — or
+under a generated 24-character **recovery code**, shown once for printing —
+into `lifelogr-recovery.json`. Keep that file safe: it is as sensitive as
+the key itself.
+
+To recover on a new machine or after the key is lost: **Restore from
+recovery kit**, load the file, enter the passphrase or code. LifeLogr
+verifies the key against your stored data before installing it, and asks
+for confirmation before replacing an existing key. A warning appears in
+this panel while encryption is in use without any kit having been
+exported.
+
 ---
 
 ## 19. Data — Export & Import
 
-The **Settings → Data** tab has five panels: **Import**, **Export**,
-**Backup & Restore**, **Maintenance** and **Storage**. Long operations (large
-imports, exports, backups) show a live progress bar with the current phase —
-parse → media → insert for imports, media → finalize for exports.
+The **Settings → Data** tab has six panels: **Import**, **Export**,
+**Backup & Restore**, **Security**, **Maintenance** and **Storage**. Long
+operations (large imports, exports, backups) show a live progress bar with
+the current phase — parse → media → insert for imports, media → finalize for
+exports.
 
 ### What each export format carries
 
@@ -532,7 +564,10 @@ counted in the archive's metadata.
   title you already set is never overwritten.
 
 > Exports never include encrypted content in cleartext; encrypted notes export
-> as a placeholder with an `encrypted: true` flag.
+> as a placeholder with an `encrypted: true` flag, and encrypted entries'
+> **attachments** are omitted from the share formats (HTML, markdown, Diarium,
+> Day One). The native Archive ZIP is the exception — it carries encrypted
+> attachments *as ciphertext* so a restore keeps them.
 
 ---
 

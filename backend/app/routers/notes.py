@@ -15,9 +15,10 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,7 +43,7 @@ from app.schemas.note import (
 from app.schemas.note_media import NoteMediaFromPath, NoteMediaResponse
 from app.schemas.tag import TagBrief
 from app.core.config import settings
-from app.services.media_service import spool_upload
+from app.services.media_service import media_file_response, spool_upload
 from app.services.note_media_service import NoteMediaService
 from app.services.note_service import NoteService
 from app.services.notes_export_service import NotesExportService
@@ -295,16 +296,22 @@ async def list_note_media(note_id: int, db: AsyncSession = Depends(get_db)) -> A
 
 @router.get("/{note_id}/media/{media_id}/file")
 async def download_note_media(
-    note_id: int, media_id: int, db: AsyncSession = Depends(get_db)
-) -> FileResponse:
-    """Stream a note media file (inline, with HTTP range support)."""
+    note_id: int,
+    media_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Stream a note media file (inline, with HTTP range support).
+
+    Encrypted attachments are decrypted through the chunked reader (only the
+    requested chunks are touched) — see
+    ``services.media_service.media_file_response``.
+    """
     svc = NoteMediaService(db)
     path, content_type, filename = await svc.get_file_path(media_id, note_id)
-    return FileResponse(
-        path=str(path),
-        media_type=content_type,
-        filename=filename,
-        content_disposition_type="inline",
+    storage_path = path.relative_to(settings.MEDIA_DIR).as_posix()
+    return await media_file_response(
+        path, storage_path, content_type, filename, request.headers.get("range")
     )
 
 
@@ -333,12 +340,20 @@ async def ocr_note_media(
     reindexes ``notes.body``).
     """
     svc = NoteMediaService(db)
-    path, content_type, _filename = await svc.get_file_path(media_id, note_id)
+    _path, content_type, _filename = await svc.get_file_path(media_id, note_id)
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="OCR is only available for images.")
 
     try:
-        text = await asyncio.to_thread(ocr_image_bytes, path.read_bytes(), lang)
+        image_bytes = await svc.read_file_bytes(media_id, note_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=409,
+            detail="Attachment cannot be decrypted with this installation's key",
+        ) from None
+
+    try:
+        text = await asyncio.to_thread(ocr_image_bytes, image_bytes, lang)
     except ValueError as exc:
         # Unsupported language code (not in the whitelist).
         raise HTTPException(status_code=400, detail=str(exc)) from exc

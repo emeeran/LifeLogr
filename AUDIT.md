@@ -227,3 +227,38 @@ All items above closed. What was done, per finding:
 - Backend: 903 passed, ruff clean, mypy clean (strict, 110 files), coverage 79% (≥78 floor)
 - Frontend: 240 passed, vue-tsc clean, eslint clean (0 warnings)
 - Desktop: `cargo check` clean
+
+---
+
+# Security wave — 2026-11-07 (media encryption + recovery kit)
+
+What the SEC-* wave of the modify-idea plan changed about the entries above:
+
+## Risks closed
+
+- **Plaintext attachments of encrypted items** (previously unlisted, the worst
+  offender): a photo attached to an encrypted entry was a fully decodable file
+  on disk **and** in every backup/cloud copy, and its timeline thumbnail was a
+  plaintext WebP regardless. Now: with `ENCRYPT_MEDIA`, uploads to encrypted
+  entries/notes are stored as chunked AES-256-GCM blobs (path-bound AAD), the
+  thumbnail cache is encrypted (`.webp.llm1`), and the Maintenance action
+  migrates existing files. Share exports (HTML/markdown/Diarium/Day One) omit
+  encrypted entries' attachments instead of leaking them as plaintext files;
+  the native archive keeps them as ciphertext (restore needs them, design §9).
+- **Losing `SECRET_KEY`** — already fatal for cloud credentials, and worse
+  after media encryption. Mitigated by the recovery kit (Settings → Data →
+  Security): scrypt-wrapped `lifelogr-recovery.json`, verified against a
+  stored credential and a media chunk before install. The one-time warning
+  shows while encryption is in use without a kit.
+
+## Still accepted
+
+- **Unauthenticated loopback API** — unchanged, still by design; the
+  encryption key's threat model remains "other people with disk access", not
+  "other local processes" (the loopback design already excludes those only
+  partially — see the CSRF guard chain note above).
+- **WebKitWebProcess memory / sidecar freshness / restore-order incident** —
+  unchanged; unaffected by this wave.
+- **`strings`-on-media check** (design §12's last manual acceptance item) —
+  pending the real desktop run of the migration on a copy; the automated
+  suite covers the blob format, the thumb cache and the 409 failure mode.

@@ -9,6 +9,18 @@ import { mount, flushPromises } from '@vue/test-utils'
 
 vi.mock('../../../api/settings', () => ({
   vacuumDatabase: vi.fn(async () => ({ reclaimed_bytes: 0 })),
+  getSettings: vi.fn(async () => ({
+    security: { media_encryption_enabled: true },
+  })),
+  encryptMedia: vi.fn(async (dryRun: boolean) => ({
+    dry_run: dryRun,
+    candidates: 0,
+    plaintext_bytes: 0,
+    stale_thumbs: 0,
+    updated: 0,
+    thumbs_purged: 0,
+    errors: [],
+  })),
 }))
 vi.mock('../../../api/entries', () => ({
   entriesApi: { deduplicate: vi.fn() },
@@ -55,10 +67,66 @@ describe('MaintenancePanel mount', () => {
     const text = wrapper.text()
     expect(text).toContain('Remove duplicates')
     expect(text).toContain('Compact database')
+    expect(text).toContain('Encrypt attachments of encrypted items')
     expect(text).toContain('System Check')
     expect(text).toContain('Rebuild index')
     expect(text).toContain('Re-check')
     expect(text).toContain('Database')
+    wrapper.unmount()
+  })
+
+  it('hides the media-encryption row when the flag is off', async () => {
+    const { getSettings } = await import('../../../api/settings')
+    vi.mocked(getSettings).mockResolvedValueOnce({
+      security: { media_encryption_enabled: false },
+    } as never)
+    const wrapper = await mountPanel()
+    expect(wrapper.text()).not.toContain('Encrypt attachments of encrypted items')
+    wrapper.unmount()
+  })
+
+  it('media encryption: preview reports, second click applies and toasts', async () => {
+    const { encryptMedia } = await import('../../../api/settings')
+    vi.mocked(encryptMedia).mockClear()
+    vi.mocked(encryptMedia).mockResolvedValueOnce({
+      dry_run: true,
+      candidates: 2,
+      plaintext_bytes: 2048,
+      stale_thumbs: 1,
+      updated: 0,
+      thumbs_purged: 0,
+      errors: [],
+    })
+    const wrapper = await mountPanel()
+    // Two rows render a "Preview" button (titles backfill, media encryption) —
+    // take the last, which is the encryption row.
+    const previews = wrapper
+      .findAll('button')
+      .filter((b) => b.text().trim() === 'Preview')
+    const button = previews[previews.length - 1]!
+    await button.trigger('click')
+    await flushPromises()
+    expect(encryptMedia).toHaveBeenCalledWith(true)
+    expect(wrapper.text()).toContain('2 files (2 KB, 1 old thumbnail)')
+
+    vi.mocked(encryptMedia).mockResolvedValueOnce({
+      dry_run: false,
+      candidates: 2,
+      plaintext_bytes: 2048,
+      stale_thumbs: 1,
+      updated: 2,
+      thumbs_purged: 1,
+      errors: [],
+    })
+    const apply = wrapper.findAll('button').find((b) => b.text().trim() === 'Apply')!
+    await apply.trigger('click')
+    await flushPromises()
+    expect(encryptMedia).toHaveBeenCalledWith(false)
+    expect(
+      wrapper.emitted('toast')?.some(
+        ([t, m]) => t === 'success' && String(m).includes('Encrypted 2 attachments'),
+      ),
+    ).toBe(true)
     wrapper.unmount()
   })
 

@@ -28,10 +28,18 @@ export interface MapSettings {
   online_tiles: boolean
 }
 
+export interface SecuritySettings {
+  /** Attachments of encrypted items are encrypted at rest (ENCRYPT_MEDIA). */
+  media_encryption_enabled: boolean
+  /** ISO timestamp of the last recovery-kit export ('' = never). */
+  recovery_kit_exported_at: string
+}
+
 export interface AppSettings {
   ai: AISettings
   weather: WeatherSettings
   map: MapSettings
+  security: SecuritySettings
   storage: StorageInfo
   version: string
   app_name: string
@@ -75,6 +83,56 @@ export const getOllamaModels = () => request<AIModelInfo[]>('/settings/models')
 export const vacuumDatabase = () =>
   request<{ status: string; reclaimed_bytes: number }>('/settings/vacuum', {
     method: 'POST',
+  })
+
+export interface EncryptMediaReport {
+  dry_run: boolean
+  candidates: number
+  plaintext_bytes: number
+  stale_thumbs: number
+  updated: number
+  thumbs_purged: number
+  errors: string[]
+}
+
+/** Encrypt existing attachments of encrypted items (dry run by default). */
+export const encryptMedia = (dryRun: boolean) =>
+  request<EncryptMediaReport>(`/settings/encrypt-media?dry_run=${dryRun}`, {
+    method: 'POST',
+  })
+
+// ── Recovery kit ─────────────────────────────────────────────────────────────
+
+export interface RecoveryKitExportResult {
+  /** The kit document — save it as lifelogr-recovery.json. */
+  kit: Record<string, unknown>
+  /** Present when no passphrase was given: the one-time code that opens the kit. */
+  code: string | null
+}
+
+export interface RecoveryKitImportResult {
+  status: 'restored' | 'unchanged' | 'confirm_replace'
+  probes: { credentials: string; media: string }
+}
+
+export const exportRecoveryKit = (passphrase?: string) =>
+  request<RecoveryKitExportResult>('/settings/recovery-kit/export', {
+    method: 'POST',
+    body: JSON.stringify({ passphrase: passphrase || null }),
+  })
+
+export const importRecoveryKit = (
+  kit: Record<string, unknown>,
+  passphrase: string,
+  confirmReplace = false,
+) =>
+  request<RecoveryKitImportResult>('/settings/recovery-kit/import', {
+    method: 'POST',
+    body: JSON.stringify({
+      kit,
+      passphrase,
+      confirm_replace: confirmReplace,
+    }),
   })
 
 export const getStoragePath = () =>

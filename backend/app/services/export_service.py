@@ -21,6 +21,22 @@ from app.models.tag import EntryTag
 
 logger = logging.getLogger(__name__)
 
+
+def _skip_encrypted_media(entry: Entry, media: Any, fmt: str) -> None:
+    """Log one skipped attachment of an encrypted entry (media never exports).
+
+    The entry's body is passphrase-encrypted, so an export can never contain a
+    coherent decrypted document for it — and decrypting the attachment into a
+    plaintext export file would leak exactly the content the user hid.
+    """
+
+    logger.info(
+        "Skipping attachment %s of encrypted entry %s in %s export",
+        media.storage_path,
+        entry.id,
+        fmt,
+    )
+
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -205,6 +221,7 @@ class ExportService:
         attachment_total = sum(
             1
             for e in entries
+            if not e.is_encrypted
             for m in e.media
             if (settings.MEDIA_DIR / m.storage_path).exists()
         )
@@ -217,6 +234,13 @@ class ExportService:
                 body_html = self._md.render(body)
                 gallery_parts: list[str] = []
                 for media in entry.media:
+                    if entry.is_encrypted:
+                        # Attachments of an encrypted entry never leave the app:
+                        # decrypting them into a plaintext export would leak the
+                        # very files the user hid, and their text stays ciphertext
+                        # anyway (export cannot hold the passphrase key).
+                        _skip_encrypted_media(entry, media, "html")
+                        continue
                     local_file_path = settings.MEDIA_DIR / media.storage_path
                     if not local_file_path.exists():
                         continue
@@ -395,6 +419,12 @@ class ExportService:
                 # 2. Gather attachments and copy files to Zip
                 attachments_meta: list[dict[str, object]] = []
                 for media in entry.media:
+                    if entry.is_encrypted:
+                        # Same rule as the HTML export: attachments of an
+                        # encrypted entry never leave the app in the clear;
+                        # the frontmatter records the omission.
+                        _skip_encrypted_media(entry, media, "markdown")
+                        continue
                     local_file_path = settings.MEDIA_DIR / media.storage_path
                     if local_file_path.exists():
                         zip_media_path = f"attachments/{entry.entry_date}/{media.filename}"
@@ -420,6 +450,10 @@ class ExportService:
                 }
                 if attachments_meta:
                     metadata["attachments"] = attachments_meta
+                if entry.is_encrypted:
+                    metadata["attachments_note"] = (
+                        "attachments of this encrypted entry are omitted from exports"
+                    )
 
                 frontmatter_block = self._dump_yaml(metadata)
 
@@ -575,6 +609,7 @@ def _build_diarium_database_sync(
         media_total = sum(
             1
             for e in entries
+            if not e.is_encrypted
             for m in e.media
             if (settings.MEDIA_DIR / m.storage_path).is_file()
         )
@@ -637,6 +672,11 @@ def _build_diarium_database_sync(
             from uuid import uuid4
 
             for media_index, media in enumerate(entry.media):
+                if entry.is_encrypted:
+                    # Attachments of an encrypted entry stay in the app (same
+                    # rule as the HTML/markdown exports).
+                    _skip_encrypted_media(entry, media, "diarium")
+                    continue
                 src = settings.MEDIA_DIR / media.storage_path
                 if not src.is_file():
                     logger.warning(
@@ -979,6 +1019,11 @@ def build_archive(
             tags = [a.tag.name for a in entry.tag_associations if a.tag and a.tag.name]
             media_items = []
             for media in entry.media:
+                # NOTE: encrypted entries' media travels **as ciphertext** here —
+                # this is the native backup format (design §9): restore needs the
+                # rows and files, and the blob on disk is already unreadable
+                # without the key. Only the share exports (HTML/markdown/Diarium/
+                # Day One) omit them.
                 src = settings.MEDIA_DIR / media.storage_path
                 if not src.is_file():
                     continue

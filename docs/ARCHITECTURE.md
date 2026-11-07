@@ -237,6 +237,30 @@ random salt; cipher is **AES-256-GCM**; payload prefixed `v2:`. (Legacy v1 entri
 still readable.) The scrypt KDF was introduced specifically to make brute-force of
 short passphrases expensive.
 
+**(C) Media encryption at rest — `app/services/media_crypto.py` + `media_migration.py`**
+
+Behind `ENCRYPT_MEDIA` (default off): uploads attached to an encrypted entry/note are
+stored as **chunked AES-256-GCM** blobs (28-byte header, 1 MiB chunks, random nonce
+prefix, storage path bound as AAD — `LLM1` magic, no schema change). Serving
+(`/file`, `/thumb`, OCR) decrypts on the fly; `/file` honours `Range` by decrypting
+only the chunks the range overlaps, and `/thumb` keeps an encrypted `.webp.llm1`
+cache. Auth failure → **409**, file untouched. Existing media migrates via the
+Maintenance action (`POST /settings/encrypt-media`, dry run first, resumable).
+Share exports omit encrypted entries' attachments; the native archive keeps them as
+ciphertext (design §9). Design + rollout: `docs/design/media-encryption.md`;
+user summary: `docs/SECURITY.md`.
+
+**(D) Recovery kit — `app/services/recovery_kit.py`**
+
+Because losing `SECRET_KEY` loses credentials *and* encrypted attachments, it can be
+wrapped for recovery: scrypt(passphrase | 24-char base32 recovery code) → KEK →
+AES-GCM over `SECRET_KEY` into `lifelogr-recovery.json`
+(`POST /settings/recovery-kit/export`). Import unwraps, **probe-decrypts** one stored
+credential and one encrypted media chunk, refuses a key that cannot read the data,
+requires `confirm_replace` before replacing a live key, then persists
+`.secret_key` (managed runs only) and re-derives the in-process key caches
+(`security.rekey`). UI: Settings → Data → Security.
+
 ### 4.5 AI provider abstraction (`app/services/ai_provider_service.py`)
 
 All cloud presets speak the **OpenAI chat-completions API**, so one adapter serves them

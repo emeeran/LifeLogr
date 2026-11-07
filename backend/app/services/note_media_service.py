@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.note import Note
 from app.models.note_media import NoteMedia
+from app.services import media_crypto
 from app.services.media_service import (
     _ALLOWED_MIME_PREFIXES,
     _BLOCKED_SIGNATURES,
@@ -83,7 +84,7 @@ class NoteMediaService:
         if safe_name != filename or ".." in filename or "/" in filename:
             raise MediaSizeError("Invalid filename")
 
-        await self._require_note(note_id)
+        note = await self._require_note(note_id)
 
         media_type = MediaService._classify_media(content_type)
 
@@ -101,13 +102,17 @@ class NoteMediaService:
         rel_path = f"notes/{stored_name}"
         full_path = settings.MEDIA_DIR / "notes" / stored_name
         await asyncio.to_thread(full_path.parent.mkdir, parents=True, exist_ok=True)
+        file_size = len(final_data)
+        if note.is_encrypted and settings.ENCRYPT_MEDIA:
+            final_data = await asyncio.to_thread(media_crypto.encrypt_media, final_data, rel_path)
+            file_size = len(final_data)
         await asyncio.to_thread(full_path.write_bytes, final_data)
 
         media = NoteMedia(
             note_id=note_id,
             filename=safe_name,
             media_type=media_type,
-            file_size=len(final_data),
+            file_size=file_size,
             storage_path=rel_path,
             caption=caption,
         )
@@ -147,7 +152,7 @@ class NoteMediaService:
                 logger.warning("Blocked upload of %s (detected %s)", filename, label)
                 raise MediaSizeError(f"File type not allowed: detected {label}")
 
-        await self._require_note(note_id)
+        note = await self._require_note(note_id)
 
         media_type = MediaService._classify_media(content_type)
         final_ext = Path(safe_name).suffix or ".bin"
@@ -163,7 +168,14 @@ class NoteMediaService:
         rel_path = f"notes/{stored_name}"
         full_path = settings.MEDIA_DIR / "notes" / stored_name
         await asyncio.to_thread(full_path.parent.mkdir, parents=True, exist_ok=True)
-        if final_data is not None:
+        encrypt = note.is_encrypted and settings.ENCRYPT_MEDIA
+        if encrypt:
+            if final_data is None:
+                final_data = await asyncio.to_thread(src.read_bytes)
+            final_data = await asyncio.to_thread(media_crypto.encrypt_media, final_data, rel_path)
+            file_size = len(final_data)
+            await asyncio.to_thread(full_path.write_bytes, final_data)
+        elif final_data is not None:
             file_size = len(final_data)
             await asyncio.to_thread(full_path.write_bytes, final_data)
         else:
@@ -183,7 +195,7 @@ class NoteMediaService:
         await self.db.refresh(media)
         return media
 
-    async def _require_note(self, note_id: int) -> None:
+    async def _require_note(self, note_id: int) -> Note:
         note = (
             await self.db.execute(
                 select(Note).where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
@@ -191,6 +203,7 @@ class NoteMediaService:
         ).scalar_one_or_none()
         if not note:
             raise NotFoundError(f"Note {note_id} not found")
+        return note
 
 
     async def upload_from_path(
@@ -238,6 +251,17 @@ class NoteMediaService:
         if media.storage_path.endswith(".webp"):
             content_type = "image/webp"
         return full_path, content_type, media.filename
+
+    async def read_file_bytes(self, media_id: int, note_id: int) -> bytes:
+        """Return the plaintext bytes of an attachment (decrypting when stored encrypted).
+
+        In-memory only — never writes a plaintext temp file (OCR path).
+        """
+        media = await self._get_owned(media_id, note_id)
+        full_path = settings.MEDIA_DIR / media.storage_path
+        return await asyncio.to_thread(
+            MediaService._read_stored_bytes, full_path, media.storage_path
+        )
 
     async def delete(self, media_id: int, note_id: int) -> None:
         media = await self._get_owned(media_id, note_id)

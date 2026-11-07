@@ -209,15 +209,44 @@ manual session moves 10 notes and 3 notebooks without losing one.
 
 - [x] **SEC-MEDIA-1** Design note in `docs/design/media-encryption.md` (key hierarchy,
       chunked-AEAD blob format, Range mapping, policy, migration, failure modes, rollout).
-- [ ] **SEC-MEDIA-2** Implement chunked reader/writer + `ENCRYPT_MEDIA` flag; no schema change
-      (magic sniffing). *(pending)*
-- [ ] **SEC-MEDIA-3** Encrypt on upload when the parent item is encrypted; decrypt on serve
-      (`/file`, `/thumb`, OCR) with path-bound AAD. *(pending)*
-- [ ] **SEC-MEDIA-4** Encrypted thumbnail cache + purge plaintext thumbs of encrypted parents.
-      *(pending)*
-- [ ] **SEC-MEDIA-5** Maintenance "Encrypt attachments of encrypted items" (dry run,
-      resumable, atomic per file). *(pending)*
-- [ ] **SEC-MEDIA-6** Tests from the design note §12. *(pending)*
+- [x] **SEC-MEDIA-2** Implement chunked reader/writer + `ENCRYPT_MEDIA` flag; no schema change
+      (magic sniffing). Codec in `services/media_crypto.py` (encrypt/decrypt/range, on-disk
+      `probe_file`/`read_range_file` that seek only the chunks a range needs); flag in
+      `core/config.py` (default off — it gates uploads only, serving always decrypts).
+      20 codec unit tests.
+- [x] **SEC-MEDIA-3** Encrypt on upload when the parent item is encrypted; decrypt on serve
+      (`/file`, `/thumb`, OCR) with path-bound AAD. Both `MediaService` and
+      `NoteMediaService`; `media_file_response` shared by both routers maps auth failure →
+      409 (file untouched); `file_size` records ciphertext. 7 integration tests in
+      `test_media_encryption.py` (flag off/on, plaintext items, Range 206/416, tamper 409,
+      encrypted note media).
+- [x] **SEC-MEDIA-4** Encrypted thumbnail cache (`.webp.llm1` sibling, rendered from
+      decrypted bytes, thumb path as AAD) — served decrypted via `/thumb`; a stale
+      plaintext WebP sibling is deleted when the encrypted cache is written, and the
+      migration purges pre-existing plaintext thumbs (SEC-MEDIA-5).
+- [x] **SEC-MEDIA-5** Maintenance "Encrypt attachments of encrypted items"
+      (`services/media_migration.py`, `POST /settings/encrypt-media`, dry run first,
+      resumable, atomic per file with fsync, failures keep the original and are named).
+      Purges stale plaintext thumbs. UI row in Maintenance (two-step, shown only when
+      `ENCRYPT_MEDIA` is on, via the new `security` block in `GET /settings`). 5
+      integration tests in `test_media_migration.py`.
+- [x] **SEC-MEDIA-6** Tests from the design note §12 (codec round-trip/tamper/AAD/range;
+      wiring: flag on/off, Range 206/416, tamper 409, encrypted thumb cache, note media;
+      migration dry-run/idempotency/purge; recovery kit round-trip incl. probes). The
+      manual `strings`-on-media acceptance check stays with the real desktop run.
+      **Code-review pass (pre-commit) fixed:** missing-file guard before the migration
+      probe; **VideoNote clips of encrypted entries** now encrypt on upload, decrypt on
+      serve and migrate (the third attachment store the first pass missed); delete
+      removes the encrypted thumb sibling; recovery-kit media probe scans all rows
+      (a sampled probe could skip and bless a wrong key); magic-prefix false positives
+      (`looks_encrypted`) treated as plaintext; `bytes=-0` → 416; dead `decrypt_range`
+      removed; thumb cache flavour derived from the blob (one query off the grid path).
+- [x] **SEC-MEDIA-7** Exports no longer leak encrypted attachments: share exports
+      (HTML zip, Obsidian markdown, Diarium-compatible markdown, `.diary`, Day One)
+      omit attachments of encrypted entries — markdown records the omission in
+      frontmatter. The **native archive** keeps them *as ciphertext* (restore needs
+      the rows/files; design §9). 4 integration tests in
+      `test_export_encrypted_media.py`.
 
 ### SEC-BACKUP — manifest, verify, dry-run
 
@@ -236,18 +265,41 @@ manual session moves 10 notes and 3 notebooks without losing one.
 
 - [x] **SEC-KEYS-1** Key source audited and documented in the design note §2 (SECRET_KEY →
       HKDF; domain-separated media info).
-- [ ] **SEC-KEYS-2** Export: scrypt → AES-GCM wrap + recovery code. *(pending)*
-- [ ] **SEC-KEYS-3** Import/restore with probe decrypts. *(pending)*
-- [ ] **SEC-KEYS-4** UI + one-time warning for encrypted users without a kit. *(pending)*
-- [ ] **SEC-KEYS-5** Round-trip test (export → wipe → restore → decrypt). *(pending)*
-- [ ] **SEC-KEYS-6** `SECURITY.md` / manual section. *(pending)*
+- [x] **SEC-KEYS-2** Export: `services/recovery_kit.py` — scrypt(n=2^15, r=8, p=1) → KEK →
+      AES-GCM wrap of `SECRET_KEY` (AAD `lifelogr-recovery-kit-v1`), 24-base32 recovery
+      code (grouped XXXX-) whose normalised form **is** the KDF input;
+      `POST /settings/recovery-kit/export` returns the kit + code (never the raw key)
+      and records the export timestamp in runtime settings.
+- [x] **SEC-KEYS-3** Import/restore with probe decrypts: unwraps (passphrase literal
+      first, normalised code form second), probe-decrypts one stored credential
+      (`BackupConfig.credentials_encrypted`) and one encrypted media chunk, refuses a
+      key that cannot read the data, requires `confirm_replace` before replacing a
+      different non-default key, installs live (`security.rekey` + media-key cache
+      reset + `.secret_key` 0600) and refuses unmanaged (env-sourced) runs.
+      `POST /settings/recovery-kit/import`.
+- [x] **SEC-KEYS-4** UI: new **Security** pill in Settings → Data (`SecurityPanel.vue`) —
+      export (optional passphrase, downloads the kit, shows the code once), restore
+      (file picker + passphrase + inline confirm-replace), and the one-time warning
+      shown while media encryption is on and no kit has been exported.
+- [x] **SEC-KEYS-5** Round-trip tests (export → key wipe → restore → credential readable
+      again), plus: wrong passphrase, damaged kit, foreign-kit refusal via the media
+      probe, confirm-replace flow, unmanaged-run refusal. 7 integration tests in
+      `test_recovery_kit.py`.
+- [x] **SEC-KEYS-6** `docs/SECURITY.md` (what is / is not encrypted, key hierarchy,
+      failure mode, recovery kit, threat model); `CHANGELOG.md` entries; AUDIT.md
+      security-wave section.
 
 ### SEC-AUDIT — scratch files & docs
 
-- [ ] **SEC-AUDIT-1** Verify TTS cache, snip temp files and drag-drop staging are removed on
-      shutdown/failure; add cleanup where missing.
-- [ ] **SEC-AUDIT-2** Update `AUDIT.md` "accepted risk" entries that this wave changes.
-- [ ] **SEC-AUDIT-3** `CHANGELOG.md` security section + version bump note.
+- [x] **SEC-AUDIT-1** Audited temp/scratch paths — all clean, no code needed: TTS
+      `.part` unlink on failure + LRU cache eviction; media/backup/entries import
+      spools unlink in `finally`/`except`; jobs delete result files on discard;
+      restore uses `TemporaryDirectory`; frontend object URLs audited in BLANK-6.
+- [x] **SEC-AUDIT-2** `AUDIT.md` — new "Security wave — 2026-11-07" section: risks closed
+      (plaintext attachments, key loss) and what remains accepted.
+- [x] **SEC-AUDIT-3** `CHANGELOG.md` — recovery kit, migration and export-omission
+      entries under `[Unreleased]`. Version bump left to the release cut
+      (`make bump`), which drives the deb/AppImage names.
 
 **Wave 4 done when:** SEC-MEDIA/BACKUP/KEYS/AUDIT checked, the restore/verify tests pass on a real
 archive, and the manual `strings`-on-media check shows no decodable image for encrypted items.

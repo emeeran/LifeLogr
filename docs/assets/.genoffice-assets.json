@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "name": "image.png",
+      "sha256": "ea9317a913fecd68288f7e03b955d3efa4b907fd13d65a96a6433a5941defa76"
+    }
+  ],
+  "documents": {
+    "modify-idea.md": [
+      "image.png"
+    ]
+  },
+  "pending": {}
+}

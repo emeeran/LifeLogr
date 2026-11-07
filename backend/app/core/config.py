@@ -306,6 +306,14 @@ class Settings(BaseSettings):
         "http://tauri.localhost,https://tauri.localhost,http://127.0.0.1:18765"
     )
     MAX_MEDIA_SIZE_BYTES: int = Field(default=26_214_400, gt=0)  # 25 MB
+    # Encrypt attachments of encrypted entries/notes at rest (chunked AES-GCM,
+    # see docs/design/media-encryption.md). Rollout flag: serving already
+    # decrypts regardless of this, so turning it on only affects new uploads;
+    # existing files migrate via the maintenance job (SEC-MEDIA-5).
+    ENCRYPT_MEDIA: bool = False
+    # ISO timestamp of the last successful recovery-kit export (runtime-persisted).
+    # Drives the settings-UI warning for encrypted installs without a kit.
+    RECOVERY_KIT_EXPORTED_AT: str = ""
     # Hard ceiling on a restored .tar.gz upload — the import streams to disk and
     # aborts with 413 past this, so an unauthenticated loopback request can't
     # exhaust memory by streaming a huge payload at /backup/import.

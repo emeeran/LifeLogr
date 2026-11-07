@@ -6,8 +6,8 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,10 +69,18 @@ class MapSettingsUpdate(BaseModel):
     online_tiles: bool | None = None
 
 
+class SecuritySettings(BaseModel):
+    """Security-relevant feature state for the settings UI (read-only)."""
+
+    media_encryption_enabled: bool
+    recovery_kit_exported_at: str
+
+
 class AppSettingsResponse(BaseModel):
     ai: AISettings
     weather: WeatherSettings
     map: MapSettings
+    security: SecuritySettings
     storage: StorageInfo
     version: str
     app_name: str
@@ -136,6 +144,10 @@ async def get_app_settings(db: AsyncSession = Depends(get_db)) -> Any:
         ai=_get_ai_settings(),
         weather=WeatherSettings(enabled=settings.WEATHER_ENABLED),
         map=MapSettings(online_tiles=settings.MAP_ONLINE_TILES),
+        security=SecuritySettings(
+            media_encryption_enabled=settings.ENCRYPT_MEDIA,
+            recovery_kit_exported_at=settings.RECOVERY_KIT_EXPORTED_AT,
+        ),
         storage=StorageInfo(**info),
         version=settings.APP_VERSION,
         app_name=settings.APP_NAME,
@@ -250,6 +262,90 @@ async def vacuum_database(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     await asyncio.to_thread(_vacuum_sync, sync_url)
     after = db_file_size()
     return {"status": "ok", "reclaimed_bytes": max(0, before - after)}
+
+
+@router.post("/encrypt-media")
+async def encrypt_media_migration(
+    dry_run: bool = Query(
+        True, description="Report what would change without writing (default)."
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Encrypt existing attachments of encrypted entries/notes (SEC-MEDIA-5).
+
+    Dry run by default — counts and bytes only. Apply is resumable (already
+    encrypted files are skipped), atomic per file, and never deletes the only
+    copy: a failed file stays on disk and is named in ``errors``. Also purges
+    plaintext thumbnails that predate the encrypted thumb cache — the UI asks
+    for a second click before anything is written.
+    """
+    from app.core.exceptions import ValidationError
+    from app.services.media_migration import encrypt_pending_attachments
+
+    if not settings.ENCRYPT_MEDIA:
+        raise ValidationError(
+            "Media encryption is disabled — set ENCRYPT_MEDIA to enable it"
+        )
+    report = await encrypt_pending_attachments(db, dry_run=dry_run)
+    return report
+
+
+# ── Recovery kit (SEC-KEYS) ──────────────────────────────────────────────
+
+
+class RecoveryKitExportRequest(BaseModel):
+    # Optional: a user-chosen passphrase wraps the key; without one, a 24-char
+    # recovery code is generated and returned in the response for printing.
+    passphrase: str | None = Field(default=None, max_length=256)
+
+
+class RecoveryKitImportRequest(BaseModel):
+    kit: dict[str, Any]
+    passphrase: str = Field(max_length=256)
+    # Required when a *different* non-default key is already active.
+    confirm_replace: bool = False
+
+
+@router.post("/recovery-kit/export")
+async def export_recovery_kit(
+    data: RecoveryKitExportRequest,
+) -> dict[str, Any]:
+    """Wrap the current SECRET_KEY into a downloadable recovery kit.
+
+    The response carries the kit document (save it as
+    ``lifelogr-recovery.json``) and, when no passphrase was given, the
+    one-time recovery code that opens it. The key itself is never returned.
+    """
+    from app.core.exceptions import ValidationError
+    from app.services.recovery_kit import RecoveryKitError, export_kit
+
+    try:
+        return export_kit(data.passphrase)
+    except RecoveryKitError as exc:
+        raise ValidationError(str(exc)) from None
+
+
+@router.post("/recovery-kit/import")
+async def import_recovery_kit(
+    data: RecoveryKitImportRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Restore a SECRET_KEY from a recovery kit.
+
+    Unwraps with the passphrase (or recovery code — same KDF), verifies the
+    key against this installation's stored credential and media before
+    persisting, then installs it live. ``confirm_replace`` must be set when a
+    different non-default key is already active.
+    """
+    from app.core.exceptions import ValidationError
+    from app.services.recovery_kit import RecoveryKitError, import_kit
+
+    try:
+        return await import_kit(
+            db, data.kit, data.passphrase, confirm_replace=data.confirm_replace
+        )
+    except RecoveryKitError as exc:
+        raise ValidationError(str(exc)) from None
 
 
 @router.get("/storage-path", response_model=StoragePathResponse)

@@ -114,3 +114,18 @@ def reencrypt(token: str) -> str:
     if token_version(token) == 2:
         return token
     return encrypt(decrypt(token))
+
+
+def rekey(secret_key: str) -> None:
+    """Re-derive the module-level keys from a new SECRET_KEY (recovery-kit import).
+
+    The v2/v1 keys are computed at import time; restoring a key at runtime must
+    refresh them or every subsequent credential (de)cryption would use the
+    stale key. Only the recovery-kit import calls this.
+    """
+    global _v2_key, _v1_key  # noqa: PLW0603
+    material = secret_key.encode()
+    _v2_key = HKDF(
+        algorithm=hashes.SHA256(), length=32, salt=_V2_SALT, info=_V2_INFO
+    ).derive(material)
+    _v1_key = material.ljust(32, b"\0")[:32]
