@@ -63,7 +63,7 @@ async def test_markdown_zips_omit_encrypted_entry_attachments(
         name.startswith(f"attachments/{entry.entry_date}") for name in zf.namelist()
     )
     page = zf.read(f"journal/2026/07/{entry.entry_date}.md").decode()
-    assert "attachments of this encrypted entry are omitted" in page
+    assert "Attachments of this encrypted entry are omitted from exports." in page
 
     # Diarium-compatible markdown export (/api/v1/entries/export/markdown).
     r = await client.get("/api/v1/entries/export/markdown")

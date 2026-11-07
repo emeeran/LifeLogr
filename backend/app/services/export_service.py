@@ -21,6 +21,10 @@ from app.models.tag import EntryTag
 
 logger = logging.getLogger(__name__)
 
+# One sentence, surfaced in every plain-text export format (Markdown frontmatter,
+# HTML banner, PDF line) for entries whose body/attachments stay ciphertext.
+ENCRYPTED_NOTE_TEXT = "Attachments of this encrypted entry are omitted from exports."
+
 
 def _skip_encrypted_media(entry: Entry, media: Any, fmt: str) -> None:
     """Log one skipped attachment of an encrypted entry (media never exports).
@@ -52,6 +56,8 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   .gallery {{ margin-top: 12px; }}
   .gallery img, .gallery video {{ max-width: 100%; border-radius: 4px; }}
   .gallery figcaption {{ color: #666; font-size: 0.8em; }}
+  .encrypted-note {{ color: #8a6d3b; background: #fcf8e3; border: 1px solid #faebcc;
+    padding: 6px 10px; border-radius: 4px; margin-bottom: 12px; font-size: 0.9em; }}
   @page {{ margin: 2cm; }}
 </style>
 </head>
@@ -146,11 +152,18 @@ class ExportService:
         tag_html = " ".join(f'<span class="tag">{html.escape(t)}</span>' for t in tags)
         if tag_html:
             tag_html = f"<div>{tag_html}</div>"
+        # Mirrors the Markdown export's frontmatter `attachments_note`: the body
+        # stays ciphertext and attachments are omitted, so say so in the document.
+        note_part = (
+            f'<div class="encrypted-note">{ENCRYPTED_NOTE_TEXT}</div>'
+            if entry.is_encrypted
+            else ""
+        )
         return _ENTRY_HTML.format(
             date=html.escape(str(entry.entry_date)),
             title=title_part,
             mood=mood_part,
-            tags=tag_html,
+            tags=tag_html + note_part,
             body_html=body_html,
             gallery=gallery_html,
         )
@@ -357,6 +370,12 @@ class ExportService:
                 pdf.cell(0, 6, _pdf_text("  |  ".join(meta_parts)), new_x="LMARGIN", new_y="NEXT")
                 pdf.ln(4)
 
+            if entry.is_encrypted:
+                pdf.set_font("Helvetica", "I", 10)
+                pdf.set_text_color(138, 109, 59)  # #8a6d3b
+                pdf.multi_cell(0, 6, _pdf_text(ENCRYPTED_NOTE_TEXT))
+                pdf.ln(4)
+
             # Body — strip markdown to plain text for PDF
             pdf.set_font("Helvetica", "", 11)
             pdf.set_text_color(51, 51, 51)  # #333
@@ -451,9 +470,7 @@ class ExportService:
                 if attachments_meta:
                     metadata["attachments"] = attachments_meta
                 if entry.is_encrypted:
-                    metadata["attachments_note"] = (
-                        "attachments of this encrypted entry are omitted from exports"
-                    )
+                    metadata["attachments_note"] = ENCRYPTED_NOTE_TEXT
 
                 frontmatter_block = self._dump_yaml(metadata)
 
