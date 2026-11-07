@@ -11,6 +11,21 @@ export interface JobStartResponse {
   kind: string
 }
 
+/** Integrity report from `POST /backup/verify`. */
+export interface BackupVerification {
+  valid: boolean
+  /** Built before manifests existed — nothing to check (treat as a warning). */
+  legacy: boolean
+  format: number | null
+  created_at: string | null
+  app_version: string | null
+  database: string | null
+  files: number
+  bytes: number
+  errors: string[]
+  missing: string[]
+}
+
 export const backupApi = {
   createConfig(data: BackupConfigCreate): Promise<BackupConfigResponse> {
     return request('/backup/config', {
@@ -99,6 +114,17 @@ export const backupApi = {
     fd.append('file', file)
     // A full-archive restore can be hundreds of MB — long timeout (see api/client).
     return request(opts?.asJob ? '/backup/import?as_job=true' : '/backup/import', {
+      method: 'POST',
+      body: fd,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+
+  /** Check an archive's integrity manifest without restoring anything. */
+  verifyLocal(file: File): Promise<BackupVerification> {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('/backup/verify', {
       method: 'POST',
       body: fd,
       timeoutMs: UPLOAD_TIMEOUT_MS,

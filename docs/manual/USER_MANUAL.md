@@ -128,7 +128,11 @@ Journal entries are **date-bound** (one per day, by default).
   its content is pre-filled.
 
 ### Entry fields
-- **Title** — optional heading.
+- **Title** — optional heading. If you leave it empty, the first meaningful line of
+  the body becomes the title on save (markdown stripped) — see
+  **Settings → Appearance → Auto-title from first line**. A title you type is never
+  overwritten; the `Auto:` chip next to the title field applies the suggestion
+  immediately.
 - **Date** — the entry's date.
 - **Mood** — a short mood label.
 - **Body** — markdown (see [§10](#10-markdown-reference)).
@@ -158,6 +162,13 @@ Notes are standalone, non-date-bound documents organized into **folders**.
 ### Structure
 - **Folders** — create them in the left tree; folders can be **nested** (sub-folders),
   and each can have a color.
+- **Moving things** — drag a note onto a notebook to file it, or onto **Unfiled** to
+  un-file it. Drag a notebook onto another notebook to nest it, or onto the
+  **Notebooks** header to move it back to the top level. A move that would put a
+  notebook inside itself is refused with a message.
+- **Moving without a mouse** — each notebook row has a **⇥ move** button (Tab to it,
+  Enter to open) listing every valid parent plus **Top level**. Notes can also be
+  moved with the folder dropdown in the editor header.
 - **Notes** — belong to a folder; can be **pinned** and **color-coded**.
 - **Pages** — each note has tabbed pages (like sections). Add/rename/reorder/delete pages.
 - **Tags** — type `#tags` right in the note body (see [§9](#9-tags)).
@@ -174,7 +185,20 @@ Notes are standalone, non-date-bound documents organized into **folders**.
 ### Embedding media
 - Drag-and-drop, paste, or use the embed (🖼️/🎵/🎬) buttons. In the desktop app you
   can also drop a file from your file manager (native path import).
-- Embedded images are shown resizable in the preview.
+- Embedded images and videos are resizable: hover the media and drag the **grip in
+  the bottom-right corner** (the current size shows in a small chip). Keyboard:
+  focus the grip and use the arrow keys (`Shift` for larger steps). The size is
+  stored as `?w=&h=` in the note body, so it survives saving, export and backup.
+
+### Colour labels
+- Every notebook and note can carry one of eight palette colours. Open the swatch
+  next to the notebook's delete button, or the swatch in the note editor's title row,
+  and pick a colour — or **None**.
+- A notebook's colour shows as a stripe on its row; notes show a dot. A note without
+  its own colour inherits its notebook's. The colour name is also part of the row's
+  accessible name, so colour is never the only signal.
+- Colours are stored on the note/notebook itself, so they survive export, import and
+  backup.
 
 ### Encrypting a note
 See [§18](#18-encryption).
@@ -200,10 +224,12 @@ Capture content into an entry or note, embed it as a picture, and read its text 
 2. Trigger a snip:
    - **`Ctrl+Shift+S`** (works from anywhere), or
    - the **✂️ scissors** button in the formatting toolbar.
-3. The app hides itself, captures the screen, then shows the capture in a full-screen
-   **crop overlay**. *(On Wayland, approve the screen-capture portal prompt the first
-   time.)*
-4. **Drag a rectangle** over the region you want and release.
+3. The app hides itself and captures the screen. On **Wayland** capture goes
+   through the desktop portal: approve the prompt the first time (GNOME may also
+   ask you to select the region in its own overlay — that image is already cropped).
+   On X11 the whole screen is captured.
+4. If the whole screen was captured, **drag a rectangle** over the region you want
+   and release. (If GNOME's own region UI was used in step 3, just confirm.)
 5. The cropped image is **embedded into the note**, then **OCR runs automatically** and
    the recognized text is inserted beneath the image in a collapsible `📷 OCR` block —
    and becomes **searchable**.
@@ -238,9 +264,9 @@ Capture content into an entry or note, embed it as a picture, and read its text 
 
 ## 7. Voice & Video Clips
 
-- **Voice recording** — click the **microphone** in the editor's bottom bar. A timer
-  shows while recording; click **Stop** to save the clip to the entry. Playback inline;
-  delete unwanted clips.
+- **Voice recording** — click the **microphone** in the editor's bottom bar, next to
+  the read-aloud speaker. A timer shows while recording; click **Stop** to save the
+  clip to the entry. Playback inline; delete unwanted clips.
 - **Video notes** — attach short video clips to an entry (upload via the media/embed
   controls). They play inline like any embedded video.
 
@@ -472,6 +498,7 @@ parse → media → insert for imports, media → finalize for exports.
 |---|---|---|---|---|---|---|---|
 | **Archive ZIP** (native) | ✅ | ✅ | ✅ | – | ✅ | ✅ + attachments | ✅ any lifelogr |
 | **Diarium `.diary`** | ✅ | ✅ | ✅ | ✅ readings | ✅ weather | – | into Diarium |
+| **Day One ZIP** | ✅ | ✅ | ✅ | – | – | – | into Diarium (adds, never overwrites) |
 | **Markdown ZIP** | ✅ | ✅ | ✅ | – | – | – | ✅ |
 | **HTML archive** | ✅ | ✅ | – | – | – | – | read-only |
 | **HTML / PDF** | ✅ | – | ✅ / – | – | – | – | read-only |
@@ -481,13 +508,28 @@ The **Archive ZIP** is the *portable* export — it re-imports anywhere with
 media links, note attachments and events intact. The **Local backup** (below)
 is the *full-instance* backup.
 
+**Day One ZIP is the push half of Diarium sync.** Diarium's *Migrate from other
+app → Day One* adds the entries it has not seen, skips date/times it already
+has, and imports the photos/attachments (matched by the `md5` in each filename).
+Choose **Only new** to export just the entries Diarium lacks — no source
+identity, and no entry on a day Diarium already holds — or **All** for a full
+one-way archive. Encrypted entries are skipped (their body is ciphertext) and
+counted in the archive's metadata.
+
 ### Import
 - **Diarium** `.diary` backups and JSON (weather events, media, person tags
   and tracker tags with their readings all import).
 - **Day One ZIP**, **Markdown/ZIP** archives, **CSV** (incl. Daylio), and the
   native **Archive ZIP** (entries *and* notes).
-- After importing, run **Deduplicate** (Maintenance panel) to find/remove
-  duplicate entries.
+- Re-importing a `.diary` is **safe and repeatable**: entries are matched by
+  Diarium's own id (falling back to date + body), missing photos are restored,
+  and text you edited in lifelogr is kept and reported as a *conflict* instead
+  of being overwritten.
+- **Deduplicate** (Maintenance panel) is only needed to clean up histories
+  imported before this matching existed.
+- **Fill missing titles** (Maintenance panel) previews how many untitled entries
+  would gain a title from their first meaningful line; click again to apply. A
+  title you already set is never overwritten.
 
 > Exports never include encrypted content in cleartext; encrypted notes export
 > as a placeholder with an `encrypted: true` flag.
@@ -501,8 +543,13 @@ cloud backups share one **Run now** button and show per-phase progress
 (checkpoint → archive → media → upload).
 
 ### Local backup
-- A full `.tar.gz` of database + media. **Download** to keep a copy, or **Import** to
-  restore. Restore is path-traversal-safe (PEP 706 tar filtering) and atomic.
+- A full `.tar.gz` of database + media. **Download** to keep a copy, **Verify** to
+  check one, or **Import** to restore. Restore is path-traversal-safe (PEP 706 tar
+  filtering) and atomic.
+- **Verify** hashes every member against the archive's embedded manifest without
+  extracting it. Restore refuses an archive that fails the check (naming the damaged
+  file), so corruption can never overwrite good data. Archives made before manifests
+  existed still restore, with a "cannot be checked" notice.
 
 ### Scheduled backup
 - Automatic, **DB-backed** schedule (managed via APScheduler). Set a cron expression;
@@ -547,7 +594,7 @@ Open from the sidebar (gear icon). Tabs:
 |---|---|
 | **Appearance** | Theme (dark mode), font family/size, auto-save interval, OCR language, default title, default template, **search mode**, **read-aloud** voice/rate/volume/pitch, and a keyboard-shortcut reference. |
 | **AI** | Provider management (add/activate/test cloud providers, or configure local Ollama), chat & embedding model selection, model pulling/refresh, AI feature toggles, Themes & Insights. |
-| **Data** | Storage location & stats, import/export, maintenance (deduplicate, vacuum, integrity check), diagnostics (health, rebuild search index). |
+| **Data** | Storage location & stats, import/export, maintenance (deduplicate, vacuum, fill missing titles, integrity check), diagnostics (health, rebuild search index). |
 | **Backup** | Local backup download/restore, scheduled backup, and cloud providers (Google Drive, OneDrive, Dropbox, Box, WebDAV, Synology NAS). |
 | **Privacy** | Live data-egress report across all surfaces. |
 | **Dedication** | Memorial/dedication tribute (a full-bleed tribute). |

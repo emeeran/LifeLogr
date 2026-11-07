@@ -94,6 +94,7 @@ class TestArchiveProgress:
             "media/img0.jpg",
             "media/img1.jpg",
             "media/img2.jpg",
+            "manifest.json",
         ]
 
     def test_empty_install_reports_a_single_zero_event(self, tmp_path) -> None:
@@ -106,8 +107,8 @@ class TestArchiveProgress:
             add_backup_members(tar, tmp_path / "missing.db", media, report=collector)
         assert collector.events == [("archive", 0, 0)]
 
-    def test_without_report_behaviour_is_unchanged(self, tmp_path) -> None:
-        """No reporter → the legacy one-shot media add (byte-compatible path)."""
+    def test_without_report_still_writes_every_member_and_manifest(self, tmp_path) -> None:
+        """No reporter → same member set (per-file, hashed) plus the manifest."""
         from app.core.archive import add_backup_members
 
         db_file = tmp_path / "diarium.diarium"
@@ -117,12 +118,10 @@ class TestArchiveProgress:
             add_backup_members(tar, db_file, media)
         with tarfile.open(tmp_path / "a.tar.gz") as tar:
             names = tar.getnames()
-        # Legacy path: the media dir is added recursively in one call —
-        # same member set, DB first.
         assert names[0] == "diarium.diarium"
-        assert "media" in names
         assert "media/img0.jpg" in names
         assert "media/img1.jpg" in names
+        assert names[-1] == "manifest.json"
 
 
 # ── cloud backup phases ──────────────────────────────────────────────────────
@@ -198,7 +197,14 @@ class TestRestoreProgress:
 
         assert result == {"entries_restored": 0, "media_restored": 0}
         collector.assert_monotonic()
-        assert collector.phases == ["lookup", "download", "extract", "swap", "counts"]
+        assert collector.phases == [
+            "lookup",
+            "download",
+            "verify",
+            "extract",
+            "swap",
+            "counts",
+        ]
         assert fake.downloaded == ["lifelogr-backup-1.tar.gz"]
 
 

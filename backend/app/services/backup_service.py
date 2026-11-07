@@ -495,6 +495,24 @@ class BackupService:
                 archive = Path(tmpdir) / "restore.tar.gz"
                 report("download")
                 await _download_backup_archive(provider, latest_backup, archive)
+
+                # Integrity before extraction/swap: never replace good data with
+                # a truncated download or a bit-rotted member.
+                from app.core.archive import verify_archive
+
+                report("verify")
+                verification = await asyncio.to_thread(verify_archive, archive)
+                if not verification["valid"]:
+                    detail = (
+                        "; ".join(verification["errors"][:5])
+                        or "integrity check failed"
+                    )
+                    raise ValidationError(f"Backup failed verification: {detail}")
+                if verification["legacy"]:
+                    logger.warning(
+                        "Restoring a legacy backup with no integrity manifest"
+                    )
+
                 extract_dir = Path(tmpdir) / "extracted"
                 extract_dir.mkdir()
                 # Extraction is synchronous and the archive can be large — offload it.

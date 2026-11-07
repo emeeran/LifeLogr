@@ -346,6 +346,56 @@ started in the lifespan.
   second-offset distinct ticks. `tests/helpers/diarium_diary.py` builds
   synthetic `.diary` fixtures and `validate_diary` checks a file against the
   format analysis (`docs/diarium-format-analysis.md`).
+- **Diarium pulls are idempotent** (`POST /entries/import/file`, `mode=merge`
+  is the default): an imported row keeps the source's identity
+  (`entries.external_source` / `external_id` = Diarium `DiaryEntryId`) plus
+  `sync_hash`, the text fingerprint at the last pull — Diarium has no
+  `LastModified` column, so this is the only way to tell "edited here" from
+  "unchanged". Attachments are matched by a sha256 content multiset, so a
+  partially lost entry is repaired and a re-import adds no duplicates. A pull
+  updates text only when the local copy is provably untouched; otherwise it
+  keeps the local text and reports a `conflict`. `mode=append` preserves the
+  old always-insert behaviour. Covered by
+  `tests/integration/test_import_diarium_merge.py`.
+- **Day One writer** (`_build_dayone_zip_sync`): `Journal.json` + one
+  `photos/<md5>.<ext>` member per attachment — the only import format Diarium
+  supports that carries media. Entries are stamped at noon UTC (LifeLogr stores
+  a date, so noon cannot roll into an adjacent day on timezone conversion), and
+  `scope=new` selects rows with no source identity on days Diarium does not
+  already have. Encrypted entries are skipped and counted in the metadata.
+- **Notes tree drag & drop is resolved in a pure module**
+  (`composables/useNotesTreeDrag.ts`). The rail is virtualized, so drop targets are
+  identified by the row's `TreeItem` model, never a DOM index; and because
+  `note_service.update_folder` ignores a cyclic re-parent *silently*, the client
+  rejects a move into a notebook's own descendant and says why.
+- **Renderer failures are visible.** `main.ts` installs a Vue error handler plus
+  `error`/`unhandledrejection` listeners, and routed views sit inside
+  `ErrorBoundary` (message, Reload, Copy). Reports go to
+  `POST /api/v1/system/client-errors`: message/stack/component/view only, URL
+  query stripped, deduplicated and rate-limited (20/min) — never entry text.
+  Previews render `img` from `/media/{id}/thumb` (unless a body size is encoded)
+  with `loading="lazy" decoding="async"`; full-size decodes were the main driver
+  of WebKitWebProcess memory growth.
+- **Close is guarded, not blocked.** `RunEvent::ExitRequested` calls
+  `api.prevent_exit()` and hands off to a worker thread: it polls
+  `/api/v1/system/shutdown-state` (in-progress backups + import/restore jobs),
+  emits `shutdown-pending` so the UI can show "Finishing backup…", then hides
+  the window, SIGTERMs the PID that owns the backend port (never a name match),
+  waits 2.5 s, SIGKILLs, and exits. The backend's own teardown steps share a 2 s
+  deadline (`main.py` lifespan).
+- **Wayland capture goes through the portal.** GNOME implements
+  `org.freedesktop.portal.Screenshot` (v2) but not `zwlr_screencopy`, so xcap
+  only runs on X11. Order: non-interactive portal → interactive portal (GNOME's
+  region UI) → `gnome-screenshot` → error naming each failed path. Gated by
+  `--features snip-wayland` (default), separate from `snip`/xcap.
+- **Backups carry an integrity manifest.** `add_backup_members` hashes every
+  member while writing it (a `_HashingReader` wrapped around tarfile's single
+  read — no second pass) and appends `manifest.json` last: format, app version,
+  per-file size + sha256. `verify_archive` streams members from the tar (nothing
+  extracted) and reports `{valid, legacy, errors, missing}`. Both restore paths
+  verify **before** extraction/swap, so corruption cannot replace good data;
+  archives predating manifests restore with a warning. `POST /backup/verify`
+  exposes the same check to the UI.
 - **Backup completeness** (`test_backup_roundtrip.py`): entries, tags,
   tracker readings, events, entry media, notes, note pages and note
   attachments survive the real `.tar.gz` export → wipe → restore path

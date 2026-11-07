@@ -11,6 +11,96 @@ offline at any time.
 
 ## [Unreleased]
 
+### Added
+- **Backup integrity manifest + verify.** Every archive now carries
+  `manifest.json` (format, app version, per-member size + sha256, totals), written
+  as members are hashed — no second pass over the data. Restore verifies it
+  **before** extracting or swapping, so a truncated download or a bit-rotted file
+  can never replace good data; a failure names the offending member. Legacy
+  archives without a manifest still restore, with a warning. New
+  `POST /backup/verify` and a **Verify** button in Settings → Backup check an
+  archive without restoring anything.
+- **Fill missing titles** (Maintenance): preview how many untitled entries would gain
+  a title from their first meaningful line, then apply. Never overwrites an existing
+  title, and refreshes the sync fingerprint so a later Diarium pull does not read the
+  backfill as a local edit.
+- **Preview media cap**: a preview renders at most 12 inline images/videos, with a
+  "Show N more" control — the second half of the blank-screen memory fix.
+- **New images insert at ≤ 480 px wide** (aspect preserved) instead of full bleed;
+  the resize grip grows them again.
+- **"Move to…" menu on notebook rows**, excluding the notebook and its descendants —
+  the keyboard/pointer equivalent of the drag-and-drop move.
+- **The voice recorder is reachable in focus mode** (floating button; the controls
+  bar stays hidden).
+- **Drag-and-drop in the Notes rail.** Drag a note onto a notebook to file it, or
+  onto **Unfiled** to un-file it; drag a notebook onto another to nest it, or onto
+  the **Notebooks** header to return it to the top level. The drop target is
+  highlighted, and a move that would create a cycle (a notebook into itself or one
+  of its descendants) is rejected with a toast — instead of the backend's silent
+  no-op. Resolution logic lives in `composables/useNotesTreeDrag.ts` and is unit
+  tested (15 cases).
+- **Renderer error reporting + a view error boundary.** A crashing component used
+  to unmount its subtree and leave an empty panel with no trace (the "screen goes
+  blank" report). Views are now wrapped in `ErrorBoundary` (message, Reload, Copy
+  details), and Vue/window/unhandled-rejection errors are logged via
+  `POST /api/v1/system/client-errors` — message/stack/component/view only, query
+  strings stripped, deduplicated and rate-limited. Entry text is never sent.
+- **Notebook & note colour labels.** The `Note.color` / `NoteFolder.color` columns
+  existed but nothing in the UI used them. Notebooks now show a colour stripe and
+  notes a dot (a note inherits its notebook's colour), both set from a swatch picker
+  in the notebook row and the note editor. Eight palette tones are contrast-checked
+  against both themes, and the colour name is part of each row's accessible name.
+- **Auto-title from the first line.** An empty, untouched title is filled from the
+  body's first meaningful line on save (headings, list/quote markers, links, images
+  and inline markdown stripped; 120 chars, word-boundary truncation). A typed or
+  deliberately cleared title is never overwritten. `Auto:` chip applies the
+  suggestion immediately; toggle under Settings → Appearance.
+- **Visible resize grip for embedded media.** WebKit renders no affordance for the
+  CSS `resize: both` corner, so pasted images looked un-resizable even though the
+  mechanism worked. Both editors now show a corner grip + live size chip, with
+  keyboard resizing (arrows, `Shift` = larger step).
+- **Day One ZIP export — the push half of Diarium sync.** New
+  `GET /entries/export/dayone-zip` (and a *Day One ZIP (Diarium push)* row in
+  Settings → Export) writes `Journal.json` plus `photos/<md5>.<ext>`, the shape
+  Diarium's **Migrate from other app → Day One** imports *with* attachments
+  (it resolves each file by the md5 in its name). `scope=new` (default) exports
+  only entries Diarium lacks — nothing that came from Diarium, and nothing on a
+  day it already holds — while `scope=all` is a full one-way archive. Encrypted
+  entries are skipped and counted in the ZIP's metadata.
+- **Repeatable Diarium pulls (merge-mode import).** Imported `.diary` entries now
+  keep the source's own identity (`DiaryEntryId` in `entries.external_id`) and a
+  text fingerprint (`sync_hash`), so re-importing a newer backup reconciles with
+  the rows already here instead of appending copies of them. Attachments are
+  matched by content hash: a partially lost entry is repaired, an unchanged photo
+  is not duplicated. Local edits win over a pull and are reported as a conflict
+  (`conflicts` in the response). `POST /entries/import/file?mode=append` keeps
+  the old always-insert behaviour. Run `make test` → `test_import_diarium_merge`.
+
+### Changed
+- **Preview images load a ≤640 px thumbnail** (`/media/{id}/thumb`) unless the
+  body encodes an explicit `?w=&h=` size, and render with `loading="lazy"` /
+  `decoding="async"`. Full-resolution decodes of media-heavy entries were the
+  main driver of WebKitWebProcess memory growth on the desktop build.
+- **Closing the app no longer blocks the UI.** Teardown moved off the event loop
+  onto a worker thread (hide window → bounded stop → exit), SIGTERM goes to the
+  PID that owns the backend port instead of a `pkill -f` name match, and the
+  backend's own teardown shares a 2 s deadline. If a backup/import/restore is in
+  flight, the app shows a "Finishing backup…" dialog and waits for it (up to
+  120 s, cancellable) instead of truncating the archive.
+- **The voice-memo mic moved into the editor's bottom bar**, next to the read-aloud
+  speaker, replacing the floating corner button. The recording pill (meter, timer,
+  Stop) stays a popover above the bar.
+
+### Fixed
+- **Screen snip works on Wayland.** `xcap` needs `zwlr_screencopy_manager_v1`,
+  which GNOME does not implement, so capture always failed with "Cannot find
+  required wayland protocol". Capture now goes through
+  `org.freedesktop.portal.Screenshot` (v2) on Wayland, falls back to the
+  interactive portal selection and then `gnome-screenshot`, and only uses xcap on
+  X11. The error toast names the path that actually failed.
+- A `.diary` entry with only a heading and an empty body (Diarium anniversary /
+  event entries) is imported instead of being dropped as empty noise.
+
 ---
 
 ## [0.12.0] — 2026-10-25

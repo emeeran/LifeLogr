@@ -70,6 +70,7 @@ enrichment.
 | `GET` | `/entries/export/json` | Export as JSON |
 | `GET` | `/entries/export/diarium-db` | Export as a Diarium-native `.diary` SQLite database (real 3.3.x schema, trackers + events) |
 | `GET` | `/entries/export/daylio-csv` | Export as Daylio-format CSV (Diarium's documented migration import) |
+| `GET` | `/entries/export/dayone-zip` | Export as a Day One JSON ZIP (`Journal.json` + `photos/<md5>.<ext>`) — Diarium's attachment-capable migration import. `?scope=new` (default) pushes only entries Diarium lacks; `scope=all` exports everything. `as_job=true` → `{job_id}` |
 
 ### Create Entry
 ```
@@ -90,9 +91,17 @@ Returns `EntryListResponse` (`items`, `total`, `offset`, `limit`). Each item inc
 ### Import from file
 ```
 POST /entries/import/file     (multipart/form-data, field: file)
+     ?mode=merge|append       (default: merge)
+     &skip_duplicates=true|false
+     &as_job=true|false
 ```
 Supports Diarium `.diary` (SQLite backup), `.json` (both lowercase interchange and Diarium's capitalized tick-keyed shape), Daylio CSV, Day One `.zip`, and Markdown `.zip` archives.
-**Response:** `{ "imported": 15, "skipped": 2 }`
+
+`mode=merge` (default) is safe to repeat: entries are matched by the source's own id
+(Diarium `DiaryEntryId`) and then by date + body prefix, missing attachments are restored
+(content-hash dedupe), and text changes are applied only when the local copy is untouched
+since the previous import. `mode=append` always inserts, and sets `skip_duplicates=false`.
+**Response:** `{ "imported": 15, "updated": 2, "skipped": 2, "media_backfilled": 233, "conflicts": 1, "skip_reasons": [...] }`
 
 ### Deduplicate
 ```
@@ -444,7 +453,8 @@ Whole-journal document exports (in addition to the per-format entry exports unde
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/backup/export` | Download a full `.tar.gz` (DB + media) |
-| `POST` | `/backup/import` | Restore from an uploaded `.tar.gz` (path-traversal-safe, atomic) |
+| `POST` | `/backup/import` | Restore from an uploaded `.tar.gz` (manifest-verified, path-traversal-safe, atomic) |
+| `POST` | `/backup/verify` | Check an uploaded archive's integrity manifest **without** restoring; returns `{valid, legacy, files, bytes, created_at, errors[], missing[]}` |
 | `POST` | `/backup/schedule` | Schedule an automated backup (cron) |
 | `GET` | `/backup/schedule/status` | Current schedule |
 | `DELETE` | `/backup/schedule` | Remove the schedule |
@@ -503,6 +513,8 @@ An operation queue plus cloud push/pull (last-writer-wins on `updated_at`).
 | `POST` | `/system/integrity` | Re-run integrity checks |
 | `POST` | `/system/integrity/rebuild-search-index` | Rebuild the FTS5 search index |
 | `GET` | `/system/egress-report` | **Privacy egress report** (see below) |
+| `POST` | `/system/client-errors` | Renderer error report → backend log (204; text-only fields, 20/min, deduplicated) |
+| `GET` | `/system/shutdown-state` | `{busy, reasons, backups_in_progress, jobs}` — what a window close must not interrupt |
 
 ### Egress report
 `GET /system/egress-report` returns a per-surface table of what leaves the device:

@@ -307,6 +307,57 @@ async def export_local_backup(
     )
 
 
+async def _spool_upload(file: UploadFile, max_bytes: int | None = None) -> Path:
+    """Stream an upload to a temp file, enforcing the import size cap.
+
+    Starlette already spools UploadFile past ~1 MiB, but awaiting ``file.read()``
+    with no size materialises the whole payload — stream it ourselves.
+    """
+    limit = settings.MAX_IMPORT_SIZE_BYTES if max_bytes is None else max_bytes
+    upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
+    upload_path = Path(upload.name)
+    written = 0
+    try:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            if written + len(chunk) > limit:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Archive exceeds the {limit}-byte import limit.",
+                )
+            upload.write(chunk)
+            written += len(chunk)
+        upload.flush()
+        upload.close()
+    except Exception:
+        upload.close()
+        upload_path.unlink(missing_ok=True)
+        raise
+    return upload_path
+
+
+@router.post("/verify")
+async def verify_backup(file: UploadFile) -> dict[str, Any]:
+    """Check an uploaded archive against its integrity manifest — no restore.
+
+    Members are hashed straight from the tar stream (nothing is extracted), so
+    this is safe to run on a backup the user is unsure about. Legacy archives
+    built before manifests existed report ``legacy: true`` with ``valid: true``
+    (there is nothing to check), which the UI shows as a warning.
+    """
+    import asyncio
+
+    from app.core.archive import verify_archive
+
+    upload_path = await _spool_upload(file)
+    try:
+        return await asyncio.to_thread(verify_archive, upload_path)
+    finally:
+        upload_path.unlink(missing_ok=True)
+
+
 @router.post("/import")
 async def import_local_backup(
     file: UploadFile,
@@ -317,42 +368,19 @@ async def import_local_backup(
 
     Streams the upload to a temp file with a hard size cap
     (``MAX_IMPORT_SIZE_BYTES``) so an unauthenticated loopback request can't
-    exhaust memory, then extracts via the shared traversal-guarded helper and
-    atomically swaps the live data.
+    exhaust memory, verifies the manifest, then extracts via the shared
+    traversal-guarded helper and atomically swaps the live data.
 
     ``as_job=true`` spools the upload synchronously (the browser tracks that
     part itself), then returns 202 ``{job_id}`` and runs extract/swap in the
     background — poll ``GET /api/v1/jobs/{job_id}`` for progress.
     """
 
-
     max_bytes = settings.MAX_IMPORT_SIZE_BYTES
     db_file_path: Path = settings.db_path
     media_dir = settings.MEDIA_DIR
 
-    # Spool the upload to disk in 1 MiB chunks, aborting with 413 past the cap.
-    # Starlette already spools UploadFile to disk past ~1 MiB, but awaiting
-    # file.read() materialises the whole payload — stream it ourselves instead.
-    upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
-    upload_path = Path(upload.name)
-    written = 0
-    try:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            if written + len(chunk) > max_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"Archive exceeds the {max_bytes}-byte import limit.",
-                )
-            upload.write(chunk)
-            written += len(chunk)
-        upload.flush()
-        upload.close()
-    except Exception:
-        upload_path.unlink(missing_ok=True)
-        raise
+    upload_path = await _spool_upload(file, max_bytes)
 
     if as_job:
 
@@ -380,7 +408,7 @@ async def _restore_spooled_archive(
     """Extract + atomically restore a spooled .tar.gz upload; unlink it after."""
     import asyncio
 
-    from app.core.archive import extract_archive_file
+    from app.core.archive import extract_archive_file, verify_archive
     from app.core.restore import atomic_restore
 
     def _silent(phase: str, done: int = 0, total: int | None = None) -> None:
@@ -388,6 +416,18 @@ async def _restore_spooled_archive(
 
     rep = report or _silent
     try:
+        # Integrity first: a truncated download or bit-rotted file must never
+        # reach the swap, or it would replace good data with bad.
+        rep("verify")
+        verification = await asyncio.to_thread(verify_archive, upload_path)
+        if not verification["valid"]:
+            detail = "; ".join(verification["errors"][:5]) or "integrity check failed"
+            raise HTTPException(
+                status_code=400, detail=f"Backup failed verification: {detail}"
+            )
+        if verification["legacy"]:
+            logger.warning("Restoring a legacy backup with no integrity manifest")
+
         extract_dir = tempfile.mkdtemp()
         try:
             # Extraction is synchronous and can be large — offload it. The

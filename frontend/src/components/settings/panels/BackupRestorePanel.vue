@@ -92,6 +92,56 @@ onUnmounted(() => stopJobWatch?.())
 
 // ── Local archive ──
 const importing = ref(false)
+const verifying = ref(false)
+
+function formatBytesShort(bytes: number): string {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+/**
+ * Integrity check without a restore. The archive is uploaded and hashed
+ * against its embedded manifest — nothing is extracted or replaced.
+ */
+async function handleBackupVerify() {
+  const file = await pickFile({ accept: '.tar.gz,.tgz' })
+  if (!file) return
+  verifying.value = true
+  try {
+    const report = await backupApi.verifyLocal(file)
+    if (report.legacy) {
+      emit(
+        'toast',
+        'info',
+        'Legacy archive: it has no integrity manifest, so it cannot be checked (restore still works).',
+      )
+      return
+    }
+    if (report.valid) {
+      const when = report.created_at
+        ? new Date(report.created_at).toLocaleString()
+        : 'unknown date'
+      emit(
+        'toast',
+        'success',
+        `Backup verified — ${report.files} file${report.files === 1 ? '' : 's'}, ${formatBytesShort(report.bytes)}, ${when}`,
+      )
+      return
+    }
+    const first = report.errors[0] ?? 'integrity check failed'
+    emit(
+      'toast',
+      'error',
+      `Backup is damaged — ${first}${report.errors.length > 1 ? ` (+${report.errors.length - 1} more)` : ''}. Do not restore this file.`,
+    )
+  } catch (e: unknown) {
+    emit('toast', 'error', `Verification failed: ${errorMessage(e)}`)
+  } finally {
+    verifying.value = false
+  }
+}
 
 async function handleBackupDownload() {
   const resp = await fetch(getBackupArchiveUrl())
@@ -558,13 +608,21 @@ onMounted(() => {
     <SettingRow
       :icon="Database"
       label="Local archive"
-      description="Download a .tar.gz of your database and media, or restore one."
+      description="Download a .tar.gz of your database and media, verify one, or restore one."
     >
       <SButton variant="ghost" :icon="Download" @click="handleBackupDownload"
         >
 Backup
 </SButton
       >
+      <SButton
+        variant="ghost"
+        :disabled="verifying"
+        title="Check an archive's integrity without restoring it"
+        @click="handleBackupVerify"
+      >
+        <Loader v-if="verifying" :size="12" class="animate-spin" /> Verify
+      </SButton>
       <SButton
         variant="ghost"
         :disabled="importing"
