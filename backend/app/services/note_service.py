@@ -12,12 +12,14 @@ from sqlalchemy.sql.expression import Select as Select
 from app.core.exceptions import NotFoundError
 from app.models.note import Note, NoteFolder, NotePage, NoteTag
 from app.schemas.note import (
+    FoldersReorder,
     NoteCreate,
     NoteFolderCreate,
     NoteFolderUpdate,
     NotePageCreate,
     NotePageReorderItem,
     NotePageUpdate,
+    NotesReorder,
     NoteUpdate,
 )
 from app.services.hashtag import extract_hashtags, resolve_tag_ids
@@ -41,6 +43,7 @@ def _note_list_options() -> tuple[Any, ...]:
             Note.color,
             Note.is_encrypted,
             Note.encrypted_at,
+            Note.sort_order,
             Note.created_at,
             Note.updated_at,
         ),
@@ -55,13 +58,30 @@ class NoteService:
     # ── Notes ──────────────────────────────────────────────────────────────
 
     async def create(self, data: NoteCreate) -> Note:
-        """Create a new note."""
+        """Create a new note.
+
+        Sort order: in a section the user has manually reordered (any note
+        ``sort_order >= 1``), new notes append at the end of that order; in a
+        never-reordered section every note stays 0 and the recent-first default
+        shows the new note on top, exactly as before DND-3.
+        """
+        max_order = (
+            await self.db.execute(
+                select(func.coalesce(func.max(Note.sort_order), 0)).where(
+                    Note.is_deleted == False,  # noqa: E712
+                    Note.folder_id == data.folder_id
+                    if data.folder_id is not None
+                    else Note.folder_id.is_(None),
+                )
+            )
+        ).scalar_one()
         note = Note(
             title=data.title,
             body=data.body,
             folder_id=data.folder_id,
             is_pinned=data.is_pinned,
             color=data.color,
+            sort_order=max_order + 1 if max_order > 0 else 0,
         )
         self.db.add(note)
         await self.db.flush()
@@ -95,7 +115,7 @@ class NoteService:
         tag_ids: list[int] | None = None,
         is_pinned: bool | None = None,
     ) -> tuple[list[Note], int]:
-        """Return paginated notes (pinned-first, then recently-updated) and total count."""
+        """Return paginated notes (pinned-first, then manual order / recently-updated) and total."""
         base_q = select(Note).options(*_note_list_options()).where(Note.is_deleted.is_(False))
         base_q = self._apply_filters(base_q, folder_id, tag_ids, is_pinned)
         count_q = self._apply_filters(
@@ -106,7 +126,9 @@ class NoteService:
         )
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
-            base_q.order_by(Note.is_pinned.desc(), Note.updated_at.desc())
+            base_q.order_by(
+                Note.is_pinned.desc(), Note.sort_order.asc(), Note.updated_at.desc()
+            )
             .offset(offset)
             .limit(limit)
         )
@@ -217,6 +239,35 @@ class NoteService:
         await self.db.commit()
         await self.db.refresh(note)
         return note
+
+    async def reorder_notes(self, data: NotesReorder) -> int:
+        """Set sort_order for the given notes in one commit (DND-3 rail reorder).
+
+        Any unknown/deleted id fails the whole batch with a 404 — the client
+        always sends the full ordered section, so a partial apply would leave
+        the rail silently wrong.
+        """
+        order_map = {it.id: it.sort_order for it in data.items}
+        rows = (
+            (
+                await self.db.execute(
+                    select(Note).where(
+                        Note.id.in_(list(order_map)),
+                        Note.is_deleted == False,  # noqa: E712
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        found = {n.id for n in rows}
+        missing = sorted(set(order_map) - found)
+        if missing:
+            raise NotFoundError(f"Notes not found: {', '.join(str(i) for i in missing)}")
+        for note in rows:
+            note.sort_order = order_map[note.id]
+        await self.db.commit()
+        return len(rows)
 
     # ── Sub-pages (EPIM-style page tabs) ────────────────────────────────────
 
@@ -463,6 +514,34 @@ class NoteService:
         folder.is_deleted = True
         folder.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
+
+    async def reorder_folders(self, data: FoldersReorder) -> int:
+        """Set sort_order for the given folders in one commit (DND-3 rail reorder).
+
+        One batch instead of N sequential PATCHes; same all-or-nothing rule as
+        :meth:`reorder_notes` — an unknown id fails the whole batch.
+        """
+        order_map = {it.id: it.sort_order for it in data.items}
+        rows = (
+            (
+                await self.db.execute(
+                    select(NoteFolder).where(
+                        NoteFolder.id.in_(list(order_map)),
+                        NoteFolder.is_deleted == False,  # noqa: E712
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        found = {f.id for f in rows}
+        missing = sorted(set(order_map) - found)
+        if missing:
+            raise NotFoundError(f"Note folders not found: {', '.join(str(i) for i in missing)}")
+        for folder in rows:
+            folder.sort_order = order_map[folder.id]
+        await self.db.commit()
+        return len(rows)
 
     async def _get_folder(self, folder_id: int) -> NoteFolder:
         result = await self.db.execute(

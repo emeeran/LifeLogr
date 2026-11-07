@@ -12,6 +12,7 @@ import type {
   NotePageUpdate,
   NotePageReorderItem,
   NotePageResponse,
+  ReorderItem,
 } from '../types'
 import { notesApi } from '../api/notes'
 import { errorMessage } from '../utils/errorMessage'
@@ -253,6 +254,39 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
+  // ── Rail reorder (DND-3) ──────────────────────────────────────────────────
+  async function reorderNotes(items: ReorderItem[]): Promise<void> {
+    error.value = null
+    try {
+      await notesApi.reorderNotes(items)
+      const order = new Map(items.map((i) => [i.id, i.sort_order]))
+      notes.value = notes.value.map((n) =>
+        order.has(n.id) ? { ...n, sort_order: order.get(n.id)! } : n,
+      )
+    } catch (e: unknown) {
+      fail('Failed to reorder notes', e)
+      throw e
+    }
+  }
+
+  async function reorderFolders(items: ReorderItem[]): Promise<void> {
+    error.value = null
+    try {
+      await notesApi.reorderFolders(items)
+      const order = new Map(items.map((i) => [i.id, i.sort_order]))
+      // Same ordering the backend list uses: sort_order, then name.
+      folders.value = folders.value
+        .map((f) => (order.has(f.id) ? { ...f, sort_order: order.get(f.id)! } : f))
+        .sort(
+          (a, b) =>
+            a.sort_order - b.sort_order || a.name.localeCompare(b.name),
+        )
+    } catch (e: unknown) {
+      fail('Failed to reorder notebooks', e)
+      throw e
+    }
+  }
+
   return {
     notes,
     folders,
@@ -274,5 +308,7 @@ export const useNotesStore = defineStore('notes', () => {
     updatePage,
     deletePage,
     reorderPages,
+    reorderNotes,
+    reorderFolders,
   }
 })

@@ -41,6 +41,7 @@ import { errorMessage } from '../../utils/errorMessage'
 import { useToastStore } from '../../stores/toast'
 import { noteColorLabel, noteColorValue } from '../../utils/noteColors'
 import {
+  computeReorder,
   resolveDrop,
   type DropTarget,
   type TreeDragItem,
@@ -86,6 +87,88 @@ function rowTarget(row: TreeItem): DropTarget | null {
   return null
 }
 
+// ── Between-row reorder (DND-3) ─────────────────────────────────────────────
+// A note row's top/bottom half is an insertion edge *within its own section*;
+// a notebook row keeps drop-into in the middle and gains sibling reorder edges
+// only at the top/bottom (30%). Cross-section moves still use the gestures
+// that already exist (drop onto a notebook row, Unfiled, or the header).
+
+/** Ordered ids of a leaf section ('all', 'unfiled', `f<folderId>`). */
+function sectionNoteIds(sectionKey: string): number[] {
+  if (sectionKey === 'all') return allNotes.value.map((n) => n.id)
+  if (sectionKey === 'unfiled') return unfiledNotes.value.map((n) => n.id)
+  return notesIn(Number(sectionKey.slice(1))).map((n) => n.id)
+}
+
+/** Ordered sibling notebook ids under `parentId` (null = top level). */
+function siblingFolderIds(parentId: number | null): number[] {
+  return (foldersByParent.value.get(parentId) ?? []).map((f) => f.id)
+}
+
+/** Which half of the row the pointer is in (true = bottom). */
+function pointerInBottomHalf(event: DragEvent): boolean {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  return event.clientY - rect.top > rect.height / 2
+}
+
+/** Insertion edge on a note leaf (null = not an insertion point). */
+function noteInsertTarget(row: TreeItem, event: DragEvent): DropTarget | null {
+  const drag = dragging.value
+  if (!drag || drag.kind !== 'note' || !row.note || row.sectionKey == null)
+    return null
+  const section = sectionNoteIds(row.sectionKey)
+  if (!section.includes(drag.id)) return null // cross-section: keep existing gestures
+  if (!pointerInBottomHalf(event))
+    return { kind: 'note-insert', sectionKey: row.sectionKey, beforeId: row.note.id }
+  const idx = section.indexOf(row.note.id)
+  const nextId = idx >= 0 && idx + 1 < section.length ? section[idx + 1] : null
+  return { kind: 'note-insert', sectionKey: row.sectionKey, beforeId: nextId }
+}
+
+/** Drop target for a notebook row: sibling reorder edges, else move-into. */
+function folderRowTarget(row: TreeItem, event: DragEvent): DropTarget | null {
+  const base = rowTarget(row)
+  if (!base || base.kind !== 'folder' || !dragging.value) return base
+  const drag = dragging.value
+  if (drag.kind !== 'folder' || drag.id === base.id) return base
+  const targetParent =
+    store.folders.find((f) => f.id === base.id)?.parent_id ?? null
+  if (folderParent(drag.id) !== targetParent) return base // not siblings: move-into only
+  const siblings = siblingFolderIds(targetParent)
+  if (pointerInBottomHalf(event)) {
+    const idx = siblings.indexOf(base.id)
+    const nextId =
+      idx >= 0 && idx + 1 < siblings.length ? siblings[idx + 1] : null
+    return { kind: 'folder-insert', parentId: targetParent, beforeId: nextId }
+  }
+  return { kind: 'folder-insert', parentId: targetParent, beforeId: base.id }
+}
+
+/** Where the insertion line renders for this row, if it is the active target. */
+function dropLine(row: TreeItem): 'above' | 'below' | null {
+  const t = dropTarget.value
+  if (!t) return null
+  if (t.kind === 'note-insert' && row.note) {
+    if (t.beforeId === row.note.id) return 'above'
+    const section = row.sectionKey != null ? sectionNoteIds(row.sectionKey) : []
+    return t.beforeId == null &&
+      t.sectionKey === row.sectionKey &&
+      section[section.length - 1] === row.note.id
+      ? 'below'
+      : null
+  }
+  if (t.kind === 'folder-insert' && row.folderId != null) {
+    if (t.beforeId === row.folderId) return 'above'
+    const siblings = siblingFolderIds(t.parentId)
+    return t.beforeId == null &&
+      folderParent(row.folderId) === t.parentId &&
+      siblings[siblings.length - 1] === row.folderId
+      ? 'below'
+      : null
+  }
+  return null
+}
+
 function sameTarget(a: DropTarget | null, b: DropTarget | null): boolean {
   if (!a || !b) return a === b
   if (a.kind !== b.kind) return false
@@ -97,6 +180,13 @@ function markDrop(event: DragEvent, target: DropTarget | null) {
   if (dragging.value.kind === 'folder' && target.kind === 'folder') {
     if (dragging.value.id === target.id) return // cannot drop on itself
   }
+  // No insertion line directly above the row being dragged.
+  if (
+    target.kind === 'note-insert' &&
+    dragging.value.kind === 'note' &&
+    target.beforeId === dragging.value.id
+  )
+    return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
   dropTarget.value = target
@@ -163,24 +253,42 @@ async function applyDrop(event: DragEvent, target: DropTarget | null) {
   endRowDrag()
   if (!item || !target) return
 
-  const note =
-    item.kind === 'note' ? store.notes.find((n) => n.id === item.id) : null
-  const decision = resolveDrop(item, target, {
-    noteFolder: note ? (note.folder_id ?? null) : null,
-    folders: store.folders.map((f) => ({ id: f.id, parent_id: f.parent_id })),
-  })
-
-  if (decision.action === 'noop') {
-    if (decision.reason) toast.info(decision.reason)
-    return
-  }
-  if (decision.action === 'cycle') {
-    toast.error(decision.reason)
-    return
-  }
-
   dropBusy.value = true
   try {
+    // Between-row reorder (DND-3): plan against the section's current order,
+    // then send one batch. null plan = the drop changed nothing.
+    if (target.kind === 'note-insert' || target.kind === 'folder-insert') {
+      const section =
+        target.kind === 'note-insert'
+          ? sectionNoteIds(target.sectionKey)
+          : siblingFolderIds(target.parentId)
+      const plan = computeReorder(section, item.id, target.beforeId)
+      if (!plan) {
+        toast.info('Already in this position')
+        return
+      }
+      await (target.kind === 'note-insert'
+        ? store.reorderNotes(plan)
+        : store.reorderFolders(plan))
+      return
+    }
+
+    const note =
+      item.kind === 'note' ? store.notes.find((n) => n.id === item.id) : null
+    const decision = resolveDrop(item, target, {
+      noteFolder: note ? (note.folder_id ?? null) : null,
+      folders: store.folders.map((f) => ({ id: f.id, parent_id: f.parent_id })),
+    })
+
+    if (decision.action === 'noop') {
+      if (decision.reason) toast.info(decision.reason)
+      return
+    }
+    if (decision.action === 'cycle') {
+      toast.error(decision.reason)
+      return
+    }
+
     if (decision.action === 'note-to-folder') {
       await store.updateNote(decision.noteId, { folder_id: decision.folderId })
     } else if (decision.action === 'note-to-unfiled') {
@@ -300,10 +408,13 @@ function onTreeKeydown(e: KeyboardEvent) {
   }
 }
 
-// Pinned-first, then most-recently-updated.
+// Pinned-first, then manual drag order (DND-3), then most-recently-updated.
+// Sections never reordered are all sort_order 0, so the tiebreak keeps the
+// old recent-first behaviour untouched.
 function sortedNotes(arr: NoteListItem[]): NoteListItem[] {
   return [...arr].sort((a, b) => {
     if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   })
 }
@@ -369,6 +480,9 @@ interface TreeItem {
   folderName?: string
   note?: NoteListItem | null
   depth?: number
+  /** Leaf section ('all' | 'unfiled' | `f<folderId>`) or a notebook's parent
+   *  scope ('root' | `f<parentId>`) — identifies the reorder section (DND-3). */
+  sectionKey?: string
 }
 
 // Folder hierarchy: the store holds a flat list, but folders carry parent_id.
@@ -401,6 +515,7 @@ function emitFolder(out: TreeItem[], f: NoteFolderResponse, depth: number) {
     folderId: f.id,
     folderName: f.name,
     depth,
+    sectionKey: f.parent_id == null ? 'root' : `f${f.parent_id}`,
   })
   if (!isExpanded(k)) return
   const kids = foldersByParent.value.get(f.id) ?? []
@@ -412,7 +527,13 @@ function emitFolder(out: TreeItem[], f: NoteFolderResponse, depth: number) {
   if (!kids.length && !here.length)
     out.push({ kind: 'empty-folder', depth: depth + 1 })
   else
-    for (const n of here) out.push({ kind: 'leaf', note: n, depth: depth + 1 })
+    for (const n of here)
+      out.push({
+        kind: 'leaf',
+        note: n,
+        depth: depth + 1,
+        sectionKey: `f${f.id}`,
+      })
 }
 
 const flatTree = computed<TreeItem[]>(() => {
@@ -446,7 +567,7 @@ const flatTree = computed<TreeItem[]>(() => {
       out.push({ kind: 'empty', text: 'No notes yet.', depth: 1 })
     else
       for (const n of allNotes.value)
-        out.push({ kind: 'leaf', note: n, depth: 1 })
+        out.push({ kind: 'leaf', note: n, depth: 1, sectionKey: 'all' })
   }
   out.push({
     kind: 'tree-row',
@@ -462,7 +583,7 @@ const flatTree = computed<TreeItem[]>(() => {
       out.push({ kind: 'empty', text: 'Nothing unfiled.', depth: 1 })
     else
       for (const n of unfiledNotes.value)
-        out.push({ kind: 'leaf', note: n, depth: 1 })
+        out.push({ kind: 'leaf', note: n, depth: 1, sectionKey: 'unfiled' })
   }
   out.push({ kind: 'section' })
   if (showNewFolder.value && newFolderParent.value === null)
@@ -806,10 +927,14 @@ onMounted(async () => {
                 'drop-into':
                   dropTarget &&
                   sameTarget(dropTarget, rowTarget(flatTree[vr.index])),
+                'drop-line-above':
+                  dropLine(flatTree[vr.index]) === 'above',
+                'drop-line-below':
+                  dropLine(flatTree[vr.index]) === 'below',
               }"
               :style="rowIndent(flatTree[vr.index].depth)"
-              @dragover="markDrop($event, rowTarget(flatTree[vr.index]))"
-              @drop="applyDrop($event, rowTarget(flatTree[vr.index]))"
+              @dragover="markDrop($event, folderRowTarget(flatTree[vr.index], $event))"
+              @drop="applyDrop($event, folderRowTarget(flatTree[vr.index], $event))"
               @dragleave="clearDropIfLeft"
             >
               <button
@@ -976,8 +1101,15 @@ onMounted(async () => {
               class="note-leaf group"
               :class="{
                 active: store.currentNote?.id === flatTree[vr.index].note!.id,
+                'drop-line-above':
+                  dropLine(flatTree[vr.index]) === 'above',
+                'drop-line-below':
+                  dropLine(flatTree[vr.index]) === 'below',
               }"
               :style="rowIndent(flatTree[vr.index].depth)"
+              @dragover="markDrop($event, noteInsertTarget(flatTree[vr.index], $event))"
+              @drop="applyDrop($event, dropTarget)"
+              @dragleave="clearDropIfLeft"
             >
               <input
                 v-if="editingNoteId === flatTree[vr.index].note!.id"
@@ -1150,6 +1282,15 @@ onMounted(async () => {
 .drop-into {
   background: color-mix(in srgb, var(--color-accent) 16%, transparent);
   box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+/* Between-row insertion line (DND-3): an accent bar on the edge of the row the
+   drop would land above/below. Rows are virtualized (translateY wrappers), so
+   the line lives on the row itself rather than in a separate element. */
+.drop-line-above {
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+.drop-line-below {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 /* Colour label: a 3px stripe on notebooks, a dot on notes. Presentational
    only — the row's aria-label names the colour, so it is never the sole cue. */

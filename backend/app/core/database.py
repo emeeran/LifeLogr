@@ -460,6 +460,12 @@ _COLUMN_MIGRATIONS = [
         "encryption_salt",
         "ALTER TABLE notes ADD COLUMN encryption_salt VARCHAR(64)",
     ),
+    # Manual drag order within a rail section (DND-3); 0 keeps recent-first.
+    (
+        "notes",
+        "sort_order",
+        "ALTER TABLE notes ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+    ),
     # Tag trackers (Diarium Tags.Type=2 import) — definition flag on the tag,
     # verbatim per-entry reading on the association.
     (
@@ -649,7 +655,7 @@ async def _migrate_schema(conn: Any) -> None:
 # migration run, so a partial/crashed run stays detectable on the next startup
 # (the previous, lower stamp remains; the idempotent migrations then re-run and
 # heal). NOTE: ``PRAGMA user_version`` is reserved for FTS-index rebuild tracking.
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 async def _stamp_schema_version(conn: Any) -> None:

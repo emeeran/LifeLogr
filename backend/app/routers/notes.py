@@ -27,6 +27,7 @@ from app.core.jobs import ProgressReporter
 from app.core.jobs import start_data_job as _start_data_job
 from app.models.note import Note
 from app.schemas.note import (
+    FoldersReorder,
     NoteCreate,
     NoteFolderCreate,
     NoteFolderResponse,
@@ -38,6 +39,7 @@ from app.schemas.note import (
     NotePageResponse,
     NotePageUpdate,
     NoteResponse,
+    NotesReorder,
     NoteUpdate,
 )
 from app.schemas.note_media import NoteMediaFromPath, NoteMediaResponse
@@ -84,6 +86,7 @@ def _to_response(note: Note) -> NoteResponse:
         encrypted_at=note.encrypted_at,
         tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in note.tag_associations if a.tag],
         pages=[NotePageResponse.model_validate(p) for p in note.pages],
+        sort_order=note.sort_order,
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -105,6 +108,7 @@ def _to_list_item(note: Note, snippet: str) -> NoteListItem:
         is_encrypted=note.is_encrypted,
         encrypted_at=note.encrypted_at,
         tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in note.tag_associations if a.tag],
+        sort_order=note.sort_order,
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -177,6 +181,22 @@ async def web_clip(data: _WebClipBody) -> dict[str, str]:
     from app.services.web_clip_service import extract_markdown_from_url
 
     return {"markdown": await extract_markdown_from_url(str(data.url))}
+
+
+@router.post("/reorder")
+async def reorder_notes(data: NotesReorder, db: AsyncSession = Depends(get_db)) -> dict[str, int]:
+    """Batch-set sort_order for a rail section (DND-3 drag reorder)."""
+    svc = NoteService(db)
+    return {"reordered": await svc.reorder_notes(data)}
+
+
+@router.post("/folders/reorder")
+async def reorder_folders(
+    data: FoldersReorder, db: AsyncSession = Depends(get_db)
+) -> dict[str, int]:
+    """Batch-set folder sort_order (one call instead of N PATCHes)."""
+    svc = NoteService(db)
+    return {"reordered": await svc.reorder_folders(data)}
 
 
 # ── Sub-pages (EPIM-style page tabs) ────────────────────────────────────────

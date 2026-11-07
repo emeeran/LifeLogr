@@ -162,6 +162,12 @@ export interface NotePageReorderItem {
   sort_order: number
 }
 
+/** One entry of a rail reorder batch (DND-3) — notes or notebooks. */
+export interface ReorderItem {
+  id: number
+  sort_order: number
+}
+
 export interface NoteResponse {
   id: number
   folder_id: number | null
@@ -173,6 +179,8 @@ export interface NoteResponse {
   encrypted_at: string | null
   tags: TagBrief[]
   pages: NotePageResponse[]
+  /** Manual drag order within a section (DND-3); 0 = never moved (recent-first). */
+  sort_order: number
   created_at: string
   updated_at: string
 }

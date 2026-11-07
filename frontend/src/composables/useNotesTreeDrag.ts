@@ -20,6 +20,11 @@ export type DropTarget =
   | { kind: 'folder'; id: number }
   | { kind: 'unfiled' }
   | { kind: 'root' }
+  /** Between-row insertion (DND-3). `beforeId` is the sibling the dragged row
+   *  would land above (null = end of section). Notes insert only within their
+   *  own section; folders only between siblings under the same parent. */
+  | { kind: 'note-insert'; sectionKey: string; beforeId: number | null }
+  | { kind: 'folder-insert'; parentId: number | null; beforeId: number | null }
 
 export type DropResolution =
   | { action: 'note-to-folder'; noteId: number; folderId: number }
@@ -48,6 +53,26 @@ export function isDescendant(
     current = byId.get(current)?.parent_id ?? null
   }
   return false
+}
+
+/**
+ * Plan a between-row reorder (DND-3): move `dragId` to just above `beforeId`
+ * (or to the end when `beforeId` is null) and return a 1-based batch plan, or
+ * null when the drop would change nothing (same slot, unknown ids, stale
+ * target) — the component treats null as "nothing to send".
+ */
+export function computeReorder(
+  section: readonly number[],
+  dragId: number,
+  beforeId: number | null,
+): { id: number; sort_order: number }[] | null {
+  const from = section.indexOf(dragId)
+  if (from === -1) return null
+  const rest = section.filter((id) => id !== dragId)
+  const to = beforeId == null ? rest.length : rest.indexOf(beforeId)
+  if (to === -1 || to === from) return null
+  const next = [...rest.slice(0, to), dragId, ...rest.slice(to)]
+  return next.map((id, i) => ({ id, sort_order: i + 1 }))
 }
 
 /**

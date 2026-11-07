@@ -81,6 +81,10 @@ class Note(Base):
     # Random per-note PBKDF2 salt (base64). Null on legacy notes encrypted
     # before salts were introduced (decrypted via the deterministic fallback).
     encryption_salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Manual drag order within a section (folder / Unfiled). 0 = "never moved" —
+    # list ordering falls back to recent-first unless any note in the section
+    # was reordered (see NoteService.create for the append rule).
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

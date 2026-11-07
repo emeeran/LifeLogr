@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isDescendant, resolveDrop, type FolderLink } from './useNotesTreeDrag'
+import {
+  computeReorder,
+  isDescendant,
+  resolveDrop,
+  type FolderLink,
+} from './useNotesTreeDrag'
 
 // Work (1) contains Projects (2), which contains Archive (3). Personal (4) is a sibling.
 const FOLDERS: FolderLink[] = [
@@ -145,5 +150,40 @@ describe('resolveDrop — notebooks', () => {
         folders: FOLDERS,
       }).action,
     ).toBe('noop')
+  })
+})
+
+describe('computeReorder — between-row reorder plan (DND-3)', () => {
+  it('moves a note before another (1-based sort_order plan)', () => {
+    expect(computeReorder([1, 2, 3], 3, 1)).toEqual([
+      { id: 3, sort_order: 1 },
+      { id: 1, sort_order: 2 },
+      { id: 2, sort_order: 3 },
+    ])
+  })
+
+  it('moves a note to the end when beforeId is null', () => {
+    expect(computeReorder([1, 2, 3], 1, null)).toEqual([
+      { id: 2, sort_order: 1 },
+      { id: 3, sort_order: 2 },
+      { id: 1, sort_order: 3 },
+    ])
+  })
+
+  it('is null when the item already sits at the target slot', () => {
+    expect(computeReorder([1, 2, 3], 1, 2)).toBeNull()
+    expect(computeReorder([1, 2, 3], 3, null)).toBeNull()
+  })
+
+  it('is null for a single-item section', () => {
+    expect(computeReorder([7], 7, null)).toBeNull()
+  })
+
+  it('is null when the dragged id is not in the section', () => {
+    expect(computeReorder([1, 2], 9, 1)).toBeNull()
+  })
+
+  it('is null when beforeId is not in the section (stale target)', () => {
+    expect(computeReorder([1, 2], 1, 9)).toBeNull()
   })
 })

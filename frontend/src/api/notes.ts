@@ -15,6 +15,7 @@ import type {
   NotePageCreate,
   NotePageUpdate,
   NotePageReorderItem,
+  ReorderItem,
 } from '../types'
 
 export const notesApi = {
@@ -119,6 +120,22 @@ export const notesApi = {
 
   deleteFolder(id: number): Promise<void> {
     return request(`/notes/folders/${id}`, { method: 'DELETE' })
+  },
+
+  /** Batch-set note sort_order for a rail section (DND-3 drag reorder). */
+  reorderNotes(items: ReorderItem[]): Promise<{ reordered: number }> {
+    return request('/notes/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  /** Batch-set notebook sort_order (one call instead of N PATCHes). */
+  reorderFolders(items: ReorderItem[]): Promise<{ reordered: number }> {
+    return request('/notes/folders/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
   },
 
   encrypt(

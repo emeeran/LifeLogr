@@ -166,6 +166,10 @@ Notes are standalone, non-date-bound documents organized into **folders**.
   un-file it. Drag a notebook onto another notebook to nest it, or onto the
   **Notebooks** header to move it back to the top level. A move that would put a
   notebook inside itself is refused with a message.
+- **Reordering** — drag a note to the **top or bottom edge** of another note in
+  the same list and an insertion line appears; drop to place it there (the order
+  is remembered per list). Notebooks reorder the same way at the edges of a
+  **sibling** notebook; the middle of a row still nests into it.
 - **Moving without a mouse** — each notebook row has a **⇥ move** button (Tab to it,
   Enter to open) listing every valid parent plus **Top level**. Notes can also be
   moved with the folder dropdown in the editor header.

@@ -41,8 +41,16 @@ offline at any time.
   Diarium, Day One): exporting a decrypted attachment alongside its
   passphrase-encrypted body would leak exactly the content that was hidden.
   The native archive (`/export/archive`, backups) still carries them **as
-  ciphertext** so restore keeps working. See `docs/SECURITY.md` for the full
-  what-is/isn't-encrypted picture.
+  ciphertext** so restore keeps working. HTML and PDF exports now also say so
+  inline on the encrypted entry (matching the markdown frontmatter note).
+  See `docs/SECURITY.md` for the full what-is/isn't-encrypted picture.
+- **Manual note & notebook ordering in the Notes rail.** Drag a note to the top
+  or bottom edge of another note in the same list — an insertion line appears and
+  the drop reorders the list (remembered per list, pinned notes still first).
+  Notebooks reorder the same way between siblings; the middle of a row still
+  nests into it. Reordering is one batch call to the new
+  `POST /notes/reorder` / `POST /notes/folders/reorder` endpoints. Lists that
+  were never reordered keep the recent-first behaviour.
 - **Preview media cap**: a preview renders at most 12 inline images/videos, with a
   "Show N more" control — the second half of the blank-screen memory fix.
 - **New images insert at ≤ 480 px wide** (aspect preserved) instead of full bleed;

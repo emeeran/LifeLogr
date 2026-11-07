@@ -103,6 +103,20 @@ class NotePageReorder(BaseModel):
     items: list[NotePageReorderItem]
 
 
+# DND-3: batch reorder for rail sections (mirrors the page-reorder idiom).
+class ReorderItem(BaseModel):
+    id: int
+    sort_order: int = Field(ge=0)
+
+
+class NotesReorder(BaseModel):
+    items: list[ReorderItem]
+
+
+class FoldersReorder(BaseModel):
+    items: list[ReorderItem]
+
+
 class NotePageResponse(BaseModel):
     id: int
     note_id: int
@@ -126,6 +140,7 @@ class NoteResponse(BaseModel):
     encrypted_at: datetime | None = None
     tags: list[TagBrief]
     pages: list[NotePageResponse] = Field(default_factory=list)
+    sort_order: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -145,6 +160,7 @@ class NoteListItem(BaseModel):
     is_encrypted: bool = False
     encrypted_at: datetime | None = None
     tags: list[TagBrief]
+    sort_order: int = 0
     created_at: datetime
     updated_at: datetime
 
