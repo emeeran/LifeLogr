@@ -139,4 +139,15 @@ export async function blobRequest(path: string): Promise<Blob> {
   return await res.blob()
 }
 
+/** GET a text payload (HTML / Diarium exports) with the same error contract
+ *  as `request()` — throws `ApiError` carrying the backend's `detail`. */
+export async function textRequest(path: string): Promise<string> {
+  await waitForBackend()
+  const res = await fetch(`${BASE_URL}${path}`, {
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+  })
+  if (!res.ok) throw new ApiError(res.status, await parseDetail(res))
+  return await res.text()
+}
+
 export { request, formDataRequest, API_ORIGIN, isTauri }
