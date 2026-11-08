@@ -858,5 +858,5 @@ curl http://127.0.0.1:18765/api/v1/system/egress-report              # privacy a
 ```
 
 For usage (not internals), see the **[User Manual](manual/USER_MANUAL.md)**; for the
-HTTP contract, the **[API Reference](manual/API_REFERENCE.md)**; for packaging details,
-the **[Build Guide](BUILD_GUIDE.md)** and **[Deployment Guide](manual/DEPLOYMENT.md)**.
+HTTP contract, the **[API Reference](manual/API_REFERENCE.md)**; for packaging and
+deployment details, the **[Deployment Guide](manual/DEPLOYMENT.md)**.

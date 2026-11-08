@@ -254,8 +254,7 @@ cd desktop/src-tauri && cargo tauri build --no-default-features
 Further reading: [Architecture & Developer Guide](docs/ARCHITECTURE.md) ·
 [User Manual](docs/manual/USER_MANUAL.md) ·
 [API Reference](docs/manual/API_REFERENCE.md) ·
-[Deployment](docs/manual/DEPLOYMENT.md) ·
-[Build Guide](docs/BUILD_GUIDE.md).
+[Deployment & Packaging](docs/manual/DEPLOYMENT.md).
 
 ---
 

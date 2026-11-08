@@ -1,7 +1,7 @@
 # Design — encrypting media at rest
 
 **Status:** proposed (2026-11-07) · **Scope:** SEC-MEDIA / SEC-KEYS in
-`docs/plans/2026-11-07-modify-idea-tasks.md` · **Decision:** approved (DEC-3).
+`docs/plans/2026-11-07-modify-idea-tasks.md` (archived in trash2review/) · **Decision:** approved (DEC-3).
 
 ## 1. Why
 

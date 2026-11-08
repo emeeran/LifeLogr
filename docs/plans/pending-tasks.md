@@ -2,7 +2,7 @@
 
 Updated 2026-11-08 after the full verification gate (pytest 1004 · vitest 322 ·
 vue-tsc · eslint · Playwright e2e 13/13, all green). IDs and decision context
-live in `docs/plans/2026-11-07-modify-idea-tasks.md`; per-wave tracking also
+were tracked in `docs/plans/2026-11-07-modify-idea-tasks.md` (now in trash2review/); per-wave tracking also
 lives in issues #19–#22 on `emeeran/LifeLogr`.
 
 ## Needs the real desktop GUI (manual)

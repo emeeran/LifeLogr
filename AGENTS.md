@@ -48,7 +48,7 @@ lifelogr/
 │   │   └── integration/
 │   ├── .env                 # Local secrets (never commit)
 │   └── pyproject.toml
-├── docs/                    # ARCHITECTURE/BUILD_GUIDE + manual/ + design ADRs
+├── docs/                    # ARCHITECTURE + manual/ + design/
 ├── AGENTS.md                # ← You are here
 └── Makefile
 ```

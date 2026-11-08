@@ -341,36 +341,23 @@ The project includes `.github/workflows/build.yml` for automated multi-platform 
 | Job | Runner | Output |
 |-----|--------|--------|
 | `build-linux` | ubuntu-latest | AppImage + .deb |
-| `build-windows` | windows-latest | .msi |
-| `build-mac` | macos-13 | .dmg |
 
-All jobs run in parallel. Artifacts are uploaded to the GitHub release.
+Artifacts are uploaded to the GitHub release.
 
-### Manual Build Script
+### Manual Build
 
-For local builds across all targets:
+From `desktop/`, the Makefile drives the same pipeline CI uses (frontend build,
+PyInstaller sidecar, Tauri bundle):
 
 ```bash
-./scripts/build.sh [target]
+cd desktop && make build    # AppImage + .deb into src-tauri/target/release/bundle/
 ```
-
-**Targets:**
-
-| Target | Description |
-|--------|-------------|
-| `linux` | Build Linux desktop (AppImage + deb) |
-| `windows` | Build Windows desktop (.msi) |
-| `mac` | Build macOS desktop (.dmg) |
-| `all-desktop` | Build all desktop targets |
-| `all` | Alias for `all-desktop` |
 
 ### Release Workflow
 
 ```bash
-# 1. Update version
-# Edit version in:
-#   - desktop/src-tauri/tauri.conf.json
-#   - backend/pyproject.toml
+# 1. Update version (all five sources at once)
+#   make bump V=x.y.z
 
 # 2. Commit and tag
 git add -A

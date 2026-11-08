@@ -92,7 +92,7 @@ done
 
 cat <<'NOTE'
 
-Targets (see docs/plans/2026-11-07-modify-idea-plan.md §9):
+Targets (modify-idea plan §9; plan archived in trash2review/):
   idle           p50 ≤ 1 s, p95 ≤ 1.5 s
   backup running app shows "Finishing backup…" and exits ≤ 2 s after it completes
   always         port 18765 free within 2 s, no orphaned lifelogr-backend
