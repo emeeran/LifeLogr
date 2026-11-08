@@ -254,8 +254,8 @@ class LocalFileProvider:
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
         target = self._safe_target(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(target.write_bytes, data)
         return str(target)
 
     async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
@@ -263,35 +263,49 @@ class LocalFileProvider:
         import shutil
 
         target = self._base / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with open(local_path, "rb") as src, open(target, "wb") as dst:
-            shutil.copyfileobj(src, dst)
+        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+
+        def _copy() -> None:
+            with open(local_path, "rb") as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+        await asyncio.to_thread(_copy)
         return str(target)
 
     async def download(self, path: str) -> bytes:
         target = self._safe_target(path)
-        return target.read_bytes()
+        return await asyncio.to_thread(target.read_bytes)
 
     async def download_to_file(self, path: str, local_path: str) -> str:
         """Stream a local provider file to disk (disk-to-disk copy)."""
         import shutil
 
         target = self._safe_target(path)
-        with open(target, "rb") as src, open(local_path, "wb") as dst:
-            shutil.copyfileobj(src, dst)
+
+        def _copy() -> None:
+            with open(target, "rb") as src, open(local_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+        await asyncio.to_thread(_copy)
         return path
 
     async def list_files(self, prefix: str) -> list[str]:
         if not self._base.exists():
             return []
-        return [
-            str(p.relative_to(self._base)) for p in self._base.rglob(f"{prefix}*") if p.is_file()
-        ]
+
+        def _scan() -> list[str]:
+            return [
+                str(p.relative_to(self._base))
+                for p in self._base.rglob(f"{prefix}*")
+                if p.is_file()
+            ]
+
+        return await asyncio.to_thread(_scan)
 
     async def delete(self, path: str) -> None:
         target = self._safe_target(path)
         if target.exists():
-            target.unlink()
+            await asyncio.to_thread(target.unlink)
 
     async def close(self) -> None:
         """Local provider has no open resources."""
