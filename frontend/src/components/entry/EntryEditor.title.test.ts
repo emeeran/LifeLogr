@@ -18,11 +18,41 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../api/entries', () => ({
   entriesApi: {
     calendarMonth: vi.fn(async () => []),
-    get: vi.fn(async () => ({}) as unknown),
+    // A minimal well-formed entry: `loadEntry` reads tags/body/mood/template_id
+    // off it, and `{}` here used to throw an unhandled rejection after save().
+    get: vi.fn(async () => ({
+      id: 7,
+      entry_date: '2026-11-07',
+      title: null,
+      body: '',
+      summary: null,
+      mood: '',
+      is_deleted: false,
+      is_encrypted: false,
+      tags: [],
+      events: [],
+      media_count: 0,
+      has_recording: false,
+      created_at: '',
+      updated_at: '',
+      template_id: null,
+    })),
     list: vi.fn(async () => ({ items: [], total: 0 })),
     create: mocks.create,
     update: mocks.update,
     delete: vi.fn(),
+  },
+}))
+
+// The editor prewarms TTS after a successful save; without this mock the
+// request hits the default origin and pollutes the run with ECONNREFUSED.
+vi.mock('../../api/tts', () => ({
+  ttsApi: {
+    entryAudioUrl: vi.fn(async () => ''),
+    speakUrl: vi.fn(async () => ({ key: '' })),
+    fileUrl: vi.fn(() => ''),
+    prewarmEntry: vi.fn(async () => undefined),
+    prewarmText: vi.fn(async () => undefined),
   },
 }))
 
