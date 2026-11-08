@@ -307,7 +307,7 @@ Requires macOS build environment.
 
 ### Data Directory
 
-The Tauri shell passes `DIARI_DATA_DIR` to the backend sidecar:
+The Tauri shell passes `DATA_DIR` to the backend sidecar:
 
 | Platform | Path |
 |----------|------|
@@ -393,12 +393,6 @@ git push origin main --tags
 | `OLLAMA_MODEL` | `llama3.2:3b` | Model to use for AI features |
 | `OLLAMA_TIMEOUT_SECONDS` | `300` | Request timeout |
 
-### OCR
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OCR_ENGINE` | `tesseract` | OCR engine |
-
 ### Database
 
 | Variable | Default | Description |
@@ -411,7 +405,7 @@ git push origin main --tags
 
 | Variable | Description |
 |----------|-------------|
-| `DIARI_DATA_DIR` | Set by Tauri shell — data directory for the app |
+| `DATA_DIR` | Set by Tauri shell — data directory for the app |
 
 ### Frontend Build
 
