@@ -64,9 +64,10 @@ _MAX_SIGNATURE_LEN = max(len(sig) for sig in _BLOCKED_SIGNATURES)
 # Standard user folders accepted by the path-import endpoint.
 _STANDARD_USER_DIRS = ("Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos")
 # Extra operator-configured import roots (comma-separated), mirroring
-# ``BACKUP_ALLOWED_ROOTS``. Read from settings when the field exists, else from
-# the environment — core/config.py is owned elsewhere.
-_EXTRA_ROOTS_SETTING = "MEDIA_IMPORT_ALLOWED_ROOTS"
+# ``BACKUP_ALLOWED_ROOTS``. Deliberately read from the environment, not
+# Settings: it's not a Settings field, and promoting it would suddenly honor
+# .env files in deployments that never set it before.
+_EXTRA_ROOTS_ENV = "MEDIA_IMPORT_ALLOWED_ROOTS"
 
 
 def _is_under(path: Path, root: Path) -> bool:
@@ -106,9 +107,7 @@ def allowed_import_roots() -> list[Path]:
     The explicit denylist (app data dir, ``~/.ssh``, ``~/.gnupg``, ``~/.config``)
     is applied afterwards in :func:`validate_import_path` and always wins.
     """
-    extra = str(getattr(settings, _EXTRA_ROOTS_SETTING, "") or "") or os.environ.get(
-        _EXTRA_ROOTS_SETTING, ""
-    )
+    extra = os.environ.get(_EXTRA_ROOTS_ENV, "")
 
     home = Path.home().resolve()
     roots: list[Path] = [home / name for name in _STANDARD_USER_DIRS]
