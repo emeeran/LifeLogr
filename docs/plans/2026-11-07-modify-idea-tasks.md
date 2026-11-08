@@ -27,7 +27,7 @@ IDs are stable — reference them in commit messages (`COL-2`, `BLANK-4`, …).
       backups).
       **Answer:** **wait** for an in-flight backup. CLOSE-3/6 below updated: show a
       "Finishing backup…" dialog and wait (bounded), only then exit.
-- [ ] **DEC-5** Create one issue per wave; link this file.
+- [x] **DEC-5** Create one issue per wave; link this file. *(issues #19–#22)*
 
 **Done when:** each DEC has a one-line answer recorded at the bottom of this file.
 
@@ -117,8 +117,8 @@ the desktop build at 380 px and fullscreen.
 - [ ] **BLANK-7** Heartbeat: 5 s `fetch /health` while visible; two missed beats → reload
       overlay. *(deferred — a crashed/killed renderer cannot be detected from inside it; a
       native watchdog is the honest fix and needs its own design)*
-- [ ] **BLANK-8** Playwright `tests/e2e/blank-screen.spec.ts`. *(deferred — no e2e harness in
-      the repo yet; needs a running stack + browser install)*
+- [x] **BLANK-8** Playwright `tests/blank-screen.spec.ts`. *(landed with the e2e
+      harness: ErrorBoundary rendering, Copy details, Reload)*
 - [x] **BLANK-9** `ARCHITECTURE.md` + `CHANGELOG.md`: error reporting, thumbnails, close guard.
 
 ### CLOSE — fast shutdown (item 9)
@@ -165,10 +165,11 @@ GNOME/Wayland machine and on X11, and no new lint/type/test failures.
       model via `application/x-lifelogr-tree`, never a DOM index).
 - [x] **DND-2** Drop on a folder row → `store.updateNote({ folder_id })` for notes,
       `store.updateFolder({ parent_id })` for folders; the target row highlights.
-- [ ] **DND-3** Insertion line between rows; on "Unfiled" / "All Notes" → `clear_folder` /
-      `clear_parent`. **Partial:** dropping on **Unfiled** un-files and dropping a notebook on
-      the **Notebooks** header moves it to the top level; between-row *reordering* is not done
-      (notes have no `sort_order`, and folder reordering would need N sequential PATCHes).
+- [x] **DND-3** Insertion line between rows; on "Unfiled" / "All Notes" → `clear_folder` /
+      `clear_parent`. **Completed:** between-row *reordering* landed later —
+      `notes.sort_order` (inline migration, `_SCHEMA_VERSION` 4), batch
+      `POST /notes/reorder` + `POST /notes/folders/reorder`; never-reordered
+      sections keep recent-first.
 - [x] **DND-4** Client-side cycle check (`isDescendant`) → toast
       "A notebook cannot move into itself"; the backend's silent no-op is unreachable.
 - [x] **DND-5** Optimistic move with rollback, `Esc` cancels, auto-expand a hovered folder.
@@ -199,8 +200,9 @@ GNOME/Wayland machine and on X11, and no new lint/type/test failures.
       (BLANK-4); an explicit `?w=&h=` keeps the full-size `/file` source.
 - [x] **RESIZE-6** `useResizableMedia.test.ts`: grip presence, drag → `onResize`, min-size
       clamp, keyboard steps, no commit without a pointerdown on the grip.
-- [ ] **RESIZE-7** Playwright: paste → drag → reload → size identical; downsize to 320 px decodes
-      only the thumbnail. *(needs the e2e harness from BLANK-8)*
+- [x] **RESIZE-7** Playwright: paste → drag → reload → size identical; downsize to 320 px decodes
+      only the thumbnail. *(landed with the e2e harness; caught and fixed the
+      `/thumb` rewrite dropping `?w=&h=`)*
 
 **Wave 3 done when:** DND + RESIZE checked, both editors pass the mount/Playwright tests, and a
 manual session moves 10 notes and 3 notebooks without losing one.
