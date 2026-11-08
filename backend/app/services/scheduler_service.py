@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import tarfile
 import tempfile
@@ -16,7 +17,7 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cron_utils import last_scheduled_occurrence as _last_scheduled_occurrence
-from app.core.jobs import ProgressReporter
+from app.core.jobs import ProgressReporter, jobs
 
 logger = logging.getLogger(__name__)
 
@@ -306,6 +307,8 @@ class SchedulerService:
         await SchedulerService._restore_backup_schedule()
         # Daily DB maintenance (incremental vacuum) keeps the SQLite file compact.
         await SchedulerService.register_db_maintenance()
+        # Daily trash sweep: permanently purge entries past their retention window.
+        await SchedulerService.register_trash_purge()
         # Run a missed backup shortly after boot, mirroring reminder catch-up.
         if sched.running:
             from apscheduler.triggers.date import DateTrigger
@@ -681,6 +684,44 @@ class SchedulerService:
         )
         return 1
 
+    @staticmethod
+    async def register_trash_purge() -> int:
+        """Register the daily trash sweep (purges entries past retention).
+
+        Runs at 03:10 local — just after the vacuum job, same coalesced +
+        single-instance discipline. No-op (returns 0) when the scheduler
+        isn't running. Idempotent via ``replace_existing``.
+        """
+        sched = SchedulerService.get_scheduler()
+        if not sched.running:
+            return 0
+        sched.add_job(
+            _run_trash_purge,
+            trigger=SchedulerService._cron_trigger("10 3 * * *"),
+            id="trash_purge",
+            replace_existing=True,
+            coalesce=True,
+            misfire_grace_time=3600,
+            max_instances=1,
+        )
+        return 1
+
+
+async def _run_trash_purge() -> None:
+    """Purge soft-deleted entries past ``TRASH_RETENTION_DAYS`` (daily).
+
+    Never raises — a maintenance task must not wedge the scheduler. Opens its
+    own session (APScheduler runs outside FastAPI DI).
+    """
+    from app.core.database import async_session
+    from app.services.entry_service import EntryService
+
+    try:
+        async with async_session() as session:
+            await EntryService(session).purge_expired_trash()
+    except Exception:
+        logger.warning("Trash purge sweep failed", exc_info=True)
+
 
 async def _run_incremental_vacuum() -> None:
     """Reclaim up to 100 free DB pages via incremental vacuum (daily, off-peak).
@@ -766,7 +807,15 @@ async def _run_backup(
     """Execute the backup job — creates a .tar.gz archive of DB + media.
 
     *report* (optional) receives (phase, done, total) progress; phases mirror
-    the cloud backup: archive/database, archive/media, retention.
+    the cloud backup: archive/database, archive/media, retention. When absent
+    (the scheduler path) the run registers in the shared job registry so the
+    shutdown guard (`GET /system/shutdown-state`) sees it — without that, a
+    window close SIGKILLs the pack mid-write.
+
+    The archive is packed to a ``.part`` file and moved into place only when
+    complete: a crash or kill can never leave a truncated file under the
+    final name (which retention counting globs), and the ``.part`` suffix
+    keeps partial files out of that glob.
     """
     from app.core.archive import add_backup_members
     from app.core.config import settings
@@ -779,8 +828,35 @@ async def _run_backup(
     path = resolve_backup_path(backup_path)
     path.mkdir(parents=True, exist_ok=True)
 
+    registry_job = None
+    progress: ProgressReporter
+    if report is not None:
+        progress = report
+    else:
+        registry_job = jobs.create("backup")
+        registry_reporter = jobs.reporter(registry_job.id)
+
+        def progress(phase: str, done: int = 0, total: int | None = None, detail: str | None = None) -> None:
+            registry_reporter(phase, done, total, detail)
+
+    def _fail_registry_job(exc: BaseException) -> None:
+        if registry_job is not None:
+            jobs.fail(registry_job.id, f"{type(exc).__name__}: {exc}")
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     archive_path = path / f"lifelogr-backup-{timestamp}.tar.gz"
+    part_path = archive_path.with_name(archive_path.name + ".part")
+
+    # Sweep .part files abandoned by a killed earlier run (crash, SIGKILL at
+    # shutdown). Anything older than a day can't be an in-flight write.
+    cutoff = datetime.now(timezone.utc).timestamp() - 86400
+    for stale in path.glob("*.tar.gz.part"):
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+                logger.warning("Removed stale partial backup: %s", stale.name)
+        except OSError:
+            logger.warning("Could not inspect stale partial backup %s", stale, exc_info=True)
 
     db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
@@ -799,18 +875,22 @@ async def _run_backup(
         # Gzipping DB + media is synchronous file I/O — offload it so the
         # scheduled backup job doesn't block the event loop.
         def _pack() -> None:
-            with tarfile.open(archive_path, "w:gz") as tar:
-                add_backup_members(tar, db_file, media_dir, report=report)
+            with tarfile.open(part_path, "w:gz") as tar:
+                add_backup_members(tar, db_file, media_dir, report=progress)
 
         await asyncio.to_thread(_pack)
+        # Atomic publish: the final name appears only with a complete archive.
+        os.replace(part_path, archive_path)
         logger.info(f"Backup complete: {archive_path}")
         await _mark_backup_run()
-        if report is not None:
-            report("retention")
-    except Exception:
+        if registry_job is not None:
+            jobs.finish(registry_job.id)
+        else:
+            progress("retention")
+    except BaseException as exc:
         logger.error("Backup failed", exc_info=True)
-        if archive_path.exists():
-            archive_path.unlink(missing_ok=True)
+        part_path.unlink(missing_ok=True)
+        _fail_registry_job(exc)
         raise
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

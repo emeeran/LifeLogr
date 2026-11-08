@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 import time
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -522,3 +523,40 @@ class TestLastScheduledOccurrence:
 
     def test_invalid_cron_returns_none(self):
         assert _last_scheduled_occurrence("nope", datetime.now()) is None
+
+
+class TestLocalBackupStaging:
+    """The scheduled local backup packs to a .part file and atomically renames
+    into place, and (without a caller-supplied reporter) registers in the job
+    registry so the shutdown guard sees it — a window close can no longer
+    SIGKILL a run invisibly, and a kill mid-pack can never leave a truncated
+    file under the final name that retention counting globs."""
+
+    async def test_archive_published_atomically(self, tmp_path, _clean_scheduler):
+        from app.core.jobs import jobs
+
+        import app.services.scheduler_service as mod
+
+        jobs.reset()
+        backup_dir = tmp_path / "backups"
+        archive = Path(await mod._run_backup(str(backup_dir), retention=5))
+
+        assert archive.exists() and archive.stat().st_size > 0
+        assert list(backup_dir.glob("*.tar.gz")) == [archive]
+        assert not list(backup_dir.glob("*.part")), "staging file must not survive"
+        assert not jobs.running(), "finished run must not block shutdown"
+        jobs.reset()
+
+    async def test_stale_part_files_are_swept(self, tmp_path, _clean_scheduler):
+        import time
+
+        import app.services.scheduler_service as mod
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        stale = backup_dir / "lifelogr-backup-20240101-000000.tar.gz.part"
+        stale.write_bytes(b"junk from a killed run")
+        os.utime(str(stale), (time.time() - 90_000, time.time() - 90_000))
+
+        await mod._run_backup(str(backup_dir), retention=5)
+        assert not stale.exists()
