@@ -26,6 +26,10 @@ tokio = { version = "1", features = ["rt", "time", "sync", "net", "io-util"] }
 log = "0.4"
 env_logger = "0.11"
 libc = "0.2"
+# SIGTERM/SIGINT iterator: without a handler the shell's default disposition
+# dies instantly and orphans the backend sidecar (see the signal thread in
+# main.rs setup).
+signal-hook = "0.3"
 
 [features]
 # `devtools` is intentionally NOT in `default`: Tauri auto-enables the webview
