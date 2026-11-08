@@ -73,3 +73,35 @@ test.describe('ErrorBoundary (BLANK-8)', () => {
     ).toBeVisible({ timeout: 5000 })
   })
 })
+
+test.describe('Route switching (BLANK-9)', () => {
+  /**
+   * BLANK-9 — rapid Journal ↔ Notes toggling must always leave a view mounted.
+   *
+   * The old route transition used mode="out-in": leave completes before enter
+   * starts, so while a lazy route chunk resolves inside that gap Vue can end up
+   * rendering a comment placeholder — a permanently blank panel with no error
+   * (exactly the user report). The invariant is structural, not textual: the
+   * routed <main> must contain an element after every navigation. A comment
+   * placeholder is invisible to CSS selectors, so `main > *` hitting zero is
+   * the blank-page signature.
+   */
+  test('rapid Journal ↔ Notes toggling always mounts a view', async ({
+    page,
+  }) => {
+    await page.goto('/calendar')
+    await dismissWhatsNew(page)
+
+    const routedChildren = page.locator('main > *')
+    await expect(routedChildren.first()).toBeVisible({ timeout: 5000 })
+
+    for (let i = 0; i < 10; i++) {
+      // Click without waiting for the previous transition to settle — the
+      // race needs a navigation to interrupt an active leave phase.
+      await page.getByRole('link', { name: 'Notes' }).click()
+      await expect(routedChildren.first()).toBeVisible({ timeout: 3000 })
+      await page.getByRole('link', { name: 'Journal' }).click()
+      await expect(routedChildren.first()).toBeVisible({ timeout: 3000 })
+    }
+  })
+})
