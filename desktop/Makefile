@@ -44,11 +44,7 @@ build: build-frontend build-sidecar
 
 # ── Setup (install system deps on Linux) ──
 setup:
-	@if [ "$(UNAME_S)" = "Linux" ]; then \
-	    sudo bash scripts/setup-linux.sh; \
-	else \
-	    echo "System setup is only available on Linux."; \
-	fi
+	sudo bash scripts/setup-linux.sh
 
 # ── Clean ──
 clean:

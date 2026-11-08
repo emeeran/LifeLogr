@@ -814,11 +814,19 @@ onUnmounted(() => {
   // The buffers die with the component — a stale shared dirty flag would make
   // the router guard prompt for edits that no longer exist anywhere.
   ui.editorIsDirty = false
+  // An armed autosave must not fire against a dead editor: the timer survives
+  // unmount and its fire-time reads would PATCH a stale target id.
+  cancelSave()
 })
 watch([() => ui.editingEntryId, () => ui.newEntryDate], (next, prev) => {
   // Mirror the outgoing entry before the buffers swap (same as the notes
   // editor's page switch) — the debounced write may not have fired yet.
   if (next[0] !== prev[0]) flushDraft(String(prev[0] ?? -1))
+  // Drop any pending autosave: it reads the buffers and the target id at
+  // fire time, so letting it fire mid-switch would PATCH the incoming entry
+  // with the outgoing entry's (or a cleared) payload. The outgoing entry's
+  // unsaved keystrokes live on in its crash draft instead.
+  cancelSave()
   void loadEntry()
   loadAttachments()
 })

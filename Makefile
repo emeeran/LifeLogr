@@ -85,7 +85,7 @@ check-version:
 # `git tag v1.0.0`) are deliberately excluded.
 DOC_FILES := README.md docs/ARCHITECTURE.md \
              docs/manual/USER_MANUAL.md docs/manual/DEPLOYMENT.md docs/manual/API_REFERENCE.md
-DOC_VERSION_RE := (LifeLogr\|lifelogr-web)_[0-9]+\.[0-9]+\.[0-9]+_\|^\*Version [0-9]+\.[0-9]+\.[0-9]+\|^\`v[0-9]+\.[0-9]+\.[0-9]+\`\|APP_VERSION\` | \`[0-9]+\.[0-9]+\.[0-9]+
+DOC_VERSION_RE := (LifeLogr|lifelogr-web)_[0-9]+\.[0-9]+\.[0-9]+_|\*Version [0-9]+\.[0-9]+\.[0-9]+|^`v[0-9]+\.[0-9]+\.[0-9]+`|APP_VERSION` \| `[0-9]+\.[0-9]+\.[0-9]+
 
 docs-check:
 	@CURRENT="$$(node -p "require('./frontend/package.json').version" 2>/dev/null)"; \

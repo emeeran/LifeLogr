@@ -70,7 +70,7 @@ fn check_deps() -> serde_json::Value {
         "ollama": ollama,
         "gst_plugins_bad": gst_plugins_bad,
         "tesseract": tesseract,
-        "all_installed": ollama,
+        "all_installed": ollama && gst_plugins_bad && tesseract,
     })
 }
 
