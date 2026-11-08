@@ -1,4 +1,4 @@
-import { request, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
+import { request, textRequest, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
 import type { JobStartResponse } from './backup'
 import type {
   NoteResponse,
@@ -229,8 +229,10 @@ export const notesApi = {
   exportJsonUrl(): string {
     return `${API_ORIGIN}/api/v1/notes/export/json`
   },
-  exportHtmlUrl(): string {
-    return `${API_ORIGIN}/api/v1/notes/export/html`
+  /** Full notes export as HTML text (goes through the shared transport so
+   *  failures carry the backend's detail, not a bare status code). */
+  exportHtml(): Promise<string> {
+    return textRequest('/notes/export/html')
   },
   importFile(file: File): Promise<{ imported: number; skipped: number }> {
     const form = new FormData()

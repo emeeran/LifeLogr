@@ -2,7 +2,6 @@
 import { ref, computed } from 'vue'
 import { entriesApi } from '../../../api/entries'
 import { notesApi } from '../../../api/notes'
-import { textRequest } from '../../../api/client'
 import {
   exportHtml,
   getExportPdfUrl,
@@ -225,7 +224,7 @@ async function downloadNotesJson() {
 }
 async function downloadNotesHtml() {
   exportLabel.value = 'Notes HTML export'
-  const html = await textRequest('/notes/export/html')
+  const html = await notesApi.exportHtml()
   const blob = new Blob([html], { type: 'text/html' })
   await saveFile({
     data: blob,

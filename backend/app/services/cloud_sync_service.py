@@ -254,8 +254,12 @@ class LocalFileProvider:
 
     async def upload(self, path: str, data: bytes, encrypted: bool = True) -> str:
         target = self._safe_target(path)
-        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(target.write_bytes, data)
+
+        def _write() -> None:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+
+        await asyncio.to_thread(_write)
         return str(target)
 
     async def upload_file(self, path: str, local_path: str, encrypted: bool = False) -> str:
@@ -290,7 +294,7 @@ class LocalFileProvider:
         return path
 
     async def list_files(self, prefix: str) -> list[str]:
-        if not self._base.exists():
+        if not await asyncio.to_thread(self._base.exists):
             return []
 
         def _scan() -> list[str]:
@@ -304,7 +308,7 @@ class LocalFileProvider:
 
     async def delete(self, path: str) -> None:
         target = self._safe_target(path)
-        if target.exists():
+        if await asyncio.to_thread(target.exists):
             await asyncio.to_thread(target.unlink)
 
     async def close(self) -> None:

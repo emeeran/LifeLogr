@@ -52,7 +52,7 @@ vi.mock('../../../api/notes', () => ({
   notesApi: {
     exportMarkdownUrl: () => '/notes/export/markdown',
     exportJsonUrl: () => '/notes/export/json',
-    exportHtmlUrl: () => '/notes/export/html',
+    exportHtml: vi.fn(async () => '<html>notes</html>'),
   },
 }))
 vi.mock('../../../utils/fileDialog', () => ({
