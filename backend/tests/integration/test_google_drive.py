@@ -4,7 +4,6 @@ import json
 import time
 from urllib.parse import parse_qs, urlparse
 
-import pytest
 import respx
 import httpx
 

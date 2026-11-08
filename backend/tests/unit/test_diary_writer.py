@@ -13,7 +13,6 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-import pytest
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload

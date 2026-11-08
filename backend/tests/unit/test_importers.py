@@ -8,7 +8,6 @@ import sqlite3
 import zipfile
 from datetime import date, datetime, timezone
 
-import pytest
 
 from app.services.importers import (
     parse_csv,

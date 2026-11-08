@@ -1,6 +1,5 @@
 """Tests for the settings vacuum endpoint."""
 
-import pytest
 from httpx import AsyncClient
 
 

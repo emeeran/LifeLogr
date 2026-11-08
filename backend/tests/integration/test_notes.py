@@ -1,6 +1,5 @@
 """Integration tests for note sub-pages (EPIM-style page tabs)."""
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 

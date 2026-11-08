@@ -3,7 +3,6 @@
 import json
 from unittest.mock import AsyncMock
 
-import pytest
 from sqlalchemy import select
 
 from app.core.security import encrypt

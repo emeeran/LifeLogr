@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from app.schemas.note import NoteFolderCreate, NoteFolderUpdate
 from app.services.note_service import NoteService
