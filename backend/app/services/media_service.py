@@ -23,6 +23,7 @@ from app.models.entry import Entry
 from app.models.media import Media
 from app.models.note_media import NoteMedia
 from app.services import media_crypto
+from app.services.entry_service import get_entry_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -367,13 +368,6 @@ class MediaService:
                 logger.warning("Blocked upload of %s (detected %s)", filename, label)
                 raise MediaSizeError(f"File type not allowed: detected {label}")
 
-    async def _require_entry(self, entry_id: int) -> Entry:
-        result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise NotFoundError(f"Entry {entry_id} not found")
-        return entry
-
     async def _persist_media(
         self,
         entry_id: int,
@@ -408,7 +402,7 @@ class MediaService:
         """Store file on disk and create media record; reject > 25 MB."""
         safe_name = self._validate_upload_meta(filename, content_type, len(file_data))
         self._check_signature(file_data, filename)
-        entry = await self._require_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         media_type = self._classify_media(content_type)
         final_data = file_data
@@ -467,7 +461,7 @@ class MediaService:
 
         head = await asyncio.to_thread(read_head, src)
         self._check_signature(head, filename)
-        entry = await self._require_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         media_type = self._classify_media(content_type)
         final_ext = Path(safe_name).suffix or ".bin"

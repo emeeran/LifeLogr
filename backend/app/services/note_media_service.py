@@ -20,6 +20,7 @@ from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.note import Note
 from app.models.note_media import NoteMedia
 from app.services import media_crypto
+from app.services.note_service import get_note_or_raise
 from app.services.media_service import (
     _ALLOWED_MIME_PREFIXES,
     _BLOCKED_SIGNATURES,
@@ -195,14 +196,7 @@ class NoteMediaService:
         return media
 
     async def _require_note(self, note_id: int) -> Note:
-        note = (
-            await self.db.execute(
-                select(Note).where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
-            )
-        ).scalar_one_or_none()
-        if not note:
-            raise NotFoundError(f"Note {note_id} not found")
-        return note
+        return await get_note_or_raise(self.db, note_id)
 
 
     async def upload_from_path(

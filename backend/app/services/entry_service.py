@@ -114,6 +114,21 @@ def invalidate_stats_cache() -> None:
     _stats_cache.clear()
 
 
+async def get_entry_or_raise(
+    db: AsyncSession, entry_id: int, *, include_deleted: bool = False
+) -> Entry:
+    """Return the entry by ID, raising :class:`NotFoundError` if it doesn't
+    exist — or is soft-deleted, unless ``include_deleted`` (some paths, like
+    attachment serving, stay valid for deleted entries)."""
+    stmt = select(Entry).where(Entry.id == entry_id)
+    if not include_deleted:
+        stmt = stmt.where(Entry.is_deleted == False)  # noqa: E712
+    entry = (await db.execute(stmt)).scalar_one_or_none()
+    if not entry:
+        raise NotFoundError(f"Entry {entry_id} not found")
+    return entry
+
+
 class EntryService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -196,13 +211,7 @@ class EntryService:
 
     async def get(self, entry_id: int) -> Entry:
         """Return a single non-deleted entry by ID."""
-        result = await self.db.execute(
-            select(Entry).where(Entry.id == entry_id, Entry.is_deleted == False)  # noqa: E712
-        )
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise NotFoundError(f"Entry {entry_id} not found")
-        return entry
+        return await get_entry_or_raise(self.db, entry_id)
 
     async def list_entries(
         self,

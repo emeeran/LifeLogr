@@ -33,7 +33,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -293,12 +292,10 @@ async def _get_speakable_entry(db: AsyncSession, entry_id: int) -> Entry:
     letter. Deleted maps to 404, encrypted to 409 (ConflictError), matching the
     app's exception-to-HTTP mapping.
     """
-    from app.core.exceptions import ConflictError, NotFoundError
+    from app.core.exceptions import ConflictError
+    from app.services.entry_service import get_entry_or_raise
 
-    result = await db.execute(select(Entry).where(Entry.id == entry_id))
-    entry = result.scalar_one_or_none()
-    if not entry or entry.is_deleted:
-        raise NotFoundError(f"Entry {entry_id} not found")
+    entry = await get_entry_or_raise(db, entry_id)
     if entry.is_encrypted:
         raise ConflictError("This entry is encrypted — decrypt it before using read-aloud")
     return entry

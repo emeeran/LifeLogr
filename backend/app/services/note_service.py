@@ -27,6 +27,20 @@ from app.services.hashtag import extract_hashtags, resolve_tag_ids
 logger = logging.getLogger(__name__)
 
 
+async def get_note_or_raise(
+    db: AsyncSession, note_id: int, *, include_deleted: bool = False
+) -> Note:
+    """Return the note by ID, raising :class:`NotFoundError` if it doesn't
+    exist — or is soft-deleted, unless ``include_deleted``."""
+    stmt = select(Note).where(Note.id == note_id)
+    if not include_deleted:
+        stmt = stmt.where(Note.is_deleted == False)  # noqa: E712
+    note = (await db.execute(stmt)).scalar_one_or_none()
+    if not note:
+        raise NotFoundError(f"Note {note_id} not found")
+    return note
+
+
 def _note_list_options() -> tuple[Any, ...]:
     """Eager-load tags + every scalar column EXCEPT ``body``.
 
@@ -99,13 +113,7 @@ class NoteService:
 
     async def get(self, note_id: int) -> Note:
         """Return a single non-deleted note by ID."""
-        result = await self.db.execute(
-            select(Note).where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
-        )
-        note = result.scalar_one_or_none()
-        if not note:
-            raise NotFoundError(f"Note {note_id} not found")
-        return note
+        return await get_note_or_raise(self.db, note_id)
 
     async def list_notes(
         self,

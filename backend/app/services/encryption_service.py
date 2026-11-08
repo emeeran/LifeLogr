@@ -9,13 +9,14 @@ import os
 from datetime import datetime, timezone
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
 from app.models.embedding import NoteEmbedding
 from app.models.entry import Entry
 from app.models.note import Note
+from app.services.entry_service import get_entry_or_raise
+from app.services.note_service import get_note_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ class EncryptionService:
 
     async def encrypt_entry(self, entry_id: int, passphrase: str) -> Entry:
         """Encrypt the body and mood of an entry in-place. Title is kept readable."""
-        entry = await self._get_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id)
 
         if entry.is_encrypted:
             raise ValueError("Entry is already encrypted")
@@ -141,7 +142,7 @@ class EncryptionService:
 
     async def decrypt_entry(self, entry_id: int, passphrase: str) -> Entry:
         """Decrypt the body and mood of an entry in-place."""
-        entry = await self._get_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id)
 
         if not entry.is_encrypted:
             raise ValueError("Entry is not encrypted")
@@ -169,27 +170,18 @@ class EncryptionService:
 
     async def get_encryption_status(self, entry_id: int) -> dict[str, object]:
         """Return encryption status for an entry."""
-        entry = await self._get_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id)
         return {
             "entry_id": entry.id,
             "is_encrypted": entry.is_encrypted,
             "encrypted_at": entry.encrypted_at,
         }
 
-    async def _get_entry(self, entry_id: int) -> Entry:
-        result = await self.db.execute(
-            select(Entry).where(Entry.id == entry_id, Entry.is_deleted == False)  # noqa: E712
-        )
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise NotFoundError(f"Entry {entry_id} not found")
-        return entry
-
     # ── Notes ──────────────────────────────────────────────────────────────
 
     async def encrypt_note(self, note_id: int, passphrase: str) -> Note:
         """Encrypt a note's body in-place. Title is kept readable (like entries)."""
-        note = await self._get_note(note_id)
+        note = await get_note_or_raise(self.db, note_id)
         if note.is_encrypted:
             raise ValueError("Note is already encrypted")
         salt = os.urandom(_SALT_SIZE)
@@ -210,7 +202,7 @@ class EncryptionService:
 
     async def decrypt_note(self, note_id: int, passphrase: str) -> Note:
         """Decrypt a note's body in-place."""
-        note = await self._get_note(note_id)
+        note = await get_note_or_raise(self.db, note_id)
         if not note.is_encrypted:
             raise ValueError("Note is not encrypted")
         key = await asyncio.to_thread(
@@ -238,21 +230,12 @@ class EncryptionService:
 
     async def get_note_encryption_status(self, note_id: int) -> dict[str, object]:
         """Return encryption status for a note."""
-        note = await self._get_note(note_id)
+        note = await get_note_or_raise(self.db, note_id)
         return {
             "note_id": note.id,
             "is_encrypted": note.is_encrypted,
             "encrypted_at": note.encrypted_at,
         }
-
-    async def _get_note(self, note_id: int) -> Note:
-        result = await self.db.execute(
-            select(Note).where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
-        )
-        note = result.scalar_one_or_none()
-        if not note:
-            raise NotFoundError(f"Note {note_id} not found")
-        return note
 
     # ── Free text (selection encryption) ──────────────────────────────────
 
