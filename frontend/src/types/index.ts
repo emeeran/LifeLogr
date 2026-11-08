@@ -92,6 +92,27 @@ export interface EntryListResponse {
   limit: number
 }
 
+export interface TrashItem {
+  id: number
+  entry_date: string
+  title: string | null
+  body_snippet: string
+  mood: string | null
+  is_encrypted: boolean
+  tags: TagBrief[]
+  media_count: number
+  has_recording: boolean
+  deleted_at: string
+  created_at: string
+}
+
+export interface TrashListResponse {
+  items: TrashItem[]
+  total: number
+  offset: number
+  limit: number
+}
+
 export interface EntryCreate {
   entry_date: string
   title?: string | null

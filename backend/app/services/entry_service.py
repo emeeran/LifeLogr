@@ -88,6 +88,7 @@ def _entry_list_options() -> tuple[Any, ...]:
             Entry.mood,
             Entry.is_deleted,
             Entry.is_encrypted,
+            Entry.deleted_at,
             Entry.latitude,
             Entry.longitude,
             Entry.location_name,
@@ -237,6 +238,29 @@ class EntryService:
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
             base_q.order_by(Entry.entry_date.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
+    async def list_trash(self, offset: int, limit: int) -> tuple[list[Entry], int]:
+        """Return soft-deleted entries (restorable trash), newest deletion first.
+
+        Ordered by ``deleted_at`` so the trash view can show what the retention
+        sweep will purge next. Entries whose ``deleted_at`` is somehow null
+        sort last (deleted_at IS NOT NULL filters nothing here — the sweep and
+        purge paths key off deleted_at, so treat null as oldest).
+        """
+        base_q = (
+            select(Entry)
+            .options(*_entry_list_options())
+            .where(Entry.is_deleted == True)  # noqa: E712
+        )
+        count_q = select(func.count()).select_from(Entry).where(Entry.is_deleted == True)  # noqa: E712
+        total = (await self.db.execute(count_q)).scalar_one()
+        result = await self.db.execute(
+            base_q
+            .order_by(Entry.deleted_at.desc().nulls_last())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all()), total
 

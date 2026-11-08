@@ -54,6 +54,8 @@ from app.schemas.entry import (
     ImportSkipReason,
     JournalStatsResponse,
     ResetRequest,
+    TrashItemResponse,
+    TrashListResponse,
 )
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
@@ -187,6 +189,39 @@ async def list_entries(
     snippets = await svc.body_snippets([e.id for e in entries])
     return EntryListResponse(
         items=[_to_list_item(e, snippets.get(e.id, "")) for e in entries],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/trash", response_model=TrashListResponse)
+async def list_trash(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """List soft-deleted entries (restorable trash), newest deletion first."""
+    svc = EntryService(db)
+    entries, total = await svc.list_trash(offset, limit)
+    snippets = await svc.body_snippets([e.id for e in entries])
+    return TrashListResponse(
+        items=[
+            TrashItemResponse(
+                id=e.id,
+                entry_date=e.entry_date,
+                title=e.title,
+                body_snippet=snippets.get(e.id, ""),
+                mood=e.mood,
+                is_encrypted=e.is_encrypted,
+                tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in e.tag_associations if a.tag],
+                media_count=len(e.media),
+                has_recording=len(e.recordings) > 0,
+                deleted_at=e.deleted_at or e.updated_at,
+                created_at=e.created_at,
+            )
+            for e in entries
+        ],
         total=total,
         offset=offset,
         limit=limit,

@@ -26,9 +26,9 @@ calling the data-safety story done.
   is the only destructive path, and a daily scheduler sweep purges entries
   past `TRASH_RETENTION_DAYS` (default 30; 0 disables). Media, video-note
   files, and recordings all unlink only after commit; bulk sweep is
-  set-based. Tests: `tests/unit/test_entry_trash.py`. **Follow-up (UI):** the
-  restore/purge endpoints have no frontend caller yet — a trash view is the
-  remaining piece of this fix.
+  set-based. Tests: `tests/unit/test_entry_trash.py`. Trash UI shipped
+  2026-11-09: `GET /entries/trash` + `components/trash/TrashView.vue`
+  (restore, confirmed purge) in the sidebar nav.
 - [x] **RESOLVED 2026-11-08** — `backend/app/services/scheduler_service.py`
   `_run_backup` — packs to a `.part` file and `os.replace`s into place (a
   kill mid-tar can no longer leave a truncated archive under the retention

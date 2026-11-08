@@ -123,6 +123,29 @@ class EntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TrashItemResponse(BaseModel):
+    """One soft-deleted entry in the trash view.
+
+    Same lightweight projection as :class:`EntryListItem` plus ``deleted_at``
+    (the UI counts down to the retention sweep) and without the location/
+    template fields the trash list never renders.
+    """
+
+    id: int
+    entry_date: date
+    title: str | None
+    body_snippet: str
+    mood: str | None
+    is_encrypted: bool = False
+    tags: list[TagBrief]
+    media_count: int
+    has_recording: bool
+    deleted_at: datetime
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class EntryListItem(BaseModel):
     """Lightweight entry for list/timeline views.
 
@@ -194,6 +217,13 @@ class GeotagResponse(BaseModel):
 
 class EntryListResponse(BaseModel):
     items: list[EntryListItem]
+    total: int
+    offset: int
+    limit: int
+
+
+class TrashListResponse(BaseModel):
+    items: list[TrashItemResponse]
     total: int
     offset: int
     limit: int
