@@ -4,7 +4,7 @@
 > Your data stays on your machine. AI runs locally via Ollama by default; OCR via
 > Tesseract; read-aloud via Edge TTS. Cloud AI and cloud backup are strictly opt-in.
 
-*Version 0.15.0*
+*Version 0.16.0*
 
 ---
 
@@ -49,7 +49,7 @@
 ### Install the desktop app (Tauri)
 A native window with everything bundled. **Required if you want screen-snipping.**
 ```bash
-sudo dpkg -i LifeLogr_0.15.0_amd64.deb
+sudo dpkg -i LifeLogr_0.16.0_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu.
@@ -58,7 +58,7 @@ Launch **LifeLogr** from your app menu.
 Lighter; the backend serves the app and you use it in a browser tab. The Python
 virtualenv is built on your machine during install (needs network).
 ```bash
-sudo dpkg -i lifelogr-web_0.15.0_amd64.deb
+sudo dpkg -i lifelogr-web_0.16.0_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser tab on

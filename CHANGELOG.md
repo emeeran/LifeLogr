@@ -9,6 +9,29 @@ offline at any time.
 
 ---
 
+## [0.16.0] — 2026-11-09
+
+### Changed
+- **Linux-only packaging:** the Windows/macOS build jobs, MSI/DMG targets and
+  their icon sets are gone; releases are the .deb and AppImage only.
+- Media-heavy exports (HTML, markdown, Day One, native archive, .diary) are
+  built streaming to disk instead of in memory — large journals no longer risk
+  out-of-memory failures during export.
+
+### Fixed
+- Switching entries while an autosave was pending could overwrite the new
+  entry with cleared content. Fixed, with a regression test.
+- The app now hard-fails with a clear dialog if another program is squatting
+  its backend port, instead of silently sending journal content to it.
+- Closing the app via logout, `systemctl stop`, or `kill` now shuts the
+  backend down cleanly (previously only the window close did).
+- Malformed search/list filters (bad dates, months, tag ids) return a proper
+  validation error instead of a server error.
+- Deleting attachments, restoring from the trash, and disabling auto-backup
+  now surface errors instead of failing silently.
+- The Obsidian vault export endpoint works again (it was shadowed by another
+  route and never reachable).
+
 ## [0.15.0] — 2026-11-08
 
 ### Added
