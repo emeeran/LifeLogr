@@ -318,16 +318,6 @@ export interface GrammarSuggestion {
   message: string
 }
 
-export interface GrammarCheckResponse {
-  corrected_text: string
-  suggestions: GrammarSuggestion[]
-}
-
-export interface SpellCheckResponse {
-  corrected_text: string
-  misspellings: GrammarSuggestion[]
-}
-
 export interface RewriteResponse {
   rewritten_text: string
   style: string
@@ -347,44 +337,10 @@ export interface TagSuggestionResponse {
   tags: string[]
 }
 
-// ── AI Writer's Block ───────────────────────────────────────────────
-
-export interface ContinueWritingResponse {
-  continuation: string
-}
-
 // ── AI Smart Tools ──────────────────────────────────────────────────
 
 export interface ExpandResponse {
   expanded_text: string
-}
-
-export interface ChangeToneResponse {
-  changed_text: string
-  tone: string
-}
-
-// ── AI Analyze Text ──────────────────────────────────────────────────
-
-export interface AnalyzeTextResponse {
-  emotions: string[]
-  themes: string[]
-  summary: string
-}
-
-// ── AI Define Text ───────────────────────────────────────────────────
-
-export interface DefineTextResponse {
-  definition: string
-}
-
-export interface VoiceChangeResponse {
-  changed_text: string
-  voice: string
-}
-
-export interface RewriteForClarityResponse {
-  rewritten_text: string
 }
 
 // ── AI Themes ───────────────────────────────────────────────────────
@@ -408,17 +364,6 @@ export interface EncryptionStatusResponse {
   encrypted_at: string | null
 }
 
-// ── Video Notes ──────────────────────────────────────────────────────
-
-export interface VideoNoteResponse {
-  id: number
-  entry_id: number
-  filename: string
-  duration_seconds: number | null
-  thumbnail_path: string | null
-  created_at: string
-}
-
 // ── Search (FTS5) ────────────────────────────────────────────────────
 
 export interface SearchResultEntry {
@@ -438,55 +383,6 @@ export interface GlobalSearchResponse {
   total: number
   offset: number
   limit: number
-}
-
-// ── Analytics ─────────────────────────────────────────────────────────
-
-export interface OverviewResponse {
-  total_entries: number
-  total_words: number
-  total_media: number
-  total_recordings: number
-  date_range_start: string | null
-  date_range_end: string | null
-  longest_streak: number
-  current_streak: number
-}
-
-export interface WritingHabitResponse {
-  day_of_week: number
-  day_name: string
-  entry_count: number
-}
-
-export interface WordCountResponse {
-  total_words: number
-  average_words_per_entry: number
-  longest_entry_words: number
-  shortest_entry_words: number
-}
-
-export interface TagStatsResponse {
-  tag_id: number
-  tag_name: string
-  usage_count: number
-}
-
-export interface HeatmapDayResponse {
-  date: string
-  count: number
-}
-
-export interface HeatmapResponse {
-  year: number
-  days: HeatmapDayResponse[]
-}
-
-export interface MediaStatsResponse {
-  total_images: number
-  total_videos: number
-  total_recordings: number
-  total_size_bytes: number
 }
 
 // ── Reminders ────────────────────────────────────────────────────────
