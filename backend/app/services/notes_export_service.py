@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.exceptions import MediaSizeError
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.models.note import Note, NoteFolder, NoteTag
 
@@ -328,10 +329,10 @@ class NotesExportService:
             if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
                 continue
             try:
-                from app.services.media_service import MediaService
+                from app.services.media_service import check_signature
 
-                MediaService._check_signature(data[:64], filename)
-            except Exception:
+                check_signature(data[:64], filename)
+            except MediaSizeError:
                 continue
             media_type = (item.get("media_type") or "document").lower()
             if media_type not in ("image", "audio", "video", "document"):

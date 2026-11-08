@@ -34,6 +34,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import Base, get_db
+from app.core.exceptions import MediaSizeError
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.core.jobs import start_data_job as _start_data_job
 from app.core.jobs import start_export_job
@@ -57,7 +58,7 @@ from app.schemas.entry import (
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 from app.services.entry_service import EntryService
-from app.services.media_service import spool_upload
+from app.services.media_service import check_signature, spool_upload
 from app.services.export_service import (
     ARCHIVE_FORMAT,
     ExportService,
@@ -1335,10 +1336,8 @@ async def _attach_imported_media(
             )
             continue
         try:
-            from app.services.media_service import MediaService
-
-            MediaService._check_signature(data[:64], filename)
-        except Exception as e:
+            check_signature(data[:64], filename)
+        except MediaSizeError as e:
             logger.warning("Import media %s blocked: %s", filename, e)
             continue
         media_type = (item.get("media_type") or "document").lower()

@@ -157,6 +157,14 @@ def validate_import_path(path: str) -> Path:
     return p
 
 
+def check_signature(head: bytes, filename: str) -> None:
+    """Reject a head sample of the payload matching a blocked signature."""
+    for sig, label in _BLOCKED_SIGNATURES.items():
+        if head[: len(sig)] == sig:
+            logger.warning("Blocked upload of %s (detected %s)", filename, label)
+            raise MediaSizeError(f"File type not allowed: detected {label}")
+
+
 def read_head(path: Path, n: int = _MAX_SIGNATURE_LEN) -> bytes:
     """First ``n`` bytes of a file (magic-number checks; handle-safe)."""
     with path.open("rb") as f:
@@ -346,7 +354,7 @@ class MediaService:
         """Shared upload gate: size cap, MIME allowlist and filename sanitising.
 
         Returns the sanitised filename. Magic-number signatures are checked
-        separately (:meth:`_check_signature`) so the streaming path can test just
+        separately (:func:`check_signature`) so the streaming path can test just
         the head bytes instead of the whole payload.
         """
         ensure_within_media_cap(size)
@@ -358,14 +366,6 @@ class MediaService:
         if safe_name != filename or ".." in filename or "/" in filename:
             raise MediaSizeError("Invalid filename")
         return safe_name
-
-    @staticmethod
-    def _check_signature(head: bytes, filename: str) -> None:
-        """Reject a head sample of the payload matching a blocked signature."""
-        for sig, label in _BLOCKED_SIGNATURES.items():
-            if head[: len(sig)] == sig:
-                logger.warning("Blocked upload of %s (detected %s)", filename, label)
-                raise MediaSizeError(f"File type not allowed: detected {label}")
 
     async def _persist_media(
         self,
@@ -400,7 +400,7 @@ class MediaService:
     ) -> Media:
         """Store file on disk and create media record; reject > 25 MB."""
         safe_name = self._validate_upload_meta(filename, content_type, len(file_data))
-        self._check_signature(file_data, filename)
+        check_signature(file_data, filename)
         entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         media_type = self._classify_media(content_type)
@@ -459,7 +459,7 @@ class MediaService:
         safe_name = self._validate_upload_meta(filename, content_type, size)
 
         head = await asyncio.to_thread(read_head, src)
-        self._check_signature(head, filename)
+        check_signature(head, filename)
         entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         media_type = self._classify_media(content_type)
