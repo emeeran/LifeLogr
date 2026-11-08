@@ -321,6 +321,9 @@ class Settings(BaseSettings):
     # Comma-separated extra roots a local backup may target beyond the defaults
     # (home, app data dir, temp dir) — e.g. "/media,/mnt" for external drives.
     BACKUP_ALLOWED_ROOTS: str = ""
+    # Days a soft-deleted entry stays recoverable before the daily sweep
+    # purges it (and its media files) permanently. 0 disables the sweep.
+    TRASH_RETENTION_DAYS: int = Field(default=30, ge=0)
 
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str = ""

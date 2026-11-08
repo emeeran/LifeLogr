@@ -1025,9 +1025,16 @@ async def update_entry(entry_id: int, data: EntryUpdate, db: AsyncSession = Depe
 
 @router.delete("/{entry_id}", status_code=204)
 async def delete_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> None:
-    """Soft-delete an entry and cascade media."""
+    """Soft-delete an entry (restorable trash — media are kept)."""
     svc = EntryService(db)
     await svc.soft_delete(entry_id)
+
+
+@router.delete("/{entry_id}/purge", status_code=204)
+async def purge_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Permanently delete an entry and its media files (no recovery)."""
+    svc = EntryService(db)
+    await svc.purge(entry_id)
 
 
 @router.post("/{entry_id}/restore", response_model=EntryResponse)
