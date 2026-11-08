@@ -88,6 +88,7 @@ def _entry_list_options() -> tuple[Any, ...]:
             Entry.mood,
             Entry.is_deleted,
             Entry.is_encrypted,
+            Entry.deleted_at,
             Entry.latitude,
             Entry.longitude,
             Entry.location_name,
@@ -112,6 +113,21 @@ _stats_cache: dict[str, tuple[float, JournalStatsResponse]] = {}
 def invalidate_stats_cache() -> None:
     """Drop the cached stats aggregates (call after any entry/media mutation)."""
     _stats_cache.clear()
+
+
+async def get_entry_or_raise(
+    db: AsyncSession, entry_id: int, *, include_deleted: bool = False
+) -> Entry:
+    """Return the entry by ID, raising :class:`NotFoundError` if it doesn't
+    exist — or is soft-deleted, unless ``include_deleted`` (some paths, like
+    attachment serving, stay valid for deleted entries)."""
+    stmt = select(Entry).where(Entry.id == entry_id)
+    if not include_deleted:
+        stmt = stmt.where(Entry.is_deleted == False)  # noqa: E712
+    entry = (await db.execute(stmt)).scalar_one_or_none()
+    if not entry:
+        raise NotFoundError(f"Entry {entry_id} not found")
+    return entry
 
 
 class EntryService:
@@ -196,13 +212,7 @@ class EntryService:
 
     async def get(self, entry_id: int) -> Entry:
         """Return a single non-deleted entry by ID."""
-        result = await self.db.execute(
-            select(Entry).where(Entry.id == entry_id, Entry.is_deleted == False)  # noqa: E712
-        )
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise NotFoundError(f"Entry {entry_id} not found")
-        return entry
+        return await get_entry_or_raise(self.db, entry_id)
 
     async def list_entries(
         self,
@@ -228,6 +238,29 @@ class EntryService:
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
             base_q.order_by(Entry.entry_date.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
+    async def list_trash(self, offset: int, limit: int) -> tuple[list[Entry], int]:
+        """Return soft-deleted entries (restorable trash), newest deletion first.
+
+        Ordered by ``deleted_at`` so the trash view can show what the retention
+        sweep will purge next. Entries whose ``deleted_at`` is somehow null
+        sort last (deleted_at IS NOT NULL filters nothing here — the sweep and
+        purge paths key off deleted_at, so treat null as oldest).
+        """
+        base_q = (
+            select(Entry)
+            .options(*_entry_list_options())
+            .where(Entry.is_deleted == True)  # noqa: E712
+        )
+        count_q = select(func.count()).select_from(Entry).where(Entry.is_deleted == True)  # noqa: E712
+        total = (await self.db.execute(count_q)).scalar_one()
+        result = await self.db.execute(
+            base_q
+            .order_by(Entry.deleted_at.desc().nulls_last())
+            .offset(offset)
+            .limit(limit)
         )
         return list(result.scalars().all()), total
 
@@ -290,40 +323,9 @@ class EntryService:
             WeatherService.schedule(entry.id, entry.latitude, entry.longitude, entry.entry_date)
         return entry
 
-    async def soft_delete(self, entry_id: int) -> None:
-        """Mark entry as deleted; remove associated media files."""
-        entry = await self.get(entry_id)
-        entry.is_deleted = True
-        entry.deleted_at = datetime.now(timezone.utc)
-
-        # Clean up media files for the soft-deleted entry
-        from app.models.media import Media
-
-        media_result = await self.db.execute(select(Media).where(Media.entry_id == entry_id))
-        media_list = media_result.scalars().all()
-        for media in media_list:
-            await self.db.delete(media)
-
-        # Commit BEFORE unlinking files: if the commit failed after the files
-        # were gone, the DB would reference media that no longer exists (and
-        # restore() could never bring them back). A failed unlink after a
-        # successful commit only orphans a file, which is recoverable.
-        await self.db.commit()
-        for media in media_list:
-            full_path = settings.MEDIA_DIR / media.storage_path
-            if full_path.exists():
-                try:
-                    full_path.unlink()
-                except OSError:
-                    logger.warning(
-                        "Could not remove media file %s for soft-deleted entry %s",
-                        full_path,
-                        entry_id,
-                        exc_info=True,
-                    )
-        invalidate_stats_cache()
-        # Best-effort: drop from the vector cache now (ensure_fresh reloads on
-        # any divergence anyway, so a miss here self-heals on the next search).
+    def _drop_from_semantic_cache(self, entry_id: int) -> None:
+        """Best-effort: drop from the vector cache (ensure_fresh reloads on any
+        divergence anyway, so a miss here self-heals on the next search)."""
         try:
             from app.services.semantic_cache import get_semantic_cache
 
@@ -331,12 +333,122 @@ class EntryService:
         except Exception:
             logger.warning("Failed to drop entry %d from semantic cache", entry_id, exc_info=True)
 
-    async def restore(self, entry_id: int) -> Entry:
-        """Un-delete a soft-deleted entry.
+    async def soft_delete(self, entry_id: int) -> None:
+        """Mark entry as deleted (restorable trash — media are kept).
 
-        The FTS ``fts_entry_restore`` trigger re-indexes the entry automatically.
-        Note: media files removed at soft-delete time are not restored (they
-        were permanently deleted); the entry's text content is fully recovered.
+        Delete is recoverable: media rows and files stay until :meth:`purge`
+        (explicit, or the daily trash sweep past ``TRASH_RETENTION_DAYS``).
+        The restore endpoint exists but has no UI surface yet, so this is a
+        backend-level safety net, not full notes-style trash UX.
+        """
+        entry = await self.get(entry_id)
+        entry.is_deleted = True
+        entry.deleted_at = datetime.now(timezone.utc)
+        await self.db.commit()
+        invalidate_stats_cache()
+        self._drop_from_semantic_cache(entry_id)
+
+    async def purge(self, entry_id: int) -> None:
+        """Permanently delete an entry and its media/video files (no recovery).
+
+        Removing the entry row cascades media/recordings/events/embeddings via
+        FK; the files are unlinked AFTER the commit so a failed commit can
+        never leave live rows pointing at missing files (same ordering rule
+        the old soft-delete documented).
+        """
+        entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
+        await self._purge_entry_row(entry)
+        self._drop_from_semantic_cache(entry_id)
+
+    async def _purge_entry_row(self, entry: Entry) -> None:
+        """Delete one entry row, then unlink its media and video-note files.
+
+        Mirrors ``VideoService.delete``'s cleanup for video notes (files only;
+        ``thumbnail_path`` is never populated today).
+        """
+        from app.models.media import Media
+        from app.models.video_note import VideoNote
+
+        media_result = await self.db.execute(select(Media).where(Media.entry_id == entry.id))
+        media_list = media_result.scalars().all()
+        video_result = await self.db.execute(
+            select(VideoNote).where(VideoNote.entry_id == entry.id)
+        )
+        video_list = video_result.scalars().all()
+        await self.db.delete(entry)
+        await self.db.commit()
+
+        for file_path in [
+            *(settings.MEDIA_DIR / m.storage_path for m in media_list),
+            *(settings.MEDIA_DIR / v.storage_path for v in video_list),
+        ]:
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                except OSError:
+                    logger.warning(
+                        "Could not remove file %s for purged entry %s",
+                        file_path,
+                        entry.id,
+                        exc_info=True,
+                    )
+
+    async def purge_expired_trash(self) -> int:
+        """Purge entries soft-deleted more than ``TRASH_RETENTION_DAYS`` ago.
+
+        Returns the number purged. Runs daily from the scheduler; entries
+        inside the retention window stay recoverable. ``TRASH_RETENTION_DAYS=0``
+        disables the sweep entirely (trash lives until the next full reset).
+        Set-based: one query for the expired ids, one cascading bulk delete,
+        one commit, then the file sweep.
+        """
+        if settings.TRASH_RETENTION_DAYS <= 0:
+            return 0
+        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.TRASH_RETENTION_DAYS)
+        result = await self.db.execute(
+            select(Entry.id).where(Entry.is_deleted == True, Entry.deleted_at < cutoff)  # noqa: E712
+        )
+        expired_ids = set(result.scalars().all())
+        if not expired_ids:
+            return 0
+        from app.models.media import Media
+        from app.models.video_note import VideoNote
+
+        media_list = (
+            (await self.db.execute(select(Media).where(Media.entry_id.in_(expired_ids))))
+            .scalars()
+            .all()
+        )
+        video_list = (
+            (await self.db.execute(select(VideoNote).where(VideoNote.entry_id.in_(expired_ids))))
+            .scalars()
+            .all()
+        )
+        # One cascading bulk delete + one commit — a months-deep trash backlog
+        # sweeps in a single transaction's time, not per-entry round-trips.
+        await self.db.execute(delete(Entry).where(Entry.id.in_(expired_ids)))
+        await self.db.commit()
+        for file_path in [
+            *(settings.MEDIA_DIR / m.storage_path for m in media_list),
+            *(settings.MEDIA_DIR / v.storage_path for v in video_list),
+        ]:
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                except OSError:
+                    logger.warning("Could not remove trashed file %s", file_path, exc_info=True)
+        for entry_id in expired_ids:
+            self._drop_from_semantic_cache(entry_id)
+        logger.info("Purged %d expired trash entries", len(expired_ids))
+        return len(expired_ids)
+
+    async def restore(self, entry_id: int) -> Entry:
+        """Un-delete a soft-deleted entry, attachments included.
+
+        The FTS ``fts_entry_restore`` trigger re-indexes the entry
+        automatically. Media rows and files are untouched by soft-delete, so
+        restore is fully lossless — unless the entry was purged (explicitly
+        or by the retention sweep), in which case it no longer exists.
         """
         # Fetch even if soft-deleted by querying without the default filter.
         result = await self.db.execute(select(Entry).where(Entry.id == entry_id))

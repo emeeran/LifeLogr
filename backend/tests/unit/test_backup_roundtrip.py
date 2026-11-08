@@ -20,7 +20,6 @@ from sqlalchemy import func, select, text
 from app.core.config import settings
 from app.main import app
 
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture

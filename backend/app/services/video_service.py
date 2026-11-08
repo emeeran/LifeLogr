@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import MediaSizeError, NotFoundError
-from app.models.entry import Entry
 from app.models.video_note import VideoNote
 from app.services import media_crypto
-from app.services.media_service import _BLOCKED_SIGNATURES, read_head
+from app.services.entry_service import get_entry_or_raise
+from app.services.media_service import _BLOCKED_SIGNATURES, ensure_within_media_cap, read_head
 
 logger = logging.getLogger(__name__)
 
@@ -26,23 +26,13 @@ class VideoService:
         self.db = db
         self._media_dir = Path(settings.MEDIA_DIR)
 
-    async def _get_entry(self, entry_id: int) -> Entry:
-        result = await self.db.execute(
-            select(Entry).where(Entry.id == entry_id, Entry.is_deleted == False)  # noqa: E712
-        )
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise NotFoundError(f"Entry {entry_id} not found")
-        return entry
-
     async def upload(
         self, entry_id: int, filename: str, content_type: str, data: bytes
     ) -> VideoNote:
         """Upload a video file and create a VideoNote record."""
-        entry = await self._get_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id)
 
-        if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"Video exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(len(data))
         if not content_type.startswith("video/"):
             raise MediaSizeError(
                 f"File type '{content_type}' not allowed; only video/* is accepted"
@@ -84,11 +74,10 @@ class VideoService:
         consumed (moved) on success — the caller still unlinks it, which is a
         safe no-op afterwards.
         """
-        entry = await self._get_entry(entry_id)
+        entry = await get_entry_or_raise(self.db, entry_id)
 
         size = (await asyncio.to_thread(src.stat)).st_size
-        if size > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"Video exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(size)
         if not content_type.startswith("video/"):
             raise MediaSizeError(
                 f"File type '{content_type}' not allowed; only video/* is accepted"
@@ -128,7 +117,7 @@ class VideoService:
         return note
 
     async def list_for_entry(self, entry_id: int) -> list[VideoNote]:
-        await self._get_entry(entry_id)
+        await get_entry_or_raise(self.db, entry_id)
         result = await self.db.execute(
             select(VideoNote).where(VideoNote.entry_id == entry_id).order_by(VideoNote.created_at)
         )

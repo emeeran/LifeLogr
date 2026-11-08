@@ -371,34 +371,6 @@ body {
   background: var(--color-text-muted);
 }
 
-/* ── Shared animations ── */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes slideInFromBottom {
-  from {
-    transform: translateY(8px);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-.animate-in {
-  animation-duration: 0.3s;
-  animation-fill-mode: both;
-}
-.fade-in {
-  animation-name: fadeIn;
-}
-.slide-in-from-bottom-2 {
-  animation-name: slideInFromBottom;
-}
-
 /* ── Focus ring for all interactive elements ── */
 button:focus-visible,
 select:focus-visible,
@@ -550,32 +522,6 @@ textarea:focus-visible,
   color: var(--color-accent);
 }
 
-.sbtn-outline {
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  border-color: var(--color-border);
-}
-.sbtn-outline:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
-  color: var(--color-accent);
-}
-
-.sbtn-accent-soft {
-  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-  color: var(--color-accent);
-}
-.sbtn-accent-soft:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
-}
-
-.sbtn-danger-soft {
-  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
-  color: var(--color-danger);
-}
-.sbtn-danger-soft:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-danger) 25%, transparent);
-}
-
 .sbtn-danger {
   background: var(--color-danger);
   color: #fff;
@@ -607,9 +553,6 @@ textarea:focus-visible,
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.18);
-}
-.transition-smooth {
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* Sidebar reorder handle affordance (grip icon). */
 .drag-grip {

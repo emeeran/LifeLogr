@@ -6,18 +6,10 @@ import { createPinia, setActivePinia } from 'pinia'
  * Mount smoke test for MediaTimelineView — setup-order / mount-crash guard.
  */
 
-vi.mock('../../api/media', () => ({
-  mediaApi: {
-    listAll: vi.fn(async () => ({ items: [], total: 0 })),
-    listByEntry: vi.fn(async () => []),
-    fileUrl: vi.fn(() => ''),
-    thumbUrl: vi.fn(() => ''),
-    upload: vi.fn(),
-    uploadFromPath: vi.fn(),
-    extractText: vi.fn(),
-    delete: vi.fn(async () => undefined),
-  },
-}))
+vi.mock('../../api/media', async () => {
+  const { makeMediaApiMock } = await import('../../test-utils/apiMocks')
+  return { mediaApi: makeMediaApiMock() }
+})
 
 beforeEach(() => {
   setActivePinia(createPinia())

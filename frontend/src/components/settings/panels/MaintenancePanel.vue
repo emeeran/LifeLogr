@@ -24,7 +24,7 @@ import {
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
 import SButton from '../shared/SButton.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -53,7 +53,7 @@ async function handleDeduplicate() {
         `Removed ${r.duplicates_removed} duplicate${r.duplicates_removed > 1 ? 's' : ''} across ${r.groups_found} group${r.groups_found > 1 ? 's' : ''}`,
       )
   } catch (e: unknown) {
-    emit('toast', 'error', `Deduplicate failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Deduplicate failed: ${errorMessage(e)}`)
   } finally {
     deduplicating.value = false
   }
@@ -84,7 +84,7 @@ async function handleBackfillTitles() {
     )
     titlesPending.value = null
   } catch (e: unknown) {
-    emit('toast', 'error', `Title backfill failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Title backfill failed: ${errorMessage(e)}`)
   } finally {
     titlesBusy.value = false
   }
@@ -100,7 +100,7 @@ async function handleVacuum() {
       `Database compacted — ${formatBytes(r.reclaimed_bytes)} reclaimed`,
     )
   } catch (e: unknown) {
-    emit('toast', 'error', `Vacuum failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Vacuum failed: ${errorMessage(e)}`)
   } finally {
     vacuuming.value = false
   }
@@ -147,7 +147,7 @@ async function handleEncryptMedia() {
     }
     encryptPreview.value = null
   } catch (e: unknown) {
-    emit('toast', 'error', `Encryption failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Encryption failed: ${errorMessage(e)}`)
   } finally {
     encryptBusy.value = false
   }

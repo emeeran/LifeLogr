@@ -138,4 +138,4 @@ async def oauth_callback(
         logger.warning("Failed to persist Box credentials", exc_info=True)
         return error_page("Failed to save the Box connection. Please retry.")
 
-    return success_page("Box Connected!", "📦", "LifeLogr is now connected to your Box account.")
+    return success_page("Box Connected!", "✅", "LifeLogr is now connected to your Box account.")

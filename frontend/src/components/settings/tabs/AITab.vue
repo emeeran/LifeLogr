@@ -45,7 +45,7 @@ import SkeletonCard from '../shared/SkeletonCard.vue'
 import AccordionItem from '../shared/AccordionItem.vue'
 import SettingGroup from '../shared/SettingGroup.vue'
 import SButton from '../shared/SButton.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -56,7 +56,7 @@ const emit = defineEmits<{
  *  for anything else by falling back to the message text. */
 function apiErrMsg(e: unknown): string {
   if (e instanceof ApiError && e.detail) return e.detail
-  return errMsg(e)
+  return errorMessage(e)
 }
 
 function formatModelSize(bytes: number): string {
@@ -144,7 +144,7 @@ async function refreshModels() {
     const n = ollamaModels.value.length
     emit('toast', 'success', `Found ${n} model${n === 1 ? '' : 's'}`)
   } catch (e: unknown) {
-    emit('toast', 'error', `Refresh failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Refresh failed: ${errorMessage(e)}`)
   } finally {
     modelsRefreshing.value = false
   }
@@ -174,7 +174,7 @@ async function saveAISettings() {
     aiDirty.value = false
     emit('toast', 'success', 'AI settings saved')
   } catch (e: unknown) {
-    emit('toast', 'error', `Save failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Save failed: ${errorMessage(e)}`)
   } finally {
     aiSaving.value = false
   }
@@ -225,7 +225,7 @@ async function testConnection() {
       modelLoaded: false,
       embedAvailable: false,
     }
-    emit('toast', 'error', `Connection failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Connection failed: ${errorMessage(e)}`)
   } finally {
     connTesting.value = false
   }
@@ -249,8 +249,8 @@ async function handlePullModel() {
       `Model pull started: ${pullModelName.value.trim()}`,
     )
   } catch (e: unknown) {
-    pullStatus.value = `Failed: ${errMsg(e)}`
-    emit('toast', 'error', `Pull failed: ${errMsg(e)}`)
+    pullStatus.value = `Failed: ${errorMessage(e)}`
+    emit('toast', 'error', `Pull failed: ${errorMessage(e)}`)
   } finally {
     pulling.value = false
   }
@@ -266,7 +266,7 @@ async function fetchThemes() {
   try {
     themes.value = (await getThemes(themesMonths.value)).themes
   } catch (e: unknown) {
-    emit('toast', 'error', `Themes failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Themes failed: ${errorMessage(e)}`)
   } finally {
     themesLoading.value = false
   }

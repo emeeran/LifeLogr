@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -162,10 +163,6 @@ async def update_app_settings(data: SettingsUpdateRequest) -> dict[str, str]:
         # arbitrary host — restrict it to http(s) to block obvious SSRF, and to
         # loopback unless the caller explicitly confirmed a remote host.
         if data.ai.ollama_base_url is not None:
-            from urllib.parse import urlparse
-
-            from fastapi import HTTPException
-
             url = data.ai.ollama_base_url.strip()
             if urlparse(url).scheme.lower() not in ("http", "https"):
                 raise HTTPException(status_code=400, detail="Ollama URL must use http or https")
@@ -369,8 +366,6 @@ async def update_storage_path(
     so it survives restart. Raises 400 on an invalid target or insufficient
     space. The old directory is left intact.
     """
-    from fastapi import HTTPException
-
     from app.services.storage_service import relocate_storage
 
     try:

@@ -174,3 +174,36 @@ class TestConfirmation:
 
         source = inspect.getsource(entries_mod.reset_database)
         assert "compare_digest" in source
+
+
+class TestBackupAndPurgeCoverage:
+    """Import/restore swap the live DB and purge destroys media irreversibly —
+    both must sit behind the same origin rule as /entries/reset. The import
+    route is the critical one: multipart is a CORS simple request (no
+    preflight), so the generic CSRF guard cannot see a cross-site POST to it.
+
+    POST /backup/restore is exercised with an empty body — the guard rejects
+    on Origin before the handler runs, so the 403 vs 422 distinction proves
+    which layer answered.
+    """
+
+    async def test_restore_rejects_hostile_loopback_origin(self, client: AsyncClient):
+        r = await client.post(
+            "/api/v1/backup/restore", json={}, headers={"Origin": "http://localhost:9999"}
+        )
+        assert r.status_code == 403
+        assert "Cross-origin" in r.json()["detail"]
+
+    async def test_restore_allows_no_origin(self, client: AsyncClient):
+        r = await client.post("/api/v1/backup/restore", json={})
+        assert r.status_code != 403  # reached the handler (which 422s on the empty body)
+
+    async def test_purge_rejects_hostile_loopback_origin(self, client: AsyncClient):
+        r = await client.delete(
+            "/api/v1/entries/1/purge", headers={"Origin": "http://localhost:9999"}
+        )
+        assert r.status_code == 403
+
+    async def test_purge_allows_no_origin(self, client: AsyncClient):
+        r = await client.delete("/api/v1/entries/99999/purge")
+        assert r.status_code == 404  # reached the handler; id simply doesn't exist

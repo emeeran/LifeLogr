@@ -17,7 +17,6 @@ from sqlalchemy import delete, select
 
 from app.core.config import settings
 
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture

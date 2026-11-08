@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ttsApi } from '../api/tts'
-import { errMsg } from '../utils/errorMessage.ts'
+import { errorMessage } from '../utils/errorMessage'
 
 /**
  * App-wide read-aloud player.
@@ -130,7 +130,7 @@ export const useTtsStore = defineStore('tts', () => {
       isPlaying.value = false
       isLoading.value = false
       current.value = null
-      lastError.value = errMsg(e)
+      lastError.value = errorMessage(e)
       throw e
     } finally {
       isLoading.value = false

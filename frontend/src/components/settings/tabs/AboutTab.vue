@@ -35,7 +35,7 @@ import AccordionItem from '../shared/AccordionItem.vue'
 
 // Bake the changelog into the bundle — always offline-available.
 import changelogRaw from '../../../../../CHANGELOG.md?raw'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -113,8 +113,8 @@ async function runSystemSetup() {
     emit('toast', 'success', 'System setup complete!')
     await checkSystemDeps()
   } catch (e: unknown) {
-    setupOutput.value = errMsg(e)
-    emit('toast', 'error', `Setup failed: ${errMsg(e)}`)
+    setupOutput.value = errorMessage(e)
+    emit('toast', 'error', `Setup failed: ${errorMessage(e)}`)
   } finally {
     setupRunning.value = false
   }
@@ -133,7 +133,7 @@ async function handleReset() {
     showResetConfirm.value = false
     resetConfirmText.value = ''
   } catch (e: unknown) {
-    emit('toast', 'error', `Reset failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Reset failed: ${errorMessage(e)}`)
   } finally {
     resetting.value = false
   }

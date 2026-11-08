@@ -20,11 +20,13 @@ from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.note import Note
 from app.models.note_media import NoteMedia
 from app.services import media_crypto
+from app.services.note_service import get_note_or_raise
 from app.services.media_service import (
     _ALLOWED_MIME_PREFIXES,
     _BLOCKED_SIGNATURES,
     _CONVERTIBLE_IMAGE_TYPES,
     MediaService,
+    ensure_within_media_cap,
     read_head,
     validate_import_path,
 )
@@ -69,8 +71,7 @@ class NoteMediaService:
         caption: str | None = None,
     ) -> NoteMedia:
         """Store file on disk under MEDIA_DIR/notes/ and create a NoteMedia record."""
-        if len(file_data) > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(len(file_data))
 
         if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
             raise MediaSizeError(f"File type '{content_type}' not allowed")
@@ -138,8 +139,7 @@ class NoteMediaService:
         """
         if size is None:
             size = (await asyncio.to_thread(src.stat)).st_size
-        if size > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(size)
         if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
             raise MediaSizeError(f"File type '{content_type}' not allowed")
         safe_name = Path(filename).name
@@ -196,14 +196,7 @@ class NoteMediaService:
         return media
 
     async def _require_note(self, note_id: int) -> Note:
-        note = (
-            await self.db.execute(
-                select(Note).where(Note.id == note_id, Note.is_deleted == False)  # noqa: E712
-            )
-        ).scalar_one_or_none()
-        if not note:
-            raise NotFoundError(f"Note {note_id} not found")
-        return note
+        return await get_note_or_raise(self.db, note_id)
 
 
     async def upload_from_path(

@@ -41,7 +41,7 @@ def allowed_backup_roots() -> list[Path]:
     tmp = Path(tempfile.gettempdir()).resolve()
     if tmp not in roots:
         roots.append(tmp)
-    extra = getattr(settings, "BACKUP_ALLOWED_ROOTS", "") or ""
+    extra = settings.BACKUP_ALLOWED_ROOTS or ""
     for raw in str(extra).split(","):
         raw = raw.strip()
         if raw:

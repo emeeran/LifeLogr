@@ -67,7 +67,6 @@ def _ensure_scheduler_running() -> None:
 
 
 class TestCheckDataIntegrity:
-    @pytest.mark.asyncio
     async def test_clean_db_reports_ok(self, _reset_state, _scheduler_db):
         await sc.check_data_integrity()
         res = sc.get_integrity_status()
@@ -75,7 +74,6 @@ class TestCheckDataIntegrity:
         assert res["ok"] is True
         assert res["fk_violations"] == 0
 
-    @pytest.mark.asyncio
     async def test_orphan_fk_is_flagged(self, db_engine, _reset_state, _scheduler_db):
         # Create a referential orphan: a snapshot whose config_id doesn't exist.
         # FK enforcement is ON, so disable it for the raw insert; the check's
@@ -98,7 +96,6 @@ class TestCheckDataIntegrity:
 
 
 class TestCheckBackupHealth:
-    @pytest.mark.asyncio
     async def test_no_schedule(self, _reset_state, _scheduler_db):
         _ensure_scheduler_running()
         await sc.check_backup_health()
@@ -106,7 +103,6 @@ class TestCheckBackupHealth:
         assert res["ran"] is True
         assert res["scheduled"] is False
 
-    @pytest.mark.asyncio
     async def test_healthy_schedule_is_stale_until_first_backup(
         self, db_session, _reset_state, _scheduler_db
     ):
@@ -121,7 +117,6 @@ class TestCheckBackupHealth:
         # No backup has ever run → flagged stale (accurate: it is unbacked-up).
         assert res["stale"] is True
 
-    @pytest.mark.asyncio
     async def test_self_heal_missing_job(self, db_session, _reset_state, _scheduler_db):
         """Silent-stop regression: schedule present, job gone → re-registered."""
         from unittest.mock import patch
@@ -145,7 +140,6 @@ class TestCheckBackupHealth:
         assert sched.get_job("auto_backup") is not None
         assert sc.get_backup_status()["scheduled"] is True
 
-    @pytest.mark.asyncio
     async def test_recent_backup_not_stale(self, db_session, _reset_state, _scheduler_db):
         _ensure_scheduler_running()
         await SchedulerService(db_session).schedule_backup(
@@ -166,13 +160,11 @@ def _backup_config(credentials_encrypted: str) -> BackupConfig:
 
 
 class TestCheckAppIntegrity:
-    @pytest.mark.asyncio
     async def test_encryption_key_default_is_error(self, db_session, monkeypatch):
         monkeypatch.setattr(settings, "SECRET_KEY", "change-me-before-production")
         res = await sc._check_encryption_key(db_session)
         assert res["status"] == "error"
 
-    @pytest.mark.asyncio
     async def test_encryption_key_valid_credential_ok(self, db_session, monkeypatch):
         monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")  # bypass the default guard
         db_session.add(_backup_config(security.encrypt("secret")))
@@ -180,7 +172,6 @@ class TestCheckAppIntegrity:
         res = await sc._check_encryption_key(db_session)
         assert res["status"] == "ok"
 
-    @pytest.mark.asyncio
     async def test_encryption_key_undecryptable_is_error(self, db_session, monkeypatch):
         monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")
         db_session.add(_backup_config("not-a-valid-encrypted-token"))
@@ -189,11 +180,9 @@ class TestCheckAppIntegrity:
         assert res["status"] == "error"
         assert "backup_config" in res["detail"]
 
-    @pytest.mark.asyncio
     async def test_schema_tables_ok(self, db_session):
         assert (await sc._check_schema_tables(db_session))["status"] == "ok"
 
-    @pytest.mark.asyncio
     async def test_fts_sync_drift_warns(self, db_session):
         # The fixture schema now installs the real FTS sync triggers, so drift
         # has to be manufactured directly: delete the index row out from under a
@@ -213,7 +202,6 @@ class TestCheckAppIntegrity:
         await db_session.commit()
         assert (await sc._check_fts_sync(db_session))["status"] == "warn"
 
-    @pytest.mark.asyncio
     async def test_schema_completeness_missing_is_error(self, db_engine, db_session):
         async with db_engine.begin() as conn:
             await conn.execute(text("PRAGMA foreign_keys=OFF"))
@@ -222,13 +210,11 @@ class TestCheckAppIntegrity:
         assert res["status"] == "error"
         assert "templates" in res["detail"]
 
-    @pytest.mark.asyncio
     async def test_unexpected_tables_ok_on_clean_db(self, db_session):
         # FTS5 shadow tables (entries_fts_data, …) and sqlite internals must not trip.
         res = await sc._check_unexpected_tables(db_session)
         assert res["status"] == "ok"
 
-    @pytest.mark.asyncio
     async def test_unexpected_tables_flags_rogue(self, db_session):
         await db_session.execute(text("CREATE TABLE legacy_leftover (x INTEGER)"))
         await db_session.commit()
@@ -236,7 +222,6 @@ class TestCheckAppIntegrity:
         assert res["status"] == "warn"
         assert "legacy_leftover" in res["detail"]
 
-    @pytest.mark.asyncio
     async def test_unexpected_tables_ignores_schema_meta(self, db_session):
         # ``_schema_meta`` is created by the inline migration system
         # (schema_version + migration_log) and is expected infrastructure, not a
@@ -249,14 +234,12 @@ class TestCheckAppIntegrity:
         res = await sc._check_unexpected_tables(db_session)
         assert res["status"] == "ok"
 
-    @pytest.mark.asyncio
     async def test_fragmentation_reports_shape(self, db_session):
         res = await sc._check_fragmentation_wal(db_session)
         assert res["id"] == "db_fragmentation"
         assert res["status"] in {"ok", "warn", "error"}
         assert "free pages" in res["detail"]
 
-    @pytest.mark.asyncio
     async def test_structure_ok(self, db_session):
         assert (await sc._check_structure(db_session))["status"] == "ok"
 
@@ -268,7 +251,6 @@ class TestCheckAppIntegrity:
         assert settings.DB_POOL_SIZE > 1
         assert sc._check_connection_pool()["status"] == "ok"
 
-    @pytest.mark.asyncio
     async def test_full_battery_returns_report(self, _scheduler_db):
         report = await sc.check_app_integrity()
         assert report["ran"] is True
@@ -288,7 +270,6 @@ class TestCheckAppIntegrity:
         assert sc.get_app_integrity()["ran_at"] == report["ran_at"]
 
 
-    @pytest.mark.asyncio
     async def test_full_battery_self_heals_fts_drift(self, db_session, _scheduler_db):
         # ORM insert bypasses the FTS triggers the test schema lacks → drift.
         db_session.add(
@@ -305,7 +286,6 @@ class TestCheckAppIntegrity:
         fts = next(c for c in report["checks"] if c["id"] == "fts_sync")
         assert fts["status"] == "ok"  # detected + rebuilt
 
-    @pytest.mark.asyncio
     async def test_battery_runs_vacuum_on_fragmentation(self, _scheduler_db, monkeypatch):
         from unittest.mock import AsyncMock, patch
 
@@ -329,7 +309,6 @@ class TestCheckAppIntegrity:
 
 
 class TestRebuildSearchIndex:
-    @pytest.mark.asyncio
     async def test_rebuild_repopulates_entries_fts(self, db_session):
         from app.core.database import rebuild_search_index
 
@@ -351,7 +330,6 @@ class TestRebuildSearchIndex:
         n = (await db_session.execute(text("SELECT COUNT(*) FROM entries_fts"))).scalar()
         assert n == 1
 
-    @pytest.mark.asyncio
     async def test_rebuild_skips_missing_fts(self, db_engine, db_session):
         from app.core.database import rebuild_search_index
 
@@ -362,7 +340,6 @@ class TestRebuildSearchIndex:
 
 
 class TestSystemIntegrityEndpoint:
-    @pytest.mark.asyncio
     async def test_get_returns_cached_report(self, client):
         await sc.check_app_integrity()  # populate the cache
         r = await client.get("/api/v1/system/integrity")
@@ -371,13 +348,11 @@ class TestSystemIntegrityEndpoint:
         assert body["ran"] is True
         assert isinstance(body["checks"], list)
 
-    @pytest.mark.asyncio
     async def test_post_reruns_live(self, client):
         r = await client.post("/api/v1/system/integrity")
         assert r.status_code == 200
         assert r.json()["ran"] is True
 
-    @pytest.mark.asyncio
     async def test_rebuild_search_index_endpoint(self, client):
         r = await client.post("/api/v1/system/integrity/rebuild-search-index")
         assert r.status_code == 200
@@ -398,7 +373,6 @@ class TestSchemaIntrospectionAccuracy:
         assert "entry_prompts" in tables
         assert len(tables) >= 22
 
-    @pytest.mark.asyncio
     async def test_drop_orphan_legacy_tables(self, db_engine):
         from app.core.database import _drop_removed_feature_tables
 

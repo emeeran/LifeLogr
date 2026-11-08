@@ -198,7 +198,11 @@ async function onExtractText(id: number) {
     >
       <ErrorBoundary>
         <router-view v-slot="{ Component: RouteComponent }">
-          <Transition name="route-fade" mode="out-in">
+          <!-- No mode="out-in": with lazy route chunks it can leave the routed
+               slot empty between leave and enter (a permanent blank panel,
+               BLANK-9). The leave is instant (see .route-fade-leave-* below),
+               so this is an enter-only fade and a view is always mounted. -->
+          <Transition name="route-fade">
             <CrashProbe v-if="crashProbe" />
             <component :is="RouteComponent" v-else />
           </Transition>
@@ -383,13 +387,14 @@ async function onExtractText(id: number) {
   width: 0;
 }
 
-/* Route transition — smooth fade between views */
-.route-fade-enter-active,
-.route-fade-leave-active {
+/* Route transition — fade the incoming view in, swap the outgoing one out
+   instantly. A leave transition here would need mode="out-in" to look right,
+   and out-in + lazy route chunks intermittently leaves the routed slot empty
+   (blank panel, no error — see the router-view comment above). */
+.route-fade-enter-active {
   transition: opacity 0.15s ease;
 }
-.route-fade-enter-from,
-.route-fade-leave-to {
+.route-fade-enter-from {
   opacity: 0;
 }
 </style>

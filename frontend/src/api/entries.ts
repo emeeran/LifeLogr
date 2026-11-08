@@ -8,6 +8,7 @@ import type {
   EntryListParams,
   CalendarEntryResponse,
   JournalStats,
+  TrashListResponse,
 } from '../types'
 
 export interface GeotagItem {
@@ -65,6 +66,20 @@ export const entriesApi = {
 
   delete(id: number): Promise<void> {
     return request(`/entries/${id}`, { method: 'DELETE' })
+  },
+
+  /** Soft-deleted entries (restorable trash), newest deletion first. */
+  trash(offset = 0, limit = 50): Promise<TrashListResponse> {
+    return request(`/entries/trash?offset=${offset}&limit=${limit}`)
+  },
+
+  restore(id: number): Promise<EntryResponse> {
+    return request(`/entries/${id}/restore`, { method: 'POST' })
+  },
+
+  /** Permanently destroy a trashed entry and its media — no recovery. */
+  purge(id: number): Promise<void> {
+    return request(`/entries/${id}/purge`, { method: 'DELETE' })
   },
 
   importEntries(

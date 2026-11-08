@@ -28,7 +28,7 @@ import ToggleSwitch from '../shared/ToggleSwitch.vue'
 import AccordionItem from '../shared/AccordionItem.vue'
 import SettingGroup from '../shared/SettingGroup.vue'
 import SButton from '../shared/SButton.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 interface TTSVoice {
   short_name: string
@@ -183,7 +183,7 @@ async function previewVoice() {
     await previewAudio.play()
   } catch (e: unknown) {
     ttsPreviewing.value = false
-    emit('toast', 'error', `Voice preview failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Voice preview failed: ${errorMessage(e)}`)
   }
 }
 

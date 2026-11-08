@@ -3,7 +3,6 @@
 import json
 from unittest.mock import AsyncMock
 
-import pytest
 from sqlalchemy import select
 
 from app.core.security import encrypt
@@ -11,7 +10,6 @@ from app.models.backup import BackupConfig, BackupSnapshot
 from app.services.backup_service import BackupService
 
 
-@pytest.mark.asyncio
 async def test_config_label_roundtrips(client):
     payload = {
         "provider": "webdav",
@@ -35,7 +33,6 @@ async def test_config_label_roundtrips(client):
     await client.delete(f"/api/v1/backup/config/{created['id']}")
 
 
-@pytest.mark.asyncio
 async def test_config_label_optional(client):
     r = await client.post(
         "/api/v1/backup/config",
@@ -49,7 +46,6 @@ async def test_config_label_optional(client):
     await client.delete(f"/api/v1/backup/config/{r.json()['id']}")
 
 
-@pytest.mark.asyncio
 async def test_delete_backup_removes_snapshot_and_cloud_file(client, db_session, monkeypatch):
     """DELETE /backup/snapshots/{id} deletes the cloud file + the snapshot record."""
     config = BackupConfig(
@@ -89,7 +85,6 @@ async def test_delete_backup_removes_snapshot_and_cloud_file(client, db_session,
     assert remaining is None
 
 
-@pytest.mark.asyncio
 async def test_delete_backup_without_filename_only_removes_record(client, db_session, monkeypatch):
     """An old snapshot with no stored filename just has its record removed."""
     config = BackupConfig(

@@ -13,7 +13,6 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-import pytest
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -22,7 +21,6 @@ from app.models.tag import EntryTag
 from app.services.export_service import build_diarium_database
 from app.services.importers.diarium import parse_diarium_sqlite
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _seed_entry_with_trackers(db_session) -> int:

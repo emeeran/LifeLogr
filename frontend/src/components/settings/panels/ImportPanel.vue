@@ -18,7 +18,7 @@ import {
 import SettingsSection from '../shared/SettingsSection.vue'
 import SButton from '../shared/SButton.vue'
 import OperationProgress from '../../common/OperationProgress.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -56,7 +56,7 @@ async function runImport(accept: string) {
     const started = await entriesApi.importFileJob(file)
     await runJobImport(started.job_id, 'Import')
   } catch (e: unknown) {
-    emit('toast', 'error', `Import failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Import failed: ${errorMessage(e)}`)
   } finally {
     importing.value = false
   }
@@ -71,7 +71,7 @@ async function runNotesImport(accept: string) {
     const started = await notesApi.importFileJob(file)
     await runJobImport(started.job_id, 'Notes import')
   } catch (e: unknown) {
-    emit('toast', 'error', `Import failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Import failed: ${errorMessage(e)}`)
   } finally {
     importing.value = false
   }

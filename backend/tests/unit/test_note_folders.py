@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 
 from app.schemas.note import NoteFolderCreate, NoteFolderUpdate
 from app.services.note_service import NoteService
 
 
-@pytest.mark.asyncio
 async def test_create_subfolder_and_list(db_session):
     svc = NoteService(db_session)
     parent = await svc.create_folder(NoteFolderCreate(name="Parent"))
@@ -19,7 +17,6 @@ async def test_create_subfolder_and_list(db_session):
     assert folders[parent.id].parent_id is None
 
 
-@pytest.mark.asyncio
 async def test_reparent_and_clear_parent(db_session):
     svc = NoteService(db_session)
     a = await svc.create_folder(NoteFolderCreate(name="A"))
@@ -34,7 +31,6 @@ async def test_reparent_and_clear_parent(db_session):
     assert folders[b.id].parent_id is None
 
 
-@pytest.mark.asyncio
 async def test_cycle_guard_prevents_moving_into_descendant(db_session):
     svc = NoteService(db_session)
     a = await svc.create_folder(NoteFolderCreate(name="A"))

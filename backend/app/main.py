@@ -345,7 +345,23 @@ async def csrf_origin_guard(request: Request, call_next: Any) -> Response:
 # Non-browser clients (curl, the sidecar's own scripts) send no Origin at all
 # and are unaffected. A local process already running as the user could read the
 # DB file directly, so it is out of scope for an HTTP defence.
-_DESTRUCTIVE_PATHS = frozenset({"/api/v1/entries/reset"})
+_DESTRUCTIVE_PATHS = frozenset({
+    "/api/v1/entries/reset",
+    # Backup import/restore swap the live database — the multipart import is
+    # a CORS simple request (no preflight), so without this entry a hostile
+    # page on another loopback port could replace the DB wholesale, including
+    # the settings rows that hold AI provider base_urls and API keys.
+    "/api/v1/backup/import",
+    "/api/v1/backup/restore",
+})
+
+
+def _is_destructive_path(path: str) -> bool:
+    """True for endpoints whose effect is irreversible wholesale (see block
+    above) plus the per-entry purge, whose path carries an id."""
+    return path in _DESTRUCTIVE_PATHS or (
+        path.startswith("/api/v1/entries/") and path.endswith("/purge")
+    )
 
 # Irreversible endpoints also get an always-on throttle. The generic limiter
 # above is production-only (rate limiting a desktop user's own saves is
@@ -368,7 +384,7 @@ def _origin_allowed_for_destructive(origin: str, host_header: str) -> bool:
 @app.middleware("http")
 async def destructive_endpoint_guard(request: Request, call_next: Any) -> Response:
     path = request.url.path
-    if path not in _DESTRUCTIVE_PATHS:
+    if not _is_destructive_path(path):
         return await call_next(request)  # type: ignore[no-any-return]
 
     client_ip = request.client.host if request.client else "unknown"

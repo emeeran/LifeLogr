@@ -4,7 +4,6 @@ import json
 import time
 from urllib.parse import parse_qs, urlparse
 
-import pytest
 import respx
 import httpx
 
@@ -18,7 +17,6 @@ from app.services.backup_service import BackupService
 TEST_REDIRECT_URI = "http://127.0.0.1:18765/api/v1/backup/google-drive/callback"
 
 
-@pytest.mark.asyncio
 async def test_ensure_valid_token_uses_existing():
     """Verify ensure_valid_token uses active access token if not expired."""
     creds = {
@@ -33,7 +31,6 @@ async def test_ensure_valid_token_uses_existing():
     assert token == "active-access-token"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_ensure_valid_token_refreshes():
     """Verify ensure_valid_token automatically refreshes access token if expired."""
@@ -70,7 +67,6 @@ async def test_ensure_valid_token_refreshes():
     assert refresh_called is True
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_google_drive_provider_upload_create():
     """Test uploading a file that does not exist yet (creates new file)."""
@@ -95,7 +91,6 @@ async def test_google_drive_provider_upload_create():
     assert result == "test-file.json"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_google_drive_provider_upload_update():
     """Test uploading a file that already exists (updates existing file)."""
@@ -122,7 +117,6 @@ async def test_google_drive_provider_upload_update():
     assert result == "test-file.json"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_google_drive_upload_falls_back_to_appdata_on_403():
     """A drive.appdata-only token (folder query 403) degrades to App Data.
@@ -153,7 +147,6 @@ async def test_google_drive_upload_falls_back_to_appdata_on_403():
     assert provider._use_appdata is True
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_google_drive_provider_download():
     """Test downloading a file successfully."""
@@ -179,7 +172,6 @@ async def test_google_drive_provider_download():
     assert content == b"downloaded-bytes"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_google_drive_migrate_appdata_backups():
     """Hidden App Data backups are copied into the visible folder and removed."""
@@ -212,7 +204,6 @@ async def test_google_drive_migrate_appdata_backups():
     assert moved == 1
 
 
-@pytest.mark.asyncio
 async def test_oauth_auth_url_endpoint(client, db_session):
     """Test GET /api/v1/backup/google-drive/auth-url endpoint."""
     creds = {
@@ -233,7 +224,6 @@ async def test_oauth_auth_url_endpoint(client, db_session):
     assert "state=" in data["auth_url"]
 
 
-@pytest.mark.asyncio
 async def test_oauth_auth_url_follows_request_port(client, monkeypatch):
     """The loopback redirect URI uses the port the caller actually reached.
 
@@ -250,7 +240,6 @@ async def test_oauth_auth_url_follows_request_port(client, monkeypatch):
     assert redirect_uri == "http://127.0.0.1:8123/api/v1/backup/google-drive/callback"
 
 
-@pytest.mark.asyncio
 async def test_oauth_auth_url_rejects_non_loopback_host(client, monkeypatch):
     """A spoofed non-loopback Host header falls back to the configured bind."""
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "env-client-id")
@@ -262,7 +251,6 @@ async def test_oauth_auth_url_rejects_non_loopback_host(client, monkeypatch):
     assert redirect_uri == "http://127.0.0.1:18765/api/v1/backup/google-drive/callback"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_oauth_callback_exchanges_with_matching_redirect_uri(client, db_session):
     """The callback's token exchange reuses the same redirect_uri as auth-url.
@@ -307,7 +295,6 @@ async def test_oauth_callback_exchanges_with_matching_redirect_uri(client, db_se
     )
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_oauth_callback_endpoint(client, db_session):
     """Test GET /api/v1/backup/google-drive/callback success scenario."""
@@ -356,7 +343,6 @@ async def test_oauth_callback_endpoint(client, db_session):
     assert creds["refresh_token"] == "returned-refresh-token"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_oauth_callback_endpoint_missing_refresh_token(client, db_session):
     """Test GET /api/v1/backup/google-drive/callback when refresh token is missing."""
@@ -391,7 +377,6 @@ async def test_oauth_callback_endpoint_missing_refresh_token(client, db_session)
     assert "No refresh token returned" in response.text
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_backup_service_run_backup_gdrive(db_session):
     """Test BackupService.run_backup executing with Google Drive provider."""
@@ -443,7 +428,6 @@ async def test_backup_service_run_backup_gdrive(db_session):
     assert snapshot.entries_synced == 0
 
 
-@pytest.mark.asyncio
 async def test_schedule_cloud_backup_registers_job(client, db_session):
     """Test POST /schedule with config_id registers a cloud backup job."""
     from app.services.scheduler_service import SchedulerService
@@ -490,7 +474,6 @@ async def test_schedule_cloud_backup_registers_job(client, db_session):
     _sched_mod._scheduler = None
 
 
-@pytest.mark.asyncio
 async def test_schedule_cloud_backup_rejects_invalid_config_id(client, db_session):
     """Test POST /schedule with non-existent config_id returns 404."""
     response = await client.post("/api/v1/backup/schedule?config_id=9999&cron=0+3+*+*+*")

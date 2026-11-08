@@ -2,7 +2,7 @@
  *  Bulk/media imports stay in `api/backup.ts` (archive) and `api/entries.ts`
  *  / `api/notes.ts` (multipart uploads) — they are request wrappers, not URLs.
  */
-import { API_ORIGIN } from './client'
+import { API_ORIGIN, textRequest } from './client'
 
 const BASE_URL = `${API_ORIGIN}/api/v1`
 
@@ -14,9 +14,7 @@ export async function exportHtml(
   if (startDate) params.set('start_date', startDate)
   if (endDate) params.set('end_date', endDate)
   const qs = params.toString()
-  const res = await fetch(`${BASE_URL}/export/html${qs ? `?${qs}` : ''}`)
-  if (!res.ok) throw new Error(`Export HTML failed: ${res.status}`)
-  return res.text()
+  return textRequest(`/export/html${qs ? `?${qs}` : ''}`)
 }
 
 export function getExportPdfUrl(startDate?: string, endDate?: string): string {
@@ -46,14 +44,10 @@ export async function exportDiarium(
   if (startDate) params.set('start_date', startDate)
   if (endDate) params.set('end_date', endDate)
   const qs = params.toString()
-  const res = await fetch(
-    `${BASE_URL}/entries/export/diarium${qs ? `?${qs}` : ''}`,
-  )
-  if (!res.ok) throw new Error(`Diarium export failed: ${res.status}`)
-  return res.text()
+  return textRequest(`/entries/export/diarium${qs ? `?${qs}` : ''}`)
 }
 
 /** Full-instance local backup archive (.tar.gz, DB + media). */
 export function getBackupArchiveUrl(): string {
-  return `${API_ORIGIN}/api/v1/backup/export`
+  return `${BASE_URL}/backup/export`
 }

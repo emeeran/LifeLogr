@@ -16,7 +16,6 @@ from app.services.export_service import build_diarium_database
 from app.services.importers.diarium import parse_diarium_sqlite
 from tests.helpers.diarium_diary import build_diary, validate_diary
 
-pytestmark = pytest.mark.asyncio
 
 _SPEC = [
     {

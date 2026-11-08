@@ -23,6 +23,7 @@ from app.schemas.backup import (
     RestoreRequest,
 )
 from app.services.backup_service import BackupService
+from app.services.media_service import spool_upload
 
 logger = logging.getLogger(__name__)
 
@@ -308,34 +309,17 @@ async def export_local_backup(
 
 
 async def _spool_upload(file: UploadFile, max_bytes: int | None = None) -> Path:
-    """Stream an upload to a temp file, enforcing the import size cap.
-
-    Starlette already spools UploadFile past ~1 MiB, but awaiting ``file.read()``
-    with no size materialises the whole payload — stream it ourselves.
-    """
+    """Stream an upload to a temp file, enforcing the import size cap."""
     limit = settings.MAX_IMPORT_SIZE_BYTES if max_bytes is None else max_bytes
-    upload = tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz")
-    upload_path = Path(upload.name)
-    written = 0
-    try:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            if written + len(chunk) > limit:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"Archive exceeds the {limit}-byte import limit.",
-                )
-            upload.write(chunk)
-            written += len(chunk)
-        upload.flush()
-        upload.close()
-    except Exception:
-        upload.close()
-        upload_path.unlink(missing_ok=True)
-        raise
-    return upload_path
+
+    def _too_large(limit: int) -> Exception:
+        return HTTPException(
+            status_code=413,
+            detail=f"Archive exceeds the {limit}-byte import limit.",
+        )
+
+    path, _ = await spool_upload(file, limit, suffix=".tar.gz", on_overflow=_too_large)
+    return path
 
 
 @router.post("/verify")

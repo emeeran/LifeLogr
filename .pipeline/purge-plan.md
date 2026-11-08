@@ -1,32 +1,31 @@
-# Phase 1 Purge Plan — dry run (2026-10-27)
+# Purge Plan — 2026-11-08 (second pipeline pass)
 
-Method: exact-hash dedup across all 541 tracked files, name/artifact pattern scan,
-and a full inbound-reference sweep (git grep per candidate, excluding generated dirs).
+Dry run. Nothing has been moved yet. On approval, each path is `git mv`'d into
+`trash2review/<same-relative-path>` and the test suite is re-run.
 
-## Purge candidates (git mv → trash2review/)
-
-| path | reason | confidence | inbound refs |
+| path | reason | confidence | inbound-refs-found |
 |---|---|---|---|
-| `frontend/public/icons.svg` | unreferenced SVG sprite in public/ | high | 0 |
-| `docs/images/lifelogr_aboutus.jpg` | unreferenced screenshot (README links only lifelogr_01.jpg + lifelogr_Editor.jpg) | high | 0 |
-| `docs/blog_lifelogr_vs_diarium.md` | unreferenced blog draft; not part of manual, not linked anywhere | high | 0 |
+| `backend/app/schemas/sync.py` | Orphaned module — leftover fallout from the 2026-10-27 run's own `sync.py` router removal. All six symbols (`SyncQueueRequest`, `SyncQueueResponse`, `SyncStatusResponse`, `SyncFlushResponse`, `CloudSyncRequest`, `CloudSyncResponse`) have zero references outside the file itself (verified by grep over `backend/app` + `backend/tests`). The previous run missed it because its basename grep collided with the live `models/sync.py`. | high | none (all six symbols checked) |
 
-## Already deleted by human (fold into phase 1 commit, not git mv)
+## Cleared — explicitly checked and NOT flagged
 
-16 tracked docs/ files deleted in the working tree at human direction
-(ADR 001–006, BUILD_GUIDE, audit-2026-10-18, data-management ×2,
-diarium-enhancement ×2, diarium-format-analysis, release-checklist, roadmap).
-Committed separately as their own commit so pipeline history stays clean.
+- No exact/near-duplicate files (md5 sweep over 588 tracked files; duplicate
+  groups were adjudicated by the previous run: logo ×2 has two consumers, Tauri
+  icon pairs are platform-required).
+- No orphaned backend modules beyond the above (24 routers, 30+ services, 18
+  models, 17 schemas all referenced; `models/prompt.py` and
+  `models/reflection_prompt.py` are distinct live models, not supersessions).
+- No orphaned frontend components/composables/utils (basename-reference sweep,
+  excluding own tests).
+- No superseded generations (`test_archive_v2.py` is a distinct feature test;
+  the two `test_notes.py` files are integration vs unit with disjoint coverage).
+- No committed build/cache artifacts (`__pycache__`, `.pyc`, `dist/`, logs —
+  zero tracked; `.gitignore` coverage confirmed adequate).
+- `trash2review/` items from the 2026-10-27 run are out of scope and untouched.
 
-## Reviewed and kept (do NOT purge)
+## Noted, no action
 
-- `assets/lifelogr-logo.png` ≡ `frontend/public/logo.png` — same bytes, but two
-  independent consumers (backend deb packaging, frontend public dir). Keep both.
-- Tauri iOS icon `@2x-1` duplicates — required by Apple icon naming convention.
-- Empty `__init__.py` files — Python package markers.
-- `backend/.env.example` — referenced by ARCHITECTURE.md; conventional file.
-- `docs/data-management-overhaul-plan.md` / `-tasks.md` and `docs/diarium-enhancement-*`
-  — companion planning docs, recent commits, deliberate pairs (NOTE: human deleted
-  these during the session; no action needed from this plan).
-- ADRs 001/003/006 unreferenced — ADRs are historical records by convention.
-- `.pipeline/*` — pipeline's own artifacts, required by this run.
+- `assets/.genoffice-assets.json` (untracked) — empty genoffice manifest, 70
+  bytes, vestigial. Human said leave it; left untouched.
+- `.gitignore` line 11: trailing space in `local/ ` pattern (cosmetic; git
+  still honors it). Will be normalized during the Phase 3 style pass.

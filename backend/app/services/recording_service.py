@@ -12,8 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError
-from app.models.entry import Entry
 from app.models.recording import VoiceRecording
+from app.services.entry_service import get_entry_or_raise
 from app.services.media_service import MediaService
 
 logger = logging.getLogger(__name__)
@@ -85,9 +85,7 @@ class VoiceRecordingService:
 
     async def upload(self, entry_id: int, filename: str, file_data: bytes) -> VoiceRecording:
         """Store an audio file, create media + recording records."""
-        entry_result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
-        if not entry_result.scalar_one_or_none():
-            raise NotFoundError(f"Entry {entry_id} not found")
+        await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         audio_format = self._detect_format(filename)
         media = await self.media_svc.upload(entry_id, filename, f"audio/{audio_format}", file_data)
@@ -106,9 +104,7 @@ class VoiceRecordingService:
     async def start_recording(self, entry_id: int) -> None:
         """Begin capturing the default microphone for an entry."""
         global _active_recording
-        entry_result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
-        if not entry_result.scalar_one_or_none():
-            raise NotFoundError(f"Entry {entry_id} not found")
+        await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         with _active_lock:
             if _active_recording is not None:

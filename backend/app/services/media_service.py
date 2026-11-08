@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 from fastapi import UploadFile
@@ -23,6 +23,7 @@ from app.models.entry import Entry
 from app.models.media import Media
 from app.models.note_media import NoteMedia
 from app.services import media_crypto
+from app.services.entry_service import get_entry_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,10 @@ _MAX_SIGNATURE_LEN = max(len(sig) for sig in _BLOCKED_SIGNATURES)
 # Standard user folders accepted by the path-import endpoint.
 _STANDARD_USER_DIRS = ("Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos")
 # Extra operator-configured import roots (comma-separated), mirroring
-# ``BACKUP_ALLOWED_ROOTS``. Read from settings when the field exists, else from
-# the environment — core/config.py is owned elsewhere.
-_EXTRA_ROOTS_SETTING = "MEDIA_IMPORT_ALLOWED_ROOTS"
+# ``BACKUP_ALLOWED_ROOTS``. Deliberately read from the environment, not
+# Settings: it's not a Settings field, and promoting it would suddenly honor
+# .env files in deployments that never set it before.
+_EXTRA_ROOTS_ENV = "MEDIA_IMPORT_ALLOWED_ROOTS"
 
 
 def _is_under(path: Path, root: Path) -> bool:
@@ -105,9 +107,7 @@ def allowed_import_roots() -> list[Path]:
     The explicit denylist (app data dir, ``~/.ssh``, ``~/.gnupg``, ``~/.config``)
     is applied afterwards in :func:`validate_import_path` and always wins.
     """
-    extra = str(getattr(settings, _EXTRA_ROOTS_SETTING, "") or "") or os.environ.get(
-        _EXTRA_ROOTS_SETTING, ""
-    )
+    extra = os.environ.get(_EXTRA_ROOTS_ENV, "")
 
     home = Path.home().resolve()
     roots: list[Path] = [home / name for name in _STANDARD_USER_DIRS]
@@ -157,24 +157,50 @@ def validate_import_path(path: str) -> Path:
     return p
 
 
+def check_signature(head: bytes, filename: str) -> None:
+    """Reject a head sample of the payload matching a blocked signature."""
+    for sig, label in _BLOCKED_SIGNATURES.items():
+        if head[: len(sig)] == sig:
+            logger.warning("Blocked upload of %s (detected %s)", filename, label)
+            raise MediaSizeError(f"File type not allowed: detected {label}")
+
+
 def read_head(path: Path, n: int = _MAX_SIGNATURE_LEN) -> bytes:
     """First ``n`` bytes of a file (magic-number checks; handle-safe)."""
     with path.open("rb") as f:
         return f.read(n)
 
 
-async def spool_upload(file: UploadFile, max_bytes: int) -> tuple[Path, int]:
+def ensure_within_media_cap(size: int) -> None:
+    """Raise :class:`MediaSizeError` if ``size`` exceeds the per-file media cap."""
+    if size > settings.MAX_MEDIA_SIZE_BYTES:
+        raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+
+
+async def spool_upload(
+    file: UploadFile,
+    max_bytes: int,
+    *,
+    suffix: str = "",
+    on_overflow: Callable[[int], Exception] | None = None,
+) -> tuple[Path, int]:
     """Stream an ``UploadFile`` to a temp file, enforcing ``max_bytes`` incrementally.
 
-    ``await file.read()`` materialises the whole body in RAM *before* the 25 MB
-    service check runs, so an oversized upload costs memory as well as bandwidth.
-    Spooling in 1 MiB chunks (the pattern used by the backup import endpoint)
-    aborts with :class:`MediaSizeError` the moment the cap is crossed.
+    ``await file.read()`` materialises the whole body in RAM *before* any size
+    check runs, so an oversized upload costs memory as well as bandwidth.
+    Spooling in 1 MiB chunks aborts the moment the cap is crossed, raising
+    whatever ``on_overflow(limit)`` builds (:class:`MediaSizeError` by default;
+    the backup/import endpoints pass their own 413 :class:`HTTPException`).
 
     Returns ``(spool_path, size)``. The caller owns the spool file and must
     unlink it (``spool_path.unlink(missing_ok=True)``).
     """
-    upload = tempfile.NamedTemporaryFile(delete=False)
+
+    def _default_overflow(limit: int) -> Exception:
+        return MediaSizeError(f"File exceeds {limit} bytes")
+
+    build_overflow = on_overflow or _default_overflow
+    upload = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     path = Path(upload.name)
     written = 0
     try:
@@ -183,7 +209,7 @@ async def spool_upload(file: UploadFile, max_bytes: int) -> tuple[Path, int]:
             if not chunk:
                 break
             if written + len(chunk) > max_bytes:
-                raise MediaSizeError(f"File exceeds {max_bytes} bytes")
+                raise build_overflow(max_bytes)
             upload.write(chunk)
             written += len(chunk)
         upload.flush()
@@ -328,11 +354,10 @@ class MediaService:
         """Shared upload gate: size cap, MIME allowlist and filename sanitising.
 
         Returns the sanitised filename. Magic-number signatures are checked
-        separately (:meth:`_check_signature`) so the streaming path can test just
+        separately (:func:`check_signature`) so the streaming path can test just
         the head bytes instead of the whole payload.
         """
-        if size > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(size)
 
         if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
             raise MediaSizeError(f"File type '{content_type}' not allowed")
@@ -341,21 +366,6 @@ class MediaService:
         if safe_name != filename or ".." in filename or "/" in filename:
             raise MediaSizeError("Invalid filename")
         return safe_name
-
-    @staticmethod
-    def _check_signature(head: bytes, filename: str) -> None:
-        """Reject a head sample of the payload matching a blocked signature."""
-        for sig, label in _BLOCKED_SIGNATURES.items():
-            if head[: len(sig)] == sig:
-                logger.warning("Blocked upload of %s (detected %s)", filename, label)
-                raise MediaSizeError(f"File type not allowed: detected {label}")
-
-    async def _require_entry(self, entry_id: int) -> Entry:
-        result = await self.db.execute(select(Entry).where(Entry.id == entry_id))
-        entry = result.scalar_one_or_none()
-        if not entry:
-            raise NotFoundError(f"Entry {entry_id} not found")
-        return entry
 
     async def _persist_media(
         self,
@@ -390,8 +400,8 @@ class MediaService:
     ) -> Media:
         """Store file on disk and create media record; reject > 25 MB."""
         safe_name = self._validate_upload_meta(filename, content_type, len(file_data))
-        self._check_signature(file_data, filename)
-        entry = await self._require_entry(entry_id)
+        check_signature(file_data, filename)
+        entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         media_type = self._classify_media(content_type)
         final_data = file_data
@@ -449,8 +459,8 @@ class MediaService:
         safe_name = self._validate_upload_meta(filename, content_type, size)
 
         head = await asyncio.to_thread(read_head, src)
-        self._check_signature(head, filename)
-        entry = await self._require_entry(entry_id)
+        check_signature(head, filename)
+        entry = await get_entry_or_raise(self.db, entry_id, include_deleted=True)
 
         media_type = self._classify_media(content_type)
         final_ext = Path(safe_name).suffix or ".bin"

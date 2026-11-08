@@ -1,15 +1,20 @@
 # trash2review — holding pen, not a deletion
 
-Files here were moved by the cleanup pipeline because they looked redundant,
-dead, or superseded. **Nothing has been deleted.** Review at your leisure and
-empty this folder when satisfied.
-
-## Restore a file
+Files moved here by the cleanup pipeline were judged redundant or dead, but
+**nothing is hard-deleted**. Everything here is still in git history and in the
+working tree, just relocated. The human reviews this folder and empties it
+(git rm) or restores files individually:
 
 ```bash
-git mv trash2review/backend/app/old_module.py backend/app/old_module.py
+# restore a file to its original location
+git mv trash2review/<original/relative/path> <original/relative/path>
+
+# permanently remove (only after review)
+git rm -r trash2review
 ```
 
-(Paths are mirrored from their original location under the repo root. Then
-commit the restore. If the pipeline branch has since been merged or rebased,
-restoring onto the branch it came from is easiest.)
+Each file's reason for being moved is logged in `.pipeline/purge-plan.md`.
+
+> **Note:** the `backend/`, `docs/`, and `frontend/` items below were parked by
+> the 2026-10-27 pipeline run and are still awaiting human review. Items added
+> by the 2026-11-08 run are logged separately in that run's purge plan.

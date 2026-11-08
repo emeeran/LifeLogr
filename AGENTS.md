@@ -66,7 +66,11 @@ lifelogr/
 - **DB boot safety:** `core/database` takes a rotating `lifelogr.db.boot-bak-*` snapshot before migrations; if `PRAGMA integrity_check` fails at boot, the newest good snapshot is restored and the corrupt file is quarantined (`_CORRUPT_PREFIX`).
 - Never use silent `except: pass` — always log with context (`logger.warning`).
 - Backup import validates tar members for path traversal before extraction.
-- Soft delete must clean up associated media files (see `entry_service.py`).
+- **Soft delete is restorable trash:** entry/note soft delete keeps media rows
+  and files (restore is lossless). Permanent cleanup happens only in
+  `EntryService.purge` (explicit `DELETE /entries/{id}/purge`, or the daily
+  trash sweep past `TRASH_RETENTION_DAYS`). Any new delete path must unlink
+  files only AFTER the DB commit succeeds.
 - Body size limit: `max_length=1_000_000` on `EntryCreate.body`.
 - **Versioning:** `make bump V=x.y.z` updates `backend/pyproject.toml`, `backend/app/core/config.py` (`APP_VERSION`), `desktop/src-tauri/Cargo.toml`, AND `desktop/src-tauri/tauri.conf.json` together (these drive the `.deb`/AppImage filename). The About tab shows the version injected at **frontend build time** via `VITE_APP_VERSION` (see `frontend/src/version.ts`); the build passes it from `Cargo.toml` (`desktop/Makefile` + `.github/workflows/build.yml`), so the UI always matches the bundle without waiting for the backend. The backend's `APP_VERSION` (via `/api/v1/settings`) is the API-consumer source of truth. The `.deb` build auto-generates a `SECRET_KEY`.
 - **AI tools are registry-driven:** the editor's AI tools are defined once in `frontend/src/composables/aiToolRegistry.ts` (id/label/icon/endpoint/resultField/param). The AI drawer, right-click context menu, and `useAiTools` composable all iterate it — no per-tool boilerplate. Tools backed by the generic `POST /api/v1/ai/tool/{tool_id}` endpoint also need a prompt builder added to `backend/app/services/ai_tool_registry.py`.

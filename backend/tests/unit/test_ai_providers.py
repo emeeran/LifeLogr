@@ -17,7 +17,6 @@ def _clear_active_cache():
     invalidate_active_cache()
 
 
-@pytest.mark.asyncio
 async def test_create_provider_hides_key_and_activates(client):
     r = await client.post(
         "/api/v1/ai/providers",
@@ -41,7 +40,6 @@ async def test_create_provider_hides_key_and_activates(client):
     assert all("api_key" not in p and "api_key_encrypted" not in p for p in providers)
 
 
-@pytest.mark.asyncio
 async def test_activate_is_exclusive(client, db_session):
     a = await AIProviderService(db_session).create(
         AIProviderCreate(name="A", preset="openai", base_url="https://a/v1", model="m", is_active=True)
@@ -56,7 +54,6 @@ async def test_activate_is_exclusive(client, db_session):
     assert active["is_active"] is True and stale["is_active"] is False
 
 
-@pytest.mark.asyncio
 async def test_cloud_provider_routes_to_openai_endpoint(db_session):
     await AIProviderService(db_session).create(
         AIProviderCreate(
@@ -77,7 +74,6 @@ async def test_cloud_provider_routes_to_openai_endpoint(db_session):
     assert out == "cloud-reply"
 
 
-@pytest.mark.asyncio
 async def test_no_active_provider_falls_back_to_ollama(db_session):
     # No provider created → active is None → native Ollama (/api/generate).
     with respx.mock(base_url="http://localhost:11434") as mock:
@@ -90,7 +86,6 @@ async def test_no_active_provider_falls_back_to_ollama(db_session):
 # ── test_connection / list_models error paths (respx) ────────────────────────
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_connection_returns_reported_model():
     from app.services.ai_provider_service import test_connection
@@ -101,7 +96,6 @@ async def test_connection_returns_reported_model():
     assert await test_connection("https://provider.test/v1", "key", "gpt-x") == "gpt-x"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_connection_raises_on_http_error():
     import httpx
@@ -113,7 +107,6 @@ async def test_connection_raises_on_http_error():
         await test_connection("https://provider.test/v1", "key", "m")
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_connection_raises_on_timeout():
     import httpx
@@ -127,7 +120,6 @@ async def test_connection_raises_on_timeout():
         await test_connection("https://provider.test/v1", "key", "m")
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_connection_without_key_omits_auth_header():
     from app.services.ai_provider_service import test_connection
@@ -137,7 +129,6 @@ async def test_connection_without_key_omits_auth_header():
     assert "Authorization" not in route.calls.last.request.headers
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_list_models_sorts_and_drops_empty_ids():
     from app.services.ai_provider_service import list_models
@@ -151,7 +142,6 @@ async def test_list_models_sorts_and_drops_empty_ids():
     ]
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_list_models_missing_data_returns_empty():
     from app.services.ai_provider_service import list_models
@@ -164,7 +154,6 @@ async def test_list_models_missing_data_returns_empty():
 # ── Retired-model fixups (Groq decommissions) ────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_groq_preset_uses_current_model():
     from app.services.ai_provider_service import PROVIDER_PRESETS
 
@@ -176,7 +165,6 @@ async def test_groq_preset_uses_current_model():
         }
 
 
-@pytest.mark.asyncio
 async def test_fixup_rewrites_retired_models_and_is_idempotent(db_session):
     from app.services.ai_provider_service import apply_deprecated_model_fixups
 
@@ -199,7 +187,6 @@ async def test_fixup_rewrites_retired_models_and_is_idempotent(db_session):
     assert stale.model == "openai/gpt-oss-120b"
 
 
-@pytest.mark.asyncio
 async def test_active_provider_safety_net_rewrites_retired_model(db_session):
     from app.services.ai_provider_service import get_active_provider
 
@@ -218,7 +205,6 @@ async def test_active_provider_safety_net_rewrites_retired_model(db_session):
     assert provider.model == "openai/gpt-oss-20b"
 
 
-@pytest.mark.asyncio
 @respx.mock
 async def test_model_not_found_gets_friendly_error(db_session):
     await AIProviderService(db_session).create(

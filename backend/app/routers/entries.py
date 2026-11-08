@@ -8,7 +8,6 @@ import json
 import logging
 import re
 import secrets
-import tempfile
 import uuid
 import zipfile
 from collections import Counter
@@ -35,6 +34,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import Base, get_db
+from app.core.exceptions import MediaSizeError
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.core.jobs import start_data_job as _start_data_job
 from app.core.jobs import start_export_job
@@ -54,10 +54,13 @@ from app.schemas.entry import (
     ImportSkipReason,
     JournalStatsResponse,
     ResetRequest,
+    TrashItemResponse,
+    TrashListResponse,
 )
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 from app.services.entry_service import EntryService
+from app.services.media_service import check_signature, spool_upload
 from app.services.export_service import (
     ARCHIVE_FORMAT,
     ExportService,
@@ -186,6 +189,39 @@ async def list_entries(
     snippets = await svc.body_snippets([e.id for e in entries])
     return EntryListResponse(
         items=[_to_list_item(e, snippets.get(e.id, "")) for e in entries],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/trash", response_model=TrashListResponse)
+async def list_trash(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """List soft-deleted entries (restorable trash), newest deletion first."""
+    svc = EntryService(db)
+    entries, total = await svc.list_trash(offset, limit)
+    snippets = await svc.body_snippets([e.id for e in entries])
+    return TrashListResponse(
+        items=[
+            TrashItemResponse(
+                id=e.id,
+                entry_date=e.entry_date,
+                title=e.title,
+                body_snippet=snippets.get(e.id, ""),
+                mood=e.mood,
+                is_encrypted=e.is_encrypted,
+                tags=[TagBrief(id=a.tag.id, name=a.tag.name) for a in e.tag_associations if a.tag],
+                media_count=len(e.media),
+                has_recording=len(e.recordings) > 0,
+                deleted_at=e.deleted_at or e.updated_at,
+                created_at=e.created_at,
+            )
+            for e in entries
+        ],
         total=total,
         offset=offset,
         limit=limit,
@@ -376,7 +412,7 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
     the importer rewrites body URLs to.
     """
     from app.models.note import Note, NoteTag
-    from app.services.notes_export_service import _ENCRYPTED_PLACEHOLDER
+    from app.services.notes_export_service import ENCRYPTED_PLACEHOLDER
 
     res = await session.execute(
         select(Note)
@@ -394,7 +430,7 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
         notes.append(
             {
                 "title": n.title,
-                "body": _ENCRYPTED_PLACEHOLDER if n.is_encrypted else (n.body or ""),
+                "body": ENCRYPTED_PLACEHOLDER if n.is_encrypted else (n.body or ""),
                 "is_encrypted": n.is_encrypted,
                 "is_pinned": n.is_pinned,
                 "color": n.color,
@@ -1024,9 +1060,16 @@ async def update_entry(entry_id: int, data: EntryUpdate, db: AsyncSession = Depe
 
 @router.delete("/{entry_id}", status_code=204)
 async def delete_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> None:
-    """Soft-delete an entry and cascade media."""
+    """Soft-delete an entry (restorable trash — media are kept)."""
     svc = EntryService(db)
     await svc.soft_delete(entry_id)
+
+
+@router.delete("/{entry_id}/purge", status_code=204)
+async def purge_entry(entry_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Permanently delete an entry and its media files (no recovery)."""
+    svc = EntryService(db)
+    await svc.purge(entry_id)
 
 
 @router.post("/{entry_id}/restore", response_model=EntryResponse)
@@ -1249,35 +1292,16 @@ def _record_skip(
 
 
 async def _spool_upload(file: UploadFile, max_bytes: int) -> Path:
-    """Spool an upload to a temp file, aborting past ``max_bytes`` with 413.
+    """Spool an upload to a temp file, aborting past ``max_bytes`` with 413."""
 
-    ``await file.read()`` materialises the whole payload in memory; streaming in
-    1 MiB chunks bounds the request's footprint and enforces a hard cap (same
-    pattern as the backup importer).
-    """
-    upload = tempfile.NamedTemporaryFile(
-        delete=False, suffix=Path(file.filename or "import").suffix[:16] or ".bin"
-    )
-    path = Path(upload.name)
-    written = 0
-    try:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"Import file exceeds the {max_bytes}-byte limit.",
-                )
-            upload.write(chunk)
-        upload.flush()
-        upload.close()
-    except Exception:
-        upload.close()
-        path.unlink(missing_ok=True)
-        raise
+    def _too_large(limit: int) -> Exception:
+        return HTTPException(
+            status_code=413,
+            detail=f"Import file exceeds the {limit}-byte limit.",
+        )
+
+    suffix = Path(file.filename or "import").suffix[:16] or ".bin"
+    path, _ = await spool_upload(file, max_bytes, suffix=suffix, on_overflow=_too_large)
     return path
 
 
@@ -1354,10 +1378,8 @@ async def _attach_imported_media(
             )
             continue
         try:
-            from app.services.media_service import MediaService
-
-            MediaService._check_signature(data[:64], filename)
-        except Exception as e:
+            check_signature(data[:64], filename)
+        except MediaSizeError as e:
             logger.warning("Import media %s blocked: %s", filename, e)
             continue
         media_type = (item.get("media_type") or "document").lower()

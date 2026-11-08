@@ -266,7 +266,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_env_files(), env_file_encoding="utf-8")
 
     APP_NAME: str = "LifeLogr"
-    APP_VERSION: str = "0.14.1"  # in-app version; keep in sync with pyproject.toml
+    APP_VERSION: str = "0.15.0"  # in-app version; keep in sync with pyproject.toml
     APP_ENV: str = "development"
     # Network bind host. Defaults to loopback — a privacy-first single-user app
     # must not listen on external interfaces. ``validate_production`` rejects a
@@ -321,6 +321,9 @@ class Settings(BaseSettings):
     # Comma-separated extra roots a local backup may target beyond the defaults
     # (home, app data dir, temp dir) — e.g. "/media,/mnt" for external drives.
     BACKUP_ALLOWED_ROOTS: str = ""
+    # Days a soft-deleted entry stays recoverable before the daily sweep
+    # purges it (and its media files) permanently. 0 disables the sweep.
+    TRASH_RETENTION_DAYS: int = Field(default=30, ge=0)
 
     # Google OAuth 2.0 Credentials
     GOOGLE_CLIENT_ID: str = ""

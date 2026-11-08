@@ -1,9 +1,8 @@
 # LifeLogr — pending tasks
 
-Updated 2026-11-07 after the batch on the `feature/pending-tasks-batch`
-branch (DND-3 remainder, SEC-MEDIA-7 export notes, BLANK-8 + RESIZE-7 e2e,
-DEC-5 issues). IDs and decision context live in
-`docs/plans/2026-11-07-modify-idea-tasks.md`; per-wave tracking now also
+Updated 2026-11-08 after the full verification gate (pytest 1004 · vitest 322 ·
+vue-tsc · eslint · Playwright e2e 13/13, all green). IDs and decision context
+live in `docs/plans/2026-11-07-modify-idea-tasks.md`; per-wave tracking also
 lives in issues #19–#22 on `emeeran/LifeLogr`.
 
 ## Needs the real desktop GUI (manual)
@@ -28,16 +27,20 @@ lives in issues #19–#22 on `emeeran/LifeLogr`.
       overlay). A crashed/killed renderer cannot detect itself — the honest fix
       is a native watchdog in the Tauri shell; needs its own small design. (#20)
 
-## Known unrelated debt
+## Resolved from the previous export (kept for the record)
 
-- `tests/unit/test_main_misc.py::TestSpaCatchAll` — 2 failures introduced by the
-  `e0204e5` stability commit (SPA catch-all returns 404 for client routes);
-  pre-dates the security wave and needs a separate fix.
-- `tests/settings.spec.ts` "Data tab" e2e fails in this environment (Export
-  button never appears) on the unmodified baseline too — needs triage with the
-  dev stack, possibly an overlay/timing issue rather than a regression.
+- ~~`TestSpaCatchAll` backend test failures~~ — green in the 2026-11-08 run
+  (pytest 1004 passed).
+- ~~`tests/settings.spec.ts` "Data tab" e2e failure~~ — two real spec bugs,
+  not environment: the pill sub-nav carries `role="tab"` (spec clicked
+  `role="button"`), and the "Archive ZIP" label shares its element with the
+  "carries" span so `exact: true` never matched. Spec fixed 2026-11-08.
+- **Route-transition blank (the "frequently blank" report)** — fixed
+  2026-11-08 on `fix/route-transition-blank`: `mode="out-in"` on the
+  router-view transition + lazy route chunks left the routed slot a comment
+  placeholder; enter-only fade now, BLANK-9 e2e guards it.
 
-## Done in this batch (was open in the previous export)
+## Done in the 2026-11-07 batch
 
 - **DND-3 remainder** — `notes.sort_order` (inline migration, `_SCHEMA_VERSION`
   4), batch `POST /notes/reorder` + `POST /notes/folders/reorder`, between-row

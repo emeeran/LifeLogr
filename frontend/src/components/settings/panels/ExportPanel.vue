@@ -24,7 +24,7 @@ import {
 import SettingsSection from '../shared/SettingsSection.vue'
 import SButton from '../shared/SButton.vue'
 import OperationProgress from '../../common/OperationProgress.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -70,7 +70,7 @@ async function guard(label: string, fn: () => Promise<void>) {
   try {
     await fn()
   } catch (e: unknown) {
-    emit('toast', 'error', `${label} failed: ${errMsg(e)}`)
+    emit('toast', 'error', `${label} failed: ${errorMessage(e)}`)
   }
 }
 
@@ -224,8 +224,7 @@ async function downloadNotesJson() {
 }
 async function downloadNotesHtml() {
   exportLabel.value = 'Notes HTML export'
-  const resp = await fetch(notesApi.exportHtmlUrl())
-  const html = await resp.text()
+  const html = await notesApi.exportHtml()
   const blob = new Blob([html], { type: 'text/html' })
   await saveFile({
     data: blob,

@@ -162,6 +162,6 @@ async def oauth_callback(
     # 4. Render success page.
     return success_page(
         "Google Drive Connected!",
-        "🎉",
+        "✅",
         "LifeLogr is now connected to your Google Drive account.",
     )
