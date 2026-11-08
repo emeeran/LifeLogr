@@ -152,7 +152,7 @@ describe('EntryEditor mount', () => {
       const { makeEntryMock } = await import('../../test-utils/apiMocks')
       // Entry 43's fetch hangs: the switch's load window stays open, so the
       // (unfixed) stale autosave timer fires while the buffers are cleared.
-      let release43: ((v: unknown) => void) | null = null
+      let release43!: (v: unknown) => void
       const gate43 = new Promise((resolve) => {
         release43 = resolve
       })
@@ -212,7 +212,7 @@ describe('EntryEditor mount', () => {
 
       expect(entriesApi.update).not.toHaveBeenCalled()
       wrapper.unmount()
-      release43?.(makeEntryMock({ id: 43, body: 'entry 43 text' }))
+      release43(makeEntryMock({ id: 43, body: 'entry 43 text' }))
       await flushPromises()
     } finally {
       vi.useRealTimers()
