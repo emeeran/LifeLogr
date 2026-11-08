@@ -16,7 +16,7 @@ from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.entry import Entry
 from app.models.video_note import VideoNote
 from app.services import media_crypto
-from app.services.media_service import _BLOCKED_SIGNATURES, read_head
+from app.services.media_service import _BLOCKED_SIGNATURES, ensure_within_media_cap, read_head
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,7 @@ class VideoService:
         """Upload a video file and create a VideoNote record."""
         entry = await self._get_entry(entry_id)
 
-        if len(data) > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"Video exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(len(data))
         if not content_type.startswith("video/"):
             raise MediaSizeError(
                 f"File type '{content_type}' not allowed; only video/* is accepted"
@@ -87,8 +86,7 @@ class VideoService:
         entry = await self._get_entry(entry_id)
 
         size = (await asyncio.to_thread(src.stat)).st_size
-        if size > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"Video exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(size)
         if not content_type.startswith("video/"):
             raise MediaSizeError(
                 f"File type '{content_type}' not allowed; only video/* is accepted"

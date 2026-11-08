@@ -25,6 +25,7 @@ from app.services.media_service import (
     _BLOCKED_SIGNATURES,
     _CONVERTIBLE_IMAGE_TYPES,
     MediaService,
+    ensure_within_media_cap,
     read_head,
     validate_import_path,
 )
@@ -69,8 +70,7 @@ class NoteMediaService:
         caption: str | None = None,
     ) -> NoteMedia:
         """Store file on disk under MEDIA_DIR/notes/ and create a NoteMedia record."""
-        if len(file_data) > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(len(file_data))
 
         if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
             raise MediaSizeError(f"File type '{content_type}' not allowed")
@@ -138,8 +138,7 @@ class NoteMediaService:
         """
         if size is None:
             size = (await asyncio.to_thread(src.stat)).st_size
-        if size > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(size)
         if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
             raise MediaSizeError(f"File type '{content_type}' not allowed")
         safe_name = Path(filename).name

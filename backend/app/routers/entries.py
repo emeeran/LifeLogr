@@ -8,7 +8,6 @@ import json
 import logging
 import re
 import secrets
-import tempfile
 import uuid
 import zipfile
 from collections import Counter
@@ -58,6 +57,7 @@ from app.schemas.entry import (
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
 from app.services.entry_service import EntryService
+from app.services.media_service import spool_upload
 from app.services.export_service import (
     ARCHIVE_FORMAT,
     ExportService,
@@ -1249,35 +1249,16 @@ def _record_skip(
 
 
 async def _spool_upload(file: UploadFile, max_bytes: int) -> Path:
-    """Spool an upload to a temp file, aborting past ``max_bytes`` with 413.
+    """Spool an upload to a temp file, aborting past ``max_bytes`` with 413."""
 
-    ``await file.read()`` materialises the whole payload in memory; streaming in
-    1 MiB chunks bounds the request's footprint and enforces a hard cap (same
-    pattern as the backup importer).
-    """
-    upload = tempfile.NamedTemporaryFile(
-        delete=False, suffix=Path(file.filename or "import").suffix[:16] or ".bin"
-    )
-    path = Path(upload.name)
-    written = 0
-    try:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            written += len(chunk)
-            if written > max_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"Import file exceeds the {max_bytes}-byte limit.",
-                )
-            upload.write(chunk)
-        upload.flush()
-        upload.close()
-    except Exception:
-        upload.close()
-        path.unlink(missing_ok=True)
-        raise
+    def _too_large(limit: int) -> Exception:
+        return HTTPException(
+            status_code=413,
+            detail=f"Import file exceeds the {limit}-byte limit.",
+        )
+
+    suffix = Path(file.filename or "import").suffix[:16] or ".bin"
+    path, _ = await spool_upload(file, max_bytes, suffix=suffix, on_overflow=_too_large)
     return path
 
 

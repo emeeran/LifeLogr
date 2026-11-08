@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 from fastapi import UploadFile
@@ -163,18 +163,36 @@ def read_head(path: Path, n: int = _MAX_SIGNATURE_LEN) -> bytes:
         return f.read(n)
 
 
-async def spool_upload(file: UploadFile, max_bytes: int) -> tuple[Path, int]:
+def ensure_within_media_cap(size: int) -> None:
+    """Raise :class:`MediaSizeError` if ``size`` exceeds the per-file media cap."""
+    if size > settings.MAX_MEDIA_SIZE_BYTES:
+        raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+
+
+async def spool_upload(
+    file: UploadFile,
+    max_bytes: int,
+    *,
+    suffix: str = "",
+    on_overflow: Callable[[int], Exception] | None = None,
+) -> tuple[Path, int]:
     """Stream an ``UploadFile`` to a temp file, enforcing ``max_bytes`` incrementally.
 
-    ``await file.read()`` materialises the whole body in RAM *before* the 25 MB
-    service check runs, so an oversized upload costs memory as well as bandwidth.
-    Spooling in 1 MiB chunks (the pattern used by the backup import endpoint)
-    aborts with :class:`MediaSizeError` the moment the cap is crossed.
+    ``await file.read()`` materialises the whole body in RAM *before* any size
+    check runs, so an oversized upload costs memory as well as bandwidth.
+    Spooling in 1 MiB chunks aborts the moment the cap is crossed, raising
+    whatever ``on_overflow(limit)`` builds (:class:`MediaSizeError` by default;
+    the backup/import endpoints pass their own 413 :class:`HTTPException`).
 
     Returns ``(spool_path, size)``. The caller owns the spool file and must
     unlink it (``spool_path.unlink(missing_ok=True)``).
     """
-    upload = tempfile.NamedTemporaryFile(delete=False)
+
+    def _default_overflow(limit: int) -> Exception:
+        return MediaSizeError(f"File exceeds {limit} bytes")
+
+    build_overflow = on_overflow or _default_overflow
+    upload = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     path = Path(upload.name)
     written = 0
     try:
@@ -183,7 +201,7 @@ async def spool_upload(file: UploadFile, max_bytes: int) -> tuple[Path, int]:
             if not chunk:
                 break
             if written + len(chunk) > max_bytes:
-                raise MediaSizeError(f"File exceeds {max_bytes} bytes")
+                raise build_overflow(max_bytes)
             upload.write(chunk)
             written += len(chunk)
         upload.flush()
@@ -331,8 +349,7 @@ class MediaService:
         separately (:meth:`_check_signature`) so the streaming path can test just
         the head bytes instead of the whole payload.
         """
-        if size > settings.MAX_MEDIA_SIZE_BYTES:
-            raise MediaSizeError(f"File exceeds {settings.MAX_MEDIA_SIZE_BYTES} bytes")
+        ensure_within_media_cap(size)
 
         if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
             raise MediaSizeError(f"File type '{content_type}' not allowed")
