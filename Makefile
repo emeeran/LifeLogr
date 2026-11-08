@@ -21,7 +21,7 @@ help:
 	@echo "  make check        Everything CI runs (backend + frontend)"
 	@echo "  make run          Start dev server"
 	@echo "  make bump V=x    Bump version in all 5 places"
-	@echo "  make check-version  Verify all 4 version sources match"
+	@echo "  make check-version  Verify all 5 version sources match"
 	@echo "  make docs-check     Verify docs don't reference a stale version"
 	@echo "  make clean        Remove __pycache__ and .pytest_cache"
 	@echo ""

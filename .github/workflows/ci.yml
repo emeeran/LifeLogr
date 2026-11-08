@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: All four version sources must agree
+      - name: All five version sources must agree
         run: python scripts/check_version.py
 
   # Compile the Tauri/Rust shell on every PR — a Rust break otherwise only
