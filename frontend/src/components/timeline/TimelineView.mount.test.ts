@@ -6,47 +6,28 @@ import { createPinia, setActivePinia } from 'pinia'
  * Mount smoke test for TimelineView — setup-order / mount-crash guard.
  */
 
-vi.mock('../../api/entries', () => ({
-  entriesApi: {
-    list: vi.fn(async () => ({ items: [], total: 0 })),
-    calendarMonth: vi.fn(async () => []),
-    get: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../api/entries', async () => {
+  const { makeEntriesApiMock } = await import('../../test-utils/apiMocks')
+  // get/create/update stay unresolved: nothing in this view should wait on them.
+  return {
+    entriesApi: makeEntriesApiMock({ get: vi.fn(), create: vi.fn(), update: vi.fn() }),
+  }
+})
 
-vi.mock('../../api/media', () => ({
-  mediaApi: {
-    listByEntry: vi.fn(async () => []),
-    listAll: vi.fn(async () => ({ items: [], total: 0 })),
-    fileUrl: vi.fn(() => ''),
-    upload: vi.fn(),
-    uploadFromPath: vi.fn(),
-    extractText: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../api/media', async () => {
+  const { makeMediaApiMock } = await import('../../test-utils/apiMocks')
+  return { mediaApi: makeMediaApiMock() }
+})
 
-vi.mock('../../api/tags', () => ({
-  tagsApi: {
-    list: vi.fn(async () => []),
-    tree: vi.fn(async () => []),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../api/tags', async () => {
+  const { makeTagsApiMock } = await import('../../test-utils/apiMocks')
+  return { tagsApi: makeTagsApiMock() }
+})
 
-vi.mock('../../api/templates', () => ({
-  templatesApi: {
-    list: vi.fn(async () => []),
-    create: vi.fn(),
-    update: vi.fn(),
-    remove: vi.fn(),
-  },
-}))
+vi.mock('../../api/templates', async () => {
+  const { makeTemplatesApiMock } = await import('../../test-utils/apiMocks')
+  return { templatesApi: makeTemplatesApiMock() }
+})
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
   return {

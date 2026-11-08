@@ -15,99 +15,45 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
 }))
 
-vi.mock('../../api/entries', () => ({
-  entriesApi: {
-    calendarMonth: vi.fn(async () => []),
-    // A minimal well-formed entry: `loadEntry` reads tags/body/mood/template_id
-    // off it, and `{}` here used to throw an unhandled rejection after save().
-    get: vi.fn(async () => ({
-      id: 7,
-      entry_date: '2026-11-07',
-      title: null,
-      body: '',
-      summary: null,
-      mood: '',
-      is_deleted: false,
-      is_encrypted: false,
-      tags: [],
-      events: [],
-      media_count: 0,
-      has_recording: false,
-      created_at: '',
-      updated_at: '',
-      template_id: null,
-    })),
-    list: vi.fn(async () => ({ items: [], total: 0 })),
-    create: mocks.create,
-    update: mocks.update,
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../api/entries', async () => {
+  const { makeEntriesApiMock } = await import('../../test-utils/apiMocks')
+  return { entriesApi: makeEntriesApiMock({ create: mocks.create, update: mocks.update }) }
+})
 
-// The editor prewarms TTS after a successful save; without this mock the
-// request hits the default origin and pollutes the run with ECONNREFUSED.
-vi.mock('../../api/tts', () => ({
-  ttsApi: {
-    entryAudioUrl: vi.fn(async () => ''),
-    speakUrl: vi.fn(async () => ({ key: '' })),
-    fileUrl: vi.fn(() => ''),
-    prewarmEntry: vi.fn(async () => undefined),
-    prewarmText: vi.fn(async () => undefined),
-  },
-}))
+vi.mock('../../api/tts', async () => {
+  const { makeTtsApiMock } = await import('../../test-utils/apiMocks')
+  return { ttsApi: makeTtsApiMock() }
+})
 
-vi.mock('../../api/media', () => ({
-  mediaApi: {
-    upload: vi.fn(),
-    uploadFromPath: vi.fn(),
-    extractText: vi.fn(),
-    fileUrl: vi.fn(() => ''),
-    listByEntry: vi.fn(async () => []),
-    listAll: vi.fn(async () => ({ items: [], total: 0 })),
-    delete: vi.fn(),
-    get: vi.fn(),
-  },
-}))
+vi.mock('../../api/media', async () => {
+  const { makeMediaApiMock } = await import('../../test-utils/apiMocks')
+  return { mediaApi: makeMediaApiMock() }
+})
 
-vi.mock('../../api/ai', () => ({
-  aiStatus: vi.fn(async () => ({ ollama_available: false, model_loaded: false })),
-  suggestTags: vi.fn(async () => ({ tags: [] })),
-}))
+vi.mock('../../api/ai', async () => {
+  const { makeAiMocks } = await import('../../test-utils/apiMocks')
+  return makeAiMocks()
+})
 
-vi.mock('../../api/encryption', () => ({
-  encryptText: vi.fn(async () => ({ encrypted: '' })),
-  decryptText: vi.fn(async () => ({ decrypted: '' })),
-}))
+vi.mock('../../api/encryption', async () => {
+  const { makeEncryptionMocks } = await import('../../test-utils/apiMocks')
+  return makeEncryptionMocks()
+})
 
-vi.mock('../../api/recordings', () => ({
-  recordingsApi: {
-    upload: vi.fn(),
-    start: vi.fn(async () => undefined),
-    stop: vi.fn(async () => ({ id: 1 })),
-    listByEntry: vi.fn(async () => []),
-    get: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../api/recordings', async () => {
+  const { makeRecordingsApiMock } = await import('../../test-utils/apiMocks')
+  return { recordingsApi: makeRecordingsApiMock() }
+})
 
-vi.mock('../../api/templates', () => ({
-  templatesApi: {
-    list: vi.fn(async () => []),
-    create: vi.fn(),
-    update: vi.fn(),
-    remove: vi.fn(),
-  },
-}))
+vi.mock('../../api/templates', async () => {
+  const { makeTemplatesApiMock } = await import('../../test-utils/apiMocks')
+  return { templatesApi: makeTemplatesApiMock() }
+})
 
-vi.mock('../../api/tags', () => ({
-  tagsApi: {
-    list: vi.fn(async () => []),
-    tree: vi.fn(async () => []),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-}))
+vi.mock('../../api/tags', async () => {
+  const { makeTagsApiMock } = await import('../../test-utils/apiMocks')
+  return { tagsApi: makeTagsApiMock() }
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
