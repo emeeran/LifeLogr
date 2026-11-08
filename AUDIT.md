@@ -20,34 +20,29 @@ calling the data-safety story done.
 
 ## Blockers (must fix before prod)
 
-- [ ] `backend/app/services/entry_service.py:302-332` — **soft-delete
-  hard-deletes all media + voice recordings immediately at trash time** (files
-  unlinked; `VoiceRecording` rows cascade away via `models/recording.py:30`).
-  `restore()` recovers only text; the notes flow keeps attachments and is
-  lossless, so entries and notes have contradictory trash semantics, and the
-  restore endpoint (`routers/entries.py:1033`) has no frontend caller. A user
-  tapping delete expecting trash loses photos/audio permanently. Either defer
-  media cleanup to purge (matching notes) or warn loudly in the UI.
-- [ ] `backend/app/services/scheduler_service.py:761-834` — **scheduled local
-  backups are invisible to the shutdown guard and written directly to their
-  final filename.** `_run_backup` registers no job-registry entry and no
-  in-progress `BackupSnapshot`, so `GET /system/shutdown-state` reads "not
-  busy" and the desktop shell SIGTERMs (2 s) → SIGKILLs (2.5 s) mid-tar; and
-  `tarfile.open(archive_path, "w:gz")` writes straight to
-  `lifelogr-backup-<ts>.tar.gz`, leaving a truncated archive that retention
-  counting still glob-counts. Cloud backups stage via mkstemp + in-progress
-  row and are protected — the local path needs the same staging + registry
-  entry (`.part` + `os.replace`).
+- [x] **RESOLVED 2026-11-08** — `backend/app/services/entry_service.py` —
+  soft-delete no longer touches media: delete is restorable trash, `purge()`
+  (explicit `DELETE /entries/{id}/purge`, behind the destructive-origin guard)
+  is the only destructive path, and a daily scheduler sweep purges entries
+  past `TRASH_RETENTION_DAYS` (default 30; 0 disables). Media, video-note
+  files, and recordings all unlink only after commit; bulk sweep is
+  set-based. Tests: `tests/unit/test_entry_trash.py`. **Follow-up (UI):** the
+  restore/purge endpoints have no frontend caller yet — a trash view is the
+  remaining piece of this fix.
+- [x] **RESOLVED 2026-11-08** — `backend/app/services/scheduler_service.py`
+  `_run_backup` — packs to a `.part` file and `os.replace`s into place (a
+  kill mid-tar can no longer leave a truncated archive under the retention
+  glob; stale `.part` files are swept daily), and registers in the job
+  registry when no caller reporter is passed, so `GET /system/shutdown-state`
+  sees scheduled local backups and the window-close guard engages. Tests:
+  `TestLocalBackupStaging` in `tests/unit/test_scheduler_service.py`.
 
 ## High priority
 
-- [ ] `backend/app/main.py:363` + `backend/app/routers/backup.py:345` —
-  `POST /api/v1/backup/import` is a multipart simple-request (no CORS
-  preflight) and is absent from `_DESTRUCTIVE_PATHS`, so a hostile page on any
-  other loopback port can swap the live DB — including the `settings` table,
-  letting it re-point AI `base_url`s and harvest stored API keys on the next
-  AI call. Add it (and `/restore`) to the strict-origin/destructive guard
-  that `/entries/reset` gets.
+- [x] **RESOLVED 2026-11-08** — `backend/app/main.py` — `/api/v1/backup/import`
+  and `/api/v1/backup/restore` added to `_DESTRUCTIVE_PATHS`, and the new
+  per-entry `DELETE /entries/{id}/purge` matches via `_is_destructive_path`.
+  Tests: `TestBackupAndPurgeCoverage` in `tests/unit/test_reset_guard.py`.
 - [ ] `backend/app/routers/entries.py:197-204,176-177,253,255,512-514` —
   malformed query/path params (`month=13`, `year=0`, `start_date=oops`) raise
   `ValueError` → generic 500 instead of 422; `tag_ids` parsing
