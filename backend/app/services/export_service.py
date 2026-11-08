@@ -31,6 +31,27 @@ logger = logging.getLogger(__name__)
 ENCRYPTED_NOTE_TEXT = "Attachments of this encrypted entry are omitted from exports."
 
 
+def stage_export_file(suffix: str = ".export") -> Path:
+    """Create a staged export file under ``DATA_DIR/tmp`` and return its path.
+
+    Archives are written straight to disk instead of a BytesIO: a media-heavy
+    export deflated into memory can OOM the process serving the UI (recorded
+    incidents). System /tmp is off-limits too — tmpfs on Ubuntu 24.04, so the
+    archive would land in RAM anyway. The caller owns deletion (served then
+    unlinked, or claimed by the job result).
+    """
+    import os
+    import tempfile
+
+    from app.core.config import settings
+
+    tmp_dir = settings.DATA_DIR / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(suffix=suffix, dir=str(tmp_dir))
+    os.close(fd)
+    return Path(path)
+
+
 def _skip_encrypted_media(entry: Entry, media: Any, fmt: str) -> None:
     """Log one skipped attachment of an encrypted entry (media never exports).
 
@@ -190,8 +211,11 @@ class ExportService:
         start_date: date | None = None,
         end_date: date | None = None,
         report: ProgressReporter = noop_reporter,
-    ) -> bytes:
+    ) -> Path:
         """Export entries as an HTML archive ZIP with media attachments.
+
+        Returns the staged file under ``DATA_DIR/tmp`` — caller serves and
+        unlinks it.
 
         ``website/index.html`` holds every entry (same styling as
         :meth:`export_html`); attachments are copied to
@@ -221,19 +245,19 @@ class ExportService:
         # same as the Markdown vault path.
         return await asyncio.to_thread(self._build_html_zip, entries, report)
 
-    def _build_html_zip(self, entries: list[Entry], report: ProgressReporter = noop_reporter) -> bytes:
+    def _build_html_zip(self, entries: list[Entry], report: ProgressReporter = noop_reporter) -> Path:
         """Synchronously assemble the HTML archive ZIP for ``entries``.
 
         Same-day entries sharing an attachment filename would silently
         overwrite each other (the Markdown vault path has this latent issue) —
         later collisions get an ``<id>-`` prefix instead.
         """
-        import io
         import zipfile
 
         from app.core.config import settings
 
-        zip_buffer = io.BytesIO()
+        out_path = stage_export_file()
+        out_file = out_path.open("wb")
         used_attachment_paths: set[str] = set()
         parts: list[str] = []
         attachment_total = sum(
@@ -246,7 +270,7 @@ class ExportService:
         attachment_done = 0
         if report is not None:
             report("render", 0, len(entries))
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for entry_index, entry in enumerate(entries):
                 body = entry.body or ""
                 body_html = self._md.render(body)
@@ -300,7 +324,7 @@ class ExportService:
             content = "\n".join(parts)
             page = _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
             zip_file.writestr("website/index.html", page.encode("utf-8"))
-        return zip_buffer.getvalue()
+        return out_path
 
     async def export_pdf(
         self, start_date: date | None = None, end_date: date | None = None
@@ -394,8 +418,8 @@ class ExportService:
 
     async def export_markdown(
         self, start_date: date | None = None, end_date: date | None = None
-    ) -> bytes:
-        """Export entries as an Obsidian-compatible Markdown vault bundled inside a ZIP file."""
+    ) -> Path:
+        """Export entries as an Obsidian vault ZIP, staged under DATA_DIR/tmp."""
         from sqlalchemy.orm import selectinload
 
         q = (
@@ -420,7 +444,7 @@ class ExportService:
         # (plus markdown per entry) — CPU + blocking file I/O, so offload it.
         return await asyncio.to_thread(self._build_markdown_zip, entries)
 
-    def _build_markdown_zip(self, entries: list[Entry]) -> bytes:
+    def _build_markdown_zip(self, entries: list[Entry]) -> Path:
         """Synchronously assemble the Obsidian vault ZIP for ``entries``.
 
         Multiple entries can share one ``entry_date``, so the naive
@@ -428,14 +452,14 @@ class ExportService:
         first for that day (data loss in the export). The first entry of a date
         keeps the legacy path; any further same-day entry gets ``<date>-<id>.md``.
         """
-        import io
         import zipfile
 
         from app.core.config import settings
 
-        zip_buffer = io.BytesIO()
+        out_path = stage_export_file()
+        out_file = out_path.open("wb")
         used_paths: set[str] = set()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for entry in entries:
                 # 1. Gather tags
                 tags = [assoc.tag.name for assoc in entry.tag_associations if assoc.tag]
@@ -514,7 +538,7 @@ class ExportService:
                 used_paths.add(zip_md_path)
                 zip_file.writestr(zip_md_path, full_markdown.encode("utf-8"))
 
-        return zip_buffer.getvalue()
+        return out_path
 
     @staticmethod
     def _dump_yaml(data: dict[str, object]) -> str:
@@ -599,25 +623,23 @@ def _markdown_to_diarium_html(body: str) -> str:
 
 async def build_diarium_database(
     entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
-    """Build a Diarium-native .diary SQLite database (as bytes) from entries.
+) -> Path:
+    """Build a Diarium-native .diary SQLite database, staged under DATA_DIR/tmp.
 
-    ``entries`` must have ``tag_associations`` loaded (selectinload). Returns the
-    serialized SQLite file so the caller can wrap it in a StreamingResponse.
-    The SQLite build is CPU-bound, so it runs in a worker thread.
+    ``entries`` must have ``tag_associations`` loaded (selectinload). Returns
+    the staged file so the caller can serve it as a FileResponse (the SQLite
+    build is CPU-bound, so it runs in a worker thread).
     """
     return await asyncio.to_thread(_build_diarium_database_sync, entries, report)
 
 
 def _build_diarium_database_sync(
     entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
+) -> Path:
     """Synchronously serialize ``entries`` into the Diarium SQLite schema."""
     import sqlite3
-    import tempfile
     from datetime import date as date_type
     from datetime import datetime, timezone
-    from pathlib import Path
 
     from app.core.config import settings
 
@@ -754,14 +776,12 @@ def _build_diarium_database_sync(
         # Serialize to a binary SQLite file. conn.serialize()/iterdump() aren't
         # available under pysqlite3 (the frozen-build FTS5 swap), so backup() to
         # a file connection (works in both stdlib sqlite3 and pysqlite3).
-        tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
-        tmp.close()
-        try:
-            with sqlite3.connect(tmp.name) as out:
-                conn.backup(out)
-            return Path(tmp.name).read_bytes()
-        finally:
-            Path(tmp.name).unlink(missing_ok=True)
+        # The backup target is the staged file itself — written straight to
+        # disk, never held in RAM.
+        out_path = stage_export_file(".diary")
+        with sqlite3.connect(str(out_path)) as out:
+            conn.backup(out)
+        return out_path
     finally:
         conn.close()
 
@@ -815,8 +835,10 @@ def _dayone_photo_type(media: Any) -> tuple[str, str]:
 
 async def build_dayone_zip(
     entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
-    """Build a Day One JSON export ZIP (as bytes) for Diarium's migration import.
+) -> Path:
+    """Build a Day One JSON export ZIP, staged under DATA_DIR/tmp.
+
+    Returns the staged file for Diarium's migration import.
 
     ``entries`` must have ``tag_associations`` and ``media`` loaded. Diarium
     imports this via Settings → Migrate from other app → Day One, which **adds**
@@ -829,9 +851,8 @@ async def build_dayone_zip(
 
 def _build_dayone_zip_sync(
     entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
+) -> Path:
     import hashlib
-    import io
     import json
     import zipfile
     from uuid import NAMESPACE_URL, uuid5
@@ -850,8 +871,9 @@ def _build_dayone_zip_sync(
     written_media: set[str] = set()
     items: list[dict[str, Any]] = []
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    out_path = stage_export_file()
+    out_file = out_path.open("wb")
+    with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
         for index, entry in enumerate(entries):
             if entry.is_encrypted:
                 skipped_encrypted += 1
@@ -930,7 +952,7 @@ def _build_dayone_zip_sync(
         zf.writestr(
             "Journal.json", json.dumps(document, indent=2, ensure_ascii=False).encode("utf-8")
         )
-    return buf.getvalue()
+    return out_path
 
 
 # ── Daylio CSV export (Diarium's supported migration import) ────────────────
@@ -946,9 +968,11 @@ _MOOD_TO_DAYLIO = {"awful": "awful", "bad": "bad", "meh": "meh", "good": "good",
 
 def build_markdown_zip(
     entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
-    """Diarium-compatible markdown vault ZIP; *report* gets render/media ticks."""
-    buf = io.BytesIO()
+) -> Path:
+    """Diarium-compatible markdown vault ZIP, staged under DATA_DIR/tmp;
+    *report* gets render/media ticks."""
+    out_path = stage_export_file()
+    out_file = out_path.open("wb")
     media_total = sum(
         1
         for e in entries
@@ -959,7 +983,7 @@ def build_markdown_zip(
     media_done = 0
     if report is not None:
         report("render", 0, len(entries))
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
         for entry_index, entry in enumerate(entries):
             tags = [a.tag.name for a in entry.tag_associations if a.tag]
             # YAML frontmatter (Diarium-compatible)
@@ -1018,8 +1042,7 @@ def build_markdown_zip(
             "exported_entries": len(entries),
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-    buf.seek(0)
-    return buf.getvalue()
+    return out_path
 
 def build_daylio_csv(entries: list[Entry]) -> bytes:
     """Serialize entries into Daylio CSV text (as bytes) for Diarium import.
@@ -1030,7 +1053,6 @@ def build_daylio_csv(entries: list[Entry]) -> bytes:
     the content in tags.
     """
     import csv as csv_mod
-    import io
 
     buf = io.StringIO(newline="")
     writer = csv_mod.writer(buf)
@@ -1078,7 +1100,7 @@ def build_archive(
     entries: list[Entry],
     notes: list[dict[str, Any]] | None = None,
     report: ProgressReporter = noop_reporter,
-) -> bytes:
+) -> Path:
     """Serialize entries (+ optionally notes) and their media into the archive ZIP.
 
     ``entries`` must have ``tag_associations``, ``media`` and ``events``
@@ -1089,7 +1111,6 @@ def build_archive(
     *report* (optional) gets (phase, done, total) — "media" per file, then
     "finalize" for the JSON document.
     """
-    import io
     import json as json_mod
     import zipfile
 
@@ -1111,8 +1132,9 @@ def build_archive(
     if report is not None:
         report("media", 0, media_total)
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    out_path = stage_export_file()
+    out_file = out_path.open("wb")
+    with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
         doc_entries = []
         for entry in entries:
             tags = [a.tag.name for a in entry.tag_associations if a.tag and a.tag.name]
@@ -1180,4 +1202,4 @@ def build_archive(
         if report is not None:
             report("finalize", 1, 1)
         zf.writestr("lifelogr.json", json_mod.dumps(doc, ensure_ascii=False, indent=2))
-    return buf.getvalue()
+    return out_path

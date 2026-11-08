@@ -6,8 +6,9 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.core.database import get_db
 from app.services.export_service import ExportService
@@ -52,17 +53,23 @@ async def export_pdf(
     )
 
 
-@router.get("/markdown")
-async def export_markdown(
+@router.get("/obsidian-vault")
+async def export_obsidian_vault(
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
-) -> Response:
-    """Export entries as an Obsidian-compatible Markdown ZIP vault."""
+) -> FileResponse:
+    """Export entries as an Obsidian-compatible Markdown ZIP vault.
+
+    Lives at its own path: this router used to register ``/export/markdown``
+    after the entries router, whose markdown export shadowed it — the documented
+    Obsidian endpoint silently returned the Diarium markdown format instead.
+    """
     svc = ExportService(db)
-    zip_bytes = await svc.export_markdown(start_date, end_date)
-    return Response(
-        content=zip_bytes,
+    staged = await svc.export_markdown(start_date, end_date)
+    return FileResponse(
+        path=staged,
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=lifelogr-obsidian-vault.zip"},
+        filename="lifelogr-obsidian-vault.zip",
+        background=BackgroundTask(staged.unlink, True),
     )

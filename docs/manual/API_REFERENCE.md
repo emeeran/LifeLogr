@@ -441,7 +441,7 @@ Whole-journal document exports (in addition to the per-format entry exports unde
 |---|---|---|
 | `GET` | `/export/html?start_date=…&end_date=…` | Styled single HTML document |
 | `GET` | `/export/pdf?start_date=…&end_date=…` | PDF (desktop — bundled fpdf2) |
-| `GET` | `/export/markdown` | Obsidian-compatible Markdown ZIP |
+| `GET` | `/export/obsidian-vault` | Obsidian-compatible Markdown ZIP (formerly `/export/markdown`, which was shadowed by the entries router and never reachable) |
 
 > Exports never include encrypted content in cleartext.
 

@@ -70,7 +70,8 @@ class TestArchiveExportProgress:
         events, report = _collector()
         data = build_archive([_fake_entry(tmp_path, 2)], report=report)
 
-        assert data[:2] == b"PK"  # a real zip
+        assert data.read_bytes()[:2] == b"PK"  # a real zip
+        data.unlink(missing_ok=True)
         phases = [p for p, _, _ in events]
         assert phases[0] == "media"
         assert phases[-1] == "finalize"
@@ -86,7 +87,8 @@ class TestArchiveExportProgress:
         events, report = _collector()
         data = build_archive([_fake_entry(tmp_path, 0)], report=report)
 
-        assert data[:2] == b"PK"
+        assert data.read_bytes()[:2] == b"PK"
+        data.unlink(missing_ok=True)
         assert ("media", 0, 0) in events
         assert events[-1] == ("finalize", 1, 1)
         # total=0 → the registry reports percent=None (indeterminate), never 0/0.

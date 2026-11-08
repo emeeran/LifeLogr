@@ -55,8 +55,8 @@ async def test_markdown_zips_omit_encrypted_entry_attachments(
 ) -> None:
     entry = await _seed_encrypted_entry_with_photo(client, db_session)
 
-    # Obsidian vault export (/api/v1/export/markdown) + frontmatter note.
-    r = await client.get("/api/v1/export/markdown")
+    # Obsidian vault export (/api/v1/export/obsidian-vault) + frontmatter note.
+    r = await client.get("/api/v1/export/obsidian-vault")
     assert r.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     assert not any(

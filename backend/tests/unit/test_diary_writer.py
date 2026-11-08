@@ -9,9 +9,7 @@ of the file reproduces the tracker readings.
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 from datetime import date
-from pathlib import Path
 
 
 from sqlalchemy import select
@@ -65,11 +63,9 @@ async def _load(db_session, entry_id: int):
     ).scalar_one()
 
 
-def _open_diary(data: bytes) -> sqlite3.Connection:
-    tmp = tempfile.NamedTemporaryFile(suffix=".diary", delete=False)
-    tmp.close()
-    Path(tmp.name).write_bytes(data)
-    return sqlite3.connect(tmp.name)
+def _open_diary(diary_path): 
+    """Open a staged .diary export (build_diarium_database now returns a Path)."""
+    return sqlite3.connect(str(diary_path))
 
 
 async def test_export_writes_trackers_and_container_pragmas(db_session):

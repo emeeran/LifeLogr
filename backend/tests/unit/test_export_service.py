@@ -23,7 +23,7 @@ class TestExportMarkdown:
                 "title": "Obsidian Export",
             },
         )
-        r = await client.get("/api/v1/export/markdown")
+        r = await client.get("/api/v1/export/obsidian-vault")
         assert r.status_code == 200
         assert r.headers["content-type"] == "application/zip"
 
@@ -88,7 +88,7 @@ class TestExportEncryptedEntryNote:
         import zipfile
 
         await _encrypted_entry(client)
-        r = await client.get("/api/v1/export/markdown")
+        r = await client.get("/api/v1/export/obsidian-vault")
         assert r.status_code == 200
         zip_file = zipfile.ZipFile(io.BytesIO(r.content))
         content = zip_file.read("journal/2026/06/2026-06-01.md").decode("utf-8")
@@ -101,7 +101,7 @@ class TestExportEncryptedEntryNote:
         await client.post(
             "/api/v1/entries", json={"entry_date": "2026-06-02", "body": "Open diary"}
         )
-        r = await client.get("/api/v1/export/markdown")
+        r = await client.get("/api/v1/export/obsidian-vault")
         zip_file = zipfile.ZipFile(io.BytesIO(r.content))
         content = zip_file.read("journal/2026/06/2026-06-02.md").decode("utf-8")
         assert NOTE_TEXT not in content

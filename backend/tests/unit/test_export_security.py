@@ -94,7 +94,7 @@ class TestUniqueExportFilenames:
         await _create_entry(client, "2026-05-11", "first entry of the day")
         await _create_entry(client, "2026-05-11", "second entry of the day")
 
-        r = await client.get("/api/v1/export/markdown")
+        r = await client.get("/api/v1/export/obsidian-vault")
         assert r.status_code == 200
         zf = zipfile.ZipFile(io.BytesIO(r.content))
         day_files = [n for n in zf.namelist() if n.startswith("journal/") and n.endswith(".md")]

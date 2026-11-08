@@ -26,7 +26,8 @@ from fastapi import (
     UploadFile,
 )
 from fastapi import Path as PathParam
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy import or_ as sa_or
 from sqlalchemy import select
 from sqlalchemy import func as sa_func
@@ -461,6 +462,20 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
     return notes
 
 
+def _staged_file_response(path: Path, filename: str, media_type: str) -> FileResponse:
+    """Serve a staged export file, unlinking it after the response is sent.
+
+    The media-heavy export builders write archives straight to DATA_DIR/tmp
+    (never in RAM); this is the matching serve-and-cleanup half.
+    """
+    return FileResponse(
+        path=path,
+        media_type=media_type,
+        filename=filename,
+        background=BackgroundTask(path.unlink, True),
+    )
+
+
 @router.get("/export/markdown")
 async def export_markdown(
     background_tasks: BackgroundTasks,
@@ -479,7 +494,7 @@ async def export_markdown(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date)
             return await asyncio.to_thread(build_markdown_zip, entries, report)
 
@@ -490,12 +505,8 @@ async def export_markdown(
 
     entries = await _export_entries(db, start_date, end_date)
     # Zip assembly (deflate + copying every media file) is blocking — offload it.
-    data = await asyncio.to_thread(build_markdown_zip, entries)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=diarium-export.zip"},
-    )
+    staged = await asyncio.to_thread(build_markdown_zip, entries)
+    return _staged_file_response(staged, "diarium-export.zip", "application/zip")
 
 
 @router.get("/export/html-zip")
@@ -521,7 +532,7 @@ async def export_html_zip(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             return await ExportService(session).export_html_zip(start, end, report=report)
 
         return start_export_job(
@@ -529,14 +540,8 @@ async def export_html_zip(
             session_factory=async_session,
         )
 
-    payload = await ExportService(db).export_html_zip(start, end)
-    buf = io.BytesIO(payload)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=lifelogr-export-html.zip"},
-    )
+    staged = await ExportService(db).export_html_zip(start, end)
+    return _staged_file_response(staged, "lifelogr-export-html.zip", "application/zip")
 
 
 @router.get("/export/diarium")
@@ -653,7 +658,7 @@ async def export_archive(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date)
             notes = await _load_archive_notes(session)
             return await asyncio.to_thread(build_archive, entries, notes, report)
@@ -665,15 +670,8 @@ async def export_archive(
 
     entries = await _export_entries(db, start_date, end_date)
     notes = await _load_archive_notes(db)
-    buf = io.BytesIO(await asyncio.to_thread(build_archive, entries, notes))
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": 'attachment; filename="lifelogr-archive.zip"'
-        },
-    )
+    staged = await asyncio.to_thread(build_archive, entries, notes)
+    return _staged_file_response(staged, "lifelogr-archive.zip", "application/zip")
 
 
 @router.get("/export/json")
@@ -747,7 +745,7 @@ async def export_diarium_db(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date)
             return await build_diarium_database(entries, report=report)
 
@@ -758,12 +756,8 @@ async def export_diarium_db(
 
     entries = await _export_entries(db, start_date, end_date)
     # build_diarium_database offloads its SQLite build to a worker thread.
-    data = await build_diarium_database(entries)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="lifelogr-export.diary"'},
-    )
+    staged = await build_diarium_database(entries)
+    return _staged_file_response(staged, "lifelogr-export.diary", "application/octet-stream")
 
 
 @router.get("/export/dayone-zip")
@@ -799,7 +793,7 @@ async def export_dayone_zip(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date, only_new=only_new)
             return await build_dayone_zip(entries, report=report)
 
@@ -809,12 +803,8 @@ async def export_dayone_zip(
         )
 
     entries = await _export_entries(db, start_date, end_date, only_new=only_new)
-    data = await build_dayone_zip(entries)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="lifelogr-dayone.zip"'},
-    )
+    staged = await build_dayone_zip(entries)
+    return _staged_file_response(staged, "lifelogr-dayone.zip", "application/zip")
 
 
 @router.post("/backfill-titles", response_model=dict)
