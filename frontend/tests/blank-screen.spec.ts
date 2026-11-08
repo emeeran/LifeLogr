@@ -21,6 +21,11 @@ test.beforeEach(async ({ page }) => {
   // The memorial splash is a full-screen overlay on fresh contexts; disable it.
   await page.addInitScript(() => {
     localStorage.setItem('lifelogr-memorial-title', 'false')
+    // Mark the "What's New" dialog as seen so a version bump can't pop it
+    // over the boundary 300 ms into these tests (it intercepts clicks).
+    // The dev server doesn't inject VITE_APP_VERSION, so the app's
+    // APP_VERSION is literally 'unknown' here — last-seen must equal it.
+    localStorage.setItem('lifelogr-update-last-seen', 'unknown')
   })
 })
 

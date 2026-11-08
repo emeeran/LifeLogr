@@ -107,22 +107,25 @@ test.describe('Settings UI verification', () => {
     await expect(page.getByText('Import entries', { exact: true })).toBeVisible()
     await expect(page.getByText('Import notes', { exact: true })).toBeVisible()
 
-    // Export pill → format rows labeled with what they carry.
-    await page.getByRole('button', { name: 'Export', exact: true }).click()
-    await expect(page.getByText('Archive ZIP', { exact: true })).toBeVisible()
+    // Export pill → format rows labeled with what they carry. The pill nav is
+    // a real tablist (role="tab"), not plain buttons.
+    await page.getByRole('tab', { name: 'Export', exact: true }).click()
+    // The format row's label shares its element with the "carries" span, so
+    // match by substring; the explainer paragraph mentions it too.
+    await expect(page.getByText('Archive ZIP').first()).toBeVisible()
     await expect(page.getByText('Portable export').first()).toBeVisible()
 
     // Backup & Restore pill → the backup sections render (toBeVisible
     // waits for the swap; no fixed sleep).
     await page
-      .getByRole('button', { name: 'Backup & Restore', exact: true })
+      .getByRole('tab', { name: 'Backup & Restore', exact: true })
       .click()
     await expect(page.getByText('Local Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Scheduled Backup', { exact: true })).toBeVisible()
     await expect(page.getByText('Cloud Backup', { exact: true })).toBeVisible()
 
     // Maintenance pill → maintenance rows + the absorbed system check.
-    await page.getByRole('button', { name: 'Maintenance', exact: true }).click()
+    await page.getByRole('tab', { name: 'Maintenance', exact: true }).click()
     await expect(page.getByText('Compact database', { exact: true })).toBeVisible()
     await expect(page.getByText('System Check', { exact: true })).toBeVisible()
   })
