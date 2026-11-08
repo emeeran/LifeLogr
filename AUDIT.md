@@ -8,17 +8,16 @@ config/environment, observability, testing/CI, operational readiness. Every
 
 ## Summary
 
-**Ready with fixes.** This pass purged the stale planning docs, the divergent
-build script, the Windows/macOS CI scaffolding and icon sets (app is
-Linux-only), fixed the query-param 500s, the delete-before-commit media
-ordering, the autosave race, and a batch of silent-failure paths (details
-below). Backend and frontend test suites are green at every checkpoint
-(1023 + 327). What stands between the current tree and a ship call: the
-**Rust shell's two high-severity gaps** (a foreign port-squatter receives
-journal content with only a log line; SIGTERM orphans the sidecar), the
-**RAM-buffered exports** (this project has recorded OOM kills), and
-**Docker's vacuous bind guard** on the web variant. All are enumerated below
-with file:line refs; none are fixed in this pass.
+**Ship-ready on the desktop blockers.** This pass purged the stale planning
+docs, the divergent build script, the Windows/macOS CI scaffolding and icon
+sets (app is Linux-only), fixed the query-param 500s, the delete-before-commit
+media ordering, the autosave race, and a batch of silent-failure paths
+(details below). The three ship blockers found on 2026-11-09 — the Rust
+shell's port-squatter and SIGTERM gaps, and the RAM-buffered exports — were
+**all fixed the same day** (see the blockers section). Backend and frontend
+test suites are green at every checkpoint (1023 + 328; cargo check clean).
+What remains before a release call: the Docker/web variant's **vacuous bind
+guard** (High, below) and the rest of the High list.
 
 ## Fixed in this pass (verified by the audits where noted)
 
@@ -69,22 +68,38 @@ with file:line refs; none are fixed in this pass.
 
 ## Blockers (must fix before shipping a release)
 
-- [ ] `desktop/src-tauri/src/main.rs:370-377` — a foreign squatter on port
-  18765 satisfies the port probe and `verify_sidecar_owner` only `warn!`s;
-  every journal entry, note, and decrypted body is then POSTed to it with no
-  UI signal. Should refuse to serve / abort with a visible error.
-- [ ] `desktop/src-tauri/src/main.rs:710-719` — no SIGTERM/SIGINT handler
-  (no signal crate in `Cargo.toml`; `RunEvent::ExitRequested` does not fire
-  on signals). `systemctl stop`/logout/`kill` orphans the unauthenticated
-  sidecar on 18765 holding the DB and WAL. Mitigated at next launch by
-  `reclaim_port`, but the orphan window is real.
-- [ ] `backend/app/services/export_service.py:236,436,853,951,1114` — the
-  HTML, PDF, markdown (Obsidian + Diarium) and Day One builders buffer the
-  entire archive in RAM (`BytesIO` + per-attachment `read_bytes()` + deflate,
-  which burns CPU for ~0% on media) while the backup path streams. A
-  media-heavy export in the same process serving the UI can OOM the machine
-  (recorded incidents: 5 GB WebKit renderer OOMs). Stream to staged files in
-  `DATA_DIR/tmp` like the backup path does.
+*All three resolved 2026-11-09 (commits `4d79471`, `10e8b13`).*
+
+- [x] **RESOLVED 2026-11-09** — `desktop/src-tauri/src/main.rs` — a foreign
+  squatter on port 18765 satisfies the port probe and `verify_sidecar_owner`
+  only `warn!`s; every journal entry, note, and decrypted body is then POSTed
+  to it with no UI signal. **Fix:** a mismatch whose owner cmdline does not
+  name `lifelogr-backend` now emits `backend-owner-mismatch`, shows a blocking
+  native error dialog, and the app exits — it never talks to the impostor. A
+  pid mismatch whose cmdline IS our sidecar is the legitimate one-file-build
+  case (the spawned pid is the PyInstaller bootloader; the listener is its
+  Python child) and is allowed through with an info log.
+- [x] **RESOLVED 2026-11-09** — `desktop/src-tauri/src/main.rs` — no
+  SIGTERM/SIGINT handler; `systemctl stop`/logout/`kill` orphaned the
+  unauthenticated sidecar on 18765 holding the DB and WAL. **Fix:** a
+  `signal-hook` iterator thread routes SIGTERM/SIGINT through the same
+  `begin_shutdown` chain as the window close (busy-guard → stop_backend →
+  exit); a `SHUTDOWN_STARTED` guard makes the close-guard / ExitRequested /
+  signal race single-flight.
+- [x] **RESOLVED 2026-11-09** — `backend/app/services/export_service.py` —
+  the HTML, markdown (Obsidian + Diarium), Day One and native-archive builders
+  buffered the entire archive in RAM (`BytesIO` + per-attachment
+  `read_bytes()` + deflate) while the backup path streamed. **Fix:** all six
+  media-carrying builders (including `build_archive`, which the original line
+  list missed) write straight to a staged file under `DATA_DIR/tmp` via
+  `stage_export_file()`; the `.diary` SQLite backup targets the staged file
+  directly; `start_export_job` accepts the staged Path and the five sync
+  routes serve `FileResponse` with after-send unlink. Small text exports
+  (CSV/JSON) and the text-only PDF remain in-memory by design. Bonus fix
+  found during the refactor: the documented Obsidian route
+  `/api/v1/export/markdown` was shadowed by the entries router's identically
+  named export and never reachable (it silently returned the Diarium format) —
+  moved to `/api/v1/export/obsidian-vault` and served correctly.
 
 ## High priority
 
