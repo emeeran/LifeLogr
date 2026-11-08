@@ -9,7 +9,7 @@ offline at any time.
 
 ---
 
-## [Unreleased]
+## [0.15.0] — 2026-11-08
 
 ### Added
 - **Backup integrity manifest + verify.** Every archive now carries
@@ -117,10 +117,6 @@ offline at any time.
   tampering, copied paths) returns **409** and is never deleted or
   overwritten. Existing plaintext media migrates via the upcoming Maintenance
   action.
-- **Preview images load a ≤640 px thumbnail** (`/media/{id}/thumb`) unless the
-  body encodes an explicit `?w=&h=` size, and render with `loading="lazy"` /
-  `decoding="async"`. Full-resolution decodes of media-heavy entries were the
-  main driver of WebKitWebProcess memory growth on the desktop build.
 - **Closing the app no longer blocks the UI.** Teardown moved off the event loop
   onto a worker thread (hide window → bounded stop → exit), SIGTERM goes to the
   PID that owns the backend port instead of a `pkill -f` name match, and the
@@ -144,8 +140,30 @@ offline at any time.
   `org.freedesktop.portal.Screenshot` (v2) on Wayland, falls back to the
   interactive portal selection and then `gnome-screenshot`, and only uses xcap on
   X11. The error toast names the path that actually failed.
+
+## [0.14.1] — 2026-10-28
+
+No changelog entries were recorded for this release.
+
+## [0.14.0] — 2026-10-27
+
+### Changed
+- **Preview images load a ≤640 px thumbnail** (`/media/{id}/thumb`) unless the
+  body encodes an explicit `?w=&h=` size, and render with `loading="lazy"` /
+  `decoding="async"`. Full-resolution decodes of media-heavy entries were the
+  main driver of WebKitWebProcess memory growth on the desktop build.
+
+### Fixed
 - A `.diary` entry with only a heading and an empty body (Diarium anniversary /
   event entries) is imported instead of being dropped as empty noise.
+
+## [0.13.1] — 2026-10-26
+
+No changelog entries were recorded for this release.
+
+## [0.13.0] — 2026-10-25
+
+No changelog entries were recorded for this release.
 
 ---
 

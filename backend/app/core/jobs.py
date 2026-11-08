@@ -236,10 +236,12 @@ def start_export_job(
 ) -> dict[str, str]:
     """Build an export as a polled job; download via GET /jobs/{id}/result.
 
-    *builder* receives ``(report, session)`` and returns the export bytes; the
-    job writes them to a temp file, finishes with the download attached, and
-    the result endpoint deletes the file after serving it. A fresh session is
-    opened per job (pass ``None`` for builders that don't need the DB).
+    *builder* receives ``(report, session)`` and returns either a Path to a
+    staged export file (already written under ``DATA_DIR/tmp`` by the media-
+    heavy builders) or raw bytes (small text exports), which are written to a
+    temp file here. The finished job carries the download; the result endpoint
+    deletes the file after serving it. A fresh session is opened per job (pass
+    ``None`` for builders that don't need the DB).
     """
     job = jobs.create(kind)
     report = jobs.reporter(job.id)
@@ -251,9 +253,12 @@ def start_export_job(
                     data = await builder(report, session)
             else:
                 data = await builder(report, None)
-            fd, tmp = tempfile.mkstemp(suffix=".export", dir=str(_export_tmp_dir()))
-            os.close(fd)
-            Path(tmp).write_bytes(data)
+            if isinstance(data, Path):
+                tmp = str(data)
+            else:
+                fd, tmp = tempfile.mkstemp(suffix=".export", dir=str(_export_tmp_dir()))
+                os.close(fd)
+                Path(tmp).write_bytes(data)
             jobs.finish_with_result(job.id, tmp, filename, detail=filename)
         except Exception as exc:
             logger.exception("Export job %s (%s) failed", job.id, kind)

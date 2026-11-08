@@ -12,7 +12,7 @@ import uuid
 import zipfile
 from collections import Counter
 from collections.abc import Awaitable
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,9 @@ from fastapi import (
     Query,
     UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi import Path as PathParam
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy import or_ as sa_or
 from sqlalchemy import select
 from sqlalchemy import func as sa_func
@@ -38,6 +40,7 @@ from app.core.exceptions import MediaSizeError
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.core.jobs import start_data_job as _start_data_job
 from app.core.jobs import start_export_job
+from app.routers._params import parse_tag_ids
 from app.models.entry import Entry
 from app.models.media import Media
 from app.models.tag import EntryTag
@@ -64,6 +67,7 @@ from app.services.media_service import check_signature, spool_upload
 from app.services.export_service import (
     ARCHIVE_FORMAT,
     ExportService,
+    build_markdown_zip,
     build_archive,
     build_daylio_csv,
     build_dayone_zip,
@@ -175,14 +179,14 @@ async def list_entries(
     limit: int = Query(20, ge=1, le=100),
     tag_ids: str | None = Query(None),
     mood: str | None = None,
-    year: int | None = None,
-    month: int | None = None,
+    year: int | None = Query(None, ge=1, le=9999),
+    month: int | None = Query(None, ge=1, le=12),
     template_id: int | None = Query(None, description="Only entries created from this template"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """List entries with optional filters and pagination."""
     svc = EntryService(db)
-    parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
+    parsed_tag_ids = parse_tag_ids(tag_ids)
     entries, total = await svc.list_entries(
         offset, limit, parsed_tag_ids, mood, year, month, template_id
     )
@@ -229,7 +233,11 @@ async def list_trash(
 
 
 @router.get("/calendar/{year}/{month}", response_model=list[CalendarEntryResponse])
-async def calendar_view(year: int, month: int, db: AsyncSession = Depends(get_db)) -> Any:
+async def calendar_view(
+    year: int = PathParam(ge=1, le=9999),
+    month: int = PathParam(ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
     """Return lightweight entry projections for a calendar month.
 
     Excludes body/media fields to keep the payload small — the grid only
@@ -263,8 +271,8 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
 async def list_geotags(
     offset: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=5000),
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Entries with coordinates, for the map view.
@@ -273,7 +281,6 @@ async def list_geotags(
     lightweight projection is returned — bodies never leave the API for the
     map; the client links back to the entry for content.
     """
-    from datetime import date as date_type
 
     filters = [
         Entry.is_deleted.is_(False),
@@ -281,13 +288,12 @@ async def list_geotags(
         # GeotagItem (and Leaflet) need both coordinates; a lat-only row would
         # break the map client anyway, so the filter matches the contract.
         Entry.longitude.is_not(None),
-        Entry.longitude.is_not(None),
         sa_or(Entry.latitude != 0, Entry.longitude != 0),
     ]
     if start_date:
-        filters.append(Entry.entry_date >= date_type.fromisoformat(start_date))
+        filters.append(Entry.entry_date >= start_date)
     if end_date:
-        filters.append(Entry.entry_date <= date_type.fromisoformat(end_date))
+        filters.append(Entry.entry_date <= end_date)
 
     total = (
         await db.execute(
@@ -353,8 +359,8 @@ async def search_entries(
 
 async def _export_entries(
     session: AsyncSession,
-    start_date: str | None,
-    end_date: str | None,
+    start_date: date | None,
+    end_date: date | None,
     *,
     only_new: bool = False,
 ) -> list[Entry]:
@@ -456,89 +462,25 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
     return notes
 
 
-def _build_markdown_zip_sync(
-    entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
-    """Diarium-compatible markdown vault ZIP; *report* gets render/media ticks."""
-    buf = io.BytesIO()
-    media_total = sum(
-        1
-        for e in entries
-        if not e.is_encrypted
-        for m in e.media
-        if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+def _staged_file_response(path: Path, filename: str, media_type: str) -> FileResponse:
+    """Serve a staged export file, unlinking it after the response is sent.
+
+    The media-heavy export builders write archives straight to DATA_DIR/tmp
+    (never in RAM); this is the matching serve-and-cleanup half.
+    """
+    return FileResponse(
+        path=path,
+        media_type=media_type,
+        filename=filename,
+        background=BackgroundTask(path.unlink, True),
     )
-    media_done = 0
-    if report is not None:
-        report("render", 0, len(entries))
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for entry_index, entry in enumerate(entries):
-            tags = [a.tag.name for a in entry.tag_associations if a.tag]
-            # YAML frontmatter (Diarium-compatible)
-            frontmatter = "---\n"
-            frontmatter += f"date: {entry.entry_date}\n"
-            if entry.title:
-                frontmatter += f"title: {entry.title}\n"
-            if entry.mood:
-                frontmatter += f"mood: {entry.mood}\n"
-            if tags:
-                frontmatter += "tags:\n"
-                for t in tags:
-                    frontmatter += f"  - {t}\n"
-            # Media manifest — the files sit at media/{storage_path} in this
-            # zip; `ref` is the id bodies reference as /api/v1/media/{ref}/file
-            # so the importer can rewrite those links to the new ids.
-            exportable_media = [
-                m
-                for m in entry.media
-                # Attachments of an encrypted entry never export (the body is
-                # ciphertext, so the files would be orphaned plaintext).
-                if not entry.is_encrypted
-                and (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
-            ]
-            if exportable_media:
-                frontmatter += "media:\n"
-                for media in exportable_media:
-                    frontmatter += f"  - ref: {media.id}\n"
-                    frontmatter += f"    path: media/{media.storage_path}\n"
-                    frontmatter += f"    filename: {media.filename}\n"
-                    frontmatter += f"    type: {media.media_type}\n"
-            frontmatter += "---\n\n"
-
-            # Same-day entries used to share one filename and overwrite each
-            # other — suffix the id so every entry survives the round-trip.
-            filename = f"entries/{entry.entry_date}-{entry.id}.md"
-            zf.writestr(filename, frontmatter + entry.body)
-            if report is not None:
-                report("render", entry_index + 1, len(entries))
-
-            # Include media files
-            for media in entry.media:
-                if entry.is_encrypted:
-                    continue
-                media_path = Path(settings.MEDIA_DIR) / media.storage_path
-                if media_path.exists():
-                    zf.write(str(media_path), f"media/{media.storage_path}")
-                    media_done += 1
-                    if report is not None:
-                        report("media", media_done, media_total)
-
-        # Add manifest
-        manifest = {
-            "format": "diarium-markdown",
-            "version": "1.0",
-            "exported_entries": len(entries),
-        }
-        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-    buf.seek(0)
-    return buf.getvalue()
 
 
 @router.get("/export/markdown")
 async def export_markdown(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -552,9 +494,9 @@ async def export_markdown(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date)
-            return await asyncio.to_thread(_build_markdown_zip_sync, entries, report)
+            return await asyncio.to_thread(build_markdown_zip, entries, report)
 
         return start_export_job(
             background_tasks, "export-markdown", "diarium-export.zip", _build,
@@ -563,19 +505,15 @@ async def export_markdown(
 
     entries = await _export_entries(db, start_date, end_date)
     # Zip assembly (deflate + copying every media file) is blocking — offload it.
-    data = await asyncio.to_thread(_build_markdown_zip_sync, entries)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=diarium-export.zip"},
-    )
+    staged = await asyncio.to_thread(build_markdown_zip, entries)
+    return _staged_file_response(staged, "diarium-export.zip", "application/zip")
 
 
 @router.get("/export/html-zip")
 async def export_html_zip(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -587,15 +525,14 @@ async def export_html_zip(
     ``as_job=true`` returns ``{job_id}``; download from
     ``GET /api/v1/jobs/{job_id}/result``.
     """
-    from datetime import date as date_type
 
-    start = date_type.fromisoformat(start_date) if start_date else None
-    end = date_type.fromisoformat(end_date) if end_date else None
+    start = start_date
+    end = end_date
 
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             return await ExportService(session).export_html_zip(start, end, report=report)
 
         return start_export_job(
@@ -603,20 +540,14 @@ async def export_html_zip(
             session_factory=async_session,
         )
 
-    payload = await ExportService(db).export_html_zip(start, end)
-    buf = io.BytesIO(payload)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=lifelogr-export-html.zip"},
-    )
+    staged = await ExportService(db).export_html_zip(start, end)
+    return _staged_file_response(staged, "lifelogr-export-html.zip", "application/zip")
 
 
 @router.get("/export/diarium")
 async def export_diarium(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Export entries as a JSON array (date/text/heading/rating/tags).
@@ -675,8 +606,8 @@ async def export_diarium(
 
 @router.get("/export/daylio-csv")
 async def export_daylio_csv(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Export entries as Daylio-format CSV — Diarium's supported migration import.
@@ -711,8 +642,8 @@ async def export_daylio_csv(
 @router.get("/export/archive")
 async def export_archive(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -727,7 +658,7 @@ async def export_archive(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date)
             notes = await _load_archive_notes(session)
             return await asyncio.to_thread(build_archive, entries, notes, report)
@@ -739,21 +670,14 @@ async def export_archive(
 
     entries = await _export_entries(db, start_date, end_date)
     notes = await _load_archive_notes(db)
-    buf = io.BytesIO(await asyncio.to_thread(build_archive, entries, notes))
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": 'attachment; filename="lifelogr-archive.zip"'
-        },
-    )
+    staged = await asyncio.to_thread(build_archive, entries, notes)
+    return _staged_file_response(staged, "lifelogr-archive.zip", "application/zip")
 
 
 @router.get("/export/json")
 async def export_json(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Export entries as a portable LifeLogr JSON document.
@@ -804,8 +728,8 @@ async def export_json(
 @router.get("/export/diarium-db")
 async def export_diarium_db(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -821,7 +745,7 @@ async def export_diarium_db(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date)
             return await build_diarium_database(entries, report=report)
 
@@ -832,19 +756,15 @@ async def export_diarium_db(
 
     entries = await _export_entries(db, start_date, end_date)
     # build_diarium_database offloads its SQLite build to a worker thread.
-    data = await build_diarium_database(entries)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="lifelogr-export.diary"'},
-    )
+    staged = await build_diarium_database(entries)
+    return _staged_file_response(staged, "lifelogr-export.diary", "application/octet-stream")
 
 
 @router.get("/export/dayone-zip")
 async def export_dayone_zip(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     scope: str = Query(
         "new",
         description=(
@@ -873,7 +793,7 @@ async def export_dayone_zip(
     if as_job:
         from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
             entries = await _export_entries(session, start_date, end_date, only_new=only_new)
             return await build_dayone_zip(entries, report=report)
 
@@ -883,12 +803,8 @@ async def export_dayone_zip(
         )
 
     entries = await _export_entries(db, start_date, end_date, only_new=only_new)
-    data = await build_dayone_zip(entries)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="lifelogr-dayone.zip"'},
-    )
+    staged = await build_dayone_zip(entries)
+    return _staged_file_response(staged, "lifelogr-dayone.zip", "application/zip")
 
 
 @router.post("/backfill-titles", response_model=dict)

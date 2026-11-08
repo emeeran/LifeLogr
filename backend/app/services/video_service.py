@@ -16,7 +16,12 @@ from app.core.exceptions import MediaSizeError, NotFoundError
 from app.models.video_note import VideoNote
 from app.services import media_crypto
 from app.services.entry_service import get_entry_or_raise
-from app.services.media_service import _BLOCKED_SIGNATURES, ensure_within_media_cap, read_head
+from app.services.media_service import (
+    _BLOCKED_SIGNATURES,
+    ensure_within_media_cap,
+    read_head,
+    unlink_media_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,13 +129,14 @@ class VideoService:
         return list(result.scalars().all())
 
     async def delete(self, video_id: int) -> None:
-        """Delete a video note and its file."""
+        """Delete a video note, then remove its file from disk."""
         note = await self.get(video_id)
         file_path = self._media_dir / note.storage_path
-        if file_path.exists():
-            file_path.unlink()
         await self.db.delete(note)
         await self.db.commit()
+        # Unlink only after the commit (same ordering rule as
+        # EntryService.purge).
+        unlink_media_file(file_path, context="video note")
 
     def get_file_path(self, note: VideoNote) -> Path:
         """Return the filesystem path to the video file."""

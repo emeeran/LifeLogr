@@ -75,3 +75,6 @@ backend/models/
 
 # Local linker shim for builds on hosts without libgbm-dev (see desktop/scripts/setup-linux.sh)
 desktop/.build-libs/
+
+# Pipeline process scratch (plans, test logs) — not product
+.pipeline/

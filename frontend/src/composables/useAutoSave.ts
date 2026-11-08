@@ -23,7 +23,9 @@ export function useAutoSave(options: {
   tagIds: Ref<number[]>
   templateId: () => number | null
   editingEntryId: Ref<number | null | undefined>
-  snapshot: () => void
+  /** Called after a successful create with the values actually sent — not the
+   *  live refs, which may already hold keystrokes typed during the request. */
+  snapshot: (saved?: { body: string; title: string | null; tagIds: number[] }) => void
   createEntry: (data: {
     entry_date: string
     title: string | null
@@ -45,8 +47,10 @@ export function useAutoSave(options: {
   let savedTimer: ReturnType<typeof setTimeout> | null = null
   // In-flight guard: prevents a debounced autosave from racing a manual save
   // (two concurrent updateEntry calls with different snapshots = last-write-wins
-  // data loss) and from overlapping itself.
+  // data loss) and from overlapping itself. ``inflight`` is the same save as a
+  // promise so a manual save can wait for it instead of racing it.
   let saving = false
+  let inflight: Promise<void> | null = null
 
   const saveState = ref<SaveState>('idle')
   const saveError = ref<string | null>(null)
@@ -98,34 +102,46 @@ export function useAutoSave(options: {
     }
 
     saveState.value = 'pending'
-    saveTimer = setTimeout(async () => {
-      // Skip if a save is already in flight (e.g. a manual save just started) —
-      // the next change will re-arm the timer once it finishes.
-      if (saving) {
-        saveTimer = null
-        return
-      }
-      saving = true
-      saveState.value = 'saving'
+    saveTimer = setTimeout(runSave, autosaveMs.value)
+  }
+
+  async function runSave(): Promise<void> {
+    // A save is already in flight (e.g. a manual save just started): re-arm
+    // instead of dropping this tick — content typed during the flight must
+    // still persist once it completes, not wait for a keystroke that may
+    // never come before close() discards it.
+    if (saving) {
+      saveTimer = setTimeout(runSave, autosaveMs.value)
+      return
+    }
+    // Capture the payload up front: values read after the await are the live
+    // refs, which may hold keystrokes typed while the request was in flight —
+    // marking those as saved would silently drop them.
+    const sent = {
+      entry_date: options.entryDate.value,
+      title: options.title.value || null,
+      body: options.body.value,
+      tag_ids: options.tagIds.value,
+    }
+    saving = true
+    saveState.value = 'saving'
+    inflight = (async () => {
       try {
         if (options.isNew.value) {
           const entry = await options.createEntry({
-            entry_date: options.entryDate.value,
-            title: options.title.value || null,
-            body: options.body.value,
-            tag_ids: options.tagIds.value,
+            ...sent,
             template_id: options.templateId(),
           })
           options.setEditingEntryId(entry.id)
-          options.snapshot()
+          options.snapshot({ body: sent.body, title: sent.title, tagIds: sent.tag_ids })
         } else {
           await options.updateEntry(options.editingEntryId.value as number, {
-            title: options.title.value || null,
-            body: options.body.value,
-            tag_ids: options.tagIds.value,
+            title: sent.title,
+            body: sent.body,
+            tag_ids: sent.tag_ids,
           })
         }
-        lastSavedBody = options.body.value
+        lastSavedBody = sent.body
         saveError.value = null
         _setSaved()
       } catch (e) {
@@ -137,13 +153,22 @@ export function useAutoSave(options: {
         saving = false
         saveTimer = null
       }
-    }, autosaveMs.value)
+    })()
+    await inflight
+    inflight = null
+  }
+
+  /** Resolves once any in-flight save has finished. A manual save awaits this
+   *  (after cancelling the pending timer) so it never races the autosave. */
+  function whenIdle(): Promise<void> {
+    return inflight ?? Promise.resolve()
   }
 
   return {
     autosaveMs,
     triggerAutosave,
     cancelSave,
+    whenIdle,
     saveState,
     saveError,
   }

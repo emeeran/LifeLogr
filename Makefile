@@ -21,7 +21,7 @@ help:
 	@echo "  make check        Everything CI runs (backend + frontend)"
 	@echo "  make run          Start dev server"
 	@echo "  make bump V=x    Bump version in all 5 places"
-	@echo "  make check-version  Verify all 4 version sources match"
+	@echo "  make check-version  Verify all 5 version sources match"
 	@echo "  make docs-check     Verify docs don't reference a stale version"
 	@echo "  make clean        Remove __pycache__ and .pytest_cache"
 	@echo ""
@@ -85,7 +85,7 @@ check-version:
 # `git tag v1.0.0`) are deliberately excluded.
 DOC_FILES := README.md docs/ARCHITECTURE.md \
              docs/manual/USER_MANUAL.md docs/manual/DEPLOYMENT.md docs/manual/API_REFERENCE.md
-DOC_VERSION_RE := (LifeLogr\|lifelogr-web)_[0-9]+\.[0-9]+\.[0-9]+_\|^\*Version [0-9]+\.[0-9]+\.[0-9]+\|^\`v[0-9]+\.[0-9]+\.[0-9]+\`\|APP_VERSION\` | \`[0-9]+\.[0-9]+\.[0-9]+
+DOC_VERSION_RE := (LifeLogr|lifelogr-web)_[0-9]+\.[0-9]+\.[0-9]+_|\*Version [0-9]+\.[0-9]+\.[0-9]+|^`v[0-9]+\.[0-9]+\.[0-9]+`|APP_VERSION` \| `[0-9]+\.[0-9]+\.[0-9]+
 
 docs-check:
 	@CURRENT="$$(node -p "require('./frontend/package.json').version" 2>/dev/null)"; \

@@ -18,6 +18,11 @@ struct SidecarChild(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 /// in-flight backup. The wait loop polls it (300 ms) and gives up.
 struct ExitState(AtomicBool);
 
+/// Guard against double teardown: the window-close guard, `ExitRequested`, and
+/// the SIGTERM/SIGINT handler can all race; the first to start wins and later
+/// triggers return immediately.
+static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
+
 /// Called from the shutdown overlay. Merely stops waiting — teardown and exit
 /// still go through the same path, so the sidecar is never orphaned.
 #[tauri::command]
@@ -70,7 +75,7 @@ fn check_deps() -> serde_json::Value {
         "ollama": ollama,
         "gst_plugins_bad": gst_plugins_bad,
         "tesseract": tesseract,
-        "all_installed": ollama,
+        "all_installed": ollama && gst_plugins_bad && tesseract,
     })
 }
 
@@ -306,6 +311,10 @@ fn port_owner_pid(_port: u16) -> Option<u32> {
 /// Close sequence: wait for protected work, hide the window, stop the backend,
 /// exit. Runs on its own thread so the UI never blocks on teardown.
 fn begin_shutdown(app: tauri::AppHandle) {
+    if SHUTDOWN_STARTED.swap(true, Ordering::SeqCst) {
+        info!("Shutdown already in progress — ignoring duplicate trigger");
+        return;
+    }
     let port = backend_port();
     let mut state = backend_busy_state(port).unwrap_or_default();
 
@@ -364,23 +373,64 @@ fn port_owner_pid(port: u16) -> Option<u32> {
 /// Confirm our sidecar actually owns the port it reports ready on. Catches the
 /// TOCTOU window where a foreign process grabs the port between `reclaim_port`
 /// and our sidecar's bind — otherwise we'd TCP-probe that foreign listener and
-/// silently talk to a stale backend. Best-effort, Linux only; silent when lsof
-/// is absent.
+/// silently POST every journal entry, note, and decrypted body to it.
+///
+/// A pid mismatch alone is NOT a hijack: in a PyInstaller one-file build the
+/// spawned pid is the bootloader, and the port-owning process is the Python
+/// child it forks. The discriminator is the owner's cmdline — a mismatch whose
+/// cmdline doesn't name our sidecar is a foreign program, and the app must
+/// refuse to serve: the user gets a blocking native error, then we exit.
 #[cfg(target_os = "linux")]
-fn verify_sidecar_owner(port: u16, expected_pid: u32) {
+fn verify_sidecar_owner(app: &tauri::AppHandle, port: u16, expected_pid: u32) {
+    let owner_cmdline = |pid: u32| -> String {
+        std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
+            .map(|s| s.replace('\0', " "))
+            .unwrap_or_default()
+    };
     match port_owner_pid(port) {
         Some(pid) if pid == expected_pid => info!("Verified sidecar pid {pid} owns port {port}"),
-        Some(other) => warn!(
-            "Port {port} is owned by pid {other}, not our sidecar (pid {expected_pid}) — \
-             the app may be talking to a stale backend; try restarting LifeLogr."
+        Some(other) => {
+            let cmdline = owner_cmdline(other);
+            if cmdline.contains("lifelogr-backend") {
+                info!(
+                    "Port {port} owned by our sidecar's backend process (pid {other}, \
+                     spawned by bootloader pid {expected_pid})"
+                );
+                return;
+            }
+            error!(
+                "SECURITY: port {port} is owned by pid {other} (cmdline: {cmdline:?}), \
+                 not our sidecar (pid {expected_pid}) — refusing to send journal \
+                 content to it."
+            );
+            let _ = app.emit(
+                "backend-owner-mismatch",
+                serde_json::json!({ "port": port, "owner_pid": other }),
+            );
+            use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+            app.dialog()
+                .message(format!(
+                    "LifeLogr cannot verify its own backend: another program \
+                     (pid {other}) is listening on port {port}.\n\n\
+                     To protect your journal, LifeLogr will now quit. Free the \
+                     port (or set DIARI_PORT to another one) and start \
+                     LifeLogr again."
+                ))
+                .title("LifeLogr — backend verification failed")
+                .kind(MessageDialogKind::Error)
+                .blocking_show();
+            std::process::exit(1);
+        }
+        None => info!(
+            "Could not verify the owner of port {port} (lsof unavailable) — \
+             continuing without ownership confirmation"
         ),
-        None => {}
     }
 }
 
 /// No-op on non-Linux targets (lsof-based verification isn't available).
 #[cfg(not(target_os = "linux"))]
-fn verify_sidecar_owner(_port: u16, _expected_pid: u32) {}
+fn verify_sidecar_owner(_app: &tauri::AppHandle, _port: u16, _expected_pid: u32) {}
 
 fn init_logging(data_dir: &std::path::Path) {
     let log_path = data_dir.join("lifelogr-desktop.log");
@@ -649,11 +699,35 @@ fn main() {
 
             // Sidecar health check — TCP probe until backend is ready, then
             // verify (best-effort, Linux) that OUR sidecar owns the port and not
-            // a stale process that grabbed it during the bind window.
+            // a stale process that grabbed it during the bind window. A foreign
+            // owner hard-fails: the app quits rather than talk to it.
             let health_port = port;
+            let health_app = app.handle().clone();
             std::thread::spawn(move || {
                 wait_for_sidecar(health_port);
-                verify_sidecar_owner(health_port, child_pid);
+                verify_sidecar_owner(&health_app, health_port, child_pid);
+            });
+
+            // SIGTERM/SIGINT (systemd stop, logout, Ctrl+C): the default
+            // disposition kills the shell instantly and orphans the sidecar on
+            // our port with the DB still open. Route signals through the same
+            // teardown chain as the window close (busy-guard → stop_backend).
+            let signal_app = app.handle().clone();
+            std::thread::spawn(move || {
+                use signal_hook::consts::{SIGINT, SIGTERM};
+                let mut signals =
+                    match signal_hook::iterator::Signals::new([SIGTERM, SIGINT]) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("Could not register signal handlers: {e}");
+                            return;
+                        }
+                    };
+                for sig in signals.forever() {
+                    info!("Received signal {sig} — starting teardown");
+                    begin_shutdown(signal_app);
+                    break; // begin_shutdown never returns (process::exit)
+                }
             });
 
             // Permission policy: deny by default. Only device-info requests

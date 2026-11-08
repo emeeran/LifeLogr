@@ -1,247 +1,324 @@
-# Production Readiness Audit — 2026-11-08
+# Production Readiness Audit — 2026-11-09
 
-Second cleanup-pipeline pass. Replaces the 2026-10-27 audit (all its items
-were resolved; see git history for that document). Six dimensions audited
-independently: correctness/error-handling, security, config/environment,
-observability, testing/CI, operational readiness.
+Third cleanup-pipeline pass (ship-readiness). Replaces the 2026-11-08 audit
+(resolved items live in git history at `a35e8c5`). Six dimensions audited
+independently by fresh agents: correctness/error-handling, security,
+config/environment, observability, testing/CI, operational readiness. Every
+2026-11-08 finding was re-checked against the current tree.
 
 ## Summary
 
-**Ready with fixes.** The security posture, config hygiene, and observability
-remain strong (injection/SSRF/crypto/secrets all verified clean; CI genuinely
-gates releases). But this pass surfaced two data-integrity problems the prior
-audit missed, both in the app's own safety machinery: **entry soft-delete
-irreversibly destroys attachments at trash time**, and **scheduled local
-backups can be killed mid-write by the shutdown guard and are written
-directly to their final filename** — meaning the backup you keep may be
-truncated and the trash you trust isn't trash. Neither is a crash; both are
-silent, and both contradict the app's stated semantics. Fix those two before
-calling the data-safety story done.
+**Ship-ready on the desktop blockers.** This pass purged the stale planning
+docs, the divergent build script, the Windows/macOS CI scaffolding and icon
+sets (app is Linux-only), fixed the query-param 500s, the delete-before-commit
+media ordering, the autosave race, and a batch of silent-failure paths
+(details below). The three ship blockers found on 2026-11-09 — the Rust
+shell's port-squatter and SIGTERM gaps, and the RAM-buffered exports — were
+**all fixed the same day** (see the blockers section). Backend and frontend
+test suites are green at every checkpoint (1023 + 328; cargo check clean).
+What remains before a release call: the Docker/web variant's **vacuous bind
+guard** (High, below) and the rest of the High list.
 
-## Blockers (must fix before prod)
+## Fixed in this pass (verified by the audits where noted)
 
-- [x] **RESOLVED 2026-11-08** — `backend/app/services/entry_service.py` —
-  soft-delete no longer touches media: delete is restorable trash, `purge()`
-  (explicit `DELETE /entries/{id}/purge`, behind the destructive-origin guard)
-  is the only destructive path, and a daily scheduler sweep purges entries
-  past `TRASH_RETENTION_DAYS` (default 30; 0 disables). Media, video-note
-  files, and recordings all unlink only after commit; bulk sweep is
-  set-based. Tests: `tests/unit/test_entry_trash.py`. Trash UI shipped
-  2026-11-09: `GET /entries/trash` + `components/trash/TrashView.vue`
-  (restore, confirmed purge) in the sidebar nav.
-- [x] **RESOLVED 2026-11-08** — `backend/app/services/scheduler_service.py`
-  `_run_backup` — packs to a `.part` file and `os.replace`s into place (a
-  kill mid-tar can no longer leave a truncated archive under the retention
-  glob; stale `.part` files are swept daily), and registers in the job
-  registry when no caller reporter is passed, so `GET /system/shutdown-state`
-  sees scheduled local backups and the window-close guard engages. Tests:
-  `TestLocalBackupStaging` in `tests/unit/test_scheduler_service.py`.
+- Malformed query params (`month=13`, `tag_ids=abc`, bad dates) return 422,
+  not 500 — shared `parse_tag_ids` helper, constrained/path-typed params
+  (`routers/_params.py`, `routers/entries.py`, `routers/search.py`,
+  `routers/notes.py`). Was the 2026-11-08 High item.
+- Media/note-media/video deletes unlink files only after the DB commit
+  (shared `unlink_media_file`), matching `EntryService.purge`'s rule.
+- Corrupt-DB quarantine copies rotate (keep 3) — a failing disk can no
+  longer write one full-DB-size file per boot attempt forever.
+- AI provider `base_url` requires http(s) + host, validated in the Pydantic
+  schema (`schemas/ai_provider.py:24-40`) — security audit verified.
+- Autosave race: snapshot records the payload actually sent (keystrokes
+  typed mid-flight are no longer marked clean), the debounced tick re-arms
+  instead of dropping, and manual save awaits `whenIdle()` instead of racing
+  an in-flight autosave. Regression-tested (`useAutoSave.test.ts`).
+- `build_markdown_zip` moved from the entries router into `export_service`
+  (router stays transport; pass-2 blind-review layering seam).
+- `export_local_backup` stages in `DATA_DIR`, not tmpfs `/tmp`
+  (`routers/backup.py:279-285`).
+- GDrive `list_files` raises when both listings fail — a provider outage no
+  longer masquerades as "No cloud backups found" during restore
+  (`cloud_sync_service.py:755-777`).
+- `useJobProgress` stops on 404 with a terminal failed state — resolves the
+  pass-2 open question (unbounded 1 Hz poll) in favor of the blind review's
+  reading; `run()`'s promise can no longer hang
+  (`useJobProgress.ts:44-67`).
+- Editor silent failures surfaced: clipboard cut keeps the selection when
+  the write fails, delete distinguishes 404 from real errors, AI tag-suggest
+  toasts (`EntryEditor.vue`).
+- Reminder resync failures log at WARNING (was DEBUG — a silently unarmed
+  reminder); scheduled backup drops its vestigial per-run `mkdtemp`.
+- CI gates ESLint (tooling was installed but never run), runs all Playwright
+  specs (was a hand-maintained list), Playwright `retries: 1`.
+- Docs/config ghosts: `OCR_ENGINE` (documented, never read) removed;
+  `DIARI_DATA_DIR` → `DATA_DIR` in DEPLOYMENT.md; `.env.example` documents
+  `BIND_HOST`/`BIND_PORT`/`API_TOKEN`/`BACKUP_ALLOWED_ROOTS`/
+  `MEDIA_IMPORT_ALLOWED_ROOTS`/`BACKUP_CLOUD_RETENTION`/enrichment
+  concurrency; package-lock root version synced to 0.15.0; version-source
+  count drift (four vs five) fixed.
+- CHANGELOG cut into real 0.13.x/0.14.x/0.15.0 sections (ships in-app via
+  Settings → What's New; previously everything since 0.12 sat in
+  `[Unreleased]`).
+- Pass-2 blocker verification: scheduled backups stage `.part` + `os.replace`
+  and register with the shutdown guard — confirmed real and tested
+  (`TestLocalBackupStaging`, `test_scheduler_service.py:528`).
+
+## Blockers (must fix before shipping a release)
+
+*All three resolved 2026-11-09 (commits `4d79471`, `10e8b13`).*
+
+- [x] **RESOLVED 2026-11-09** — `desktop/src-tauri/src/main.rs` — a foreign
+  squatter on port 18765 satisfies the port probe and `verify_sidecar_owner`
+  only `warn!`s; every journal entry, note, and decrypted body is then POSTed
+  to it with no UI signal. **Fix:** a mismatch whose owner cmdline does not
+  name `lifelogr-backend` now emits `backend-owner-mismatch`, shows a blocking
+  native error dialog, and the app exits — it never talks to the impostor. A
+  pid mismatch whose cmdline IS our sidecar is the legitimate one-file-build
+  case (the spawned pid is the PyInstaller bootloader; the listener is its
+  Python child) and is allowed through with an info log.
+- [x] **RESOLVED 2026-11-09** — `desktop/src-tauri/src/main.rs` — no
+  SIGTERM/SIGINT handler; `systemctl stop`/logout/`kill` orphaned the
+  unauthenticated sidecar on 18765 holding the DB and WAL. **Fix:** a
+  `signal-hook` iterator thread routes SIGTERM/SIGINT through the same
+  `begin_shutdown` chain as the window close (busy-guard → stop_backend →
+  exit); a `SHUTDOWN_STARTED` guard makes the close-guard / ExitRequested /
+  signal race single-flight.
+- [x] **RESOLVED 2026-11-09** — `backend/app/services/export_service.py` —
+  the HTML, markdown (Obsidian + Diarium), Day One and native-archive builders
+  buffered the entire archive in RAM (`BytesIO` + per-attachment
+  `read_bytes()` + deflate) while the backup path streamed. **Fix:** all six
+  media-carrying builders (including `build_archive`, which the original line
+  list missed) write straight to a staged file under `DATA_DIR/tmp` via
+  `stage_export_file()`; the `.diary` SQLite backup targets the staged file
+  directly; `start_export_job` accepts the staged Path and the five sync
+  routes serve `FileResponse` with after-send unlink. Small text exports
+  (CSV/JSON) and the text-only PDF remain in-memory by design. Bonus fix
+  found during the refactor: the documented Obsidian route
+  `/api/v1/export/markdown` was shadowed by the entries router's identically
+  named export and never reachable (it silently returned the Diarium format) —
+  moved to `/api/v1/export/obsidian-vault` and served correctly.
 
 ## High priority
 
-- [x] **RESOLVED 2026-11-08** — `backend/app/main.py` — `/api/v1/backup/import`
-  and `/api/v1/backup/restore` added to `_DESTRUCTIVE_PATHS`, and the new
-  per-entry `DELETE /entries/{id}/purge` matches via `_is_destructive_path`.
-  Tests: `TestBackupAndPurgeCoverage` in `tests/unit/test_reset_guard.py`.
-- [ ] `backend/app/routers/entries.py:197-204,176-177,253,255,512-514` —
-  malformed query/path params (`month=13`, `year=0`, `start_date=oops`) raise
-  `ValueError` → generic 500 instead of 422; `tag_ids` parsing
-  (`entries.py:182`, `search.py:31`) 500s on `?tag_ids=abc`. Type the params
-  (`Query(ge=…)` / `date`) the way `search.py:23-24` already does.
+- [ ] `backend/app/main.py:588-676` — `/health` has no data-dir
+  writability or `shutil.disk_usage` probe; writability is checked once at
+  boot (`startup_checks.py:441`). A full or read-only volume keeps Docker
+  "healthy" while every write 500s.
+- [ ] `desktop/src-tauri/src/main.rs:147-163` — `port_is_lifelogr` matches
+  any response containing "200"/"ok" before `fuser -k`; any JSON API on the
+  port passes the heuristic and gets SIGKILLed. Match the exact `/health`
+  contract shape.
+- [ ] Docker/web variant: `Dockerfile` CMD hardcodes `--host 0.0.0.0` so
+  the production bind guard (`config.py:451-455`) validates the unchanged
+  127.0.0.1 default — a bare `docker run -p 8000:8000` exposes an
+  unauthenticated API on all interfaces while the guard passes. The
+  Dockerfile comment claiming boot-time bind validation is misleading.
+  Related: `docker-compose.yml` still passes dev `.env` wholesale (dev
+  `DATABASE_URL` lands outside the mounted volume — journal silently lost on
+  container replacement).
+- [ ] `DELETE /api/v1/media/{id}`, recordings/video-note/note-media deletes,
+  and `DELETE /api/v1/backup/snapshots/{id}` are irreversible but sit
+  outside the strict destructive-origin guard (`main.py:348-364`) — any
+  loopback origin (hostile page on another local port) can enumerate IDs and
+  mass-delete. Note the tradeoff: the destructive guard couples origin
+  strictness with a 5/60s rate limit, which would break legitimate bulk
+  media deletes; the fix needs those two concerns decoupled.
+- [ ] `desktop/src-tauri/capabilities/default.json:27-36` — blanket
+  `fs:allow-write-file` over `$DOWNLOAD/$DOCUMENT/$PICTURE/$DESKTOP/
+  $HOME/Documents`; the only legitimate use is the user-picked save dialog
+  (`utils/fileDialog.ts:29`). A compromised webview can overwrite arbitrary
+  files in five trees with no dialog.
 
 ## Medium priority
 
-- [ ] `frontend/src/composables/useAutoSave.ts:101-139` +
-  `EntryEditor.vue:967-1046` — keystrokes typed during an in-flight save are
-  marked clean (`snapshot()` stringifies live refs post-await) and never
-  persisted; `close()` then discards the crash draft. Snapshot from the
-  payload values, or re-arm the debounce on the skip path.
-- [ ] `backend/app/core/database.py:288-305` — `lifelogr.db.corrupt-*`
-  quarantine copies are never pruned (boot snapshots rotate at 5; quarantine
-  doesn't). A failing disk writes one full-DB-size file per boot attempt.
-- [ ] `backend/app/core/jobs.py:254-272` + `routers/backup.py:281` — export
-  temp handling is inconsistent: job exports go to `DATA_DIR/tmp` with no boot
-  sweep after a crash, while `export_local_backup` stages a full DB+media
-  archive in system `/tmp` (tmpfs risk). One policy + a boot sweep + a
-  free-space check.
-- [ ] No free-space checks on backup/restore staging
-  (`scheduler_service.py:779-805`, `backup_service.py:190,493`,
-  `routers/backup.py:415`) — only the hot-move checks headroom
-  (`storage_service.py:100-106`).
-- [ ] `backend/app/main.py:572-660` — `/health` has no data-dir
-  writability/disk-space signal; a full or read-only volume keeps the
-  Docker container "healthy" while every write 500s.
-- [ ] `backend/app/services/ai_provider_service.py:93,111-112` — custom
-  provider `base_url` accepts any string (contrast the scheme+loopback+consent
-  checks on `ollama_base_url` in `routers/settings.py:165-178`); stored API
-  keys are later sent to it as Bearer headers. At minimum validate scheme.
-- [ ] `backend/app/services/media_service.py:758-768`,
-  `note_media_service.py:259-265`, `video_service.py:126-133` — these three
-  deletes unlink files *before* the DB commit, the opposite of the ordering
-  `entry_service.soft_delete` documents and deliberately uses
-  (`entry_service.py:317-320`).
-- [ ] Config/environment (browser/Docker variant): `Dockerfile:10,15` ignores
-  `uv.lock` (floating `uv:latest`, resolve-at-build deps); `docker-compose.yml`
-  loads `backend/.env` wholesale, injecting dev `DATABASE_URL` (DB lands
-  outside the mounted volume), dev `SECRET_KEY`, and a real OAuth secret into
-  the container; `frontend/package-lock.json` root version is stale at 0.13.0.
+- Media writes go straight to final paths with no temp+rename —
+  `note_media_service.py:112,179,182,185`, `media_service.py:443,502,504`,
+  `video_service.py:60,103` — ENOSPC mid-write leaves a permanent truncated
+  orphan (thumbnails already do temp+rename correctly,
+  `media_service.py:765-768`).
+- No free-space checks before backup/restore/export staging
+  (`scheduler_service.py:828-848`, `routers/backup.py:281,415` — restore
+  peaks at ~2x data size across two filesystems), and no boot sweep for
+  orphaned staged artifacts (`core/jobs.py:254-257`, `DATA_DIR/tmp`,
+  crash-before-download leaks).
+- `routers/media.py:69-90` batch upload commits per file with no per-file
+  result: one bad file at position 12 of 20 → error naming nothing, and a
+  retry duplicates the first 11.
+- `main.rs:187-191` `pkill -f lifelogr-backend` fallback can kill unrelated
+  processes matching the substring (psmisc ships in the .deb, so `fuser` is
+  the normal path; the fallback is the dangerous branch).
+- `capabilities/default.json:7` bare `shell:allow-open` — no URL validator;
+  a compromised webview can invoke arbitrary schemes directly (frontend
+  gating through `isExternalHref` is bypassable).
+- `main.rs:39-44` + `tauri.conf.json:25` — `DIARI_PORT` env override is
+  honored by the shell but the CSP pins `127.0.0.1:18765`; a non-default
+  port silently breaks the webview's own API reach.
+- `frontend/src/utils/markdown.ts:60-61` — `data-enc="${enc}"` unescaped
+  while `escAttr` sits unused in the same file; an imported journal can
+  inject attributes pre-sanitize (DOMPurify is the backstop; defense-in-depth
+  breakage, not XSS).
+- `BackupRestorePanel.vue:489-503` — disabling auto-backup swallows a failed
+  schedule DELETE: the switch shows off while backups keep running, contrary
+  to explicit user intent.
+- `frontend/src/stores/tts.ts` (267 lines: object-URL lifecycle, audio
+  caching) has zero tests; no frontend coverage measurement at all (backend
+  has a 78% floor) — asymmetric ratchet.
+- `backend/tests/unit/test_ocr_service.py:12` — the only real-OCR test skips
+  in CI (no tesseract on runners); one `apt-get install` line closes it.
+- `main.rs:385-401` — `init_logging` truncates the desktop log every launch
+  (no post-mortem trail) and `.expect()`s on an unwritable data dir — the
+  exact condition where diagnostics matter.
+- `backend/app/main.py:609-611,614-670` — `/health` DB failures log ~30
+  duplicate errors per failed boot (client polls at 2 Hz), and soft-check
+  failures (FTS/scheduler) are never logged, only in a body nobody reads
+  mid-boot.
+- `Dockerfile:10,15` — floating `uv:latest`, resolves deps at build time
+  while `uv.lock` (233 packages) is never COPYed; two builds of one tag can
+  diverge.
+- Reminder catch-up double-fire window (~seconds, notification-only;
+  `_reminder_due_for_catchup` also ignores its `now_utc` parameter and uses
+  naive local time — `scheduler_service.py:640-662,988-991`).
+- Stats cache not invalidated on media mutations (stale media counts up to
+  the 60s TTL; `entry_service.py:109-115` contract vs `routers/media.py`).
 
 ## Low priority
 
-- [ ] Shutdown guard can kill foreign listeners: `port_is_lifelogr`
-  (`desktop/src-tauri/src/main.rs:147-164`) matches any 200 body containing
-  "ok" before `fuser -k`; parse the actual `{"status": "ok"}` shape.
-- [ ] `waitForBackend` (`frontend/src/api/client.ts:24-27`) discards the
-  `/health` body — a corrupt-DB boot surfaces as generic "Backend failed to
-  start" instead of "Database unavailable"; `/health` also `logger.error`s
-  per poll (~30 duplicate lines per failed boot) (`main.py:593`), and its
-  soft-check failures are unlogged (`main.py:604-614,659-662`).
-- [ ] `note_media_service.py:110,177,180` — media written to final path
-  without temp+rename (ENOSPC leaves orphaned truncated files); TTS and
-  imports already do it correctly.
-- [ ] `EntryEditor.vue:1329` (delete catch swallows 500s as "already gone"),
-  `:1056-1061` (unhandled clipboard promise), `:1357` (AI tag-suggest button
-  fails silently — a click, not a background load).
-- [ ] Reminder catch-up double-fire window (~sub-second race,
-  `scheduler_service.py:637-660/908-938`); notification-only impact.
-- [ ] Stats cache not invalidated on media mutations despite the stated
-  contract (`entry_service.py:104-108` vs `routers/media.py` — stale media
-  counts up to 60 s).
-- [ ] Bulk dedupe soft-deletes without the single-path media policy
-  (`routers/entries.py:995-1009`) — restore-after-dedupe keeps attachments,
-  restore-after-single-delete can't (resolution follows the blocker above).
-- [ ] CI/testing: ESLint never runs in CI (ci.yml frontend job); Playwright
-  has zero retries (`playwright.config.ts`) and CI hard-enumerates spec files;
-  frontend stores largely untested (notably `stores/tts.ts`); OCR byte-path
-  test skipped in CI (no tesseract installed); `SearchPalette.mount.test.ts:93`
-  uses a real-timer sleep where fake timers are the established pattern; no
-  frontend coverage measurement.
-- [ ] `backend/.env.example` missing 12 operator fields (BIND_HOST/BIND_PORT,
-  API_TOKEN, DATA_DIR, BACKUP_ALLOWED_ROOTS, …); `OCR_ENGINE` documented but
-  nonexistent (`DEPLOYMENT.md:413`, `.env.example:47`); sidecar env table
-  lists `DIARI_DATA_DIR` but the code sets `DATA_DIR` (`main.rs:613`);
-  undocumented env-only knobs `BACKUP_CLOUD_RETENTION`
-  (`backup_service.py:48`) and `LIFEOGRF_ENRICHMENT_CONCURRENCY`
-  (`enrichment_service.py:43`); `BIND_HOST`/`BIND_PORT` inert under Docker's
-  hardcoded CMD (documented, but silently ignored).
-- [ ] Cloud-sync `_list_all_names` failures log at DEBUG only
-  (`cloud_sync_service.py:757-762`) — provider auth failure reads as "0
-  backups found" at INFO.
+- Bulk dedupe bypasses `_drop_from_semantic_cache` — soft-deleted dupes can
+  surface in semantic search until `ensure_fresh` self-heals
+  (`routers/entries.py:995-1009`).
+- `routers/search.py:22` — `q` has `min_length=1` but no max; megabyte
+  queries reach FTS + embeddings (loopback-trusted, theoretical).
+- `EntryEditor.vue:1066-1075` — `copyToClipboard` (post-fix) is fine, but
+  non-secure-context clipboard denials now toast every attempt; consider
+  once-per-session dedup if it ever bites.
+- `semantic_cache.py:352` — embedding backfill scheduling failure logs at
+  DEBUG; semantic search silently degrades to FTS-only.
+- `scheduler_service.py:316-324,272-293` — auto_backup and backup_catchup
+  are distinct jobs; `max_instances=1` is per-id, so a same-second overlap
+  could interleave two tar writes to one staged path (narrow window).
+- `frontend/src/components/search/SearchPalette.mount.test.ts:93` —
+  real-timer 260 ms sleep where fake timers are the established pattern.
+- `init_logging`'s `verify_sidecar_owner` `None => {}` branch silently
+  ignores a missing port owner (`main.rs:375`).
 
 ## Explicitly out of scope / accepted risk
 
-- **`trash2review/`** — this pipeline's holding pen (9 tracked files from the
-  2026-10-27 run plus the dead `schemas/sync.py` from this pass). Not dead
-  weight; awaiting human review.
-- **Incremental sync merge machinery has no router caller** —
-  `SyncService.push/pull` in `cloud_sync_service.py` is dead-ish code (only
-  the providers feed `backup_service`) since `/api/v1/sync` was parked in the
-  prior pass. Kept intentionally; flagged so it isn't mistaken for live.
-- **Rust shell has zero tests** — `main.rs` (720 lines) is a compile-gate-only
-  thin shell (`cargo check` in CI). Accepted boundary.
+- **`trash2review/`** — holding pen for everything this pass parked
+  (finished planning docs, `scripts/build.sh`, iOS/Android/Windows icon
+  sets, genoffice manifests). Not dead weight until reviewed; see its
+  README. Pass-2 `.pipeline/` artifacts are untracked now (retrievable at
+  commit `a35e8c5`).
+- **`SyncService.push/pull` incremental merge machinery** — no router caller
+  since `/api/v1/sync` was parked; providers feed `backup_service` directly.
+  Kept intentionally.
+- **Rust shell has zero tests** — `main.rs` (~720 lines) is compile-gate
+  only (`cargo check` in CI). Accepted boundary; the blockers above are
+  exactly why that boundary is thin.
 - **CSP `style-src 'unsafe-inline'`** (`tauri.conf.json:25`) — standard Vue
   compromise; everything else strict.
-- **Local `backend/.env`** holds a real-format Google OAuth client secret —
-  untracked and gitignored (no history leak), but rotate it if that client is
-  used beyond dev; installed-app client secrets are public anyway.
-- **`RATE_LIMIT` knob** (`config.py:346`) — one reader, one value, never
-  varied; demoting to a constant would break env override. Needs a maintainer
-  decision either way (config knob vs module constant like
-  `_DESTRUCTIVE_RATE_LIMIT`).
-- **`services/` naming split** — 24 `*_service.py` class modules vs 6 bare
-  pure-function modules, and two parallel export modules with no
-  name-level boundary signal. Rename would be churn-heavy; documented here
-  instead.
-- **`MEDIA_IMPORT_ALLOWED_ROOTS`** stays env-only (deliberate; documented at
-  `media_service.py:63-68`). Promoting it to a real Settings field would
-  change behavior (`.env` deployments would start honoring it).
-- **AI-settings field enumeration in three places** (`routers/settings.py:122,
-  182`, `settings_service.py:33`) — deriving from `model_fields` was declined
-  as a style trade-off, not an oversight.
-- **Synchronous non-job `/restore`** (`routers/backup.py:249-254`) — UI uses
-  the job variant; kept for compatibility, undocumented black hole for direct
-  API callers.
+- **Local `backend/.env`** — holds real-format OAuth/AI secrets; untracked,
+  never committed (`git log --all --full-history` empty — verified this
+  pass). Rotate if used beyond dev.
+- **`RATE_LIMIT` knob** (`config.py:346`) — one reader, one value; keep as
+  env override or demote to constant, maintainer's call.
+- **`services/` naming split** (24 `*_service.py` class modules vs bare
+  function modules) — rename would be churn-heavy; documented, not fixed.
+- **AI-settings field enumeration in three places** — deriving from
+  `model_fields` was declined as a style trade-off.
+- **Synchronous non-job `/restore`** (`routers/backup.py`) — UI uses the job
+  variant; kept for compatibility.
+- **Windows/macOS scaffolding removal** (this pass) — deliberate: the
+  project is Linux-only per its charter; the deleted CI jobs and msi/dmg
+  targets remain retrievable in git history.
 
 ## Missed by pipeline, caught by blind review
 
-An independent cold review (`.pipeline/blind-review.md`, sanitized dispatch,
-verbatim) corroborated the two blockers and the backup-import CSRF gap
-(H1–H3 above — higher confidence now, two independent passes), and found
-these issues the six-dimension audit missed. Logged as-is; not quietly
-folded into the sections above:
+An independent sanitized cold review (`.pipeline/blind-review.md`, verbatim)
+corroborated all three blockers above and the Docker bind-guard and
+capabilities Highs (higher confidence now — though note the reviewer also
+found and read `AUDIT.md` in the tree, so its agreement with existing items is
+corroboration-with-knowledge; its new findings below retain full independence
+value). What it caught that the six-dimension audit missed:
 
-- **[High] No SIGTERM handler in the desktop shell**
-  (`desktop/src-tauri/src/main.rs:710-718`) — `RunEvent::ExitRequested`
-  fires only on window close; on logout/`systemd stop`/`kill` the backend is
-  orphaned and the next launch reclaims port 18765 with `fuser -k` (SIGKILL
-  by default). The careful graceful-teardown chain is reachable only via the
-  close button.
-- **[High] Sidecar-owner verification failure is log-only**
-  (`main.rs:115-125,373-376`) — a foreign squatter on port 18765 satisfies
-  the bare TCP probe; the app then posts every journal entry to it with no
-  UI signal. (Audit had the weaker discriminator-matching form of this at
-  Low; the blind review escalated it.)
-- **[Medium] Manual save path bypasses the autosave race guard**
-  (`useAutoSave.ts:46-49,108`, `EntryEditor.vue` `save()`) — `saving` is only
-  set in the composable's own callback; Ctrl+S + a keystroke can race, and a
-  tick skipped while saving never re-arms (the audit's autosave finding was
-  narrower).
-- **[Medium] Markdown/HTML/Diarium exports buffer the whole archive in RAM**
-  (`routers/entries.py:424-531`, `export_service.py:418-512` — `BytesIO`)
-  while the backup path deliberately streams; media-heavy export can OOM
-  (this project has recorded OOM incidents).
-- **[Medium] Tauri grants blanket `fs:allow-write-file` over
-  `$DOWNLOAD/$DOCUMENT/$PICTURE/$DESKTOP/$HOME/Documents`**
-  (`capabilities/default.json:8-12`), beyond the `shell:allow-spawn` item the
-  audit did catch.
-- **[Medium] Port-reclaim details contradict the shell's own rules**
-  (`main.rs:187-191` `pkill -f` fallback; `.deb` ships `psmisc` but the
-  PID-correct path needs `lsof` — without it, shutdown SIGTERMs the
-  bootloader, which the code's own comment says is unreliable).
-- **[Medium] 90-line markdown-ZIP builder lives in the router**
-  (`routers/entries.py:424`) beside a sibling export service — layering seam.
-- **[Medium] `data-enc="${enc}"` built by unescaped interpolation before
-  sanitization** (`utils/markdown.ts:60-62`); DOMPurify makes it
-  non-exploitable, but `escAttr()` sits unused in the same file.
-- **[Low] `init_logging` truncates the desktop log every launch and
-  `.expect()`s** (`main.rs:385-400`) — no post-mortem trail; unwritable data
-  dir aborts startup.
-- **[Low] Entry draft mirror lacks the notes twin's `maxWait`/`beforeunload`
-  guards** (`useDraftRecovery.ts:48-50,156-164` vs the inline copy in
-  `EntryEditor.vue:470-568`).
-- **[Low] Stale comment** — `backup_service.py:184-185` says "engine pool is
-  size 1"; `database.py:33-38` deliberately sets 5.
-- **[Low] Cross-platform scaffolding for a Linux-only app** (`msi`/`dmg`
-  bundle targets, Windows/macOS CI jobs); `scripts/build.sh` is a divergent
-  second build path that would ship a stale-version artifact.
-- **[Low] CI checksum steps glob the wrong platform's artifacts**
-  (`build.yml:106,195,273`); env-comparison styles differ
-  (`config.py:432` vs `main.py:431`); "5 places" vs "4 source files" version
-  count drift in docs.
-- **[Process, visible in the repo]** `.pipeline/` and `trash2review/` are
-  git-tracked, and the phase-prefixed commit messages make the pipeline
-  provenance visible in history. The reviewer recommends deleting both after
-  review and merging — that's the human's call (trash2review must not be
-  emptied by this pipeline).
+- **[Blocker] Entry-switch autosave wipe race** — the debounced autosave reads
+  both the payload and the target id at fire time, and the editor's
+  entry-switch watcher / unmount never cancelled it: switching entries with a
+  save armed PATCHes the incoming entry with a cleared or foreign payload
+  (silent content destruction). **FIXED same session** — `cancelSave()` in the
+  switch watcher and `onUnmounted`, with a regression test that reproduces the
+  wipe (`update(43, {body:''})`) without the fix (commit `f55bc5a`). Residual,
+  flagged not fixed: keystrokes typed during a *create* round-trip are erased
+  when the id-change reload clears buffers (`EntryEditor.vue:1020` region).
+- **[Fixed] `check_deps` reported Ollama only** — `main.rs:73`
+  `"all_installed": ollama` discarded the tesseract/GStreamer results, so the
+  UI claimed all dependencies installed when OCR/audio were missing. **FIXED**
+  (commit `f55bc5a`).
+- **[Fixed] `make docs-check` could never fail** — BRE `\|` alternation inside
+  `grep -hoE` matched nothing, and the docs had drifted to `0.11.0` stamps
+  while the app is at 0.15.0. Regex is real ERE now (proven to fail on a
+  stale version), docs re-stamped to 0.15.0. **FIXED** (commit `f55bc5a`).
+- **[Regression from this pass, caught] `desktop/Makefile:47`** referenced the
+  `UNAME_S` this pass's platform-trim had removed — `make setup` would always
+  claim non-Linux. **FIXED** (commit `f55bc5a`).
+- **[High] The production bind guard is dead code in every documented
+  deployment** — `core/database.py:376-378` skips `validate_production`
+  whenever `DATA_DIR` is set, and DEPLOYMENT.md's systemd unit, Dockerfile CMD,
+  and bare-uvicorn instructions all either set DATA_DIR or refuse to boot. The
+  audit's Docker-only framing was narrower than the reality.
+- **[High] `shell:allow-spawn` with `"args": true`**
+  (`capabilities/default.json:9-12`) — a compromised webview can spawn the
+  backend binary with arbitrary arguments (`--host 0.0.0.0`, any DATA_DIR);
+  the audit caught only the `fs:allow-write-file` half.
+- **[High] Frontend stale-response race cluster** — no sequence guards in
+  `stores/search.ts` (older hybrid search overwrites newer results),
+  `stores/entries.ts` (fast month flip renders the wrong month),
+  `stores/notes.ts` (note B's editor shows A's content), `stores/tts.ts`
+  (audio plays A while the UI says B). Plus the non-404 half of the
+  `useJobProgress` retry loop still retries forever (the 404 terminal state
+  this pass added covers only eviction). One shared latest-wins/abort utility
+  would close most of it — this is exactly the untested async-ordering surface.
+- **[High] `BackupRestorePanel.vue:147-155`** — a failed backup download can
+  save the backend's HTML error page as `backup.tar.gz` and toast success;
+  `MaintenancePanel.vue:171-185` re-check/rebuild-index throw unhandled.
+- **[Medium] Docker image installs the `ocr` extra but never
+  `apk add tesseract-ocr`** — every OCR endpoint 500s in the web deployment;
+  no `USER` directive means bind-mounted `./data` gets root-owned DB files.
+- **[Medium] Soft-deleted notes have no restore UI** — `api/notes.ts`
+  `restore()` has zero callers; `TrashView.vue` lists entries only.
+- **[Medium] Reminder TZ-frame bug** — `_reminder_due_for_catchup` ignores its
+  `now_utc` parameter and uses naive local `datetime.now()` while
+  `schedule_catchup` compares UTC (`scheduler_service.py:988,663`); the audit
+  logged the naive-now detail but not the frame mismatch.
+- **[Medium] Empty single-instance handler** (`main.rs:559-561`) — second
+  launch does nothing where the comment promises "focus existing window".
+- **[Medium] Packaging nits** — `scripts/build-web-deb.sh:34-35` falls back to
+  version `0.1.0` on a failed grep instead of failing; postrm purge leaves a
+  dangling `/usr/local/bin/lifelogr` symlink.
+- **[Style, not defects] Comment density is high-maintenance** — threat-model
+  paragraphs on nearly every block will drift faster than the code; duplicate
+  `_checkpoint_wal_sync`/rotation logic between `database.py` and
+  `scheduler_service.py`. Left as-is (behavior-preserving pass).
 
-**Open question (genuine disagreement, left unresolved):**
-`useJobProgress.ts:44-49` — the observability audit called its failed-poll
-retry "retries with an explanatory comment rather than dying" (acceptable);
-the blind review calls it "the only unbounded loop in the app" (defect).
-Both read the same code; the difference is whether an unbounded 1 Hz poll on
-a visible progress panel is a resource concern or intended behavior. Human
-to rule.
+**Open question from pass 2, now resolved:** the `useJobProgress` unbounded
+1 Hz retry was bounded this pass (404 terminal state); the blind review still
+flags the non-404 path as retrying forever (listed above with the race
+cluster). The pass-2 disagreement is settled in the reviewer's favor, with the
+404 half already fixed.
 
-**Honest limit:** the blind reviewer runs on the same underlying model as
-the audit agents — context-blindness removes self-grading and framing bias,
-not shared model blind spots. It also found AUDIT.md at HEAD mid-review, so
-its blocker agreement is corroboration-with-knowledge. For a fully
-independent signal, run the same cold-review prompt in a fresh session or
-hand it to a different reviewer.
+**Honest limit:** the blind reviewer runs on the same underlying model as the
+audit agents — context-blindness removes self-grading and framing bias, not
+shared model blind spots. It also found `AUDIT.md` at HEAD mid-review, so its
+corroboration of known items is not fully independent. For a genuinely
+independent signal, run the same cold-review prompt in a fresh session or hand
+it to a different reviewer.
 
 ## Verification note
 
-Every finding above carries file:line references from independent audit
-agents; none have been fixed by this pipeline (this pass's phases 1–3 were
-behavior-preserving cleanup only). `.pipeline/blind-review.md` holds the
-cold review verbatim, reconciled in the section above.
+Findings carry file:line refs from six independent audit agents run against
+this tree (branch `cleanup/pipeline-2026-11-09`, commits `ca66d8e`..`f55bc5a`).
+Fixed-in-pass items were re-verified by the corresponding dimension agent or
+by tests noted above. The Phase 5 sanitized cold review is preserved verbatim
+in `.pipeline/blind-review.md` and reconciled in the section above.

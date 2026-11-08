@@ -4,7 +4,7 @@
 > [API Reference](manual/API_REFERENCE.md). This document explains **how LifeLogr is
 > built and how to work in it**, not how to use it.
 >
-> *Version 0.11.0 · last updated 2026-10-24*
+> *Version 0.15.0 · last updated 2026-11-09*
 
 ---
 
@@ -163,7 +163,7 @@ A Pydantic `BaseSettings` instance loaded from env / `.env`. Highlights:
 
 | Setting | Default | Notes |
 |---|---|---|
-| `APP_VERSION` | `0.11.0` | Keep in sync via `make bump`. API source of truth. |
+| `APP_VERSION` | `0.15.0` | Keep in sync via `make bump`. API source of truth. |
 | `APP_ENV` | `development` | `production` enables rate limiting + disables `/docs`. |
 | `SECRET_KEY` | `change-me-before-production` | AES key for encrypted credentials. **Must** be set for non-launcher runs. |
 | `DATA_DIR` | platform default (`~/.local/share/lifelogr` on Linux) | Overridable — see §8. |
@@ -692,7 +692,7 @@ the override file and moves the directory (carrying `.secret_key`).
 | `check-version` | Fail if the four versions drift. |
 | `clean` | Remove caches. |
 
-### Versioning (4 sources, kept in sync)
+### Versioning (5 sources, kept in sync)
 
 `make bump V=x.y.z` updates:
 
@@ -820,7 +820,7 @@ in sync. Reuse `core/cron_utils.py` for any new cron-occurrence math (and unit-t
 - **SSRF:** every outbound URL fetch must reuse the `web_clip_service` guards
   (internal-IP block + DNS-rebinding + per-redirect-hop re-check).
 - **Body limits:** `EntryCreate.body` ≤ 1,000,000 chars; media ≤ 25 MiB.
-- **Version parity:** bump all four sources together with `make bump`, never by hand.
+- **Version parity:** bump all five sources together with `make bump`, never by hand.
 - **Commits:** conventional-commit prefixes (`feat:`, `fix:`, `test:`, `docs:`, …);
   **no** AI co-author trailers; never commit on `main`.
 - **Packaging:** the desktop build excludes `devtools` from release; `snip` needs
@@ -858,5 +858,5 @@ curl http://127.0.0.1:18765/api/v1/system/egress-report              # privacy a
 ```
 
 For usage (not internals), see the **[User Manual](manual/USER_MANUAL.md)**; for the
-HTTP contract, the **[API Reference](manual/API_REFERENCE.md)**; for packaging details,
-the **[Build Guide](BUILD_GUIDE.md)** and **[Deployment Guide](manual/DEPLOYMENT.md)**.
+HTTP contract, the **[API Reference](manual/API_REFERENCE.md)**; for packaging and
+deployment details, the **[Deployment Guide](manual/DEPLOYMENT.md)**.

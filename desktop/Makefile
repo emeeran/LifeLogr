@@ -1,34 +1,14 @@
 .PHONY: install build build-frontend build-backend build-sidecar clean dev setup
 
-# ── Platform detection ──
-UNAME_S := $(shell uname -s)
-UNAME_M := $(shell uname -m)
-
-ifeq ($(UNAME_S),Linux)
-    TRIPLE   := x86_64-unknown-linux-gnu
-    TARGETS  := appimage,deb
-    EXE      :=
-endif
-ifeq ($(UNAME_S),Darwin)
-    ifeq ($(UNAME_M),arm64)
-        TRIPLE := aarch64-apple-darwin
-    else
-        TRIPLE := x86_64-apple-darwin
-    endif
-    TARGETS  := dmg
-    EXE      :=
-endif
-ifeq ($(OS),Windows_NT)
-    TRIPLE   := x86_64-pc-windows-msvc
-    TARGETS  := msi
-    EXE      := .exe
-endif
+# Linux-only app: one triple, no platform detection.
+TRIPLE  := x86_64-unknown-linux-gnu
+TARGETS := appimage,deb
 
 # Tauri resolves `externalBin` ("lifelogr-backend") relative to the src-tauri/
 # directory root, appending the target triple. The sidecar MUST live at
 # src-tauri/lifelogr-backend-<triple> — not under binaries/ — or the stale
-# build gets bundled. Keep both paths for backwards compat with older docs.
-SIDECAR := src-tauri/lifelogr-backend-$(TRIPLE)$(EXE)
+# build gets bundled.
+SIDECAR := src-tauri/lifelogr-backend-$(TRIPLE)
 
 # ── Prerequisites ──
 install:
@@ -64,11 +44,7 @@ build: build-frontend build-sidecar
 
 # ── Setup (install system deps on Linux) ──
 setup:
-	@if [ "$(UNAME_S)" = "Linux" ]; then \
-	    sudo bash scripts/setup-linux.sh; \
-	else \
-	    echo "System setup is only available on Linux."; \
-	fi
+	sudo bash scripts/setup-linux.sh
 
 # ── Clean ──
 clean:

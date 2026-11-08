@@ -307,7 +307,7 @@ Requires macOS build environment.
 
 ### Data Directory
 
-The Tauri shell passes `DIARI_DATA_DIR` to the backend sidecar:
+The Tauri shell passes `DATA_DIR` to the backend sidecar:
 
 | Platform | Path |
 |----------|------|
@@ -341,36 +341,23 @@ The project includes `.github/workflows/build.yml` for automated multi-platform 
 | Job | Runner | Output |
 |-----|--------|--------|
 | `build-linux` | ubuntu-latest | AppImage + .deb |
-| `build-windows` | windows-latest | .msi |
-| `build-mac` | macos-13 | .dmg |
 
-All jobs run in parallel. Artifacts are uploaded to the GitHub release.
+Artifacts are uploaded to the GitHub release.
 
-### Manual Build Script
+### Manual Build
 
-For local builds across all targets:
+From `desktop/`, the Makefile drives the same pipeline CI uses (frontend build,
+PyInstaller sidecar, Tauri bundle):
 
 ```bash
-./scripts/build.sh [target]
+cd desktop && make build    # AppImage + .deb into src-tauri/target/release/bundle/
 ```
-
-**Targets:**
-
-| Target | Description |
-|--------|-------------|
-| `linux` | Build Linux desktop (AppImage + deb) |
-| `windows` | Build Windows desktop (.msi) |
-| `mac` | Build macOS desktop (.dmg) |
-| `all-desktop` | Build all desktop targets |
-| `all` | Alias for `all-desktop` |
 
 ### Release Workflow
 
 ```bash
-# 1. Update version
-# Edit version in:
-#   - desktop/src-tauri/tauri.conf.json
-#   - backend/pyproject.toml
+# 1. Update version (all five sources at once)
+#   make bump V=x.y.z
 
 # 2. Commit and tag
 git add -A
@@ -406,12 +393,6 @@ git push origin main --tags
 | `OLLAMA_MODEL` | `llama3.2:3b` | Model to use for AI features |
 | `OLLAMA_TIMEOUT_SECONDS` | `300` | Request timeout |
 
-### OCR
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OCR_ENGINE` | `tesseract` | OCR engine |
-
 ### Database
 
 | Variable | Default | Description |
@@ -424,7 +405,7 @@ git push origin main --tags
 
 | Variable | Description |
 |----------|-------------|
-| `DIARI_DATA_DIR` | Set by Tauri shell — data directory for the app |
+| `DATA_DIR` | Set by Tauri shell — data directory for the app |
 
 ### Frontend Build
 

@@ -22,6 +22,8 @@ from app.models.note_media import NoteMedia
 from app.services import media_crypto
 from app.services.note_service import get_note_or_raise
 from app.services.media_service import (
+    unlink_media_file,
+
     _ALLOWED_MIME_PREFIXES,
     _BLOCKED_SIGNATURES,
     _CONVERTIBLE_IMAGE_TYPES,
@@ -257,9 +259,11 @@ class NoteMediaService:
         )
 
     async def delete(self, media_id: int, note_id: int) -> None:
+        """Delete a note-media record, then remove its file from disk."""
         media = await self._get_owned(media_id, note_id)
         full_path = settings.MEDIA_DIR / media.storage_path
-        if full_path.exists():
-            full_path.unlink()
         await self.db.delete(media)
         await self.db.commit()
+        # Unlink only after the commit (same ordering rule as
+        # EntryService.purge).
+        unlink_media_file(full_path, context="note media")

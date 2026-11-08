@@ -205,6 +205,9 @@ async def _ensure_incremental_vacuum() -> None:
 # corrupt file and recovery is a safe file swap with no open transaction.
 _BOOT_SNAPSHOT_PREFIX = "lifelogr.db.boot-bak-"
 _CORRUPT_PREFIX = "lifelogr.db.corrupt-"
+# Forensic quarantine copies to keep (each is full-DB-size; the newest few
+# answer "when did corruption start", older ones are just disk fill).
+_CORRUPT_RETENTION = 3
 _BOOT_SNAPSHOT_RETENTION = 5
 
 
@@ -303,6 +306,12 @@ def _recover_from_snapshot_sync(db_path: Path, data_dir: Path, _ts: str | None =
     except OSError:
         logger.error("Could not quarantine corrupt DB %s", db_path, exc_info=True)
         return False
+    # Quarantine copies are full-DB-size; rotate so a failing disk that writes
+    # one per boot attempt cannot fill the data dir (mirrors boot-snapshot
+    # rotation above; oldest by embedded timestamp goes first).
+    corrupts = sorted(data_dir.glob(f"{_CORRUPT_PREFIX}*"), key=lambda p: p.name)
+    for old in corrupts[: max(0, len(corrupts) - _CORRUPT_RETENTION)]:
+        old.unlink(missing_ok=True)
 
     snaps = sorted(data_dir.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"), key=lambda p: p.name, reverse=True)
     for snap in snaps:

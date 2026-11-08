@@ -144,7 +144,7 @@ describe('useAutoSave', () => {
     expect(opts.updateEntry).not.toHaveBeenCalled()
   })
 
-  it('bails out when the debounce fires while a save is already in flight', async () => {
+  it('re-arms when the debounce fires while a save is already in flight', async () => {
     const gate = deferred<void>()
     const opts = makeOpts({ updateEntry: vi.fn(() => gate.promise) })
     const auto = useAutoSave(opts)
@@ -159,17 +159,16 @@ describe('useAutoSave', () => {
     opts.body.value = 'draft body v2'
     auto.triggerAutosave()
     await vi.advanceTimersByTimeAsync(2000)
-    // The in-flight guard must swallow this tick: no second, racing request.
+    // The in-flight guard must not race it: still only one request.
     expect(opts.updateEntry).toHaveBeenCalledTimes(1)
 
-    // 3. The slow save lands.
+    // 3. The slow save lands; the re-armed tick then persists the v2 body —
+    // without the re-arm those keystrokes would wait for a further edit that
+    // may never come before close() discards them.
     gate.resolve()
     await vi.advanceTimersByTimeAsync(0)
     expect(auto.saveState.value).toBe('saved')
     expect(auto.saveError.value).toBeNull()
-
-    // 4. The guard is a latch, not a wedge — the next edit saves normally.
-    auto.triggerAutosave()
     await vi.advanceTimersByTimeAsync(2000)
     expect(opts.updateEntry).toHaveBeenCalledTimes(2)
     expect(opts.updateEntry).toHaveBeenLastCalledWith(42, {
@@ -177,6 +176,50 @@ describe('useAutoSave', () => {
       body: 'draft body v2',
       tag_ids: [3],
     })
+  })
+
+  it('snapshots the sent payload, not keystrokes typed mid-flight', async () => {
+    const gate = deferred<void>()
+    const opts = makeOpts({
+      isNew: ref(true),
+      createEntry: vi.fn(() => gate.promise.then(() => ({ id: 7 }))),
+    })
+    const auto = useAutoSave(opts)
+
+    auto.triggerAutosave()
+    await vi.advanceTimersByTimeAsync(2000)
+    // Keystrokes land while the request carrying 'draft body' is in flight.
+    opts.body.value = 'draft body v2'
+    gate.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    // The snapshot must claim only what the request actually carried.
+    expect(opts.createEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ body: 'draft body' }),
+    )
+    expect(opts.snapshot).toHaveBeenCalledWith({
+      body: 'draft body',
+      title: 'My title',
+      tagIds: [3],
+    })
+    expect(auto.saveState.value).toBe('saved')
+  })
+
+  it('whenIdle resolves after the in-flight save finishes', async () => {
+    const gate = deferred<void>()
+    const opts = makeOpts({ updateEntry: vi.fn(() => gate.promise) })
+    const auto = useAutoSave(opts)
+
+    auto.triggerAutosave()
+    await vi.advanceTimersByTimeAsync(2000)
+    let manualDone = false
+    void auto.whenIdle().then(() => {
+      manualDone = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(manualDone).toBe(false)
+    gate.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(manualDone).toBe(true)
   })
 
   it('persists an emptied body once something was saved, but not for a pristine editor', async () => {

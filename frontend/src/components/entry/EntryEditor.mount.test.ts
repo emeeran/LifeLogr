@@ -143,6 +143,82 @@ describe('EntryEditor mount', () => {
     wrapper.unmount()
   })
 
+  it('drops a pending autosave when the edited entry switches (no cross-entry wipe)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { default: EntryEditor } = await import('./EntryEditor.vue')
+      const { useUiStore } = await import('../../stores/ui')
+      const { entriesApi } = await import('../../api/entries')
+      const { makeEntryMock } = await import('../../test-utils/apiMocks')
+      // Entry 43's fetch hangs: the switch's load window stays open, so the
+      // (unfixed) stale autosave timer fires while the buffers are cleared.
+      let release43!: (v: unknown) => void
+      const gate43 = new Promise((resolve) => {
+        release43 = resolve
+      })
+      vi.mocked(entriesApi.get).mockImplementation(
+        (async (id: number) => {
+          if (id === 43) await gate43
+          return makeEntryMock({
+            id,
+            body: id === 42 ? 'entry A text' : `entry ${id} text`,
+          })
+        }) as never,
+      )
+      // Share ONE pinia between the test's store handle and the mounted
+      // component — a second createPinia() here would give the editor its own
+      // ui store and the switch would never reach it.
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const ui = useUiStore()
+
+      const wrapper = mount(EntryEditor, {
+        global: {
+          plugins: [pinia],
+          stubs: {
+            EncryptionBadge: true,
+            EditorToolbar: true,
+            EditorStatusBar: true,
+            EditorContextMenu: true,
+            TagAutocomplete: true,
+            MediaViewer: true,
+            MediaGrid: true,
+            TemplatePicker: true,
+            EmojiPicker: true,
+            FloatingRecorder: true,
+            EntryRecordings: true,
+            FloatingPlayback: true,
+            Teleport: true,
+          },
+        },
+      })
+      await flushPromises()
+
+      // Open entry 42 while the editor is mounted (the real flow) so the
+      // id-switch watcher fires loadEntry.
+      ui.startEditing(42)
+      await flushPromises()
+
+      // Arm the debounced autosave with entry 42's content.
+      ;(wrapper.vm as { onInput?: () => void }).onInput?.()
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Switch entries before the debounce fires. The pending save reads the
+      // buffers and the target id at fire time — letting it run would PATCH
+      // entry 43 with whatever is in the buffers (empty mid-load).
+      ui.startEditing(43)
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(entriesApi.update).not.toHaveBeenCalled()
+      wrapper.unmount()
+      release43(makeEntryMock({ id: 43, body: 'entry 43 text' }))
+      await flushPromises()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // ── MIC-5: mic next to the speaker in the bottom bar ──
   // The FAB was removed (MIC-1): the mic trigger lives in the editor's bottom
   // controls bar, immediately before the read-aloud speaker; the recording

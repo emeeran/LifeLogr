@@ -28,7 +28,7 @@ import {
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
-import { isTauri } from '../../api/client'
+import { ApiError, isTauri } from '../../api/client'
 import { entriesApi } from '../../api/entries'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import EditorStatusBar from './EditorStatusBar.vue'
@@ -365,6 +365,7 @@ const { isDragging, handlers: dragHandlers } = useDragDrop()
 const {
   triggerAutosave,
   cancelSave,
+  whenIdle,
   saveState: saveActive,
 } = useAutoSave({
   isNew,
@@ -410,16 +411,20 @@ function markChanged() {
   triggerAutosave()
 }
 
-function snapshot() {
+function snapshot(saved?: { body: string; title: string | null; tagIds: number[] }) {
+  // Record what actually persisted. Callers that just saved pass the payload
+  // they sent: reading the live refs after the request would capture
+  // keystrokes typed mid-flight and silently drop them.
+  const savedTitle = saved ? saved.title ?? '' : title.value
   savedSnapshot.value = JSON.stringify({
-    body: body.value,
-    title: title.value,
-    tagIds: tagIds.value,
+    body: saved?.body ?? body.value,
+    title: savedTitle,
+    tagIds: saved?.tagIds ?? tagIds.value,
   })
   dirty.value = false
   ui.editorIsDirty = false
   // Content just persisted — it is the new crash-recovery baseline.
-  draftBaseline = { title: title.value, body: body.value }
+  draftBaseline = { title: savedTitle, body: saved?.body ?? body.value }
 }
 
 function isDirty(): boolean {
@@ -809,11 +814,19 @@ onUnmounted(() => {
   // The buffers die with the component — a stale shared dirty flag would make
   // the router guard prompt for edits that no longer exist anywhere.
   ui.editorIsDirty = false
+  // An armed autosave must not fire against a dead editor: the timer survives
+  // unmount and its fire-time reads would PATCH a stale target id.
+  cancelSave()
 })
 watch([() => ui.editingEntryId, () => ui.newEntryDate], (next, prev) => {
   // Mirror the outgoing entry before the buffers swap (same as the notes
   // editor's page switch) — the debounced write may not have fired yet.
   if (next[0] !== prev[0]) flushDraft(String(prev[0] ?? -1))
+  // Drop any pending autosave: it reads the buffers and the target id at
+  // fire time, so letting it fire mid-switch would PATCH the incoming entry
+  // with the outgoing entry's (or a cleared) payload. The outgoing entry's
+  // unsaved keystrokes live on in its crash draft instead.
+  cancelSave()
   void loadEntry()
   loadAttachments()
 })
@@ -965,9 +978,11 @@ function autoTitleIfEmpty(): boolean {
  *  that act on the result (AppShell's pending switch) must check it.
  *  Spec §9 ED8: Save persists WITHOUT closing — closing is the X control. */
 async function save(): Promise<boolean> {
-  // Cancel any pending debounced autosave so it can't race this manual save
-  // (two concurrent updateEntry calls with different snapshots lose data).
+  // Cancel any pending debounced autosave and let an already-in-flight one
+  // finish, so this manual save never races it (two concurrent updateEntry
+  // calls with different snapshots lose data — the stale one lands last).
   cancelSave()
+  await whenIdle()
   if (dateInvalid.value) {
     toast.error('Fix the entry date — it must be a valid dd-mm-yyyy date.')
     return false
@@ -996,7 +1011,11 @@ async function save(): Promise<boolean> {
         mood: mood.value || null,
       }
       const entry = await entriesApi.create(payload)
-      snapshot()
+      snapshot({
+        body: payload.body ?? '',
+        title: payload.title ?? null,
+        tagIds: payload.tag_ids ?? tagIds.value,
+      })
       // The just-saved content is persisted — drop the pre-create draft so the
       // next blank editor doesn't offer already-saved text as "recovery".
       discardDraft()
@@ -1023,7 +1042,11 @@ async function save(): Promise<boolean> {
       }
       await entries.updateEntry(ui.editingEntryId!, payload)
       if (!isEncrypted.value) tts.prewarmEntry(ui.editingEntryId!)
-      snapshot()
+      snapshot({
+        body: payload.body ?? '',
+        title: payload.title ?? null,
+        tagIds: payload.tag_ids ?? tagIds.value,
+      })
       entries.refreshAll()
       return true
     }
@@ -1047,16 +1070,25 @@ function onEmojiSelect(emoji: string) {
   showEmoji.value = false
 }
 
-function copyToClipboard() {
+async function copyToClipboard() {
   const text = getSelection()
-  if (text) navigator.clipboard.writeText(text)
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    toast.error('Clipboard unavailable — copy was blocked by the browser.')
+  }
 }
 
-function cutToClipboard() {
+async function cutToClipboard() {
   const text = getSelection()
-  if (text) {
-    navigator.clipboard.writeText(text)
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
     applyToSelection('')
+  } catch {
+    // Keep the selection: cutting without a successful write would lose it.
+    toast.error('Clipboard unavailable — cut was blocked by the browser.')
   }
 }
 
@@ -1326,8 +1358,14 @@ async function confirmDelete() {
   showDeleteConfirm.value = false
   try {
     await entries.deleteEntry(ui.editingEntryId!)
-  } catch {
-    // Entry already gone — just close
+  } catch (e) {
+    // A 404 just means it was already gone; anything else is a real failure
+    // and closing here would silently drop the user's entry from view while
+    // it still exists server-side.
+    if (e instanceof ApiError && e.status !== 404) {
+      toast.error(`Delete failed: ${errorMessage(e)}`)
+      return
+    }
   }
   entries.refreshAll()
   ui.startEditing(null)
@@ -1354,8 +1392,8 @@ async function fetchSuggestedTags() {
   try {
     const res = await suggestTags(body.value)
     suggestedTags.value = res.tags
-  } catch {
-    /* ignore */
+  } catch (e) {
+    toast.error(`Tag suggestions failed: ${errorMessage(e)}`)
   } finally {
     suggestingTags.value = false
   }

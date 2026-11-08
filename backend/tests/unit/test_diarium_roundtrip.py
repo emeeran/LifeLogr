@@ -92,7 +92,9 @@ async def test_diary_roundtrip_and_validation(db_session):
             .order_by(Entry.entry_date, Entry.id)
         )
     ).scalars().all()
-    exported = await build_diarium_database(list(loaded))
+    staged = await build_diarium_database(list(loaded))
+    exported = staged.read_bytes()  # validators/importers consume bytes
+    staged.unlink(missing_ok=True)
     validate_diary(exported)  # must not raise
 
     # Re-import the export — content equivalent to the first generation.

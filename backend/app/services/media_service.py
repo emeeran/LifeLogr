@@ -27,6 +27,20 @@ from app.services.entry_service import get_entry_or_raise
 
 logger = logging.getLogger(__name__)
 
+
+def unlink_media_file(path: Path, *, context: str) -> None:
+    """Remove a media file, logging (not raising) on failure.
+
+    Callers must unlink only AFTER the DB commit succeeds — a failed commit
+    must never leave live rows pointing at missing files.
+    """
+    if not path.exists():
+        return
+    try:
+        path.unlink()
+    except OSError:
+        logger.warning("Could not remove %s file %s", context, path, exc_info=True)
+
 # Magic-number signatures for dangerous file types (reject these)
 _BLOCKED_SIGNATURES: dict[bytes, str] = {
     b"MZ": "Windows executable",
@@ -759,14 +773,20 @@ class MediaService:
         """Delete media record and remove file from disk."""
         media = await self.get(media_id)
         full_path = settings.MEDIA_DIR / media.storage_path
-        if full_path.exists():
-            full_path.unlink()
-        # Both cache flavours: the plaintext WebP and the encrypted .llm1
-        # sibling — leaving the latter would orphan ciphertext on disk forever.
-        self._thumb_path_for(media).unlink(missing_ok=True)
-        self._thumb_path_for(media, encrypted=True).unlink(missing_ok=True)
+        thumb_paths = [
+            self._thumb_path_for(media),
+            self._thumb_path_for(media, encrypted=True),
+        ]
         await self.db.delete(media)
         await self.db.commit()
+        # Files unlink only AFTER the commit (same ordering rule as
+        # EntryService.purge), so a failed commit can never leave live rows
+        # pointing at missing files. Both cache flavours are removed: the
+        # plaintext WebP and the encrypted .llm1 sibling — leaving the latter
+        # would orphan ciphertext on disk forever.
+        unlink_media_file(full_path, context="media")
+        for thumb_path in thumb_paths:
+            thumb_path.unlink(missing_ok=True)
 
     async def list_for_entry(self, entry_id: int) -> list[Media]:
         """Return all media attachments for an entry."""

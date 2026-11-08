@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import tempfile
 from collections.abc import Awaitable
@@ -278,9 +279,14 @@ async def export_local_backup(
     from app.core.archive import add_backup_members
     from app.core.restore import checkpoint_wal
 
-    tmpdir = tempfile.mkdtemp()
+    # Stage inside DATA_DIR (not system /tmp — tmpfs on Ubuntu 24.04, so a
+    # media-heavy archive would be packed into RAM; this project has recorded
+    # OOM incidents). Same policy as the cloud backup staging in
+    # backup_service.export_local_backup.
+    fd, staged = tempfile.mkstemp(suffix=".tar.gz", dir=str(settings.DATA_DIR))
+    os.close(fd)
+    archive_path = Path(staged)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    archive_path = Path(tmpdir) / f"lifelogr-backup-{timestamp}.tar.gz"
 
     db_file = settings.db_path
     media_dir = settings.MEDIA_DIR
@@ -299,7 +305,7 @@ async def export_local_backup(
 
     await asyncio.to_thread(_pack)
 
-    background_tasks.add_task(shutil.rmtree, tmpdir, ignore_errors=True)
+    background_tasks.add_task(archive_path.unlink, True)
 
     return FileResponse(
         path=str(archive_path),

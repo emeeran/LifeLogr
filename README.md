@@ -6,7 +6,7 @@ hybrid search, end-to-end encryption, optional cloud backup, and AI assistance t
 runs **locally by default** (Ollama) and can optionally use a cloud model of your
 choice. **Your journal lives on your machine.**
 
-`v0.11.0` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
+`v0.15.0` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
 
 ![LifeLogr](docs/images/lifelogr_01.jpg)
 ![Editor](docs/images/lifelogr_Editor.jpg)
@@ -94,7 +94,7 @@ A native window; bundles everything (no install-time network needed). This is th
 **only** build that supports screen-snippet capture.
 
 ```bash
-sudo dpkg -i LifeLogr_0.11.0_amd64.deb
+sudo dpkg -i LifeLogr_0.15.0_amd64.deb
 sudo apt-get install -f        # pulls tesseract-ocr, gstreamer, webkit, etc.
 ```
 Launch **LifeLogr** from your app menu.
@@ -104,7 +104,7 @@ Lighter; the backend serves the SPA and you use it in a browser tab. The Python
 virtualenv is built **on your machine at install time** (needs network).
 
 ```bash
-sudo dpkg -i lifelogr-web_0.11.0_amd64.deb
+sudo dpkg -i lifelogr-web_0.15.0_amd64.deb
 sudo apt-get install -f        # pulls python3 (≥3.11), tesseract-ocr
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`); it opens a browser tab on
@@ -254,8 +254,7 @@ cd desktop/src-tauri && cargo tauri build --no-default-features
 Further reading: [Architecture & Developer Guide](docs/ARCHITECTURE.md) ·
 [User Manual](docs/manual/USER_MANUAL.md) ·
 [API Reference](docs/manual/API_REFERENCE.md) ·
-[Deployment](docs/manual/DEPLOYMENT.md) ·
-[Build Guide](docs/BUILD_GUIDE.md).
+[Deployment & Packaging](docs/manual/DEPLOYMENT.md).
 
 ---
 
