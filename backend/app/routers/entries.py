@@ -66,6 +66,7 @@ from app.services.media_service import check_signature, spool_upload
 from app.services.export_service import (
     ARCHIVE_FORMAT,
     ExportService,
+    build_markdown_zip,
     build_archive,
     build_daylio_csv,
     build_dayone_zip,
@@ -460,84 +461,6 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
     return notes
 
 
-def _build_markdown_zip_sync(
-    entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> bytes:
-    """Diarium-compatible markdown vault ZIP; *report* gets render/media ticks."""
-    buf = io.BytesIO()
-    media_total = sum(
-        1
-        for e in entries
-        if not e.is_encrypted
-        for m in e.media
-        if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
-    )
-    media_done = 0
-    if report is not None:
-        report("render", 0, len(entries))
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for entry_index, entry in enumerate(entries):
-            tags = [a.tag.name for a in entry.tag_associations if a.tag]
-            # YAML frontmatter (Diarium-compatible)
-            frontmatter = "---\n"
-            frontmatter += f"date: {entry.entry_date}\n"
-            if entry.title:
-                frontmatter += f"title: {entry.title}\n"
-            if entry.mood:
-                frontmatter += f"mood: {entry.mood}\n"
-            if tags:
-                frontmatter += "tags:\n"
-                for t in tags:
-                    frontmatter += f"  - {t}\n"
-            # Media manifest — the files sit at media/{storage_path} in this
-            # zip; `ref` is the id bodies reference as /api/v1/media/{ref}/file
-            # so the importer can rewrite those links to the new ids.
-            exportable_media = [
-                m
-                for m in entry.media
-                # Attachments of an encrypted entry never export (the body is
-                # ciphertext, so the files would be orphaned plaintext).
-                if not entry.is_encrypted
-                and (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
-            ]
-            if exportable_media:
-                frontmatter += "media:\n"
-                for media in exportable_media:
-                    frontmatter += f"  - ref: {media.id}\n"
-                    frontmatter += f"    path: media/{media.storage_path}\n"
-                    frontmatter += f"    filename: {media.filename}\n"
-                    frontmatter += f"    type: {media.media_type}\n"
-            frontmatter += "---\n\n"
-
-            # Same-day entries used to share one filename and overwrite each
-            # other — suffix the id so every entry survives the round-trip.
-            filename = f"entries/{entry.entry_date}-{entry.id}.md"
-            zf.writestr(filename, frontmatter + entry.body)
-            if report is not None:
-                report("render", entry_index + 1, len(entries))
-
-            # Include media files
-            for media in entry.media:
-                if entry.is_encrypted:
-                    continue
-                media_path = Path(settings.MEDIA_DIR) / media.storage_path
-                if media_path.exists():
-                    zf.write(str(media_path), f"media/{media.storage_path}")
-                    media_done += 1
-                    if report is not None:
-                        report("media", media_done, media_total)
-
-        # Add manifest
-        manifest = {
-            "format": "diarium-markdown",
-            "version": "1.0",
-            "exported_entries": len(entries),
-        }
-        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-    buf.seek(0)
-    return buf.getvalue()
-
-
 @router.get("/export/markdown")
 async def export_markdown(
     background_tasks: BackgroundTasks,
@@ -558,7 +481,7 @@ async def export_markdown(
 
         async def _build(report: ProgressReporter, session: AsyncSession) -> bytes:
             entries = await _export_entries(session, start_date, end_date)
-            return await asyncio.to_thread(_build_markdown_zip_sync, entries, report)
+            return await asyncio.to_thread(build_markdown_zip, entries, report)
 
         return start_export_job(
             background_tasks, "export-markdown", "diarium-export.zip", _build,
@@ -567,7 +490,7 @@ async def export_markdown(
 
     entries = await _export_entries(db, start_date, end_date)
     # Zip assembly (deflate + copying every media file) is blocking — offload it.
-    data = await asyncio.to_thread(_build_markdown_zip_sync, entries)
+    data = await asyncio.to_thread(build_markdown_zip, entries)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/zip",

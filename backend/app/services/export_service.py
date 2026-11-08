@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import html
+import io
+import json
 import logging
 import re
+import zipfile
 from datetime import date
+from pathlib import Path
 
 from markdown_it import MarkdownIt
 from sqlalchemy import select
@@ -16,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from typing import Any
 
 from app.core.jobs import ProgressReporter, noop_reporter
+from app.core.config import settings
 from app.models.entry import Entry
 from app.models.tag import EntryTag
 
@@ -938,6 +943,83 @@ def _build_dayone_zip_sync(
 _DAYLIO_HEADER = ["full_date", "date", "weekday", "time", "mood", "activities", "note_title", "note"]
 _MOOD_TO_DAYLIO = {"awful": "awful", "bad": "bad", "meh": "meh", "good": "good", "great": "rad"}
 
+
+def build_markdown_zip(
+    entries: list[Entry], report: ProgressReporter = noop_reporter
+) -> bytes:
+    """Diarium-compatible markdown vault ZIP; *report* gets render/media ticks."""
+    buf = io.BytesIO()
+    media_total = sum(
+        1
+        for e in entries
+        if not e.is_encrypted
+        for m in e.media
+        if (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+    )
+    media_done = 0
+    if report is not None:
+        report("render", 0, len(entries))
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for entry_index, entry in enumerate(entries):
+            tags = [a.tag.name for a in entry.tag_associations if a.tag]
+            # YAML frontmatter (Diarium-compatible)
+            frontmatter = "---\n"
+            frontmatter += f"date: {entry.entry_date}\n"
+            if entry.title:
+                frontmatter += f"title: {entry.title}\n"
+            if entry.mood:
+                frontmatter += f"mood: {entry.mood}\n"
+            if tags:
+                frontmatter += "tags:\n"
+                for t in tags:
+                    frontmatter += f"  - {t}\n"
+            # Media manifest — the files sit at media/{storage_path} in this
+            # zip; `ref` is the id bodies reference as /api/v1/media/{ref}/file
+            # so the importer can rewrite those links to the new ids.
+            exportable_media = [
+                m
+                for m in entry.media
+                # Attachments of an encrypted entry never export (the body is
+                # ciphertext, so the files would be orphaned plaintext).
+                if not entry.is_encrypted
+                and (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+            ]
+            if exportable_media:
+                frontmatter += "media:\n"
+                for media in exportable_media:
+                    frontmatter += f"  - ref: {media.id}\n"
+                    frontmatter += f"    path: media/{media.storage_path}\n"
+                    frontmatter += f"    filename: {media.filename}\n"
+                    frontmatter += f"    type: {media.media_type}\n"
+            frontmatter += "---\n\n"
+
+            # Same-day entries used to share one filename and overwrite each
+            # other — suffix the id so every entry survives the round-trip.
+            filename = f"entries/{entry.entry_date}-{entry.id}.md"
+            zf.writestr(filename, frontmatter + entry.body)
+            if report is not None:
+                report("render", entry_index + 1, len(entries))
+
+            # Include media files
+            for media in entry.media:
+                if entry.is_encrypted:
+                    continue
+                media_path = Path(settings.MEDIA_DIR) / media.storage_path
+                if media_path.exists():
+                    zf.write(str(media_path), f"media/{media.storage_path}")
+                    media_done += 1
+                    if report is not None:
+                        report("media", media_done, media_total)
+
+        # Add manifest
+        manifest = {
+            "format": "diarium-markdown",
+            "version": "1.0",
+            "exported_entries": len(entries),
+        }
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+    buf.seek(0)
+    return buf.getvalue()
 
 def build_daylio_csv(entries: list[Entry]) -> bytes:
     """Serialize entries into Daylio CSV text (as bytes) for Diarium import.

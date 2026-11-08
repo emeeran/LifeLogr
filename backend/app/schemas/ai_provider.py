@@ -7,6 +7,7 @@ and never returned — responses expose only ``has_key``.
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -19,15 +20,23 @@ def _strip(value: str | None) -> str | None:
 
 
 def _normalize_base_url(value: str | None) -> str | None:
-    """Trim whitespace and any trailing slash.
+    """Trim whitespace and any trailing slash; require an http(s) URL with a host.
 
-    A trailing slash produces ``…/v1//chat/completions`` (double slash) which some
-    OpenAI-compatible servers reject with a 404 — silently and only for the
-    affected provider. Stripping it here makes the endpoint robust to paste typos.
+    The trailing-slash strip handles ``…/v1//chat/completions`` (double slash),
+    which some OpenAI-compatible servers reject with a 404 — silently and only
+    for the affected provider. The scheme/host check mirrors the Ollama URL
+    validation in the settings router: the stored key is later sent to this
+    base_url as a Bearer header, so anything that is not a usable HTTP(S)
+    endpoint must be rejected at the boundary, not at request time.
     """
     if value is None:
         return None
-    return value.strip().rstrip("/")
+    url = value.strip().rstrip("/")
+    if urlparse(url).scheme.lower() not in ("http", "https"):
+        raise ValueError("Base URL must use http or https")
+    if not urlparse(url).hostname:
+        raise ValueError("Base URL has no host")
+    return url
 
 
 class AIProviderCreate(BaseModel):
