@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import _PASSENGER_FILES, settings, write_storage_override
 from app.core.database import init_db, reinit_engine
-from app.core.restore import _checkpoint_live, validate_extracted_db
+from app.core.restore import _atomic_write, _checkpoint_live, validate_extracted_db
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +35,6 @@ logger = logging.getLogger(__name__)
 _MOVE_PASSENGER_FILES = (*_PASSENGER_FILES, ".env")
 # Require this multiple of the live data size as free space on the target.
 _MIN_HEADROOM_MULT = 1.5
-
-
-def _atomic_copy(src: Path, dst: Path) -> None:
-    """Copy *src* to *dst* atomically via a .tmp file + os.replace."""
-    tmp = dst.with_suffix(dst.suffix + ".tmp")
-    try:
-        shutil.copy2(str(src), str(tmp))
-        os.replace(str(tmp), str(dst))
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
 
 
 def _iter_files(root: Path) -> Iterator[Path]:
@@ -167,7 +156,7 @@ async def relocate_storage(
             old_db.with_suffix(old_db.suffix + "-shm"),
         ):
             if p.exists():
-                _atomic_copy(p, target / p.name)
+                _atomic_write(p, target / p.name)
                 staged.append(target / p.name)
 
         old_media = Path(settings.MEDIA_DIR)
@@ -180,7 +169,7 @@ async def relocate_storage(
         for name in _MOVE_PASSENGER_FILES:
             src = old_dir / name
             if src.exists():
-                _atomic_copy(src, target / name)
+                _atomic_write(src, target / name)
                 staged.append(target / name)
     except BaseException:
         logger.error("Relocate failed during copy; cleaning target", exc_info=True)
