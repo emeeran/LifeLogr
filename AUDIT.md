@@ -167,9 +167,86 @@ calling the data-safety story done.
   the job variant; kept for compatibility, undocumented black hole for direct
   API callers.
 
+## Missed by pipeline, caught by blind review
+
+An independent cold review (`.pipeline/blind-review.md`, sanitized dispatch,
+verbatim) corroborated the two blockers and the backup-import CSRF gap
+(H1–H3 above — higher confidence now, two independent passes), and found
+these issues the six-dimension audit missed. Logged as-is; not quietly
+folded into the sections above:
+
+- **[High] No SIGTERM handler in the desktop shell**
+  (`desktop/src-tauri/src/main.rs:710-718`) — `RunEvent::ExitRequested`
+  fires only on window close; on logout/`systemd stop`/`kill` the backend is
+  orphaned and the next launch reclaims port 18765 with `fuser -k` (SIGKILL
+  by default). The careful graceful-teardown chain is reachable only via the
+  close button.
+- **[High] Sidecar-owner verification failure is log-only**
+  (`main.rs:115-125,373-376`) — a foreign squatter on port 18765 satisfies
+  the bare TCP probe; the app then posts every journal entry to it with no
+  UI signal. (Audit had the weaker discriminator-matching form of this at
+  Low; the blind review escalated it.)
+- **[Medium] Manual save path bypasses the autosave race guard**
+  (`useAutoSave.ts:46-49,108`, `EntryEditor.vue` `save()`) — `saving` is only
+  set in the composable's own callback; Ctrl+S + a keystroke can race, and a
+  tick skipped while saving never re-arms (the audit's autosave finding was
+  narrower).
+- **[Medium] Markdown/HTML/Diarium exports buffer the whole archive in RAM**
+  (`routers/entries.py:424-531`, `export_service.py:418-512` — `BytesIO`)
+  while the backup path deliberately streams; media-heavy export can OOM
+  (this project has recorded OOM incidents).
+- **[Medium] Tauri grants blanket `fs:allow-write-file` over
+  `$DOWNLOAD/$DOCUMENT/$PICTURE/$DESKTOP/$HOME/Documents`**
+  (`capabilities/default.json:8-12`), beyond the `shell:allow-spawn` item the
+  audit did catch.
+- **[Medium] Port-reclaim details contradict the shell's own rules**
+  (`main.rs:187-191` `pkill -f` fallback; `.deb` ships `psmisc` but the
+  PID-correct path needs `lsof` — without it, shutdown SIGTERMs the
+  bootloader, which the code's own comment says is unreliable).
+- **[Medium] 90-line markdown-ZIP builder lives in the router**
+  (`routers/entries.py:424`) beside a sibling export service — layering seam.
+- **[Medium] `data-enc="${enc}"` built by unescaped interpolation before
+  sanitization** (`utils/markdown.ts:60-62`); DOMPurify makes it
+  non-exploitable, but `escAttr()` sits unused in the same file.
+- **[Low] `init_logging` truncates the desktop log every launch and
+  `.expect()`s** (`main.rs:385-400`) — no post-mortem trail; unwritable data
+  dir aborts startup.
+- **[Low] Entry draft mirror lacks the notes twin's `maxWait`/`beforeunload`
+  guards** (`useDraftRecovery.ts:48-50,156-164` vs the inline copy in
+  `EntryEditor.vue:470-568`).
+- **[Low] Stale comment** — `backup_service.py:184-185` says "engine pool is
+  size 1"; `database.py:33-38` deliberately sets 5.
+- **[Low] Cross-platform scaffolding for a Linux-only app** (`msi`/`dmg`
+  bundle targets, Windows/macOS CI jobs); `scripts/build.sh` is a divergent
+  second build path that would ship a stale-version artifact.
+- **[Low] CI checksum steps glob the wrong platform's artifacts**
+  (`build.yml:106,195,273`); env-comparison styles differ
+  (`config.py:432` vs `main.py:431`); "5 places" vs "4 source files" version
+  count drift in docs.
+- **[Process, visible in the repo]** `.pipeline/` and `trash2review/` are
+  git-tracked, and the phase-prefixed commit messages make the pipeline
+  provenance visible in history. The reviewer recommends deleting both after
+  review and merging — that's the human's call (trash2review must not be
+  emptied by this pipeline).
+
+**Open question (genuine disagreement, left unresolved):**
+`useJobProgress.ts:44-49` — the observability audit called its failed-poll
+retry "retries with an explanatory comment rather than dying" (acceptable);
+the blind review calls it "the only unbounded loop in the app" (defect).
+Both read the same code; the difference is whether an unbounded 1 Hz poll on
+a visible progress panel is a resource concern or intended behavior. Human
+to rule.
+
+**Honest limit:** the blind reviewer runs on the same underlying model as
+the audit agents — context-blindness removes self-grading and framing bias,
+not shared model blind spots. It also found AUDIT.md at HEAD mid-review, so
+its blocker agreement is corroboration-with-knowledge. For a fully
+independent signal, run the same cold-review prompt in a fresh session or
+hand it to a different reviewer.
+
 ## Verification note
 
 Every finding above carries file:line references from independent audit
 agents; none have been fixed by this pipeline (this pass's phases 1–3 were
-behavior-preserving cleanup only). `.pipeline/blind-review.md` holds an
-independent cold review reconciled against this document.
+behavior-preserving cleanup only). `.pipeline/blind-review.md` holds the
+cold review verbatim, reconciled in the section above.
