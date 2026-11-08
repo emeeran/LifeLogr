@@ -754,16 +754,26 @@ class GoogleDriveProvider(_OAuthProviderBase):
         return [f["name"] for f in files]
 
     async def list_files(self, prefix: str) -> list[str]:
-        """List backups in the visible folder plus any still in App Data."""
+        """List backups in the visible folder plus any still in App Data.
+
+        One space failing is tolerated as partial visibility (logged). If
+        both fail, that is a provider problem (auth, connectivity) — raise
+        so callers surface it instead of reading the empty result as "no
+        backups found" during a restore.
+        """
         names: set[str] = set()
-        try:
-            names.update(await self._list_names(prefix, look_in="folder"))
-        except Exception:
-            logger.debug("list_files(folder) failed", exc_info=True)
-        try:
-            names.update(await self._list_names(prefix, look_in="appdata"))
-        except Exception:
-            logger.debug("list_files(appdata) failed", exc_info=True)
+        failures = 0
+        for look_in in ("folder", "appdata"):
+            try:
+                names.update(await self._list_names(prefix, look_in=look_in))
+            except Exception:
+                failures += 1
+                logger.warning("list_files(%s) failed", look_in, exc_info=True)
+        if failures == 2:
+            raise RuntimeError(
+                "Could not list cloud backups (both the visible folder and "
+                "app-data listings failed) — check the provider connection."
+            )
         return sorted(names)
 
     async def _delete_by_id(self, file_id: str) -> None:

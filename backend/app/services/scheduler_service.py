@@ -6,9 +6,7 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import tarfile
-import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -870,7 +868,6 @@ async def _run_backup(
             "Archive still includes -wal/-shm for completeness."
         )
 
-    tmpdir = tempfile.mkdtemp()
     try:
         # Gzipping DB + media is synchronous file I/O — offload it so the
         # scheduled backup job doesn't block the event loop.
@@ -892,8 +889,6 @@ async def _run_backup(
         part_path.unlink(missing_ok=True)
         _fail_registry_job(exc)
         raise
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
     # Retention: remove oldest backups if exceeding limit
     _cleanup_old_backups(path, retention)

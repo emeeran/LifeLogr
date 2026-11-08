@@ -1,4 +1,5 @@
 import { computed, onUnmounted, ref, watch as watchRef, shallowRef } from 'vue'
+import { ApiError } from '../api/client'
 import { jobsApi, type JobState } from '../api/jobs'
 
 const POLL_MS = 1000
@@ -42,6 +43,28 @@ export function useJobProgress() {
         stop()
       }
     } catch (e: unknown) {
+      // A 404 is terminal: the job was evicted (jobs expire a few minutes
+      // after finishing) or the backend lost its job registry (restart).
+      // Retrying forever would spin at 1 Hz on a state that can never
+      // succeed and leave run()'s promise hanging.
+      if (e instanceof ApiError && e.status === 404) {
+        error.value = 'Job no longer exists (expired or backend restarted)'
+        job.value = {
+          id: jobId,
+          kind: '',
+          status: 'failed',
+          phase: '',
+          done: 0,
+          total: null,
+          percent: null,
+          detail: null,
+          error: error.value,
+          created_at: 0,
+          finished_at: Date.now() / 1000,
+        }
+        stop()
+        return
+      }
       // A single failed poll shouldn't kill the watch — the backend may be
       // mid-restart (e.g. right after a restore). Retry within the window.
       error.value = e instanceof Error ? e.message : 'Failed to fetch progress'

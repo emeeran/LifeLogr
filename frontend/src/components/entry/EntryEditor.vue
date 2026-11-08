@@ -28,7 +28,7 @@ import {
 } from 'lucide-vue-next'
 import EncryptionBadge from './EncryptionBadge.vue'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
-import { isTauri } from '../../api/client'
+import { ApiError, isTauri } from '../../api/client'
 import { entriesApi } from '../../api/entries'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import EditorStatusBar from './EditorStatusBar.vue'
@@ -1062,16 +1062,25 @@ function onEmojiSelect(emoji: string) {
   showEmoji.value = false
 }
 
-function copyToClipboard() {
+async function copyToClipboard() {
   const text = getSelection()
-  if (text) navigator.clipboard.writeText(text)
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    toast.error('Clipboard unavailable — copy was blocked by the browser.')
+  }
 }
 
-function cutToClipboard() {
+async function cutToClipboard() {
   const text = getSelection()
-  if (text) {
-    navigator.clipboard.writeText(text)
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
     applyToSelection('')
+  } catch {
+    // Keep the selection: cutting without a successful write would lose it.
+    toast.error('Clipboard unavailable — cut was blocked by the browser.')
   }
 }
 
@@ -1341,8 +1350,14 @@ async function confirmDelete() {
   showDeleteConfirm.value = false
   try {
     await entries.deleteEntry(ui.editingEntryId!)
-  } catch {
-    // Entry already gone — just close
+  } catch (e) {
+    // A 404 just means it was already gone; anything else is a real failure
+    // and closing here would silently drop the user's entry from view while
+    // it still exists server-side.
+    if (e instanceof ApiError && e.status !== 404) {
+      toast.error(`Delete failed: ${errorMessage(e)}`)
+      return
+    }
   }
   entries.refreshAll()
   ui.startEditing(null)
@@ -1369,8 +1384,8 @@ async function fetchSuggestedTags() {
   try {
     const res = await suggestTags(body.value)
     suggestedTags.value = res.tags
-  } catch {
-    /* ignore */
+  } catch (e) {
+    toast.error(`Tag suggestions failed: ${errorMessage(e)}`)
   } finally {
     suggestingTags.value = false
   }

@@ -86,7 +86,11 @@ class ReminderService:
 
             await SchedulerService.sync_reminders()
         except Exception:
-            logger.debug("Reminder job resync skipped", exc_info=True)
+            logger.warning(
+                "Reminder job resync failed — the reminder is saved but its "
+                "job will only arm on next startup",
+                exc_info=True,
+            )
 
     async def test_notification(self, reminder_id: int) -> dict[str, bool | str]:
         """Send a test desktop notification for the reminder."""
