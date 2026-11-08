@@ -219,10 +219,91 @@ with file:line refs; none are fixed in this pass.
   project is Linux-only per its charter; the deleted CI jobs and msi/dmg
   targets remain retrievable in git history.
 
+## Missed by pipeline, caught by blind review
+
+An independent sanitized cold review (`.pipeline/blind-review.md`, verbatim)
+corroborated all three blockers above and the Docker bind-guard and
+capabilities Highs (higher confidence now — though note the reviewer also
+found and read `AUDIT.md` in the tree, so its agreement with existing items is
+corroboration-with-knowledge; its new findings below retain full independence
+value). What it caught that the six-dimension audit missed:
+
+- **[Blocker] Entry-switch autosave wipe race** — the debounced autosave reads
+  both the payload and the target id at fire time, and the editor's
+  entry-switch watcher / unmount never cancelled it: switching entries with a
+  save armed PATCHes the incoming entry with a cleared or foreign payload
+  (silent content destruction). **FIXED same session** — `cancelSave()` in the
+  switch watcher and `onUnmounted`, with a regression test that reproduces the
+  wipe (`update(43, {body:''})`) without the fix (commit `f55bc5a`). Residual,
+  flagged not fixed: keystrokes typed during a *create* round-trip are erased
+  when the id-change reload clears buffers (`EntryEditor.vue:1020` region).
+- **[Fixed] `check_deps` reported Ollama only** — `main.rs:73`
+  `"all_installed": ollama` discarded the tesseract/GStreamer results, so the
+  UI claimed all dependencies installed when OCR/audio were missing. **FIXED**
+  (commit `f55bc5a`).
+- **[Fixed] `make docs-check` could never fail** — BRE `\|` alternation inside
+  `grep -hoE` matched nothing, and the docs had drifted to `0.11.0` stamps
+  while the app is at 0.15.0. Regex is real ERE now (proven to fail on a
+  stale version), docs re-stamped to 0.15.0. **FIXED** (commit `f55bc5a`).
+- **[Regression from this pass, caught] `desktop/Makefile:47`** referenced the
+  `UNAME_S` this pass's platform-trim had removed — `make setup` would always
+  claim non-Linux. **FIXED** (commit `f55bc5a`).
+- **[High] The production bind guard is dead code in every documented
+  deployment** — `core/database.py:376-378` skips `validate_production`
+  whenever `DATA_DIR` is set, and DEPLOYMENT.md's systemd unit, Dockerfile CMD,
+  and bare-uvicorn instructions all either set DATA_DIR or refuse to boot. The
+  audit's Docker-only framing was narrower than the reality.
+- **[High] `shell:allow-spawn` with `"args": true`**
+  (`capabilities/default.json:9-12`) — a compromised webview can spawn the
+  backend binary with arbitrary arguments (`--host 0.0.0.0`, any DATA_DIR);
+  the audit caught only the `fs:allow-write-file` half.
+- **[High] Frontend stale-response race cluster** — no sequence guards in
+  `stores/search.ts` (older hybrid search overwrites newer results),
+  `stores/entries.ts` (fast month flip renders the wrong month),
+  `stores/notes.ts` (note B's editor shows A's content), `stores/tts.ts`
+  (audio plays A while the UI says B). Plus the non-404 half of the
+  `useJobProgress` retry loop still retries forever (the 404 terminal state
+  this pass added covers only eviction). One shared latest-wins/abort utility
+  would close most of it — this is exactly the untested async-ordering surface.
+- **[High] `BackupRestorePanel.vue:147-155`** — a failed backup download can
+  save the backend's HTML error page as `backup.tar.gz` and toast success;
+  `MaintenancePanel.vue:171-185` re-check/rebuild-index throw unhandled.
+- **[Medium] Docker image installs the `ocr` extra but never
+  `apk add tesseract-ocr`** — every OCR endpoint 500s in the web deployment;
+  no `USER` directive means bind-mounted `./data` gets root-owned DB files.
+- **[Medium] Soft-deleted notes have no restore UI** — `api/notes.ts`
+  `restore()` has zero callers; `TrashView.vue` lists entries only.
+- **[Medium] Reminder TZ-frame bug** — `_reminder_due_for_catchup` ignores its
+  `now_utc` parameter and uses naive local `datetime.now()` while
+  `schedule_catchup` compares UTC (`scheduler_service.py:988,663`); the audit
+  logged the naive-now detail but not the frame mismatch.
+- **[Medium] Empty single-instance handler** (`main.rs:559-561`) — second
+  launch does nothing where the comment promises "focus existing window".
+- **[Medium] Packaging nits** — `scripts/build-web-deb.sh:34-35` falls back to
+  version `0.1.0` on a failed grep instead of failing; postrm purge leaves a
+  dangling `/usr/local/bin/lifelogr` symlink.
+- **[Style, not defects] Comment density is high-maintenance** — threat-model
+  paragraphs on nearly every block will drift faster than the code; duplicate
+  `_checkpoint_wal_sync`/rotation logic between `database.py` and
+  `scheduler_service.py`. Left as-is (behavior-preserving pass).
+
+**Open question from pass 2, now resolved:** the `useJobProgress` unbounded
+1 Hz retry was bounded this pass (404 terminal state); the blind review still
+flags the non-404 path as retrying forever (listed above with the race
+cluster). The pass-2 disagreement is settled in the reviewer's favor, with the
+404 half already fixed.
+
+**Honest limit:** the blind reviewer runs on the same underlying model as the
+audit agents — context-blindness removes self-grading and framing bias, not
+shared model blind spots. It also found `AUDIT.md` at HEAD mid-review, so its
+corroboration of known items is not fully independent. For a genuinely
+independent signal, run the same cold-review prompt in a fresh session or hand
+it to a different reviewer.
+
 ## Verification note
 
 Findings carry file:line refs from six independent audit agents run against
-this tree (branch `cleanup/pipeline-2026-11-09`, commits `ca66d8e`..`ab67aed`).
+this tree (branch `cleanup/pipeline-2026-11-09`, commits `ca66d8e`..`f55bc5a`).
 Fixed-in-pass items were re-verified by the corresponding dimension agent or
-by tests noted above. A sanitized cold review (Phase 5) follows this audit;
-its reconciliation lives in `.pipeline/blind-review.md` and the section below.
+by tests noted above. The Phase 5 sanitized cold review is preserved verbatim
+in `.pipeline/blind-review.md` and reconciled in the section above.
