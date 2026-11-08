@@ -377,7 +377,7 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
     the importer rewrites body URLs to.
     """
     from app.models.note import Note, NoteTag
-    from app.services.notes_export_service import _ENCRYPTED_PLACEHOLDER
+    from app.services.notes_export_service import ENCRYPTED_PLACEHOLDER
 
     res = await session.execute(
         select(Note)
@@ -395,7 +395,7 @@ async def _load_archive_notes(session: AsyncSession) -> list[dict[str, Any]]:
         notes.append(
             {
                 "title": n.title,
-                "body": _ENCRYPTED_PLACEHOLDER if n.is_encrypted else (n.body or ""),
+                "body": ENCRYPTED_PLACEHOLDER if n.is_encrypted else (n.body or ""),
                 "is_encrypted": n.is_encrypted,
                 "is_pinned": n.is_pinned,
                 "color": n.color,

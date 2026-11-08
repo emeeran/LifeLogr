@@ -9,7 +9,7 @@ venv/
 *.egg
 dist/
 build/
-local/ 
+local/
 
 # Environment
 .env

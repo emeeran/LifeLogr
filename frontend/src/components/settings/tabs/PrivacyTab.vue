@@ -23,7 +23,7 @@ import {
   type EgressSurface,
 } from '../../../api/system'
 import { getSettings, updateSettings } from '../../../api/settings'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 import { useUiStore } from '../../../stores/ui'
 
 const uiStore = useUiStore()
@@ -49,7 +49,7 @@ async function loadWeatherSetting() {
     weatherEnabled.value = settings.weather.enabled
     mapTilesEnabled.value = settings.map.online_tiles
   } catch (e: unknown) {
-    weatherErrorMsg.value = errMsg(e)
+    weatherErrorMsg.value = errorMessage(e)
   } finally {
     weatherLoading.value = false
   }
@@ -62,7 +62,7 @@ async function setWeatherEnabled(enabled: boolean) {
     await updateSettings({ weather: { enabled } })
   } catch (e: unknown) {
     weatherEnabled.value = previous
-    weatherErrorMsg.value = errMsg(e)
+    weatherErrorMsg.value = errorMessage(e)
   }
 }
 
@@ -73,7 +73,7 @@ async function setMapTilesEnabled(enabled: boolean) {
     await updateSettings({ map: { online_tiles: enabled } })
   } catch (e: unknown) {
     mapTilesEnabled.value = previous
-    weatherErrorMsg.value = errMsg(e)
+    weatherErrorMsg.value = errorMessage(e)
   }
 }
 
@@ -116,7 +116,7 @@ onMounted(async () => {
   try {
     report.value = await getEgressReport()
   } catch (e: unknown) {
-    errorMsg.value = errMsg(e)
+    errorMsg.value = errorMessage(e)
   } finally {
     loading.value = false
   }

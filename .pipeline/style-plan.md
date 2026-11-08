@@ -1,37 +1,39 @@
-# Phase 3 Style Plan — dry run (2026-10-27)
+# Style Plan — 2026-11-08 (Phase 3 dry run)
 
-Convention detection: backend standard is `ruff check` + mypy strict (`make lint`);
-frontend is eslint + vue-tsc (`make fe-lint` / `fe-typecheck`). Docstring style is
-prose-with-reST-cross-references (`:class:`, `:func:`) uniformly; error philosophy is
-raise domain exceptions (`core/exceptions.py`) + wide-catch-with-logged-context at
-boundaries — already consistent. No formatter (black/prettier/ruff format) is wired
-into the project's workflow.
+Conventions detected as dominant: backend = ruff+mypy gates, hand-wrapped ~88
+cols, short one-liner docstrings, raise-based core.exceptions; frontend =
+style-free ESLint + extensionless relative imports; desktop = rustfmt defaults.
 
-## Apply
+## Apply — mechanical, zero-risk (batch commit)
 
-| # | inconsistency | files | resolution |
-|---|---------------|-------|------------|
-| 1 | Emoji in one toast vs plain house style everywhere else (`'Saved'`, `'Event inserted into entry'`) | `frontend/src/components/entry/EntryEditor.vue:587` | `'Daily goal reached 🎉'` → `'Daily goal reached'` |
-| 2 | Stale comment: "Connection pool (for production PostgreSQL)" — the app is SQLite-only and `database.py` uses these knobs for its SQLite QueuePool; `startup_checks.py` even enforces `DB_POOL_SIZE > 1` | `backend/app/core/config.py:345` | fix the comment, no code change |
-| 3 | 7 eslint-auto-fixable template-formatting warnings (multiline element content, quote style) clustered in 2 files | `StoragePanel.vue`, `AboutTab.vue` | `eslint --fix`, then vitest |
+| # | Finding | Change |
+|---|---|---|
+| 1 | OAuth success pages use three different icons (box.py 📦, dropbox.py/onedrive.py ✅, google_drive.py 🎉; error page ❌) | Unify on ✅ — status marker matching the error page, not per-provider mascots |
+| 3 | 10 settings-panel/tabs files + tts.ts import `errMsg` with explicit `.ts` extension; the other 24 consumers use extensionless `errorMessage`; the alias is explicitly "legacy" in utils/errorMessage.ts:23 | Switch all 10 to `import { errorMessage }` (extensionless), update references |
+| 7 | 17 of ~117 backend test files carry redundant `@pytest.mark.asyncio` while pyproject sets `asyncio_mode = "auto"` | Drop the markers |
+| 9 | desktop/src-tauri/src/main.rs fails `cargo fmt --check` (9 hunks, only file in crate) | Run `cargo fmt` |
+| 10 | .gitignore:12 `local/ ` trailing space (works today, breaks if "fixed" wrong) | Normalize to `local/` |
+| 11 | routers/entries.py:380 imports private `_ENCRYPTED_PLACEHOLDER` from notes_export_service | Promote to public `ENCRYPTED_PLACEHOLDER`, update the one other internal use |
 
-## Explicitly not applied (and why)
+## Apply — needs care (own commit, verify error paths)
 
-- **`ruff format` across the backend** — it would rewrite 88 of 98 files, but the
-  codebase is *uniformly* hand-wrapped to `ruff check`'s rules and `make lint` has no
-  format step. Uniform ≠ formatter-generated; running it would impose a new
-  convention, not erase a seam. Declined.
-- **7 `vue/no-v-html` warnings** — all in markdown renderers (entry/note bodies,
-  About tab release notes, search palette). Deliberate feature; sanitization gets
-  verified in the Phase 4 security audit instead.
-- **5 `vue/require-default-prop` warnings** — optional props on shared settings
-  components (`SButton`, `AccordionItem`, `EditorContextMenu`). Adding defaults
-  churns component APIs for warnings the project's own `fe-lint` gate already
-  tolerates. Left.
-- **1 `vue/no-template-shadow` (`Component` in AppShell.vue)** — cosmetic; left to
-  avoid touching layout code for a warning the lint gate passes with.
-- **OAuth success/error pages' emoji (`✅`/`🎉`/`📦`/`❌`)** — a deliberate parameter
-  of the shared styled callback template (`_oauth_helpers.success_page(title, emoji,
-  message)`), consistent across all five providers. This is the page's design, not
-  AI voice. Kept.
-- **`EmojiPicker.vue` emoji data** — the emoji *is* the feature. Kept.
+| # | Finding | Change |
+|---|---|---|
+| 2+4 | frontend/src/api/data.ts re-declares BASE_URL and uses raw `fetch` (loses waitForBackend, timeouts, backend `detail` in ApiError); ExportPanel.vue:227 second raw-fetch bypass | Route both through client.ts's `request()`/`blobRequest`; happy path identical, error toasts improve |
+
+## Apply — perf hygiene
+
+| # | Finding | Change |
+|---|---|---|
+| 5 | LocalFileProvider (cloud_sync_service.py:255-298, dev/testing provider) does blocking file IO on the event loop while the rest of the module wraps syscalls in asyncio.to_thread | Wrap in asyncio.to_thread |
+
+## Leave alone / needs human ruling
+
+- **6 — trash2review tracked files**: that's this pipeline's own holding pen;
+  the human empties it later. Not a style defect. (Kept.)
+- **8 — services naming split** (`*_service.py` class modules vs bare
+  pure-function modules; export_service vs notes_export_service boundary):
+  rename would be churn-heavy; document in AUDIT.md instead.
+- **12 — RATE_LIMIT knob** (one reader, one value, advertised at main.py:231):
+  demoting to a constant breaks env override; needs a human call. Flagged in
+  AUDIT.md.

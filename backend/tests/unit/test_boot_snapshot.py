@@ -182,7 +182,6 @@ def test_preflight_skips_missing_db(tmp_path: Path) -> None:
 # ── init_db hook (desktop sidecar) ────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_init_db_snapshots_existing_db_on_desktop(tmp_path: Path, monkeypatch) -> None:
     """init_db must snapshot an existing DB on the desktop sidecar (DATA_DIR set)."""
     import app.core.database as dbmod

@@ -9,7 +9,7 @@ import { KeyRound, AlertTriangle, ShieldCheck, Download, Upload, Loader } from '
 import SettingsSection from '../shared/SettingsSection.vue'
 import SettingRow from '../shared/SettingRow.vue'
 import SButton from '../shared/SButton.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -61,7 +61,7 @@ async function handleExport() {
     }
     exportPassphrase.value = ''
   } catch (e: unknown) {
-    emit('toast', 'error', `Export failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Export failed: ${errorMessage(e)}`)
   } finally {
     exportBusy.value = false
   }
@@ -122,7 +122,7 @@ async function handleImport(confirmReplace = false) {
         : 'Key restored — credentials and attachments are readable again.',
     )
   } catch (e: unknown) {
-    emit('toast', 'error', `Import failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Import failed: ${errorMessage(e)}`)
   } finally {
     importBusy.value = false
   }

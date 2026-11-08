@@ -26,7 +26,7 @@ from app.core.exceptions import MediaSizeError
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.models.note import Note, NoteFolder, NoteTag
 
-_ENCRYPTED_PLACEHOLDER = "[encrypted — body not exported]"
+ENCRYPTED_PLACEHOLDER = "[encrypted — body not exported]"
 
 
 class NotesExportService:
@@ -64,7 +64,7 @@ class NotesExportService:
 
     @staticmethod
     def _body(note: Note) -> str:
-        return _ENCRYPTED_PLACEHOLDER if note.is_encrypted else (note.body or "")
+        return ENCRYPTED_PLACEHOLDER if note.is_encrypted else (note.body or "")
 
     @staticmethod
     def _slug(title: str | None, idx: int) -> str:

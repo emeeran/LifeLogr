@@ -247,7 +247,6 @@ def test_parse_dayone_zip_prefers_full_size_over_thumbnail():
 # ── JSON export round-trip + duplicate skipping (via HTTP) ───────────────────
 
 
-@pytest.mark.asyncio
 async def test_export_import_json_roundtrip_and_dedup(client, db_session):
     from app.models.entry import Entry
 
@@ -285,7 +284,6 @@ async def test_export_import_json_roundtrip_and_dedup(client, db_session):
     assert r3.json()["imported"] == 1
 
 
-@pytest.mark.asyncio
 async def test_import_csv_via_endpoint(client):
     csv_text = "date,title,body,mood,tags\n2024-05-05,Csv,Body csv,good,a;b\n2024-05-06,,More,,\n"
     r = await client.post(
@@ -356,7 +354,6 @@ def test_parse_diarium_sqlite_converts_ticks_and_maps_rating(tmp_path):
 # ── Diarium .diary SQLite EXPORT (round-trips with the importer above) ───────
 
 
-@pytest.mark.asyncio
 async def test_export_diarium_db_builds_diarium_schema(client, db_session, tmp_path):
     import sqlite3
 
@@ -412,7 +409,6 @@ def _real_diarium_db(tmp_path) -> "sqlite3.Connection":
     return conn
 
 
-@pytest.mark.asyncio
 async def test_export_diarium_db_matches_real_diarium_schema(client, tmp_path):
     """The .diary export must be byte-schema identical to a real Diarium backup."""
     r = await client.get("/api/v1/entries/export/diarium-db")
@@ -431,7 +427,6 @@ async def test_export_diarium_db_matches_real_diarium_schema(client, tmp_path):
     assert got == sorted(_DIARIUM_DDL_VERBATIM)
 
 
-@pytest.mark.asyncio
 async def test_export_diarium_db_satisfies_not_null_and_round_trips(client, db_session, tmp_path):
     """Exported rows must satisfy the real schema's NOT NULLs and re-import losslessly."""
     from app.models.entry import Entry
@@ -528,7 +523,6 @@ def test_parse_diarium_json_entry_accepts_real_diarium_shape():
     assert parsed["tags"] == ["holiday", "Alice"]
 
 
-@pytest.mark.asyncio
 async def test_daylio_csv_export_round_trips_through_csv_import(client, db_session):
     """The Daylio CSV we emit is exactly what Diarium's CSV importer reads —
     so it must also re-import here (header spelling, rad->great, pipe tags)."""
@@ -602,7 +596,6 @@ async def _seed_entry_with_media(db_session, monkeypatch, tmp_path):
     return entry, media, blob
 
 
-@pytest.mark.asyncio
 async def test_archive_export_import_round_trips_media(client, db_session, tmp_path, monkeypatch):
     """Native archive: media bytes + metadata survive, body URLs are remapped."""
     from app.models.media import Media
@@ -647,7 +640,6 @@ async def test_archive_export_import_round_trips_media(client, db_session, tmp_p
     assert "![pic]" in reimported  # the markdown itself is preserved
 
 
-@pytest.mark.asyncio
 async def test_diarium_db_export_includes_media_blobs_and_reimports(
     client, db_session, tmp_path, monkeypatch
 ):
@@ -675,7 +667,6 @@ async def test_diarium_db_export_includes_media_blobs_and_reimports(
     assert parsed[0]["media"][0]["data"] == blob
 
 
-@pytest.mark.asyncio
 async def test_markdown_zip_export_import_round_trips_media(
     client, db_session, tmp_path, monkeypatch
 ):

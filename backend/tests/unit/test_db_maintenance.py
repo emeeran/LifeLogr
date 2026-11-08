@@ -11,7 +11,6 @@ from app.core.database import _set_sqlite_pragma
 from app.services.scheduler_service import _run_incremental_vacuum
 
 
-@pytest.mark.asyncio
 async def test_vacuum_skips_when_not_incremental(db_session) -> None:
     """On a non-INCREMENTAL DB the job is a safe no-op (the conftest engine has
     no auto_vacuum listener, so the test DB defaults to NONE)."""
@@ -19,7 +18,6 @@ async def test_vacuum_skips_when_not_incremental(db_session) -> None:
     await _run_incremental_vacuum()
 
 
-@pytest.mark.asyncio
 async def test_vacuum_runs_on_incremental_db(tmp_path, monkeypatch) -> None:
     """On an auto_vacuum=INCREMENTAL DB the job runs the reclamation pragma."""
     eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'vac.db'}")
@@ -41,7 +39,6 @@ async def test_vacuum_runs_on_incremental_db(tmp_path, monkeypatch) -> None:
         await eng.dispose()
 
 
-@pytest.mark.asyncio
 async def test_vacuum_never_raises_on_error(monkeypatch) -> None:
     """A maintenance job must never wedge the scheduler — failures are swallowed."""
 

@@ -151,9 +151,8 @@ fn port_is_lifelogr(port: u16) -> bool {
     else {
         return false;
     };
-    let req = format!(
-        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let req =
+        format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
@@ -175,9 +174,7 @@ fn reclaim_port(port: u16) {
         );
         return;
     }
-    warn!(
-        "Port {port} is already in use — reclaiming it from a stale backend sidecar"
-    );
+    warn!("Port {port} is already in use — reclaiming it from a stale backend sidecar");
     // fuser kills exactly the process holding the port (psmisc, standard on
     // Debian/Ubuntu); fall back to matching the sidecar name if fuser is absent.
     let port_arg = format!("{port}/tcp");
@@ -232,13 +229,14 @@ fn http_get(port: u16, path: &str) -> Option<String> {
     use std::io::Read;
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().ok()?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_millis(1_500))).ok()?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(1_500)))
+        .ok()?;
     stream
         .set_write_timeout(Some(Duration::from_millis(1_500)))
         .ok()?;
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).ok()?;
     let mut raw = String::new();
     stream.read_to_string(&mut raw).ok()?;
@@ -283,7 +281,10 @@ fn stop_backend(app: &tauri::AppHandle, port: u16) {
     }
 
     if port_is_listening(port) {
-        warn!("Backend did not exit within {:?} — sending SIGKILL", SIDECAR_GRACE);
+        warn!(
+            "Backend did not exit within {:?} — sending SIGKILL",
+            SIDECAR_GRACE
+        );
         if let Some(pid) = port_owner_pid(port).or(owner) {
             signal(pid, SIGKILL);
         }
@@ -386,7 +387,15 @@ fn init_logging(data_dir: &std::path::Path) {
     let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(env_logger::Target::Pipe(Box::new(log_file)))
-        .format(|buf, record| writeln!(buf, "[{} {}] {}", record.level(), record.target(), record.args()))
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "[{} {}] {}",
+                record.level(),
+                record.target(),
+                record.args()
+            )
+        })
         .init();
     info!("Logging initialised — writing to {}", log_path.display());
 }
@@ -442,10 +451,8 @@ fn gnome_screenshot_png() -> Result<Vec<u8>, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let path = std::env::temp_dir().join(format!(
-        "lifelogr-snip-{}-{stamp}.png",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("lifelogr-snip-{}-{stamp}.png", std::process::id()));
     let status = std::process::Command::new("gnome-screenshot")
         .args(["-f", &path.to_string_lossy()])
         .status()
@@ -602,10 +609,7 @@ fn main() {
                 .shell()
                 .sidecar("lifelogr-backend")
                 .map_err(|e| format!("Failed to find sidecar binary: {e}"))?
-                .args([
-                    "--host", "127.0.0.1",
-                    "--port", &port.to_string(),
-                ])
+                .args(["--host", "127.0.0.1", "--port", &port.to_string()])
                 .env("DATA_DIR", data_dir.to_string_lossy().to_string())
                 .env("APP_ENV", "production");
 
@@ -627,9 +631,15 @@ fn main() {
                     use tauri_plugin_shell::process::CommandEvent;
                     while let Some(event) = rx.recv().await {
                         match event {
-                            CommandEvent::Stdout(line) => info!("[backend] {}", String::from_utf8_lossy(&line)),
-                            CommandEvent::Stderr(line) => warn!("[backend:err] {}", String::from_utf8_lossy(&line)),
-                            CommandEvent::Terminated(status) => info!("[backend] exited: {:?}", status),
+                            CommandEvent::Stdout(line) => {
+                                info!("[backend] {}", String::from_utf8_lossy(&line))
+                            }
+                            CommandEvent::Stderr(line) => {
+                                warn!("[backend:err] {}", String::from_utf8_lossy(&line))
+                            }
+                            CommandEvent::Terminated(status) => {
+                                info!("[backend] exited: {:?}", status)
+                            }
                             CommandEvent::Error(err) => error!("[backend:error] {}", err),
                             _ => {}
                         }
@@ -659,31 +669,38 @@ fn main() {
             // one channel. WebRTC is kept off, so no peer connections exist.
             #[cfg(target_os = "linux")]
             {
-                let webview_window = app.get_webview_window("main")
+                let webview_window = app
+                    .get_webview_window("main")
                     .ok_or_else(|| "Main webview window not found".to_string())?;
-                webview_window.with_webview(|webview| {
-                    use webkit2gtk::glib::ObjectExt;
-                    use webkit2gtk::{PermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt};
-                    let ctx = webview.inner();
+                webview_window
+                    .with_webview(|webview| {
+                        use webkit2gtk::glib::ObjectExt;
+                        use webkit2gtk::{
+                            PermissionRequest, PermissionRequestExt, SettingsExt, WebViewExt,
+                        };
+                        let ctx = webview.inner();
 
-                    // Enable media stream and MediaSource APIs (microphone
-                    // capture, media playback). WebRTC peer connections stay
-                    // off — nothing in the app establishes one.
-                    if let Some(settings) = ctx.settings() {
-                        settings.set_enable_media_stream(true);
-                        settings.set_enable_mediasource(true);
-                        settings.set_enable_webrtc(false);
-                    }
-
-                    ctx.connect_permission_request(|_: &webkit2gtk::WebView, req: &PermissionRequest| {
-                        if req.is::<webkit2gtk::DeviceInfoPermissionRequest>() {
-                            req.allow();
-                        } else {
-                            req.deny();
+                        // Enable media stream and MediaSource APIs (microphone
+                        // capture, media playback). WebRTC peer connections stay
+                        // off — nothing in the app establishes one.
+                        if let Some(settings) = ctx.settings() {
+                            settings.set_enable_media_stream(true);
+                            settings.set_enable_mediasource(true);
+                            settings.set_enable_webrtc(false);
                         }
-                        true
-                    });
-                }).map_err(|e| format!("Failed to set webview media settings: {e}"))?;
+
+                        ctx.connect_permission_request(
+                            |_: &webkit2gtk::WebView, req: &PermissionRequest| {
+                                if req.is::<webkit2gtk::DeviceInfoPermissionRequest>() {
+                                    req.allow();
+                                } else {
+                                    req.deny();
+                                }
+                                true
+                            },
+                        );
+                    })
+                    .map_err(|e| format!("Failed to set webview media settings: {e}"))?;
             }
 
             Ok(())

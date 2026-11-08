@@ -6,7 +6,6 @@ from sqlalchemy import select
 
 from app.models.note import NotePage
 
-pytestmark = pytest.mark.asyncio
 
 
 async def _make_note(client: AsyncClient, **kw) -> dict:

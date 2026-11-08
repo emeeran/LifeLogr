@@ -100,7 +100,6 @@ async def _count_entries() -> int:
         return (await s.execute(select(func.count()).select_from(Entry))).scalar() or 0
 
 
-@pytest.mark.asyncio
 async def test_relocate_success(isolated_data_env, tmp_path):
     from app.services.storage_service import relocate_storage
 
@@ -131,7 +130,6 @@ async def test_relocate_success(isolated_data_env, tmp_path):
     assert fts == 1
 
 
-@pytest.mark.asyncio
 async def test_relocate_rejects_same_dir(isolated_data_env):
     from app.services.storage_service import relocate_storage
 
@@ -139,7 +137,6 @@ async def test_relocate_rejects_same_dir(isolated_data_env):
         await relocate_storage(isolated_data_env)
 
 
-@pytest.mark.asyncio
 async def test_relocate_rejects_nonempty_target(isolated_data_env, tmp_path):
     from app.services.storage_service import relocate_storage
 
@@ -150,7 +147,6 @@ async def test_relocate_rejects_nonempty_target(isolated_data_env, tmp_path):
         await relocate_storage(target)
 
 
-@pytest.mark.asyncio
 async def test_relocate_rejects_config_dir(isolated_data_env, tmp_path):
     from app.core.config import _config_dir
     from app.services.storage_service import relocate_storage
@@ -159,7 +155,6 @@ async def test_relocate_rejects_config_dir(isolated_data_env, tmp_path):
         await relocate_storage(_config_dir())
 
 
-@pytest.mark.asyncio
 async def test_relocate_rollback_on_engine_failure(isolated_data_env, tmp_path, monkeypatch):
     from app.services import storage_service as ss
 

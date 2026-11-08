@@ -14,7 +14,7 @@ import SettingRow from '../shared/SettingRow.vue'
 import SkeletonCard from '../shared/SkeletonCard.vue'
 import SButton from '../shared/SButton.vue'
 import ConfirmDialog from '../../common/ConfirmDialog.vue'
-import { errMsg } from '../../../utils/errorMessage.ts'
+import { errorMessage } from '../../../utils/errorMessage'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -71,7 +71,7 @@ async function confirmRelocate() {
     emit('toast', 'success', `Data moved to ${r.new_path}`)
     await load()
   } catch (e: unknown) {
-    emit('toast', 'error', `Move failed: ${errMsg(e)}`)
+    emit('toast', 'error', `Move failed: ${errorMessage(e)}`)
   } finally {
     relocating.value = false
     relocateConfirm.value = false
