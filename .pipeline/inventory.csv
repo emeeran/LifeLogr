@@ -1,587 +1,597 @@
-".claude/agents/rea-builder.md"|1034|2026-10-28 10:13:42|2026-10-27|NONE
-".claude/agents/rea-scout.md"|1487|2026-10-28 10:13:42|2026-10-27|NONE
-".claude/agents/rea-spec-writer.md"|777|2026-10-28 10:13:42|2026-10-27|NONE
-".claude/agents/rea-tester.md"|1234|2026-10-28 10:13:42|2026-10-27|NONE
-".dockerignore"|298|2026-10-18 09:09:28|2026-10-24|NONE
-".github/workflows/build.yml"|10123|2026-10-24 23:52:39|2026-10-24|NONE
-".github/workflows/ci.yml"|4385|2026-11-07 21:56:44|2026-11-07|Makefile .github/workflows/build.yml 
-".gitignore"|1142|2026-10-24 23:52:39|2026-10-24|NONE
-".pipeline/blind-review-prompt.md"|1000|2026-10-28 10:13:42|2026-10-27|NONE
-".pipeline/blind-review.md"|12974|2026-10-28 10:13:42|2026-10-27|NONE
-".pipeline/inventory.csv"|41234|2026-10-28 10:13:42|2026-10-27|NONE
-".pipeline/purge-plan.md"|1824|2026-10-28 10:13:42|2026-10-27|NONE
-".pipeline/refactor-plan.md"|3330|2026-10-28 10:13:42|2026-10-27|NONE
-".pipeline/style-plan.md"|2590|2026-10-28 10:13:42|2026-10-27|NONE
-"AGENTS.md"|5817|2026-09-15 19:21:36|2026-10-24|NONE
-"AUDIT.md"|14387|2026-11-07 18:27:14|2026-11-07|NONE
-"CHANGELOG.md"|28222|2026-11-07 21:56:44|2026-11-07|frontend/src/components/settings/SettingsView.mount.test.ts frontend/src/components/settings/dialogs/WhatsNewDialog.vue frontend/src/components/settings/tabs/AboutTab.vue 
-"Dockerfile"|1927|2026-10-28 10:13:42|2026-10-28|NONE
-"Makefile"|4638|2026-10-28 10:13:42|2026-10-28|NONE
-"README.md"|11269|2026-10-24 23:52:39|2026-10-24|Makefile 
-"assets/.genoffice-assets.json"|70|2026-10-27 23:42:58|2026-11-08|NONE
-"assets/lifelogr-logo.png"|3617|2026-06-24 23:25:10|2026-10-24|backend/app/main.py 
-"backend/.env.example"|2451|2026-07-26 21:45:01|2026-10-24|NONE
-"backend/.python-version"|5|2026-05-08 02:59:21|2026-10-24|NONE
-"backend/app/__init__.py"|0|2026-05-08 02:59:34|2026-10-24|NONE
-"backend/app/core/__init__.py"|0|2026-05-08 02:59:34|2026-10-24|NONE
-"backend/app/core/archive.py"|11762|2026-11-07 16:02:45|2026-11-07|NONE
-"backend/app/core/config.py"|20663|2026-11-08 14:40:03|2026-11-08|backend/app/services/media_service.py Makefile 
-"backend/app/core/cron_utils.py"|2976|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/core/database.py"|43680|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/app/core/exceptions.py"|438|2026-07-12 01:06:09|2026-10-24|NONE
-"backend/app/core/fts.py"|6266|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/core/jobs.py"|9245|2026-11-07 15:12:12|2026-11-07|backend/tests/unit/test_jobs.py 
-"backend/app/core/oauth_state.py"|4132|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/core/paths.py"|3094|2026-07-12 23:16:04|2026-10-24|NONE
-"backend/app/core/restore.py"|14420|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/core/security.py"|5062|2026-11-07 18:17:24|2026-11-07|backend/app/models/ai_provider.py backend/app/core/config.py backend/app/services/ai_provider_service.py 
-"backend/app/core/startup_checks.py"|22315|2026-08-25 21:13:49|2026-10-24|NONE
-"backend/app/main.py"|30779|2026-11-07 15:12:48|2026-11-07|backend/app/core/startup_checks.py backend/app/core/database.py backend/app/routers/entries.py backend/app/core/config.py backend/tests/unit/test_config_hardening.py 
-"backend/app/models/__init__.py"|1729|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/models/ai_provider.py"|1374|2026-07-26 21:45:01|2026-10-24|NONE
-"backend/app/models/backup.py"|3821|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/models/embedding.py"|2442|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/models/entry.py"|4289|2026-11-07 14:17:49|2026-11-07|NONE
-"backend/app/models/entry_event.py"|1745|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/app/models/media.py"|1545|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/models/note.py"|6645|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/app/models/note_media.py"|1481|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/models/prompt.py"|446|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/models/recording.py"|1926|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/models/reflection_prompt.py"|732|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/models/reminder.py"|1121|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/models/sentiment.py"|935|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/models/sync.py"|1911|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/models/tag.py"|2284|2026-10-26 02:53:56|2026-10-25|backend/app/schemas/note.py backend/app/services/cloud_sync_service.py 
-"backend/app/models/template.py"|768|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/models/video_note.py"|1178|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/routers/__init__.py"|0|2026-05-08 02:59:34|2026-10-24|NONE
-"backend/app/routers/_oauth_helpers.py"|5817|2026-10-25 10:27:43|2026-10-25|NONE
-"backend/app/routers/ai.py"|21625|2026-10-28 10:13:42|2026-10-27|backend/app/core/jobs.py 
-"backend/app/routers/backup.py"|22643|2026-11-07 16:01:44|2026-11-07|NONE
-"backend/app/routers/box.py"|5184|2026-10-25 10:27:43|2026-10-25|NONE
-"backend/app/routers/context.py"|5615|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/app/routers/dropbox.py"|5088|2026-10-25 10:27:43|2026-10-25|NONE
-"backend/app/routers/encryption.py"|5635|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/routers/entries.py"|88448|2026-11-07 18:13:09|2026-11-07|NONE
-"backend/app/routers/export.py"|2313|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/app/routers/google_drive.py"|6136|2026-10-25 10:27:43|2026-10-25|backend/app/routers/box.py 
-"backend/app/routers/jobs.py"|1308|2026-10-28 10:13:42|2026-10-28|backend/tests/unit/test_jobs.py 
-"backend/app/routers/media.py"|8458|2026-11-07 17:15:12|2026-11-07|NONE
-"backend/app/routers/notes.py"|19405|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/app/routers/onedrive.py"|5168|2026-10-25 10:27:43|2026-10-25|NONE
-"backend/app/routers/prompts.py"|887|2026-05-27 00:42:24|2026-10-24|NONE
-"backend/app/routers/recordings.py"|3472|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/app/routers/reminders.py"|2009|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/routers/search.py"|1394|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/routers/settings.py"|13861|2026-11-07 18:24:00|2026-11-07|NONE
-"backend/app/routers/system.py"|10428|2026-11-07 15:12:32|2026-11-07|backend/app/services/weather_service.py 
-"backend/app/routers/tags.py"|3130|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/app/routers/templates.py"|1313|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/routers/tts.py"|16240|2026-10-24 23:52:39|2026-10-24|backend/app/routers/system.py backend/app/services/weather_service.py 
-"backend/app/routers/video_notes.py"|3197|2026-11-07 18:45:15|2026-11-07|NONE
-"backend/app/schemas/__init__.py"|0|2026-05-08 02:59:34|2026-10-24|NONE
-"backend/app/schemas/ai.py"|8993|2026-10-28 10:13:42|2026-10-27|backend/app/core/jobs.py 
-"backend/app/schemas/ai_provider.py"|2990|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/app/schemas/backup.py"|1622|2026-07-10 09:19:15|2026-10-24|NONE
-"backend/app/schemas/encryption.py"|1359|2026-07-13 01:33:59|2026-10-24|NONE
-"backend/app/schemas/entry.py"|6539|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/app/schemas/media.py"|879|2026-08-25 19:55:08|2026-10-24|NONE
-"backend/app/schemas/note.py"|5104|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/app/schemas/note_media.py"|632|2026-07-03 17:30:55|2026-10-24|NONE
-"backend/app/schemas/prompt.py"|256|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/schemas/recording.py"|339|2026-06-26 22:11:59|2026-10-24|NONE
-"backend/app/schemas/reminder.py"|1498|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/schemas/search.py"|948|2026-10-18 12:41:15|2026-10-24|NONE
-"backend/app/schemas/sync.py"|1268|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/schemas/tag.py"|1176|2026-10-26 02:53:56|2026-10-25|backend/app/schemas/note.py backend/app/services/cloud_sync_service.py 
-"backend/app/schemas/template.py"|883|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/schemas/video_note.py"|483|2026-06-26 22:11:59|2026-10-24|NONE
-"backend/app/services/__init__.py"|0|2026-05-08 02:59:34|2026-10-24|NONE
-"backend/app/services/ai_provider_service.py"|8545|2026-08-25 21:13:49|2026-10-24|NONE
-"backend/app/services/ai_tool_registry.py"|6601|2026-10-28 10:13:42|2026-10-27|frontend/src/composables/aiToolRegistry.ts 
-"backend/app/services/backup_service.py"|27159|2026-11-07 16:01:52|2026-11-07|NONE
-"backend/app/services/cloud_sync_service.py"|66092|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/encryption_service.py"|12911|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/enrichment_service.py"|16564|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/entry_service.py"|26427|2026-10-28 10:13:42|2026-10-28|NONE
-"backend/app/services/export_service.py"|47055|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/app/services/hashtag.py"|1660|2026-07-28 00:18:22|2026-10-24|backend/app/schemas/note.py backend/app/services/cloud_sync_service.py 
-"backend/app/services/ics_service.py"|6504|2026-10-28 10:13:42|2026-10-28|NONE
-"backend/app/services/importers/__init__.py"|701|2026-08-25 21:13:49|2026-10-24|NONE
-"backend/app/services/importers/csv.py"|5555|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/app/services/importers/dayone.py"|5576|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/app/services/importers/diarium.py"|13613|2026-11-07 14:14:15|2026-11-07|NONE
-"backend/app/services/importers/markdown.py"|2965|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/media_crypto.py"|9994|2026-11-07 18:47:42|2026-11-07|backend/tests/integration/test_media_encryption.py 
-"backend/app/services/media_migration.py"|6096|2026-11-07 18:46:17|2026-11-07|NONE
-"backend/app/services/media_service.py"|35174|2026-11-07 18:48:19|2026-11-07|NONE
-"backend/app/services/note_media_service.py"|10706|2026-11-07 17:15:12|2026-11-07|NONE
-"backend/app/services/note_service.py"|22297|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/app/services/notes_export_service.py"|15261|2026-10-28 10:13:42|2026-10-28|NONE
-"backend/app/services/ocr_service.py"|2601|2026-09-16 20:32:21|2026-10-24|NONE
-"backend/app/services/ollama_service.py"|34120|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/app/services/recording_service.py"|7363|2026-07-13 01:33:59|2026-10-24|NONE
-"backend/app/services/recovery_kit.py"|10995|2026-11-07 18:46:37|2026-11-07|NONE
-"backend/app/services/reminder_service.py"|6063|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/scheduler_service.py"|36045|2026-11-07 15:12:49|2026-11-07|NONE
-"backend/app/services/search_service.py"|21178|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/semantic_cache.py"|15131|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/app/services/settings_service.py"|4591|2026-11-07 18:23:54|2026-11-07|NONE
-"backend/app/services/storage_service.py"|8571|2026-10-25 11:27:42|2026-10-25|backend/tests/unit/test_startup_foundation.py 
-"backend/app/services/tag_service.py"|4095|2026-10-18 12:41:15|2026-10-24|NONE
-"backend/app/services/template_service.py"|1790|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/app/services/title_service.py"|2209|2026-11-07 15:39:32|2026-11-07|backend/app/routers/entries.py 
-"backend/app/services/video_service.py"|6104|2026-11-07 18:44:57|2026-11-07|NONE
-"backend/app/services/weather_service.py"|11391|2026-10-28 10:13:42|2026-10-28|backend/app/routers/system.py backend/app/core/config.py 
-"backend/app/services/web_clip_service.py"|5111|2026-08-25 21:13:49|2026-10-24|NONE
-"backend/pyproject.toml"|1821|2026-11-08 14:40:03|2026-11-08|backend/app/core/config.py Makefile 
-"backend/tests/__init__.py"|0|2026-05-08 11:35:06|2026-10-24|NONE
-"backend/tests/conftest.py"|6031|2026-10-28 10:13:42|2026-10-27|backend/app/main.py backend/app/core/fts.py 
-"backend/tests/golden/daylio_export.csv"|263|2026-10-26 02:53:56|2026-10-25|backend/tests/integration/test_import_daylio_csv.py 
-"backend/tests/golden/dayone_export.zip"|839|2026-10-26 02:53:56|2026-10-25|backend/tests/integration/test_import_dayone.py 
-"backend/tests/helpers/__init__.py"|75|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/helpers/daylio_csv.py"|830|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/helpers/dayone_zip.py"|1519|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/helpers/diarium_diary.py"|11099|2026-10-26 02:53:56|2026-10-26|backend/tests/unit/test_diarium_roundtrip.py backend/tests/helpers/dayone_zip.py 
-"backend/tests/integration/test_ai_endpoints.py"|1112|2026-06-23 21:37:13|2026-10-24|NONE
-"backend/tests/integration/test_backfill_titles.py"|2846|2026-11-07 15:40:11|2026-11-07|NONE
-"backend/tests/integration/test_backup_verify.py"|2787|2026-11-07 16:02:09|2026-11-07|NONE
-"backend/tests/integration/test_context.py"|4943|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/integration/test_context_attach.py"|1328|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/integration/test_export_dayone.py"|7314|2026-11-07 14:28:33|2026-11-07|NONE
-"backend/tests/integration/test_export_encrypted_media.py"|3510|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/tests/integration/test_export_html_zip.py"|4314|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/integration/test_geotags.py"|2420|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/integration/test_google_drive.py"|18246|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/integration/test_import_daylio_csv.py"|4296|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/integration/test_import_dayone.py"|2585|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/integration/test_import_diarium_merge.py"|8423|2026-11-07 14:22:23|2026-11-07|NONE
-"backend/tests/integration/test_media_encryption.py"|11001|2026-11-07 18:48:55|2026-11-07|NONE
-"backend/tests/integration/test_media_migration.py"|4881|2026-11-07 18:05:30|2026-11-07|NONE
-"backend/tests/integration/test_notes.py"|4847|2026-07-13 01:33:59|2026-10-24|NONE
-"backend/tests/integration/test_notes_reorder.py"|5692|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/tests/integration/test_recovery_kit.py"|7780|2026-11-07 18:21:14|2026-11-07|NONE
-"backend/tests/integration/test_reset_endpoint.py"|1451|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/integration/test_system_endpoints.py"|2561|2026-11-07 15:14:22|2026-11-07|NONE
-"backend/tests/integration/test_tts.py"|8732|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/integration/test_weather_hook.py"|4779|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/__init__.py"|0|2026-05-08 11:35:06|2026-10-24|NONE
-"backend/tests/unit/test_ai_providers.py"|8401|2026-08-25 19:55:08|2026-10-24|NONE
-"backend/tests/unit/test_ai_system_prompt.py"|5849|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_ai_tool_registry.py"|2798|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_archive_manifest.py"|4612|2026-11-07 16:01:52|2026-11-07|NONE
-"backend/tests/unit/test_archive_v2.py"|6272|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_backup_cloud_ops.py"|20211|2026-10-28 10:13:42|2026-10-28|NONE
-"backend/tests/unit/test_backup_full.py"|43009|2026-09-12 19:47:12|2026-10-24|NONE
-"backend/tests/unit/test_backup_label.py"|3879|2026-07-10 09:19:15|2026-10-24|NONE
-"backend/tests/unit/test_backup_roundtrip.py"|8472|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_backup_service.py"|6263|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/tests/unit/test_boot_snapshot.py"|8141|2026-08-01 10:38:56|2026-10-24|NONE
-"backend/tests/unit/test_cloud_provider_streaming.py"|14357|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_cloud_sync_pull.py"|5006|2026-07-12 23:16:04|2026-10-24|NONE
-"backend/tests/unit/test_cloud_sync_refresh.py"|4752|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/tests/unit/test_config_hardening.py"|5066|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_cron_utils.py"|1646|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/tests/unit/test_data_dir_env_file.py"|1748|2026-10-25 10:49:04|2026-10-25|NONE
-"backend/tests/unit/test_database_pragmas.py"|4324|2026-07-25 23:06:05|2026-10-24|NONE
-"backend/tests/unit/test_db_maintenance.py"|2207|2026-07-25 22:02:51|2026-10-24|NONE
-"backend/tests/unit/test_diarium_events.py"|7974|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_diarium_roundtrip.py"|7264|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_diarium_trackers.py"|6587|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_diary_writer.py"|4713|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_egress_report.py"|2679|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_encryption_service.py"|6033|2026-09-15 19:22:43|2026-10-24|NONE
-"backend/tests/unit/test_enrichment_backfill.py"|5525|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_entry_import_hardening.py"|15915|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_entry_service.py"|6773|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_entry_stats.py"|7148|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_entry_template_filter.py"|7054|2026-07-13 01:33:59|2026-10-24|NONE
-"backend/tests/unit/test_export_progress.py"|4323|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_export_security.py"|6987|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_export_service.py"|5049|2026-11-07 21:56:44|2026-11-07|NONE
-"backend/tests/unit/test_fk_indexes.py"|2915|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_fts_integrity.py"|12754|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_hashtag.py"|4067|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/unit/test_health_and_brand.py"|1454|2026-06-25 00:16:33|2026-10-24|NONE
-"backend/tests/unit/test_host_and_token_guard.py"|3379|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_ics_parser.py"|4042|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_import_batching.py"|7353|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/unit/test_import_progress.py"|4059|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_importers.py"|27926|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_jobs.py"|4082|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_main_misc.py"|3979|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_media_crypto.py"|7120|2026-11-07 18:48:11|2026-11-07|backend/tests/integration/test_media_encryption.py 
-"backend/tests/unit/test_media_service.py"|6838|2026-09-16 20:32:22|2026-10-24|NONE
-"backend/tests/unit/test_media_thumbnails.py"|3434|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_media_upload_streaming.py"|11191|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_model_pull_jobs.py"|7040|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/unit/test_note_folders.py"|2056|2026-07-27 23:59:11|2026-10-24|NONE
-"backend/tests/unit/test_notes.py"|20782|2026-08-06 20:02:35|2026-10-24|NONE
-"backend/tests/unit/test_notes_export.py"|3228|2026-07-28 00:20:53|2026-10-24|NONE
-"backend/tests/unit/test_notification_and_cron_edges.py"|4075|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_oauth_pkce.py"|5730|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_oauth_state.py"|1941|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/tests/unit/test_ocr_service.py"|1374|2026-09-16 20:32:22|2026-10-24|NONE
-"backend/tests/unit/test_ollama_embed_fastpath.py"|4439|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_ollama_service.py"|5714|2026-07-10 19:29:11|2026-10-24|NONE
-"backend/tests/unit/test_on_this_day.py"|7188|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_operation_progress.py"|9518|2026-11-07 16:02:45|2026-11-07|NONE
-"backend/tests/unit/test_prompt_service.py"|265|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/tests/unit/test_recording_service.py"|4280|2026-07-13 01:33:59|2026-10-24|NONE
-"backend/tests/unit/test_reminder_notification_delivery.py"|4478|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/unit/test_reminder_scheduling.py"|5055|2026-07-13 01:33:59|2026-10-24|NONE
-"backend/tests/unit/test_reminder_service.py"|1620|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/tests/unit/test_reset_guard.py"|6943|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/unit/test_restore_wal_sidecars.py"|10450|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_scheduler_service.py"|21511|2026-09-12 19:47:12|2026-10-24|NONE
-"backend/tests/unit/test_schema_version.py"|2220|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/tests/unit/test_search_hybrid_totals.py"|5076|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_search_service.py"|5017|2026-07-27 15:15:52|2026-10-24|NONE
-"backend/tests/unit/test_security.py"|1740|2026-07-19 19:30:55|2026-10-24|NONE
-"backend/tests/unit/test_selection_encryption.py"|6063|2026-10-25 10:27:43|2026-10-25|NONE
-"backend/tests/unit/test_semantic_cache.py"|4497|2026-07-12 23:16:04|2026-10-24|NONE
-"backend/tests/unit/test_semantic_cache_models.py"|5445|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_settings.py"|349|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_settings_dir_size.py"|2176|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_settings_hardening.py"|3040|2026-10-26 02:53:56|2026-10-26|NONE
-"backend/tests/unit/test_startup_checks.py"|16431|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_startup_foundation.py"|4781|2026-10-28 10:13:42|2026-10-27|NONE
-"backend/tests/unit/test_storage_service.py"|6944|2026-10-25 11:27:53|2026-10-25|backend/tests/unit/test_startup_foundation.py 
-"backend/tests/unit/test_tag_service.py"|2340|2026-07-19 19:30:55|2026-10-24|NONE
-"backend/tests/unit/test_tags_batch.py"|5514|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/tests/unit/test_template_service.py"|4086|2026-10-24 23:52:39|2026-10-24|NONE
-"backend/tests/unit/test_title_service.py"|2390|2026-11-07 15:39:32|2026-11-07|NONE
-"backend/tests/unit/test_tts_entry_guard.py"|2886|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_video_service.py"|893|2026-05-26 17:42:24|2026-10-24|NONE
-"backend/tests/unit/test_video_streaming.py"|2296|2026-10-18 09:09:28|2026-10-24|NONE
-"backend/tests/unit/test_weather_service.py"|4439|2026-10-26 02:53:56|2026-10-25|NONE
-"backend/uv.lock"|480039|2026-11-08 14:40:03|2026-11-08|NONE
-"desktop/Makefile"|2147|2026-09-16 20:32:22|2026-10-24|Makefile 
-"desktop/scripts/build-frontend.sh"|655|2026-10-18 09:09:28|2026-10-24|NONE
-"desktop/scripts/pyinstaller.spec"|6702|2026-10-18 12:06:58|2026-10-24|.github/workflows/build.yml 
-"desktop/scripts/setup-linux.sh"|3942|2026-10-18 09:09:28|2026-10-24|NONE
-"desktop/src-tauri/.gitignore"|268|2026-07-13 01:33:59|2026-10-24|NONE
-"desktop/src-tauri/Cargo.lock"|173881|2026-11-08 14:40:03|2026-11-08|NONE
-"desktop/src-tauri/Cargo.toml"|1964|2026-11-08 14:40:03|2026-11-08|frontend/src/version.ts Makefile 
-"desktop/src-tauri/build.rs"|39|2026-10-18 01:51:30|2026-10-24|NONE
-"desktop/src-tauri/capabilities/default.json"|1005|2026-10-18 09:09:28|2026-10-24|NONE
-"desktop/src-tauri/gen/schemas/capabilities.json"|739|2026-10-18 09:09:28|2026-10-24|NONE
-"desktop/src-tauri/icons/128x128.png"|6526|2026-05-24 23:33:24|2026-10-24|NONE
-"desktop/src-tauri/icons/128x128@2x.png"|75607|2026-05-24 23:33:24|2026-10-24|NONE
-"desktop/src-tauri/icons/32x32.png"|2088|2026-05-24 23:33:24|2026-10-24|NONE
-"desktop/src-tauri/icons/64x64.png"|4155|2026-05-24 23:33:24|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-120x120@1x.png"|4870|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-152x152@1x.png"|7230|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-167x167@1x.png"|8445|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-180x180@1x.png"|9510|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-20x20@1x.png"|694|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-29x29@1x.png"|995|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-40x40@1x.png"|1361|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-512x512@1x.png"|46895|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-58x58@1x.png"|2019|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-60x60@1x.png"|2069|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-76x76@1x.png"|2746|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-80x80@1x.png"|2861|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/AppIcon-87x87@1x.png"|3183|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/Square107x107Logo.png"|4210|2026-05-24 23:27:33|2026-10-24|NONE
-"desktop/src-tauri/icons/Square142x142Logo.png"|6563|2026-05-24 23:27:33|2026-10-24|NONE
-"desktop/src-tauri/icons/Square150x150Logo.png"|7097|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/Square284x284Logo.png"|18905|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/Square30x30Logo.png"|1021|2026-05-24 23:27:33|2026-10-24|NONE
-"desktop/src-tauri/icons/Square310x310Logo.png"|21790|2026-05-24 23:27:34|2026-10-24|NONE
-"desktop/src-tauri/icons/Square44x44Logo.png"|1508|2026-05-24 23:27:33|2026-10-24|NONE
-"desktop/src-tauri/icons/Square71x71Logo.png"|2508|2026-05-24 23:27:33|2026-10-24|NONE
-"desktop/src-tauri/icons/Square89x89Logo.png"|3251|2026-05-24 23:27:33|2026-10-24|NONE
-"desktop/src-tauri/icons/StoreLogo.png"|1555|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml"|261|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png"|1492|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png"|4631|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png"|1752|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png"|1512|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png"|3106|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png"|1684|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png"|2696|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png"|5986|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png"|3183|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png"|4122|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png"|8581|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png"|4900|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png"|5480|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png"|11307|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png"|6407|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/android/values/ic_launcher_background.xml"|115|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/icon.icns"|55993|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/icon.ico"|13039|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/icon.png"|75607|2026-05-24 23:33:24|2026-10-24|frontend/src/components/map/MapView.vue 
-"desktop/src-tauri/icons/ios/AppIcon-20x20@1x.png"|677|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-20x20@2x-1.png"|1260|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-20x20@2x.png"|1260|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-20x20@3x.png"|1788|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-29x29@1x.png"|941|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-29x29@2x-1.png"|1723|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-29x29@2x.png"|1723|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-29x29@3x.png"|2523|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-40x40@1x.png"|1260|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-40x40@2x-1.png"|2319|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-40x40@2x.png"|2319|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-40x40@3x.png"|3427|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-512@2x.png"|7065|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-60x60@2x.png"|3427|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-60x60@3x.png"|4992|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-76x76@1x.png"|2120|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-76x76@2x.png"|4418|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png"|4762|2026-05-21 17:44:11|2026-10-24|NONE
-"desktop/src-tauri/src/main.rs"|28174|2026-11-07 15:24:34|2026-11-07|NONE
-"desktop/src-tauri/tauri.conf.json"|1864|2026-11-08 14:40:03|2026-11-08|Makefile .github/workflows/build.yml 
-"dev.sh"|2544|2026-05-19 01:03:20|2026-10-24|backend/app/routers/_oauth_helpers.py backend/tests/integration/test_google_drive.py 
-"docker-compose.yml"|1301|2026-10-28 10:13:42|2026-10-28|NONE
-"docs/ARCHITECTURE.md"|46009|2026-11-07 18:28:59|2026-11-07|Makefile 
-"docs/SECURITY.md"|3160|2026-11-07 18:27:31|2026-11-07|NONE
-"docs/assets/.genoffice-assets.json"|246|2026-11-07 14:41:08|2026-11-07|NONE
-"docs/assets/image.png"|46317|2026-11-07 14:15:13|2026-11-07|NONE
-"docs/design/media-encryption.md"|8932|2026-11-07 16:04:08|2026-11-07|backend/app/core/config.py backend/app/services/video_service.py backend/app/services/media_crypto.py backend/app/services/media_migration.py backend/app/services/media_service.py 
-"docs/diarium-sync-research.md"|18421|2026-11-07 14:36:09|2026-11-07|NONE
-"docs/images/lifelogr_01.jpg"|123654|2026-07-10 09:19:15|2026-10-24|NONE
-"docs/images/lifelogr_Editor.jpg"|58651|2026-07-10 09:19:15|2026-10-24|NONE
-"docs/manual/API_REFERENCE.md"|22105|2026-11-07 16:04:19|2026-11-07|Makefile 
-"docs/manual/DEPLOYMENT.md"|13391|2026-10-24 23:52:39|2026-10-24|Makefile 
-"docs/manual/USER_MANUAL.md"|32419|2026-11-07 21:56:44|2026-11-07|Makefile 
-"docs/modify-idea.md"|2125|2026-11-08 15:00:37|2026-11-08|NONE
-"docs/plans/2026-11-07-modify-idea-plan.md"|26684|2026-11-07 15:02:24|2026-11-07|NONE
-"docs/plans/2026-11-07-modify-idea-tasks.md"|21372|2026-11-08 15:00:58|2026-11-08|NONE
-"docs/plans/pending-tasks.md"|3101|2026-11-08 15:01:11|2026-11-08|NONE
-"frontend/.gitignore"|253|2026-05-09 11:47:25|2026-10-24|NONE
-"frontend/.vscode/extensions.json"|39|2026-05-09 11:47:25|2026-10-24|NONE
-"frontend/README.md"|442|2026-05-09 11:47:25|2026-10-24|Makefile 
-"frontend/eslint.config.ts"|1723|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/index.html"|985|2026-10-24 23:52:39|2026-10-24|backend/app/main.py backend/app/services/export_service.py backend/tests/integration/test_export_html_zip.py backend/app/routers/entries.py backend/tests/unit/test_export_service.py 
-"frontend/package-lock.json"|167806|2026-10-26 02:53:56|2026-10-25|.github/workflows/ci.yml 
-"frontend/package.json"|1538|2026-11-08 14:40:03|2026-11-08|Makefile 
-"frontend/playwright.config.ts"|587|2026-11-08 14:45:27|2026-11-08|NONE
-"frontend/public/favicon.svg"|6658|2026-06-25 09:52:25|2026-10-24|NONE
-"frontend/public/logo.png"|3617|2026-06-25 00:08:18|2026-10-24|backend/app/main.py frontend/src/components/settings/tabs/AboutTab.vue frontend/src/components/layout/Sidebar.vue 
-"frontend/src/App.vue"|1745|2026-11-07 15:15:28|2026-11-07|frontend/src/components/common/ToasterHost.test.ts frontend/src/main.ts frontend/src/stores/toast.ts frontend/src/components/common/ToasterHost.vue 
-"frontend/src/api/ai.ts"|4723|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/api/backup.ts"|5306|2026-11-07 16:03:23|2026-11-07|frontend/src/api/data.ts 
-"frontend/src/api/client.test.ts"|3881|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/api/client.ts"|4917|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/api/context.ts"|1331|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/api/data.ts"|2017|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/api/encryption.ts"|1095|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/api/entries.ts"|6428|2026-11-07 15:40:34|2026-11-07|frontend/src/api/data.ts 
-"frontend/src/api/jobs.ts"|1267|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/api/media.ts"|2189|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/api/notes.ts"|7751|2026-11-07 21:56:44|2026-11-07|frontend/src/api/data.ts 
-"frontend/src/api/recordings.ts"|1485|2026-06-26 22:11:59|2026-10-24|NONE
-"frontend/src/api/reminders.ts"|779|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/api/search.ts"|892|2026-10-18 12:47:35|2026-10-24|NONE
-"frontend/src/api/settings.ts"|3878|2026-11-07 18:24:45|2026-11-07|NONE
-"frontend/src/api/system.ts"|2328|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/api/tags.ts"|671|2026-08-25 21:13:49|2026-10-24|frontend/src/composables/useInlineTags.ts 
-"frontend/src/api/templates.ts"|659|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/api/tts.ts"|2829|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/assets/tariq-memorial-tribute.jpg"|131777|2026-06-27 11:44:44|2026-10-24|frontend/src/components/settings/tabs/DedicationTab.vue frontend/src/components/layout/SplashScreen.vue 
-"frontend/src/components/calendar/CalendarCell.vue"|2776|2026-08-25 21:13:49|2026-10-24|frontend/src/components/calendar/CalendarGrid.mount.test.ts frontend/src/components/calendar/CalendarGrid.vue 
-"frontend/src/components/calendar/CalendarGrid.mount.test.ts"|2666|2026-10-25 22:58:32|2026-10-25|NONE
-"frontend/src/components/calendar/CalendarGrid.vue"|6392|2026-10-25 22:58:24|2026-10-25|frontend/src/router.ts frontend/src/components/calendar/CalendarGrid.mount.test.ts 
-"frontend/src/components/calendar/CalendarHeader.vue"|1397|2026-08-25 21:13:49|2026-10-24|frontend/src/components/calendar/CalendarGrid.vue 
-"frontend/src/components/calendar/EntryPicker.vue"|3440|2026-08-25 21:13:49|2026-10-24|frontend/src/components/calendar/CalendarCell.vue 
-"frontend/src/components/common/ConfirmDialog.test.ts"|3085|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/components/common/ConfirmDialog.vue"|1296|2026-10-24 23:52:39|2026-10-24|frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/settings/panels/StoragePanel.vue frontend/src/components/notes/NoteEditor.vue frontend/src/components/common/ConfirmDialog.test.ts frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/common/CrashProbe.vue"|432|2026-11-07 21:56:44|2026-11-07|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/common/EmojiPicker.vue"|4876|2026-08-25 21:13:49|2026-10-24|frontend/src/components/notes/NoteEditor.vue frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/common/ErrorBoundary.mount.test.ts"|3057|2026-11-07 15:16:06|2026-11-07|NONE
-"frontend/src/components/common/ErrorBoundary.vue"|3318|2026-11-07 15:13:37|2026-11-07|frontend/src/components/common/ErrorBoundary.mount.test.ts frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/common/GoToDateModal.vue"|4953|2026-10-18 09:09:28|2026-10-24|frontend/src/components/calendar/CalendarGrid.vue frontend/src/components/timeline/TimelineView.vue 
-"frontend/src/components/common/KeyboardShortcutsDialog.vue"|2252|2026-10-24 23:52:39|2026-10-24|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/common/NowPlayingBar.vue"|3692|2026-10-24 23:52:39|2026-10-24|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/common/OperationProgress.test.ts"|2534|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/components/common/OperationProgress.vue"|2335|2026-10-26 02:53:56|2026-10-25|frontend/src/components/settings/panels/ExportPanel.vue frontend/src/components/settings/panels/ImportPanel.vue frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/common/OperationProgress.test.ts 
-"frontend/src/components/common/ShutdownOverlay.vue"|2893|2026-11-07 15:15:38|2026-11-07|frontend/src/App.vue 
-"frontend/src/components/common/SystemHealthBanner.vue"|2038|2026-08-25 21:13:49|2026-10-24|frontend/src/App.vue 
-"frontend/src/components/common/ToasterHost.test.ts"|4333|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/components/common/ToasterHost.vue"|1917|2026-10-18 09:09:28|2026-10-24|frontend/src/components/common/ToasterHost.test.ts frontend/src/App.vue 
-"frontend/src/components/editor/EditorContextMenu.vue"|12621|2026-10-28 10:13:42|2026-10-28|frontend/src/components/notes/NoteEditor.vue frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/editor/EditorToolbar.test.ts"|4474|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/components/editor/EditorToolbar.vue"|14186|2026-10-28 10:13:42|2026-10-27|frontend/src/components/editor/EditorToolbar.test.ts frontend/src/components/notes/NoteEditor.vue frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/editor/TagAutocomplete.vue"|2098|2026-08-25 21:13:49|2026-10-24|frontend/src/components/entry/EntryEditor.vue frontend/src/components/notes/NoteEditor.vue 
-"frontend/src/components/entry/AiDrawerPanel.vue"|10158|2026-10-28 10:13:42|2026-10-27|frontend/src/components/notes/NoteEditor.vue frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/entry/AttachmentsPanel.vue"|2665|2026-08-25 21:13:49|2026-10-24|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/entry/ContextDrawerPanel.test.ts"|5398|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/components/entry/ContextDrawerPanel.vue"|10488|2026-10-26 02:53:56|2026-10-25|backend/app/routers/context.py frontend/src/components/layout/AppShell.vue frontend/src/components/entry/ContextDrawerPanel.test.ts 
-"frontend/src/components/entry/EditorStatusBar.mount.test.ts"|1598|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/components/entry/EditorStatusBar.vue"|2160|2026-10-28 10:13:42|2026-10-27|frontend/src/components/entry/EditorStatusBar.mount.test.ts frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/entry/EncryptionBadge.vue"|3665|2026-10-18 09:09:28|2026-10-24|frontend/src/components/entry/EntryEditor.vue frontend/src/components/notes/NoteEditor.vue 
-"frontend/src/components/entry/EntryDetail.vue"|7767|2026-10-28 10:13:42|2026-10-28|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/entry/EntryEditor.mount.test.ts"|7894|2026-11-07 19:01:52|2026-11-07|NONE
-"frontend/src/components/entry/EntryEditor.title.test.ts"|4446|2026-11-07 19:04:03|2026-11-07|NONE
-"frontend/src/components/entry/EntryEditor.vue"|68638|2026-11-07 15:42:44|2026-11-07|frontend/src/components/layout/AppShell.vue frontend/src/components/entry/EntryEditor.mount.test.ts frontend/src/components/entry/EntryEditor.title.test.ts 
-"frontend/src/components/entry/EntryHeader.vue"|1045|2026-08-25 21:13:49|2026-10-24|frontend/src/components/entry/EntryDetail.vue 
-"frontend/src/components/layout/AppShell.vue"|13359|2026-11-08 14:40:03|2026-11-08|frontend/src/App.vue frontend/src/composables/shortcutRegistry.ts 
-"frontend/src/components/layout/PanelSplitter.vue"|1931|2026-10-18 09:09:28|2026-10-24|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/layout/Sidebar.vue"|9434|2026-10-26 02:53:56|2026-10-25|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/layout/SplashScreen.vue"|3674|2026-08-25 21:13:49|2026-10-24|frontend/src/App.vue 
-"frontend/src/components/map/MapView.test.ts"|4646|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/components/map/MapView.vue"|5941|2026-10-28 10:13:42|2026-10-27|frontend/src/router.ts frontend/src/components/map/MapView.test.ts 
-"frontend/src/components/media/MediaGrid.vue"|5320|2026-10-28 10:13:42|2026-10-27|frontend/src/components/entry/EntryDetail.vue frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/media/MediaTimelineView.mount.test.ts"|2491|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/components/media/MediaTimelineView.vue"|14705|2026-10-28 10:13:42|2026-10-27|frontend/src/components/media/MediaTimelineView.mount.test.ts frontend/src/router.ts 
-"frontend/src/components/media/MediaViewer.vue"|11592|2026-10-18 09:09:28|2026-10-24|frontend/src/components/media/MediaTimelineView.vue frontend/src/components/media/MediaGrid.vue frontend/src/components/notes/NoteEditor.vue frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/notes/FolderMovePicker.mount.test.ts"|2487|2026-11-07 15:41:46|2026-11-07|NONE
-"frontend/src/components/notes/FolderMovePicker.vue"|4547|2026-11-07 15:41:27|2026-11-07|frontend/src/components/notes/FolderMovePicker.mount.test.ts frontend/src/components/notes/NotesView.vue 
-"frontend/src/components/notes/NoteColorPicker.mount.test.ts"|2169|2026-11-07 15:08:51|2026-11-07|NONE
-"frontend/src/components/notes/NoteColorPicker.vue"|4634|2026-11-07 15:06:30|2026-11-07|frontend/src/components/notes/NoteColorPicker.mount.test.ts frontend/src/components/notes/NotesView.vue frontend/src/components/notes/NoteEditor.vue 
-"frontend/src/components/notes/NoteEditor.test.ts"|3998|2026-10-18 12:39:41|2026-10-24|NONE
-"frontend/src/components/notes/NoteEditor.vue"|55775|2026-11-07 15:42:19|2026-11-07|frontend/src/components/notes/NoteEditor.test.ts frontend/src/components/notes/NotesView.vue 
-"frontend/src/components/notes/NoteEncryptionBadge.vue"|3539|2026-10-18 09:09:28|2026-10-24|frontend/src/components/notes/NoteEditor.vue 
-"frontend/src/components/notes/NotesView.mount.test.ts"|3323|2026-10-18 12:39:41|2026-10-24|NONE
-"frontend/src/components/notes/NotesView.vue"|48197|2026-11-07 21:56:44|2026-11-07|frontend/src/router.ts frontend/src/components/notes/NotesView.mount.test.ts 
-"frontend/src/components/notes/SnipOverlay.vue"|4249|2026-08-25 21:13:49|2026-10-24|frontend/src/components/notes/NoteEditor.vue 
-"frontend/src/components/notes/WebClipModal.vue"|2860|2026-08-25 21:13:49|2026-10-24|frontend/src/components/notes/NoteEditor.vue 
-"frontend/src/components/recordings/EntryRecordings.vue"|2219|2026-08-25 21:13:49|2026-10-24|frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/recordings/FloatingPlayback.vue"|2669|2026-08-25 21:13:49|2026-10-24|frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/recordings/FloatingRecorder.vue"|5008|2026-11-07 15:07:51|2026-11-07|frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/reminders/DayPicker.vue"|2361|2026-08-25 21:13:49|2026-10-24|frontend/src/components/reminders/RemindersView.vue 
-"frontend/src/components/reminders/RemindersView.mount.test.ts"|2263|2026-10-18 12:39:41|2026-10-24|NONE
-"frontend/src/components/reminders/RemindersView.vue"|16814|2026-08-25 21:13:49|2026-10-24|frontend/src/router.ts frontend/src/components/reminders/RemindersView.mount.test.ts 
-"frontend/src/components/scribble/ScribblePad.vue"|3241|2026-10-28 10:13:42|2026-10-28|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/search/SearchPalette.mount.test.ts"|3469|2026-10-18 12:39:41|2026-10-24|NONE
-"frontend/src/components/search/SearchPalette.vue"|10517|2026-10-28 10:13:42|2026-10-28|frontend/src/components/layout/AppShell.vue frontend/src/components/search/SearchPalette.mount.test.ts 
-"frontend/src/components/settings/MemorialTribute.vue"|20676|2026-10-24 23:52:39|2026-10-24|frontend/src/components/settings/tabs/DedicationTab.vue 
-"frontend/src/components/settings/SettingsView.mount.test.ts"|3128|2026-10-18 12:39:41|2026-10-24|NONE
-"frontend/src/components/settings/SettingsView.vue"|15392|2026-10-26 02:53:56|2026-10-26|frontend/src/router.ts frontend/src/components/settings/SettingsView.mount.test.ts 
-"frontend/src/components/settings/dialogs/WhatsNewDialog.vue"|3312|2026-10-28 10:13:42|2026-10-28|frontend/src/components/layout/AppShell.vue 
-"frontend/src/components/settings/panels/BackupRestorePanel.mount.test.ts"|2661|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/components/settings/panels/BackupRestorePanel.vue"|31659|2026-11-07 16:03:23|2026-11-07|frontend/src/components/settings/panels/BackupRestorePanel.mount.test.ts frontend/src/components/settings/tabs/DataTab.vue frontend/src/components/settings/tabs/DataTab.mount.test.ts 
-"frontend/src/components/settings/panels/ExportPanel.mount.test.ts"|3835|2026-11-07 14:28:58|2026-11-07|NONE
-"frontend/src/components/settings/panels/ExportPanel.vue"|18615|2026-11-07 14:28:58|2026-11-07|frontend/src/components/settings/panels/ExportPanel.mount.test.ts frontend/src/components/settings/tabs/DataTab.mount.test.ts frontend/src/components/settings/tabs/DataTab.vue 
-"frontend/src/components/settings/panels/ImportPanel.mount.test.ts"|2421|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/components/settings/panels/ImportPanel.vue"|6500|2026-10-26 02:53:56|2026-10-26|frontend/src/components/settings/tabs/DataTab.mount.test.ts frontend/src/components/settings/panels/ImportPanel.mount.test.ts frontend/src/components/settings/tabs/DataTab.vue 
-"frontend/src/components/settings/panels/MaintenancePanel.mount.test.ts"|4856|2026-11-07 18:08:03|2026-11-07|NONE
-"frontend/src/components/settings/panels/MaintenancePanel.vue"|11632|2026-11-07 18:06:31|2026-11-07|frontend/src/components/settings/tabs/DataTab.mount.test.ts frontend/src/components/settings/panels/MaintenancePanel.mount.test.ts frontend/src/components/settings/tabs/DataTab.vue 
-"frontend/src/components/settings/panels/SecurityPanel.mount.test.ts"|2852|2026-11-07 18:26:08|2026-11-07|NONE
-"frontend/src/components/settings/panels/SecurityPanel.vue"|7625|2026-11-07 18:25:13|2026-11-07|frontend/src/components/settings/panels/SecurityPanel.mount.test.ts frontend/src/components/settings/tabs/DataTab.vue 
-"frontend/src/components/settings/panels/StoragePanel.vue"|5866|2026-10-28 10:13:42|2026-10-27|frontend/src/components/settings/tabs/DataTab.mount.test.ts frontend/src/components/settings/tabs/DataTab.vue 
-"frontend/src/components/settings/shared/AccordionItem.vue"|1522|2026-10-28 10:13:42|2026-10-28|frontend/src/components/settings/tabs/AITab.vue frontend/src/components/settings/tabs/AppearanceTab.vue frontend/src/components/settings/tabs/AboutTab.vue 
-"frontend/src/components/settings/shared/SButton.vue"|1188|2026-10-28 10:13:42|2026-10-28|frontend/src/components/settings/panels/ImportPanel.vue frontend/src/components/settings/panels/SecurityPanel.vue frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/settings/panels/StoragePanel.vue frontend/src/components/settings/tabs/AboutTab.vue 
-"frontend/src/components/settings/shared/SettingGroup.vue"|747|2026-08-25 21:13:49|2026-10-24|frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/settings/tabs/AppearanceTab.vue frontend/src/components/settings/tabs/AITab.vue 
-"frontend/src/components/settings/shared/SettingRow.vue"|1144|2026-08-25 21:13:49|2026-10-24|frontend/src/components/settings/panels/MaintenancePanel.vue frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/settings/panels/SecurityPanel.vue frontend/src/components/settings/panels/StoragePanel.vue frontend/src/components/settings/tabs/AboutTab.vue 
-"frontend/src/components/settings/shared/SettingsSection.vue"|1951|2026-08-25 21:13:49|2026-10-24|frontend/src/components/settings/panels/StoragePanel.vue frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/settings/tabs/PrivacyTab.vue frontend/src/components/settings/panels/ExportPanel.vue frontend/src/components/settings/tabs/AppearanceTab.vue 
-"frontend/src/components/settings/shared/SkeletonCard.vue"|316|2026-08-25 21:13:49|2026-10-24|frontend/src/components/settings/tabs/PrivacyTab.vue frontend/src/components/settings/panels/StoragePanel.vue frontend/src/components/settings/tabs/AITab.vue 
-"frontend/src/components/settings/shared/ToggleSwitch.vue"|956|2026-10-24 23:52:39|2026-10-24|frontend/src/components/settings/tabs/AboutTab.vue frontend/src/components/settings/panels/BackupRestorePanel.vue frontend/src/components/settings/tabs/AppearanceTab.vue frontend/src/components/settings/tabs/PrivacyTab.vue frontend/src/components/settings/tabs/AITab.vue 
-"frontend/src/components/settings/shared/UpdateStatus.vue"|3798|2026-08-25 21:13:49|2026-10-24|frontend/src/components/settings/tabs/AboutTab.vue 
-"frontend/src/components/settings/tabs/AITab.vue"|30978|2026-10-24 23:52:39|2026-10-24|frontend/src/components/settings/SettingsView.mount.test.ts frontend/src/components/settings/SettingsView.vue 
-"frontend/src/components/settings/tabs/AboutTab.vue"|13506|2026-10-28 10:13:42|2026-10-28|frontend/src/components/settings/SettingsView.vue frontend/src/components/settings/SettingsView.mount.test.ts 
-"frontend/src/components/settings/tabs/AppearanceTab.vue"|14606|2026-11-07 15:03:16|2026-11-07|frontend/src/components/settings/SettingsView.mount.test.ts frontend/src/components/settings/SettingsView.vue 
-"frontend/src/components/settings/tabs/DataTab.mount.test.ts"|2601|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/components/settings/tabs/DataTab.vue"|3313|2026-11-07 18:25:32|2026-11-07|frontend/src/components/settings/SettingsView.mount.test.ts frontend/src/components/settings/SettingsView.vue frontend/src/components/settings/tabs/DataTab.mount.test.ts 
-"frontend/src/components/settings/tabs/DedicationTab.vue"|490|2026-06-27 11:44:44|2026-10-24|frontend/src/components/settings/SettingsView.mount.test.ts frontend/src/components/settings/SettingsView.vue 
-"frontend/src/components/settings/tabs/PrivacyTab.test.ts"|3132|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/components/settings/tabs/PrivacyTab.vue"|14829|2026-10-26 02:53:56|2026-10-25|frontend/src/components/settings/SettingsView.mount.test.ts frontend/src/components/settings/SettingsView.vue frontend/src/components/settings/tabs/PrivacyTab.test.ts 
-"frontend/src/components/stats/MoodBars.mount.test.ts"|1691|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/components/stats/MoodBars.vue"|2653|2026-10-26 02:53:56|2026-10-25|frontend/src/components/stats/MoodBars.mount.test.ts frontend/src/components/stats/StatsView.vue 
-"frontend/src/components/stats/StatsView.mount.test.ts"|2756|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/components/stats/StatsView.vue"|4075|2026-10-26 02:53:56|2026-10-25|frontend/src/router.ts frontend/src/components/stats/StatsView.mount.test.ts 
-"frontend/src/components/stats/WeeklyBars.mount.test.ts"|1602|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/components/stats/WeeklyBars.vue"|4702|2026-10-26 02:53:56|2026-10-25|frontend/src/components/stats/WeeklyBars.mount.test.ts frontend/src/components/stats/StatsView.vue 
-"frontend/src/components/templates/TemplateModal.vue"|3160|2026-08-25 21:13:49|2026-10-24|frontend/src/components/templates/TemplatePicker.vue 
-"frontend/src/components/templates/TemplatePicker.vue"|4465|2026-08-25 21:13:49|2026-10-24|frontend/src/components/entry/EntryEditor.vue 
-"frontend/src/components/timeline/TimelineView.mount.test.ts"|3109|2026-10-18 12:39:41|2026-10-24|NONE
-"frontend/src/components/timeline/TimelineView.vue"|14229|2026-10-18 12:18:33|2026-10-24|frontend/src/router.ts frontend/src/components/media/MediaTimelineView.mount.test.ts frontend/src/components/timeline/TimelineView.mount.test.ts 
-"frontend/src/composables/aiToolRegistry.test.ts"|1347|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/composables/aiToolRegistry.ts"|4997|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/composables/shortcutRegistry.ts"|1832|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/composables/useAiTools.ts"|5057|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/composables/useAttachments.ts"|1840|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useAutoSave.test.ts"|8610|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/composables/useAutoSave.ts"|4921|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useCalendar.ts"|2675|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/useDraftRecovery.ts"|6093|2026-10-27 02:35:23|2026-10-24|NONE
-"frontend/src/composables/useDragDrop.ts"|1715|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/useEditorHistory.ts"|3648|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useFindReplace.ts"|1980|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/useFormat.test.ts"|2780|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/useFormat.ts"|2751|2026-10-28 10:13:42|2026-10-27|NONE
-"frontend/src/composables/useHotkey.ts"|5474|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/composables/useInlineTags.ts"|4591|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/useJobProgress.test.ts"|4307|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/composables/useJobProgress.ts"|2480|2026-10-26 02:53:56|2026-10-26|NONE
-"frontend/src/composables/useMarkdownPreview.ts"|1367|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useModalFocus.ts"|2933|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useNotesTreeDrag.test.ts"|5302|2026-11-07 21:56:44|2026-11-07|NONE
-"frontend/src/composables/useNotesTreeDrag.ts"|4560|2026-11-07 21:56:44|2026-11-07|NONE
-"frontend/src/composables/usePagination.ts"|821|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/usePasteMedia.ts"|5569|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/composables/useRecordings.ts"|8161|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useResizableMedia.test.ts"|5161|2026-11-07 15:41:02|2026-11-07|NONE
-"frontend/src/composables/useResizableMedia.ts"|15236|2026-11-07 15:40:42|2026-11-07|NONE
-"frontend/src/composables/useRichTextEditor.test.ts"|22283|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/composables/useRichTextEditor.ts"|14360|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/composables/useTauriDragDrop.ts"|1791|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/composables/useUpdateChecker.ts"|5285|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/main.ts"|3244|2026-11-07 15:13:48|2026-11-07|frontend/src/stores/ui.ts frontend/src/utils/settings.ts frontend/src/stores/ui.view.test.ts 
-"frontend/src/router.ts"|2405|2026-10-26 02:53:56|2026-10-25|frontend/src/components/search/SearchPalette.mount.test.ts frontend/src/components/notes/NoteEditor.vue frontend/src/stores/ui.ts frontend/src/stores/ui.view.test.ts 
-"frontend/src/stores/backup.ts"|2372|2026-10-18 09:09:28|2026-10-24|frontend/src/api/data.ts 
-"frontend/src/stores/entries.ts"|2610|2026-10-25 22:58:28|2026-10-25|frontend/src/api/data.ts 
-"frontend/src/stores/notes.test.ts"|2756|2026-10-18 09:29:13|2026-10-24|NONE
-"frontend/src/stores/notes.ts"|9404|2026-11-07 21:56:44|2026-11-07|frontend/src/api/data.ts 
-"frontend/src/stores/reminders.ts"|1961|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/stores/search.ts"|2465|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/stores/systemHealth.ts"|1644|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/stores/tags.ts"|2131|2026-10-18 09:09:28|2026-10-24|frontend/src/composables/useInlineTags.ts 
-"frontend/src/stores/templates.ts"|1969|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/stores/toast.test.ts"|2355|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/stores/toast.ts"|1947|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/stores/tts.ts"|7562|2026-10-24 23:52:39|2026-10-24|NONE
-"frontend/src/stores/ui.ts"|7894|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/stores/ui.view.test.ts"|2194|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/styles/main.css"|15231|2026-11-07 15:40:49|2026-11-07|frontend/src/components/stats/MoodBars.vue frontend/src/main.ts 
-"frontend/src/types/index.ts"|12807|2026-11-07 21:56:44|2026-11-07|NONE
-"frontend/src/utils/autoTitle.test.ts"|2862|2026-11-07 15:02:37|2026-11-07|frontend/src/components/entry/EntryEditor.title.test.ts 
-"frontend/src/utils/autoTitle.ts"|2448|2026-11-07 15:02:37|2026-11-07|backend/app/services/title_service.py backend/tests/unit/test_title_service.py 
-"frontend/src/utils/caretCoords.ts"|1734|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/utils/clientErrors.ts"|1895|2026-11-07 15:13:21|2026-11-07|NONE
-"frontend/src/utils/errorMessage.test.ts"|1441|2026-10-18 09:09:28|2026-10-24|NONE
-"frontend/src/utils/errorMessage.ts"|908|2026-10-18 09:09:28|2026-10-24|frontend/src/components/settings/panels/SecurityPanel.vue frontend/src/components/settings/panels/ImportPanel.vue frontend/src/components/settings/panels/ExportPanel.vue frontend/src/components/settings/panels/MaintenancePanel.vue frontend/src/components/settings/tabs/AITab.vue 
-"frontend/src/utils/externalLink.test.ts"|1137|2026-07-27 15:15:52|2026-10-24|NONE
-"frontend/src/utils/externalLink.ts"|2551|2026-10-25 12:00:29|2026-10-25|NONE
-"frontend/src/utils/fileDialog.ts"|3060|2026-08-25 21:13:49|2026-10-24|NONE
-"frontend/src/utils/markdown.test.ts"|2757|2026-11-07 21:56:44|2026-11-07|NONE
-"frontend/src/utils/markdown.ts"|3028|2026-11-07 21:56:44|2026-11-07|frontend/src/components/search/SearchPalette.vue frontend/src/components/scribble/ScribblePad.vue frontend/src/components/notes/NoteEditor.vue frontend/src/components/settings/dialogs/WhatsNewDialog.vue frontend/src/components/settings/tabs/AboutTab.vue 
-"frontend/src/utils/markdownMedia.test.ts"|6974|2026-11-07 21:56:44|2026-11-07|NONE
-"frontend/src/utils/markdownMedia.ts"|7168|2026-11-07 21:56:44|2026-11-07|NONE
-"frontend/src/utils/noteColors.test.ts"|1666|2026-11-07 15:06:19|2026-11-07|NONE
-"frontend/src/utils/noteColors.ts"|2598|2026-11-07 15:06:19|2026-11-07|NONE
-"frontend/src/utils/noteEditorDiff.test.ts"|1233|2026-09-12 19:47:12|2026-10-24|NONE
-"frontend/src/utils/noteEditorDiff.ts"|938|2026-09-12 19:47:12|2026-10-24|NONE
-"frontend/src/utils/settings.test.ts"|669|2026-09-12 19:47:12|2026-10-24|NONE
-"frontend/src/utils/settings.ts"|1994|2026-09-12 19:47:12|2026-10-24|NONE
-"frontend/src/utils/tags.ts"|682|2026-08-25 21:13:49|2026-10-24|frontend/src/composables/useInlineTags.ts 
-"frontend/src/utils/text.test.ts"|568|2026-10-26 02:53:56|2026-10-25|NONE
-"frontend/src/utils/text.ts"|460|2026-10-26 02:53:56|2026-10-25|backend/app/services/entry_service.py 
-"frontend/src/version.ts"|769|2026-06-24 23:25:10|2026-10-24|NONE
-"frontend/tests/blank-screen.spec.ts"|4842|2026-11-08 14:59:00|2026-11-08|.github/workflows/ci.yml 
-"frontend/tests/entries.spec.ts"|1766|2026-07-14 19:43:26|2026-10-24|.github/workflows/ci.yml 
-"frontend/tests/media-resize.spec.ts"|7459|2026-11-07 21:56:44|2026-11-07|.github/workflows/ci.yml 
-"frontend/tests/recordings.spec.ts"|2554|2026-10-18 12:41:15|2026-10-24|.github/workflows/ci.yml 
-"frontend/tests/settings.spec.ts"|8616|2026-11-08 14:56:24|2026-11-08|.github/workflows/ci.yml 
-"frontend/tsconfig.app.json"|420|2026-05-09 12:27:17|2026-10-24|NONE
-"frontend/tsconfig.json"|119|2026-05-09 11:47:25|2026-10-24|NONE
-"frontend/tsconfig.node.json"|591|2026-05-09 11:47:25|2026-10-24|NONE
-"frontend/vite.config.ts"|2130|2026-07-25 22:02:51|2026-10-24|NONE
-"frontend/vitest.config.ts"|633|2026-10-18 10:59:40|2026-10-24|NONE
-"scripts/build-web-deb.sh"|19207|2026-10-26 02:53:56|2026-10-25|backend/app/main.py backend/app/core/config.py 
-"scripts/build.sh"|2703|2026-10-24 23:52:39|2026-10-24|NONE
-"scripts/check_version.py"|2747|2026-10-28 10:13:42|2026-10-27|Makefile .github/workflows/ci.yml 
-"scripts/close-timing.sh"|2833|2026-11-07 15:42:44|2026-11-07|NONE
-"scripts/snip-smoke.sh"|2389|2026-11-07 15:42:44|2026-11-07|NONE
-"spec.md"|22649|2026-10-28 10:13:42|2026-10-27|backend/app/services/ai_tool_registry.py backend/tests/unit/test_ai_system_prompt.py backend/app/services/ollama_service.py frontend/src/composables/aiToolRegistry.ts 
-"trash2review/README.md"|546|2026-10-28 10:13:42|2026-10-27|Makefile 
-"trash2review/backend/app/routers/sync.py"|4594|2026-10-28 10:13:42|2026-10-28|NONE
-"trash2review/backend/tests/unit/test_sync_merge_notes.py"|9395|2026-10-28 10:13:42|2026-10-28|NONE
-"trash2review/backend/tests/unit/test_sync_pollers.py"|6288|2026-10-28 10:13:42|2026-10-28|NONE
-"trash2review/backend/tests/unit/test_sync_service.py"|1576|2026-10-28 10:13:42|2026-10-28|NONE
-"trash2review/docs/blog_lifelogr_vs_diarium.md"|5979|2026-10-28 10:13:42|2026-10-27|NONE
-"trash2review/docs/images/lifelogr_aboutus.jpg"|97929|2026-10-28 10:13:42|2026-10-27|NONE
-"trash2review/frontend/public/icons.svg"|5031|2026-10-28 10:13:42|2026-10-27|NONE
+path,bytes,git_last_commit_date,subject
+.claude/agents/rea-builder.md,1034,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+.claude/agents/rea-scout.md,1487,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+.claude/agents/rea-spec-writer.md,777,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+.claude/agents/rea-tester.md,1234,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+.dockerignore,298,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+.github/workflows/build.yml,10123,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+.github/workflows/ci.yml,4385,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+.gitignore,1141,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+.pipeline/baseline-test-results.txt,80,"2026-11-08 phase(0): baseline snapshot and safety net (second pass)"
+.pipeline/blind-review-prompt.md,1000,"2026-10-27 phase(5): blind review and reconciliation"
+.pipeline/blind-review.md,14662,"2026-11-08 phase(5): blind review and reconciliation (docs only)"
+.pipeline/blocker-fix-check.txt,105651,"2026-11-08 docs: mark audit blockers and the backup-import CSRF gap resolved"
+.pipeline/inventory.csv,1416,"2026-11-08 phase(0): baseline snapshot and safety net (second pass)"
+.pipeline/phase2-final-check.txt,104583,"2026-11-08 phase(2): record final make check gate output"
+.pipeline/phase3-final-check.txt,104186,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+.pipeline/purge-plan.md,2020,"2026-11-08 phase(1): move dead schemas/sync.py to trash2review"
+.pipeline/refactor-plan.md,6063,"2026-11-08 phase(2): debloat and refactor — fix EntryEditor test mocks (unit A)"
+.pipeline/style-plan.md,2640,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+.pipeline/trash-view-check.txt,106123,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+AGENTS.md,6083,"2026-11-08 fix(backend): entry soft-delete becomes restorable trash; purge destroys media"
+AUDIT.md,14828,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+CHANGELOG.md,28222,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+Dockerfile,1927,"2026-10-28 docs: align comments with managed-run reality; mark audit items resolved"
+Makefile,4638,"2026-10-28 chore: bump version to 0.14.1"
+README.md,11269,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+assets/.genoffice-assets.json,70,"2026-11-08 dirty tree"
+assets/lifelogr-logo.png,3617,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/.env.example,2792,"2026-11-08 fix(backend): entry soft-delete becomes restorable trash; purge destroys media"
+backend/.python-version,5,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/archive.py,11762,"2026-11-07 Backups verify themselves; document media encryption"
+backend/app/core/config.py,20865,"2026-11-08 fix(backend): entry soft-delete becomes restorable trash; purge destroys media"
+backend/app/core/cron_utils.py,2976,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/database.py,43680,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+backend/app/core/exceptions.py,438,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/fts.py,6266,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/jobs.py,9245,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+backend/app/core/oauth_state.py,4132,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/paths.py,3078,"2026-11-08 phase(2): debloat and refactor — drop phantom setting reads (unit H)"
+backend/app/core/restore.py,14420,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/core/security.py,5062,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/core/startup_checks.py,22315,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/main.py,31458,"2026-11-08 fix(backend): destructive-origin guard covers backup import/restore and entry purge"
+backend/app/models/__init__.py,1729,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/ai_provider.py,1374,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/backup.py,3821,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/embedding.py,2442,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/entry.py,4289,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/app/models/entry_event.py,1745,"2026-10-25 feat: import Diarium Events (weather) into a new entry_events table"
+backend/app/models/media.py,1545,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/note.py,6645,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+backend/app/models/note_media.py,1481,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/prompt.py,446,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/recording.py,1926,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/reflection_prompt.py,732,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/reminder.py,1121,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/sentiment.py,935,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/sync.py,1911,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/tag.py,2284,"2026-10-25 feat: import Diarium tag trackers (Tags.Type=2 + TrackingValue)"
+backend/app/models/template.py,768,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/models/video_note.py,1178,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/_oauth_helpers.py,5817,"2026-10-25 fix: cloud-backup OAuth redirect follows the real backend port; release 0.12.0"
+backend/app/routers/ai.py,21625,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/app/routers/backup.py,22120,"2026-11-08 phase(2): debloat and refactor — one spool-upload helper, one media cap gate (unit E)"
+backend/app/routers/box.py,5183,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/app/routers/context.py,5615,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+backend/app/routers/dropbox.py,5088,"2026-10-25 fix: cloud-backup OAuth redirect follows the real backend port; release 0.12.0"
+backend/app/routers/encryption.py,5635,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/entries.py,89377,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+backend/app/routers/export.py,2313,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/google_drive.py,6135,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/app/routers/jobs.py,1308,"2026-10-28 fix(backend): resolve all mypy strict errors; lint gate green"
+backend/app/routers/media.py,8458,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/routers/notes.py,19405,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+backend/app/routers/onedrive.py,5168,"2026-10-25 fix: cloud-backup OAuth redirect follows the real backend port; release 0.12.0"
+backend/app/routers/prompts.py,887,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/recordings.py,3472,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/reminders.py,2009,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/search.py,1394,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/settings.py,13777,"2026-11-08 phase(2): debloat and refactor — hoist redundant local imports (unit I)"
+backend/app/routers/system.py,10428,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+backend/app/routers/tags.py,3130,"2026-10-25 feat: import Diarium tag trackers (Tags.Type=2 + TrackingValue)"
+backend/app/routers/templates.py,1313,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/routers/tts.py,16098,"2026-11-08 phase(2): debloat and refactor — shared get-or-raise fetchers (unit G)"
+backend/app/routers/video_notes.py,3197,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/schemas/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/ai.py,8993,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/app/schemas/ai_provider.py,2990,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/backup.py,1622,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/encryption.py,1359,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/entry.py,7259,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+backend/app/schemas/media.py,879,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/note.py,5104,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+backend/app/schemas/note_media.py,632,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/prompt.py,256,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/recording.py,339,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/reminder.py,1498,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/search.py,948,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/tag.py,1176,"2026-10-25 feat: import Diarium tag trackers (Tags.Type=2 + TrackingValue)"
+backend/app/schemas/template.py,883,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/schemas/video_note.py,483,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/ai_provider_service.py,8545,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/ai_tool_registry.py,6601,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/app/services/backup_service.py,27159,"2026-11-07 Backups verify themselves; document media encryption"
+backend/app/services/cloud_sync_service.py,66571,"2026-11-08 refactor: code-review follow-ups to the blocker fixes"
+backend/app/services/encryption_service.py,12351,"2026-11-08 phase(2): debloat and refactor — shared get-or-raise fetchers (unit G)"
+backend/app/services/enrichment_service.py,16564,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/entry_service.py,31400,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+backend/app/services/export_service.py,47055,"2026-11-07 fix: note omitted encrypted attachments inline in HTML/PDF exports"
+backend/app/services/hashtag.py,1660,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/ics_service.py,6504,"2026-10-28 fix(backend): resolve all mypy strict errors; lint gate green"
+backend/app/services/importers/__init__.py,701,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/importers/csv.py,5555,"2026-10-25 feat: import Daylio CSV mood-only check-ins"
+backend/app/services/importers/dayone.py,5576,"2026-10-25 feat: import Day One photos from export zip"
+backend/app/services/importers/diarium.py,13613,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/app/services/importers/markdown.py,2965,"2026-10-24 feat: media-aware export/import across archive, .diary, and Markdown ZIP"
+backend/app/services/media_crypto.py,9994,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/services/media_migration.py,6096,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/services/media_service.py,35436,"2026-11-08 phase(2): debloat and refactor — module-level check_signature (unit J)"
+backend/app/services/note_media_service.py,10356,"2026-11-08 phase(2): debloat and refactor — shared get-or-raise fetchers (unit G)"
+backend/app/services/note_service.py,22610,"2026-11-08 phase(2): debloat and refactor — shared get-or-raise fetchers (unit G)"
+backend/app/services/notes_export_service.py,15300,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/app/services/ocr_service.py,2601,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/ollama_service.py,34120,"2026-10-27 phase(2): debloat and refactor — dead symbols"
+backend/app/services/recording_service.py,7132,"2026-11-08 phase(2): debloat and refactor — shared get-or-raise fetchers (unit G)"
+backend/app/services/recovery_kit.py,10995,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/services/reminder_service.py,6063,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/scheduler_service.py,39367,"2026-11-08 fix(backend): stage local backups atomically; register with shutdown guard"
+backend/app/services/search_service.py,21178,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/semantic_cache.py,15131,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/settings_service.py,4591,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/app/services/storage_service.py,8255,"2026-11-08 phase(2): debloat and refactor — drop duplicate atomic-copy helper (unit F)"
+backend/app/services/tag_service.py,4095,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/template_service.py,1790,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/app/services/title_service.py,2209,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/app/services/video_service.py,5636,"2026-11-08 phase(2): debloat and refactor — shared get-or-raise fetchers (unit G)"
+backend/app/services/weather_service.py,11391,"2026-10-28 fix(backend): resolve all mypy strict errors; lint gate green"
+backend/app/services/web_clip_service.py,5111,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/pyproject.toml,1821,"2026-11-08 chore: bump version to 0.15.0"
+backend/tests/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/conftest.py,6031,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/tests/golden/daylio_export.csv,263,"2026-10-25 feat: import Daylio CSV mood-only check-ins"
+backend/tests/golden/dayone_export.zip,839,"2026-10-25 feat: import Day One photos from export zip"
+backend/tests/helpers/__init__.py,75,"2026-10-25 feat: import Diarium Events (weather) into a new entry_events table"
+backend/tests/helpers/daylio_csv.py,830,"2026-10-25 feat: import Daylio CSV mood-only check-ins"
+backend/tests/helpers/dayone_zip.py,1519,"2026-10-25 feat: import Day One photos from export zip"
+backend/tests/helpers/diarium_diary.py,11099,"2026-10-26 test: .diary round-trip + structural validation suite (DM11)"
+backend/tests/integration/test_ai_endpoints.py,1112,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/integration/test_backfill_titles.py,2846,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/tests/integration/test_backup_verify.py,2787,"2026-11-07 Backups verify themselves; document media encryption"
+backend/tests/integration/test_context.py,4943,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+backend/tests/integration/test_context_attach.py,1328,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+backend/tests/integration/test_export_dayone.py,7314,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/tests/integration/test_export_encrypted_media.py,3510,"2026-11-07 fix: note omitted encrypted attachments inline in HTML/PDF exports"
+backend/tests/integration/test_export_html_zip.py,4314,"2026-10-25 feat: HTML zip export with media attachments"
+backend/tests/integration/test_geotags.py,2420,"2026-10-25 feat: map view for geotagged entries (plot-only default, opt-in tiles)"
+backend/tests/integration/test_google_drive.py,17896,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/integration/test_import_daylio_csv.py,4296,"2026-10-25 feat: import Daylio CSV mood-only check-ins"
+backend/tests/integration/test_import_dayone.py,2585,"2026-10-25 feat: import Day One photos from export zip"
+backend/tests/integration/test_import_diarium_merge.py,8423,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/tests/integration/test_media_encryption.py,11001,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/tests/integration/test_media_migration.py,4881,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/tests/integration/test_notes.py,4800,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/integration/test_notes_reorder.py,5692,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+backend/tests/integration/test_recovery_kit.py,7780,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/tests/integration/test_reset_endpoint.py,1451,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/integration/test_system_endpoints.py,2561,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+backend/tests/integration/test_tts.py,8732,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/integration/test_weather_hook.py,4779,"2026-10-25 feat: opt-in weather auto-fill for geotagged entries (Open-Meteo, disk-cached)"
+backend/tests/unit/__init__.py,0,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_ai_providers.py,8107,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_ai_system_prompt.py,5849,"2026-10-27 phase(2): debloat and refactor — dead symbols"
+backend/tests/unit/test_ai_tool_registry.py,2798,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/tests/unit/test_archive_manifest.py,4612,"2026-11-07 Backups verify themselves; document media encryption"
+backend/tests/unit/test_archive_v2.py,6239,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_backup_cloud_ops.py,20211,"2026-10-28 chore(backend): park unused /api/v1/sync surface in trash2review"
+backend/tests/unit/test_backup_full.py,43009,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_backup_label.py,3781,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_backup_roundtrip.py,8439,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_backup_service.py,6263,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_boot_snapshot.py,8120,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_cloud_provider_streaming.py,14357,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_cloud_sync_pull.py,5006,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_cloud_sync_refresh.py,4752,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_config_hardening.py,5066,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/tests/unit/test_cron_utils.py,1646,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_data_dir_env_file.py,1748,"2026-10-25 fix: packaged desktop app can load OAuth credentials from DATA_DIR/.env"
+backend/tests/unit/test_database_pragmas.py,4324,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_db_maintenance.py,2130,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_diarium_events.py,7974,"2026-10-25 feat: import Diarium Events (weather) into a new entry_events table"
+backend/tests/unit/test_diarium_roundtrip.py,7231,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_diarium_trackers.py,6587,"2026-10-25 feat: import Diarium tag trackers (Tags.Type=2 + TrackingValue)"
+backend/tests/unit/test_diary_writer.py,4666,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_egress_report.py,2679,"2026-10-25 feat: map view for geotagged entries (plot-only default, opt-in tiles)"
+backend/tests/unit/test_encryption_service.py,6033,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_enrichment_backfill.py,5525,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_entry_import_hardening.py,15915,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_entry_service.py,6773,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/tests/unit/test_entry_stats.py,7148,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+backend/tests/unit/test_entry_template_filter.py,7054,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_entry_trash.py,9282,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+backend/tests/unit/test_export_progress.py,4323,"2026-10-26 feat: job-based progress for exports (DM5)"
+backend/tests/unit/test_export_security.py,6987,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_export_service.py,5049,"2026-11-07 fix: note omitted encrypted attachments inline in HTML/PDF exports"
+backend/tests/unit/test_fk_indexes.py,2915,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_fts_integrity.py,12754,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_hashtag.py,4067,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_health_and_brand.py,1454,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_host_and_token_guard.py,3379,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_ics_parser.py,4042,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+backend/tests/unit/test_import_batching.py,7353,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_import_progress.py,4059,"2026-10-26 feat: job-based progress for imports (DM4)"
+backend/tests/unit/test_importers.py,27723,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_jobs.py,4082,"2026-10-25 feat: remove calendar on-this-day card; add job registry + progress infra (DM1, DM2)"
+backend/tests/unit/test_main_misc.py,3979,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_media_crypto.py,7120,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+backend/tests/unit/test_media_service.py,6838,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_media_thumbnails.py,3434,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/tests/unit/test_media_upload_streaming.py,11191,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_model_pull_jobs.py,7040,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_note_folders.py,1979,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_notes.py,20782,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_notes_export.py,3088,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_notification_and_cron_edges.py,4075,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_oauth_pkce.py,5730,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_oauth_state.py,1941,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_ocr_service.py,1374,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_ollama_embed_fastpath.py,4439,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_ollama_service.py,5714,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_on_this_day.py,7188,"2026-10-25 feat: on-this-day entries on the calendar and in reminder notifications"
+backend/tests/unit/test_operation_progress.py,9518,"2026-11-07 Backups verify themselves; document media encryption"
+backend/tests/unit/test_prompt_service.py,265,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_recording_service.py,4280,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_reminder_notification_delivery.py,4478,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_reminder_scheduling.py,5055,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_reminder_service.py,1620,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_reset_guard.py,8476,"2026-11-08 fix(backend): destructive-origin guard covers backup import/restore and entry purge"
+backend/tests/unit/test_restore_wal_sidecars.py,10450,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_scheduler_service.py,22463,"2026-11-08 fix(backend): stage local backups atomically; register with shutdown guard"
+backend/tests/unit/test_schema_version.py,2220,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_search_hybrid_totals.py,5076,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_search_service.py,5017,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_security.py,1740,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_selection_encryption.py,6063,"2026-10-25 fix: cloud-backup OAuth redirect follows the real backend port; release 0.12.0"
+backend/tests/unit/test_semantic_cache.py,4497,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_semantic_cache_models.py,5445,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_settings.py,314,"2026-11-08 phase(3): drop pytest imports orphaned by marker removal; record gate output"
+backend/tests/unit/test_settings_dir_size.py,2176,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_settings_hardening.py,3040,"2026-10-26 refactor: dedupe integrity endpoint and consolidate export URL builders (DM7)"
+backend/tests/unit/test_startup_checks.py,15781,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_startup_foundation.py,4781,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+backend/tests/unit/test_storage_service.py,6839,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+backend/tests/unit/test_tag_service.py,2340,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_tags_batch.py,5514,"2026-10-25 feat: import Diarium tag trackers (Tags.Type=2 + TrackingValue)"
+backend/tests/unit/test_template_service.py,4086,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_title_service.py,2390,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+backend/tests/unit/test_tts_entry_guard.py,2886,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_video_service.py,893,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_video_streaming.py,2296,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+backend/tests/unit/test_weather_service.py,4439,"2026-10-25 feat: opt-in weather auto-fill for geotagged entries (Open-Meteo, disk-cached)"
+backend/uv.lock,480039,"2026-11-08 chore: bump version to 0.15.0"
+desktop/Makefile,2147,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/scripts/build-frontend.sh,655,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/scripts/pyinstaller.spec,6702,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/scripts/setup-linux.sh,3942,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/.gitignore,268,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/Cargo.lock,173881,"2026-11-08 chore: bump version to 0.15.0"
+desktop/src-tauri/Cargo.toml,1964,"2026-11-08 chore: bump version to 0.15.0"
+desktop/src-tauri/build.rs,39,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/capabilities/default.json,1005,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/gen/schemas/capabilities.json,739,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/128x128.png,6526,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/128x128@2x.png,75607,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/32x32.png,2088,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/64x64.png,4155,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-120x120@1x.png,4870,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-152x152@1x.png,7230,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-167x167@1x.png,8445,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-180x180@1x.png,9510,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-20x20@1x.png,694,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-29x29@1x.png,995,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-40x40@1x.png,1361,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-512x512@1x.png,46895,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-58x58@1x.png,2019,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-60x60@1x.png,2069,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-76x76@1x.png,2746,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-80x80@1x.png,2861,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/AppIcon-87x87@1x.png,3183,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square107x107Logo.png,4210,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square142x142Logo.png,6563,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square150x150Logo.png,7097,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square284x284Logo.png,18905,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square30x30Logo.png,1021,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square310x310Logo.png,21790,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square44x44Logo.png,1508,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square71x71Logo.png,2508,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/Square89x89Logo.png,3251,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/StoreLogo.png,1555,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml,261,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png,1492,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png,4631,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png,1752,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png,1512,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png,3106,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png,1684,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png,2696,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png,5986,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png,3183,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png,4122,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png,8581,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png,4900,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png,5480,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png,11307,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png,6407,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/android/values/ic_launcher_background.xml,115,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/icon.icns,55993,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/icon.ico,13039,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/icon.png,75607,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-20x20@1x.png,677,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-20x20@2x-1.png,1260,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-20x20@2x.png,1260,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-20x20@3x.png,1788,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-29x29@1x.png,941,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-29x29@2x-1.png,1723,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-29x29@2x.png,1723,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-29x29@3x.png,2523,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-40x40@1x.png,1260,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-40x40@2x-1.png,2319,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-40x40@2x.png,2319,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-40x40@3x.png,3427,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-512@2x.png,7065,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-60x60@2x.png,3427,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-60x60@3x.png,4992,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-76x76@1x.png,2120,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-76x76@2x.png,4418,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png,4762,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+desktop/src-tauri/src/main.rs,28715,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+desktop/src-tauri/tauri.conf.json,1864,"2026-11-08 chore: bump version to 0.15.0"
+dev.sh,2544,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+docker-compose.yml,1301,"2026-10-28 docs: align comments with managed-run reality; mark audit items resolved"
+docs/ARCHITECTURE.md,46009,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+docs/SECURITY.md,3160,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+docs/assets/.genoffice-assets.json,246,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+docs/assets/image.png,46317,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+docs/design/media-encryption.md,8932,"2026-11-07 Backups verify themselves; document media encryption"
+docs/diarium-sync-research.md,18421,"2026-11-07 Backups verify themselves; document media encryption"
+docs/images/lifelogr_01.jpg,123654,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+docs/images/lifelogr_Editor.jpg,58651,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+docs/manual/API_REFERENCE.md,22105,"2026-11-07 Backups verify themselves; document media encryption"
+docs/manual/DEPLOYMENT.md,13391,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+docs/manual/USER_MANUAL.md,32419,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+docs/modify-idea.md,2125,"2026-11-08 docs: mark modify-idea items implemented after full verification gate"
+docs/plans/2026-11-07-modify-idea-plan.md,26684,"2026-11-07 Backups verify themselves; document media encryption"
+docs/plans/2026-11-07-modify-idea-tasks.md,21372,"2026-11-08 docs: mark modify-idea items implemented after full verification gate"
+docs/plans/pending-tasks.md,3101,"2026-11-08 docs: mark modify-idea items implemented after full verification gate"
+frontend/.gitignore,253,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/.vscode/extensions.json,39,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/README.md,442,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/eslint.config.ts,1723,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/index.html,985,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/package-lock.json,167806,"2026-10-25 chore: release 0.13.0"
+frontend/package.json,1538,"2026-11-08 chore: bump version to 0.15.0"
+frontend/playwright.config.ts,587,"2026-11-08 test: fix e2e specs that could never pass against the current UI"
+frontend/public/favicon.svg,6658,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/public/logo.png,3617,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/App.vue,1745,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+frontend/src/api/ai.ts,4723,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/api/backup.ts,5306,"2026-11-07 Backups verify themselves; document media encryption"
+frontend/src/api/client.test.ts,3881,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/client.ts,5369,"2026-11-08 phase(3): style and authorship consistency pass — shared transport for exports"
+frontend/src/api/context.ts,1331,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+frontend/src/api/data.ts,1801,"2026-11-08 phase(3): style and authorship consistency pass — shared transport for exports"
+frontend/src/api/encryption.ts,1095,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/entries.ts,6962,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/api/jobs.ts,1267,"2026-10-26 feat: job-based progress for exports (DM5)"
+frontend/src/api/media.ts,2189,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/api/notes.ts,7909,"2026-11-08 refactor: code-review follow-ups to the blocker fixes"
+frontend/src/api/recordings.ts,1485,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/reminders.ts,779,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/search.ts,892,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/settings.ts,3878,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+frontend/src/api/system.ts,2328,"2026-10-25 feat: map view for geotagged entries (plot-only default, opt-in tiles)"
+frontend/src/api/tags.ts,671,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/templates.ts,659,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/api/tts.ts,2829,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/assets/tariq-memorial-tribute.jpg,131777,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/calendar/CalendarCell.vue,2776,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/calendar/CalendarGrid.mount.test.ts,2666,"2026-10-25 feat: remove calendar on-this-day card; add job registry + progress infra (DM1, DM2)"
+frontend/src/components/calendar/CalendarGrid.vue,6392,"2026-10-25 feat: remove calendar on-this-day card; add job registry + progress infra (DM1, DM2)"
+frontend/src/components/calendar/CalendarHeader.vue,1397,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/calendar/EntryPicker.vue,3440,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/ConfirmDialog.test.ts,3085,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/ConfirmDialog.vue,1296,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/CrashProbe.vue,432,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+frontend/src/components/common/EmojiPicker.vue,4876,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/ErrorBoundary.mount.test.ts,3057,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+frontend/src/components/common/ErrorBoundary.vue,3318,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+frontend/src/components/common/GoToDateModal.vue,4953,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/KeyboardShortcutsDialog.vue,2252,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/NowPlayingBar.vue,3692,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/OperationProgress.test.ts,2534,"2026-10-25 feat: remove calendar on-this-day card; add job registry + progress infra (DM1, DM2)"
+frontend/src/components/common/OperationProgress.vue,2335,"2026-10-25 feat: remove calendar on-this-day card; add job registry + progress infra (DM1, DM2)"
+frontend/src/components/common/ShutdownOverlay.vue,2893,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+frontend/src/components/common/SystemHealthBanner.vue,2038,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/ToasterHost.test.ts,4333,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/common/ToasterHost.vue,1917,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/editor/EditorContextMenu.vue,12621,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/editor/EditorToolbar.test.ts,4474,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/editor/EditorToolbar.vue,14186,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/editor/TagAutocomplete.vue,2098,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/entry/AiDrawerPanel.vue,10158,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/entry/AttachmentsPanel.vue,2665,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/entry/ContextDrawerPanel.test.ts,5398,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+frontend/src/components/entry/ContextDrawerPanel.vue,10488,"2026-10-25 feat: entry-composer context sidebar (local photos + ICS calendar)"
+frontend/src/components/entry/EditorStatusBar.mount.test.ts,1598,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/entry/EditorStatusBar.vue,2160,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/entry/EncryptionBadge.vue,3665,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/entry/EntryDetail.vue,7767,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/entry/EntryEditor.mount.test.ts,7521,"2026-11-08 phase(2): debloat and refactor — shared API mock factories (unit D)"
+frontend/src/components/entry/EntryEditor.title.test.ts,4259,"2026-11-08 phase(2): debloat and refactor — shared API mock factories (unit D)"
+frontend/src/components/entry/EntryEditor.vue,68638,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/entry/EntryHeader.vue,1045,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/layout/AppShell.vue,13359,"2026-11-08 fix: keep a view mounted during route switches (BLANK-9)"
+frontend/src/components/layout/PanelSplitter.vue,1931,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/layout/Sidebar.vue,9495,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/components/layout/SplashScreen.vue,3674,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/map/MapView.test.ts,4646,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/map/MapView.vue,5941,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/media/MediaGrid.vue,5320,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/media/MediaTimelineView.mount.test.ts,2313,"2026-11-08 phase(2): debloat and refactor — shared API mock factories (unit D)"
+frontend/src/components/media/MediaTimelineView.vue,14705,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/components/media/MediaViewer.vue,11592,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/notes/FolderMovePicker.mount.test.ts,2487,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/notes/FolderMovePicker.vue,4547,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/notes/NoteColorPicker.mount.test.ts,2169,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/notes/NoteColorPicker.vue,4634,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/notes/NoteEditor.test.ts,3998,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/notes/NoteEditor.vue,55775,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/notes/NoteEncryptionBadge.vue,3539,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/notes/NotesView.mount.test.ts,3323,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/notes/NotesView.vue,48197,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+frontend/src/components/notes/SnipOverlay.vue,4249,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/notes/WebClipModal.vue,2860,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/recordings/EntryRecordings.vue,2219,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/recordings/FloatingPlayback.vue,2669,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/recordings/FloatingRecorder.vue,5008,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/components/reminders/DayPicker.vue,2361,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/reminders/RemindersView.mount.test.ts,2263,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/reminders/RemindersView.vue,16814,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/scribble/ScribblePad.vue,3241,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/search/SearchPalette.mount.test.ts,3469,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/search/SearchPalette.vue,10517,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/settings/MemorialTribute.vue,20676,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/SettingsView.mount.test.ts,3128,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/SettingsView.vue,15392,"2026-10-26 refactor: dedupe integrity endpoint and consolidate export URL builders (DM7)"
+frontend/src/components/settings/dialogs/WhatsNewDialog.vue,3312,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/settings/panels/BackupRestorePanel.mount.test.ts,2661,"2026-10-26 refactor: dedupe integrity endpoint and consolidate export URL builders (DM7)"
+frontend/src/components/settings/panels/BackupRestorePanel.vue,31659,"2026-11-07 Backups verify themselves; document media encryption"
+frontend/src/components/settings/panels/ExportPanel.mount.test.ts,3845,"2026-11-08 refactor: code-review follow-ups to the blocker fixes"
+frontend/src/components/settings/panels/ExportPanel.vue,18581,"2026-11-08 refactor: code-review follow-ups to the blocker fixes"
+frontend/src/components/settings/panels/ImportPanel.mount.test.ts,2421,"2026-10-26 feat: reorganize the Data tab (DM6)"
+frontend/src/components/settings/panels/ImportPanel.vue,6515,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/panels/MaintenancePanel.mount.test.ts,4856,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+frontend/src/components/settings/panels/MaintenancePanel.vue,11659,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/panels/SecurityPanel.mount.test.ts,2852,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+frontend/src/components/settings/panels/SecurityPanel.vue,7640,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/panels/StoragePanel.vue,5875,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/shared/AccordionItem.vue,1522,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/settings/shared/SButton.vue,1188,"2026-10-28 chore(frontend): drive eslint to zero warnings"
+frontend/src/components/settings/shared/SettingGroup.vue,747,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/shared/SettingRow.vue,1144,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/shared/SettingsSection.vue,1951,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/shared/SkeletonCard.vue,316,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/shared/ToggleSwitch.vue,956,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/shared/UpdateStatus.vue,3798,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/tabs/AITab.vue,31023,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/tabs/AboutTab.vue,13527,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/tabs/AppearanceTab.vue,14615,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/settings/tabs/DataTab.mount.test.ts,2601,"2026-10-26 feat: reorganize the Data tab (DM6)"
+frontend/src/components/settings/tabs/DataTab.vue,3313,"2026-11-07 Security: encrypt media at rest, migration, recovery kit"
+frontend/src/components/settings/tabs/DedicationTab.vue,490,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/settings/tabs/PrivacyTab.test.ts,3132,"2026-10-25 feat: map view for geotagged entries (plot-only default, opt-in tiles)"
+frontend/src/components/settings/tabs/PrivacyTab.vue,14856,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/components/stats/MoodBars.mount.test.ts,1691,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+frontend/src/components/stats/MoodBars.vue,2653,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+frontend/src/components/stats/StatsView.mount.test.ts,2756,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+frontend/src/components/stats/StatsView.vue,4075,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+frontend/src/components/stats/WeeklyBars.mount.test.ts,1602,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+frontend/src/components/stats/WeeklyBars.vue,4702,"2026-10-25 feat: journaling statistics dashboard (streaks, words, weekly chart, moods, media)"
+frontend/src/components/templates/TemplateModal.vue,3160,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/templates/TemplatePicker.vue,4465,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/timeline/TimelineView.mount.test.ts,3028,"2026-11-08 phase(2): debloat and refactor — shared API mock factories (unit D)"
+frontend/src/components/timeline/TimelineView.vue,14229,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/components/trash/TrashView.mount.test.ts,4216,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/components/trash/TrashView.vue,6907,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/composables/aiToolRegistry.test.ts,1347,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/composables/aiToolRegistry.ts,4997,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/composables/shortcutRegistry.ts,1832,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useAiTools.ts,5057,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+frontend/src/composables/useAttachments.ts,1840,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useAutoSave.test.ts,8610,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useAutoSave.ts,4921,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useCalendar.ts,2675,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useDraftRecovery.ts,6093,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useDragDrop.ts,1715,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useEditorHistory.ts,3648,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useFindReplace.ts,1980,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useFormat.test.ts,2780,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useFormat.ts,2751,"2026-10-27 phase(2): debloat and refactor — dead symbols"
+frontend/src/composables/useHotkey.ts,5474,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useInlineTags.ts,4591,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useJobProgress.test.ts,4307,"2026-10-26 feat: job-based progress for exports (DM5)"
+frontend/src/composables/useJobProgress.ts,2480,"2026-10-26 feat: job-based progress for exports (DM5)"
+frontend/src/composables/useMarkdownPreview.ts,1367,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useModalFocus.ts,2933,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useNotesTreeDrag.test.ts,5302,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+frontend/src/composables/useNotesTreeDrag.ts,4560,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+frontend/src/composables/usePagination.ts,821,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/usePasteMedia.ts,5569,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useRecordings.ts,8161,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useResizableMedia.test.ts,5161,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/composables/useResizableMedia.ts,15236,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/composables/useRichTextEditor.test.ts,22283,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useRichTextEditor.ts,14360,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useTauriDragDrop.ts,1791,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/composables/useUpdateChecker.ts,5285,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/main.ts,3244,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+frontend/src/router.ts,2528,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/stores/backup.ts,2372,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/entries.ts,2610,"2026-10-25 feat: remove calendar on-this-day card; add job registry + progress infra (DM1, DM2)"
+frontend/src/stores/notes.test.ts,2756,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/notes.ts,9404,"2026-11-07 feat: between-row drag reordering in the notes rail (DND-3)"
+frontend/src/stores/reminders.ts,1961,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/search.ts,2465,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/systemHealth.ts,1644,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/tags.ts,2131,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/templates.ts,1969,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/toast.test.ts,2355,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/toast.ts,1947,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/stores/tts.ts,7571,"2026-11-08 phase(3): style and authorship consistency pass — mechanical batch"
+frontend/src/stores/ui.ts,7922,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/stores/ui.view.test.ts,2194,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/styles/main.css,13988,"2026-11-08 phase(2): debloat and refactor — drop dead custom CSS (unit C)"
+frontend/src/test-utils/apiMocks.ts,3980,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/types/index.ts,10523,"2026-11-09 feat: trash view with restore and purge for soft-deleted entries"
+frontend/src/utils/autoTitle.test.ts,2862,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+frontend/src/utils/autoTitle.ts,2448,"2026-11-07 Diarium sync: repeatable .diary pulls, Day One push, title backfill"
+frontend/src/utils/caretCoords.ts,1734,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/clientErrors.ts,1895,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+frontend/src/utils/errorMessage.test.ts,1441,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/errorMessage.ts,908,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/externalLink.test.ts,1137,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/externalLink.ts,2551,"2026-10-25 fix: OAuth consent URL opens nothing in the desktop webview (window.open → shell open)"
+frontend/src/utils/fileDialog.ts,3060,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/markdown.test.ts,2757,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+frontend/src/utils/markdown.ts,3028,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+frontend/src/utils/markdownMedia.test.ts,6974,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+frontend/src/utils/markdownMedia.ts,7168,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+frontend/src/utils/noteColors.test.ts,1666,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/utils/noteColors.ts,2598,"2026-11-07 Notes UX: colour labels, drag-and-drop, quicker media"
+frontend/src/utils/noteEditorDiff.test.ts,1233,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/noteEditorDiff.ts,938,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/settings.test.ts,669,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/settings.ts,1994,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/tags.ts,682,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/src/utils/text.test.ts,568,"2026-10-25 feat: daily word-count goal with a today-total chip in the editor status bar"
+frontend/src/utils/text.ts,460,"2026-10-25 feat: daily word-count goal with a today-total chip in the editor status bar"
+frontend/src/version.ts,769,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/tests/blank-screen.spec.ts,4842,"2026-11-08 test: fix e2e specs that could never pass against the current UI"
+frontend/tests/entries.spec.ts,1766,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/tests/media-resize.spec.ts,7459,"2026-11-07 test: e2e specs for error boundary and media resize (BLANK-8, RESIZE-7)"
+frontend/tests/recordings.spec.ts,2554,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/tests/settings.spec.ts,8616,"2026-11-08 test: fix e2e specs that could never pass against the current UI"
+frontend/tsconfig.app.json,420,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/tsconfig.json,119,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/tsconfig.node.json,591,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/vite.config.ts,2130,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+frontend/vitest.config.ts,633,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+scripts/build-web-deb.sh,19207,"2026-10-25 fix: web deb declares conflict with the Tauri desktop package"
+scripts/build.sh,2703,"2026-10-24 fix: read-aloud fails with 403 from Edge TTS; misleading media-error toast"
+scripts/check_version.py,2747,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+scripts/close-timing.sh,2833,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+scripts/snip-smoke.sh,2389,"2026-11-07 Stability: recover blank views, faster close, Wayland capture"
+spec.md,22649,"2026-10-27 feat: editor unification, AI tool registry rework, media thumbnails + spec draft"
+trash2review/README.md,818,"2026-11-08 phase(0): baseline snapshot and safety net (second pass)"
+trash2review/backend/app/routers/sync.py,4594,"2026-10-28 chore(backend): park unused /api/v1/sync surface in trash2review"
+trash2review/backend/app/schemas/sync.py,1268,"2026-11-08 phase(1): move dead schemas/sync.py to trash2review"
+trash2review/backend/tests/unit/test_sync_merge_notes.py,9395,"2026-10-28 chore(backend): park unused /api/v1/sync surface in trash2review"
+trash2review/backend/tests/unit/test_sync_pollers.py,6288,"2026-10-28 chore(backend): park unused /api/v1/sync surface in trash2review"
+trash2review/backend/tests/unit/test_sync_service.py,1576,"2026-10-28 chore(backend): park unused /api/v1/sync surface in trash2review"
+trash2review/docs/blog_lifelogr_vs_diarium.md,5979,"2026-10-27 phase(1): move redundant files to trash2review"
+trash2review/docs/images/lifelogr_aboutus.jpg,97929,"2026-10-27 phase(1): move redundant files to trash2review"
+trash2review/frontend/public/icons.svg,5031,"2026-10-27 phase(1): move redundant files to trash2review"

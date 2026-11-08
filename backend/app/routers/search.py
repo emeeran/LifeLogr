@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.routers._params import parse_tag_ids
 from app.schemas.search import GlobalSearchResponse, SearchMode
 from app.services.search_service import SearchService
 
@@ -29,7 +30,7 @@ async def global_search(
 ) -> Any:
     """Search entries with keyword (FTS5), semantic (embeddings), or hybrid mode."""
     svc = SearchService(db)
-    parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
+    parsed_tag_ids = parse_tag_ids(tag_ids)
     items, total = await svc.search(
         q, mood, parsed_tag_ids, date_from, date_to, offset, limit, mode
     )

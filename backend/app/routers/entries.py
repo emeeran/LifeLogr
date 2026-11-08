@@ -12,7 +12,7 @@ import uuid
 import zipfile
 from collections import Counter
 from collections.abc import Awaitable
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ from fastapi import (
     Query,
     UploadFile,
 )
+from fastapi import Path as PathParam
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_ as sa_or
 from sqlalchemy import select
@@ -38,6 +39,7 @@ from app.core.exceptions import MediaSizeError
 from app.core.jobs import ProgressReporter, noop_reporter
 from app.core.jobs import start_data_job as _start_data_job
 from app.core.jobs import start_export_job
+from app.routers._params import parse_tag_ids
 from app.models.entry import Entry
 from app.models.media import Media
 from app.models.tag import EntryTag
@@ -175,14 +177,14 @@ async def list_entries(
     limit: int = Query(20, ge=1, le=100),
     tag_ids: str | None = Query(None),
     mood: str | None = None,
-    year: int | None = None,
-    month: int | None = None,
+    year: int | None = Query(None, ge=1, le=9999),
+    month: int | None = Query(None, ge=1, le=12),
     template_id: int | None = Query(None, description="Only entries created from this template"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """List entries with optional filters and pagination."""
     svc = EntryService(db)
-    parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
+    parsed_tag_ids = parse_tag_ids(tag_ids)
     entries, total = await svc.list_entries(
         offset, limit, parsed_tag_ids, mood, year, month, template_id
     )
@@ -229,7 +231,11 @@ async def list_trash(
 
 
 @router.get("/calendar/{year}/{month}", response_model=list[CalendarEntryResponse])
-async def calendar_view(year: int, month: int, db: AsyncSession = Depends(get_db)) -> Any:
+async def calendar_view(
+    year: int = PathParam(ge=1, le=9999),
+    month: int = PathParam(ge=1, le=12),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
     """Return lightweight entry projections for a calendar month.
 
     Excludes body/media fields to keep the payload small — the grid only
@@ -263,8 +269,8 @@ async def on_this_day(db: AsyncSession = Depends(get_db)) -> Any:
 async def list_geotags(
     offset: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=5000),
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """Entries with coordinates, for the map view.
@@ -273,7 +279,6 @@ async def list_geotags(
     lightweight projection is returned — bodies never leave the API for the
     map; the client links back to the entry for content.
     """
-    from datetime import date as date_type
 
     filters = [
         Entry.is_deleted.is_(False),
@@ -281,13 +286,12 @@ async def list_geotags(
         # GeotagItem (and Leaflet) need both coordinates; a lat-only row would
         # break the map client anyway, so the filter matches the contract.
         Entry.longitude.is_not(None),
-        Entry.longitude.is_not(None),
         sa_or(Entry.latitude != 0, Entry.longitude != 0),
     ]
     if start_date:
-        filters.append(Entry.entry_date >= date_type.fromisoformat(start_date))
+        filters.append(Entry.entry_date >= start_date)
     if end_date:
-        filters.append(Entry.entry_date <= date_type.fromisoformat(end_date))
+        filters.append(Entry.entry_date <= end_date)
 
     total = (
         await db.execute(
@@ -353,8 +357,8 @@ async def search_entries(
 
 async def _export_entries(
     session: AsyncSession,
-    start_date: str | None,
-    end_date: str | None,
+    start_date: date | None,
+    end_date: date | None,
     *,
     only_new: bool = False,
 ) -> list[Entry]:
@@ -537,8 +541,8 @@ def _build_markdown_zip_sync(
 @router.get("/export/markdown")
 async def export_markdown(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -574,8 +578,8 @@ async def export_markdown(
 @router.get("/export/html-zip")
 async def export_html_zip(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -587,10 +591,9 @@ async def export_html_zip(
     ``as_job=true`` returns ``{job_id}``; download from
     ``GET /api/v1/jobs/{job_id}/result``.
     """
-    from datetime import date as date_type
 
-    start = date_type.fromisoformat(start_date) if start_date else None
-    end = date_type.fromisoformat(end_date) if end_date else None
+    start = start_date
+    end = end_date
 
     if as_job:
         from app.core.database import async_session
@@ -615,8 +618,8 @@ async def export_html_zip(
 
 @router.get("/export/diarium")
 async def export_diarium(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Export entries as a JSON array (date/text/heading/rating/tags).
@@ -675,8 +678,8 @@ async def export_diarium(
 
 @router.get("/export/daylio-csv")
 async def export_daylio_csv(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Export entries as Daylio-format CSV — Diarium's supported migration import.
@@ -711,8 +714,8 @@ async def export_daylio_csv(
 @router.get("/export/archive")
 async def export_archive(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -752,8 +755,8 @@ async def export_archive(
 
 @router.get("/export/json")
 async def export_json(
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Export entries as a portable LifeLogr JSON document.
@@ -804,8 +807,8 @@ async def export_json(
 @router.get("/export/diarium-db")
 async def export_diarium_db(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     as_job: bool = Query(False, description="Build as a polled job; returns {job_id}"),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
@@ -843,8 +846,8 @@ async def export_diarium_db(
 @router.get("/export/dayone-zip")
 async def export_dayone_zip(
     background_tasks: BackgroundTasks,
-    start_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
-    end_date: str | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    start_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
+    end_date: date | None = Query(None, description="YYYY-MM-DD, inclusive"),
     scope: str = Query(
         "new",
         description=(

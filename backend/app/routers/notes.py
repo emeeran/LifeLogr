@@ -44,6 +44,7 @@ from app.schemas.note import (
 )
 from app.schemas.note_media import NoteMediaFromPath, NoteMediaResponse
 from app.schemas.tag import TagBrief
+from app.routers._params import parse_tag_ids
 from app.core.config import settings
 from app.services.media_service import media_file_response, spool_upload
 from app.services.note_media_service import NoteMediaService
@@ -140,7 +141,7 @@ async def list_notes(
 ) -> Any:
     """List notes with optional filters and pagination (pinned-first)."""
     svc = NoteService(db)
-    parsed_tag_ids = [int(t) for t in tag_ids.split(",")] if tag_ids else None
+    parsed_tag_ids = parse_tag_ids(tag_ids)
     notes, total = await svc.list_notes(offset, limit, folder_id, parsed_tag_ids, is_pinned)
     snippets = await svc.body_snippets([n.id for n in notes])
     return NoteListResponse(
