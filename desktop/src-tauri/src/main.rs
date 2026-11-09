@@ -144,28 +144,59 @@ fn port_is_listening(port: u16) -> bool {
 /// cause of "405 Method Not Allowed" on new endpoints). Single-instance is
 /// enforced, so anything on our port at startup is stale — kill it before
 /// spawning ours. Best-effort and no-op when the port is already free.
+/// True if an HTTP response speaks LifeLogr's /health contract (200 + "ok").
+fn health_ok(resp: &str) -> bool {
+    resp.contains("200") && resp.contains("ok")
+}
+
 /// True if whatever answers on `port` speaks LifeLogr's /health contract.
 ///
 /// `reclaim_port` kills the process holding our port, so it must never fire on
 /// a *foreign* listener (a user's unrelated service that happens to squat
-/// 18765). Only a stale own sidecar answers /health with 200 + "ok".
+/// 18765). Only a LifeLogr sidecar answers /health with 200 + "ok".
+///
+/// The probe retries a few times before answering "no": a backend that is
+/// mid-boot, dying, or momentarily starved (this app has seen memory-pressure
+/// stalls) can accept the TCP connect but miss a single-shot probe, and a
+/// false "foreign" verdict leaves a stale sidecar holding the port.
 fn port_is_lifelogr(port: u16) -> bool {
+    use std::io::Read;
     let addr = format!("127.0.0.1:{port}");
-    let Ok(mut stream) =
-        TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300))
-    else {
-        return false;
-    };
     let req =
         format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
-    if stream.write_all(req.as_bytes()).is_err() {
-        return false;
+    for _ in 0..3 {
+        let Ok(mut stream) =
+            TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(300))
+        else {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        };
+        if stream.set_read_timeout(Some(Duration::from_millis(1_000))).is_ok()
+            && stream.write_all(req.as_bytes()).is_ok()
+        {
+            // Read until the header block is complete — one read() can return a
+            // TCP fragment that happens to slice off the status line.
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 512];
+            loop {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&chunk[..n]);
+                        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            if health_ok(&String::from_utf8_lossy(&buf)) {
+                return true;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(300));
     }
-    let mut buf = [0u8; 512];
-    use std::io::Read;
-    let n = stream.read(&mut buf).unwrap_or(0);
-    let resp = String::from_utf8_lossy(&buf[..n]);
-    resp.contains("200") && resp.contains("ok")
+    false
 }
 
 fn reclaim_port(port: u16) {
@@ -370,67 +401,287 @@ fn port_owner_pid(port: u16) -> Option<u32> {
         .next()
 }
 
-/// Confirm our sidecar actually owns the port it reports ready on. Catches the
-/// TOCTOU window where a foreign process grabs the port between `reclaim_port`
-/// and our sidecar's bind — otherwise we'd TCP-probe that foreign listener and
-/// silently POST every journal entry, note, and decrypted body to it.
+/// Who owns the sidecar port when our backend reports ready.
+#[cfg(target_os = "linux")]
+enum PortOwner {
+    /// The pid we spawned, or its PyInstaller Python child (our own process).
+    Ours,
+    /// A previous LifeLogr backend (cmdline-verified) that won the bind race —
+    /// kill it and relaunch ours rather than silently talk to a stale version.
+    StaleBackend(u32),
+    /// A foreign process — refuse to send journal content to it.
+    Foreign(u32, String),
+    /// lsof unavailable, or the owner could not be identified.
+    Unknown,
+}
+
+#[cfg(target_os = "linux")]
+fn proc_field(pid: u32, field: &str) -> Option<String> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix(field) {
+            return rest.trim_start_matches([':', '\t', ' ']).to_string().into();
+        }
+    }
+    None
+}
+
+/// Decide who owns `port`, given the pid we spawned.
 ///
 /// A pid mismatch alone is NOT a hijack: in a PyInstaller one-file build the
 /// spawned pid is the bootloader, and the port-owning process is the Python
-/// child it forks. The discriminator is the owner's cmdline — a mismatch whose
-/// cmdline doesn't name our sidecar is a foreign program, and the app must
-/// refuse to serve: the user gets a blocking native error, then we exit.
+/// child it forks. Two discriminators separate "ours" from "not ours":
+/// the owner's cmdline must name our sidecar, AND its parent must be the
+/// bootloader we spawned. The parentage check is what keeps a *stale orphan*
+/// backend (left by a crashed previous run — same cmdline!) from passing as
+/// ours and silently serving an outdated API.
 #[cfg(target_os = "linux")]
-fn verify_sidecar_owner(app: &tauri::AppHandle, port: u16, expected_pid: u32) {
-    let owner_cmdline = |pid: u32| -> String {
-        std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
-            .map(|s| s.replace('\0', " "))
-            .unwrap_or_default()
+fn classify_port_owner(port: u16, expected_pid: u32) -> PortOwner {
+    let Some(pid) = port_owner_pid(port) else {
+        return PortOwner::Unknown;
     };
-    match port_owner_pid(port) {
-        Some(pid) if pid == expected_pid => info!("Verified sidecar pid {pid} owns port {port}"),
-        Some(other) => {
-            let cmdline = owner_cmdline(other);
+    if pid == expected_pid {
+        return PortOwner::Ours;
+    }
+    let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
+        .map(|s| s.replace('\0', " "))
+        .unwrap_or_default();
+    if !cmdline.contains("lifelogr-backend") {
+        return PortOwner::Foreign(pid, cmdline);
+    }
+    // Cmdline matches, pid doesn't: ours only if we are the parent. An unreadable
+    // PPID means the process died between lsof and this read — re-probe.
+    match proc_field(pid, "PPid").and_then(|s| s.trim().parse::<u32>().ok()) {
+        Some(ppid) if ppid == expected_pid => PortOwner::Ours,
+        Some(_) => PortOwner::StaleBackend(pid),
+        None => PortOwner::Unknown,
+    }
+}
+
+/// Kill a process holding our port: SIGTERM first (graceful FastAPI teardown,
+/// clean WAL checkpoint), then SIGKILL if it ignores us. The DB boot-safety
+/// snapshot makes even a SIGKILL recoverable, but SIGTERM is preferred.
+#[cfg(target_os = "linux")]
+fn kill_port_owner(port: u16, pid: u32) {
+    signal(pid, SIGTERM);
+    for _ in 0..25 {
+        if !port_is_listening(port) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    warn!("Port owner pid {pid} ignored SIGTERM — sending SIGKILL");
+    signal(pid, SIGKILL);
+}
+
+/// Stop the sidecar we spawned without orphaning its Python child. Used on the
+/// foreign-port-owner bail-out path, which must not `exit(1)` the way the old
+/// code did — that leaked our own sidecar onto the port and poisoned every
+/// subsequent launch (the orphan then failed reclaim/verify for the next run).
+///
+/// SIGTERMs the bootloader and the tracked child, then — since the PyInstaller
+/// bootloader may not forward the signal — SIGKILLs any surviving process
+/// whose parent is our bootloader. The foreign owner is left alone.
+#[cfg(target_os = "linux")]
+fn stop_spawned_sidecar(app: &tauri::AppHandle, _port: u16, expected_pid: u32) {
+    if let Some(state) = app.try_state::<SidecarChild>() {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(c) = guard.take() {
+                signal(c.pid(), SIGTERM);
+            }
+        }
+    }
+    signal(expected_pid, SIGTERM);
+    std::thread::sleep(Duration::from_millis(1_000));
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            let Ok(pid) = name.parse::<u32>() else {
+                continue;
+            };
+            let ours = proc_field(pid, "PPid").and_then(|s| s.trim().parse::<u32>().ok())
+                == Some(expected_pid);
+            if !ours {
+                continue;
+            }
+            let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
+                .map(|s| s.replace('\0', " "))
+                .unwrap_or_default();
             if cmdline.contains("lifelogr-backend") {
+                warn!("SIGKILLing leaked sidecar child pid {pid}");
+                signal(pid, SIGKILL);
+            }
+        }
+    }
+}
+
+/// Spawn the backend sidecar and its output-logging thread; remember the child
+/// handle so shutdown kills exactly what we spawned. Returns the spawned pid
+/// (the PyInstaller bootloader; the port-owning Python child forks from it).
+fn spawn_sidecar(
+    app: &tauri::AppHandle,
+    port: u16,
+    data_dir: &std::path::Path,
+) -> Result<u32, String> {
+    let sidecar_command = app
+        .shell()
+        .sidecar("lifelogr-backend")
+        .map_err(|e| format!("Failed to find sidecar binary: {e}"))?
+        .args(["--host", "127.0.0.1", "--port", &port.to_string()])
+        .env("DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("APP_ENV", "production");
+
+    let (mut rx, child) = sidecar_command
+        .spawn()
+        .map_err(|e| format!("Failed to start backend sidecar: {e}"))?;
+    let child_pid = child.pid();
+
+    if let Some(state) = app.try_state::<SidecarChild>() {
+        if let Ok(mut guard) = state.0.lock() {
+            // A previous handle, when present, is an already-exited child
+            // (bind failure) — dropping it just reaps it.
+            *guard = Some(child);
+        }
+    }
+
+    // Log sidecar output/stderr
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create tokio runtime for sidecar logging");
+        rt.block_on(async {
+            use tauri_plugin_shell::process::CommandEvent;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(line) => {
+                        info!("[backend] {}", String::from_utf8_lossy(&line))
+                    }
+                    CommandEvent::Stderr(line) => {
+                        warn!("[backend:err] {}", String::from_utf8_lossy(&line))
+                    }
+                    CommandEvent::Terminated(status) => {
+                        info!("[backend] exited: {:?}", status)
+                    }
+                    CommandEvent::Error(err) => error!("[backend:error] {}", err),
+                    _ => {}
+                }
+            }
+        });
+    });
+
+    Ok(child_pid)
+}
+
+/// Confirm our sidecar actually owns the port it reports ready on, and fix the
+/// recoverable failure modes instead of failing the launch.
+///
+/// Catches the TOCTOU window where another process owns the port between
+/// `reclaim_port` and our sidecar's bind — otherwise we'd TCP-probe that
+/// listener and silently POST every journal entry, note, and decrypted body
+/// to it. Also catches the opposite race: a stale orphan backend (left by a
+/// crashed run; PyInstaller extraction can take 30 s, so it can bind *after*
+/// our sidecar tried and died) winning the bind — reclaim never saw it. In
+/// that case we kill the orphan (cmdline + parentage verified) and relaunch
+/// ours. A genuinely foreign owner hard-fails: blocking error, sidecar
+/// stopped, exit.
+#[cfg(target_os = "linux")]
+fn verify_sidecar_owner(app: &tauri::AppHandle, port: u16, mut expected_pid: u32, data_dir: &std::path::Path) {
+    let mut respawns = 0u32;
+    loop {
+        wait_for_sidecar(port);
+        match classify_port_owner(port, expected_pid) {
+            PortOwner::Ours => {
+                info!("Verified our sidecar (bootloader pid {expected_pid}) owns port {port}");
+                return;
+            }
+            PortOwner::Unknown if !port_is_listening(port) => {
+                // Nothing is serving: our sidecar never came up (or died on a
+                // bind failure after we killed a squatter). One relaunch, then
+                // give up and let the UI's backend-unreachable state show it.
+                if respawns >= 1 {
+                    error!("Backend sidecar did not start on port {port} — continuing without it");
+                    return;
+                }
+                respawns += 1;
+                warn!("Nothing is listening on port {port} — relaunching the sidecar");
+                match spawn_sidecar(app, port, data_dir) {
+                    Ok(pid) => expected_pid = pid,
+                    Err(e) => {
+                        error!("Sidecar relaunch failed: {e}");
+                        return;
+                    }
+                }
+            }
+            PortOwner::Unknown => {
                 info!(
-                    "Port {port} owned by our sidecar's backend process (pid {other}, \
-                     spawned by bootloader pid {expected_pid})"
+                    "Could not verify the owner of port {port} (lsof unavailable \
+                     or owner vanished) — continuing without ownership confirmation"
                 );
                 return;
             }
-            error!(
-                "SECURITY: port {port} is owned by pid {other} (cmdline: {cmdline:?}), \
-                 not our sidecar (pid {expected_pid}) — refusing to send journal \
-                 content to it."
-            );
-            let _ = app.emit(
-                "backend-owner-mismatch",
-                serde_json::json!({ "port": port, "owner_pid": other }),
-            );
-            use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-            app.dialog()
-                .message(format!(
-                    "LifeLogr cannot verify its own backend: another program \
-                     (pid {other}) is listening on port {port}.\n\n\
-                     To protect your journal, LifeLogr will now quit. Free the \
-                     port (or set DIARI_PORT to another one) and start \
-                     LifeLogr again."
-                ))
-                .title("LifeLogr — backend verification failed")
-                .kind(MessageDialogKind::Error)
-                .blocking_show();
-            std::process::exit(1);
+            PortOwner::StaleBackend(pid) => {
+                if respawns >= 2 {
+                    error!(
+                        "Port {port} is still owned by a stale backend (pid {pid}) \
+                         after {respawns} reclaim attempts — continuing against it"
+                    );
+                    return;
+                }
+                respawns += 1;
+                warn!(
+                    "Port {port} was won by a stale orphan backend (pid {pid}) — \
+                     stopping it and relaunching our sidecar"
+                );
+                kill_port_owner(port, pid);
+                match spawn_sidecar(app, port, data_dir) {
+                    Ok(new_pid) => expected_pid = new_pid,
+                    Err(e) => {
+                        error!("Sidecar relaunch failed: {e}");
+                        return;
+                    }
+                }
+            }
+            PortOwner::Foreign(other, cmdline) => {
+                error!(
+                    "SECURITY: port {port} is owned by pid {other} (cmdline: {cmdline:?}), \
+                     not our sidecar (pid {expected_pid}) — refusing to send journal \
+                     content to it."
+                );
+                let _ = app.emit(
+                    "backend-owner-mismatch",
+                    serde_json::json!({ "port": port, "owner_pid": other }),
+                );
+                use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+                app.dialog()
+                    .message(format!(
+                        "LifeLogr cannot verify its own backend: another program \
+                         (pid {other}) is listening on port {port}.\n\n\
+                         To protect your journal, LifeLogr will now quit. Free the \
+                         port (or set DIARI_PORT to another one) and start \
+                         LifeLogr again."
+                    ))
+                    .title("LifeLogr — backend verification failed")
+                    .kind(MessageDialogKind::Error)
+                    .blocking_show();
+                stop_spawned_sidecar(app, port, expected_pid);
+                std::process::exit(1);
+            }
         }
-        None => info!(
-            "Could not verify the owner of port {port} (lsof unavailable) — \
-             continuing without ownership confirmation"
-        ),
     }
 }
 
 /// No-op on non-Linux targets (lsof-based verification isn't available).
 #[cfg(not(target_os = "linux"))]
-fn verify_sidecar_owner(_app: &tauri::AppHandle, _port: u16, _expected_pid: u32) {}
+fn verify_sidecar_owner(
+    _app: &tauri::AppHandle,
+    _port: u16,
+    _expected_pid: u32,
+    _data_dir: &std::path::Path,
+) {
+}
 
 fn init_logging(data_dir: &std::path::Path) {
     let log_path = data_dir.join("lifelogr-desktop.log");
@@ -654,58 +905,27 @@ fn main() {
             // so OUR sidecar can bind it (see reclaim_port).
             reclaim_port(port);
 
+            // Own the sidecar's child handle so shutdown kills the exact
+            // process (see SidecarChild / verify_sidecar_owner).
+            app.manage(SidecarChild(Mutex::new(None)));
+
             // Launch Python backend sidecar
-            let sidecar_command = app
-                .shell()
-                .sidecar("lifelogr-backend")
-                .map_err(|e| format!("Failed to find sidecar binary: {e}"))?
-                .args(["--host", "127.0.0.1", "--port", &port.to_string()])
-                .env("DATA_DIR", data_dir.to_string_lossy().to_string())
-                .env("APP_ENV", "production");
-
-            let (mut rx, child) = sidecar_command
-                .spawn()
-                .map_err(|e| format!("Failed to start backend sidecar: {e}"))?;
-            // Remember the sidecar PID + own its child handle so shutdown kills
-            // the exact process (see SidecarChild / verify_sidecar_owner).
-            let child_pid = child.pid();
-            app.manage(SidecarChild(Mutex::new(Some(child))));
-
-            // Log sidecar output/stderr
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("failed to create tokio runtime for sidecar logging");
-                rt.block_on(async {
-                    use tauri_plugin_shell::process::CommandEvent;
-                    while let Some(event) = rx.recv().await {
-                        match event {
-                            CommandEvent::Stdout(line) => {
-                                info!("[backend] {}", String::from_utf8_lossy(&line))
-                            }
-                            CommandEvent::Stderr(line) => {
-                                warn!("[backend:err] {}", String::from_utf8_lossy(&line))
-                            }
-                            CommandEvent::Terminated(status) => {
-                                info!("[backend] exited: {:?}", status)
-                            }
-                            CommandEvent::Error(err) => error!("[backend:error] {}", err),
-                            _ => {}
-                        }
-                    }
-                });
-            });
+            let child_pid =
+                spawn_sidecar(app.handle(), port, &data_dir).map_err(|e| {
+                    error!("{e}");
+                    e
+                })?;
 
             // Sidecar health check — TCP probe until backend is ready, then
-            // verify (best-effort, Linux) that OUR sidecar owns the port and not
-            // a stale process that grabbed it during the bind window. A foreign
-            // owner hard-fails: the app quits rather than talk to it.
+            // verify (best-effort, Linux) that OUR sidecar owns the port. A
+            // stale orphan that won the bind race is killed and our sidecar
+            // relaunched; a foreign owner hard-fails: the app quits rather
+            // than talk to it (and takes its own sidecar with it).
             let health_port = port;
             let health_app = app.handle().clone();
+            let health_data_dir = data_dir.clone();
             std::thread::spawn(move || {
-                wait_for_sidecar(health_port);
-                verify_sidecar_owner(&health_app, health_port, child_pid);
+                verify_sidecar_owner(&health_app, health_port, child_pid, &health_data_dir);
             });
 
             // SIGTERM/SIGINT (systemd stop, logout, Ctrl+C): the default
@@ -723,10 +943,11 @@ fn main() {
                             return;
                         }
                     };
-                for sig in signals.forever() {
+                // One signal is all we handle: begin_shutdown never returns
+                // (it ends in process::exit).
+                if let Some(sig) = signals.forever().next() {
                     info!("Received signal {sig} — starting teardown");
                     begin_shutdown(signal_app);
-                    break; // begin_shutdown never returns (process::exit)
                 }
             });
 
@@ -791,4 +1012,30 @@ fn main() {
                 std::thread::spawn(move || begin_shutdown(handle));
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::health_ok;
+
+    #[test]
+    fn health_contract_matches_our_response() {
+        assert!(health_ok("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"status\":\"ok\"}"));
+    }
+
+    #[test]
+    fn health_contract_rejects_foreign_services() {
+        // A foreign squatter that answers but not with our contract must not
+        // be reclaimed or accepted as ours.
+        assert!(!health_ok("HTTP/1.1 404 Not Found\r\n\r\n"));
+        assert!(!health_ok(""));
+        assert!(!health_ok("HTTP/1.1 200 OK\r\n\r\n{\"status\":\"unavailable\"}"));
+    }
+
+    #[test]
+    fn health_contract_survives_a_status_line_sliced_off() {
+        // The probe accumulates reads until \r\n\r\n; a first fragment missing
+        // the status line must not silently fail the contract check.
+        assert!(health_ok(" 200 OK\r\n\r\n{\"status\":\"ok\"}"));
+    }
 }
