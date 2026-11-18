@@ -6,7 +6,7 @@ hybrid search, end-to-end encryption, optional cloud backup, and AI assistance t
 runs **locally by default** (Ollama) and can optionally use a cloud model of your
 choice. **Your journal lives on your machine.**
 
-`v0.17.7` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
+`v0.18.0` · Built for **Ubuntu 24.04 LTS** (and similar modern Linux distros).
 
 ![LifeLogr](docs/images/lifelogr_01.jpg)
 ![Editor](docs/images/lifelogr_Editor.jpg)
@@ -18,22 +18,29 @@ choice. **Your journal lives on your machine.**
 - **Journal & Notes** — date-bound entries (mood, templates, media, voice & video
   clips) plus a full **Notes** workspace: **nested folders**, tabbed pages, markdown,
   **inline `#tags`**, and encryption.
-- **Clip & OCR** — snippet a region of your screen (`Ctrl+Shift+S`, desktop) or clip
-  a web page, embed it as a picture, and **OCR the text** straight into the note —
-  instantly searchable.
-- **AI writing assistant** — grammar/spell check, rewrite, summarize, key points,
-  tone, tag suggestions, themes, sentiment, reflection prompts and more. Runs
-  **locally via Ollama by default**; optionally point it at any OpenAI-compatible
-  cloud provider (OpenAI, Groq, OpenRouter, Kimi/Moonshot, Gemini, or a custom
-  endpoint). See [🔐 Privacy & the AI model](#-privacy--the-ai-model).
+- **Clip & OCR** — snippet a region of your screen (`Ctrl+Shift+S`, desktop) and
+  **OCR the text** straight into the note — instantly searchable; or clip a web
+  page's text as markdown with the SSRF-hardened web clipper.
+- **AI writing assistant** — grammar/spell check, rewrite, summarize, expand,
+  shorten, translate, tag suggestions, themes, sentiment, reflection prompts and
+  more. Runs **locally via Ollama by default**; optionally point it at any
+  OpenAI-compatible cloud provider (OpenAI, Groq, OpenRouter, Kimi/Moonshot,
+  Gemini, or a custom endpoint). See [🔐 Privacy & the AI model](#-privacy--the-ai-model).
 - **Hybrid search** — full-text (SQLite FTS5) **plus** semantic vector search,
-  unified across entries and notes (`Ctrl+K`).
+  unified across entries, notes and reminders (`Ctrl+K`).
 - **Read aloud** — Microsoft Edge TTS with voice / rate / volume / pitch controls and
   a disk cache.
 - **Encrypt** individual entries or notes (AES-256-GCM, scrypt-derived keys,
-  per-item salt).
-- **Stay organized** — Reminders with desktop notifications, **inline `#tags`** (with
-  autocomplete as you type), templates, and a daily writing prompt.
+  per-item salt) — optionally including their **media attachments**, with a
+  passphrase-wrapped **recovery kit** so a lost key is never a dead end.
+- **Stay organized** — Reminders with desktop notifications (missed ones caught up
+  after offline time), **inline `#tags`** (with autocomplete as you type),
+  templates, a daily writing prompt, a **stats dashboard**, and a restorable
+  **trash** (30-day retention — soft delete is lossless).
+- **Migration in both directions** — import from **Diarium (`.diary`)**, **Day
+  One**, **Daylio CSV**, or Markdown/JSON archives (re-imports are idempotent and
+  backfill missing media); export to Markdown, HTML, PDF, the native
+  re-importable archive, Diarium `.diary`, Day One ZIP, or an Obsidian vault.
 - **Backup** — scheduled local backup plus **Google Drive, OneDrive, Dropbox, Box**
   (OAuth) and **WebDAV / Synology NAS**. Cloud credentials are stored encrypted.
 - **Two ways to run** — a native **desktop app** (Tauri) or a lightweight **web app**
@@ -45,11 +52,12 @@ choice. **Your journal lives on your machine.**
 
 LifeLogr is built local-first. Out of the box **nothing leaves your machine**:
 
-- The backend binds to **`127.0.0.1` only** (loopback, single-user, no auth).
+- The backend binds to **`127.0.0.1` only** (loopback, single-user, no auth by
+  default — an optional `API_TOKEN` bearer gate exists for non-loopback setups).
 - **AI runs on-device via Ollama**, and **OCR via Tesseract** — both fully offline.
 - **Web-clipping** fetches a URL server-side but only the *URL* leaves the device;
   your journal content never does.
-- Cloud backup/sync is **opt-in** and uses OAuth; tokens are encrypted at rest.
+- Cloud backup is **opt-in** and uses OAuth; tokens are encrypted at rest.
 
 ### Optional cloud AI (opt-in)
 
@@ -94,7 +102,7 @@ A native window; bundles everything (no install-time network needed). This is th
 **only** build that supports screen-snippet capture.
 
 ```bash
-sudo dpkg -i LifeLogr_0.17.7_amd64.deb
+sudo dpkg -i LifeLogr_0.18.0_amd64.deb
 sudo apt-get install -f        # pulls tesseract-ocr, gstreamer, webkit, etc.
 ```
 Launch **LifeLogr** from your app menu.
@@ -104,7 +112,7 @@ Lighter; the backend serves the SPA and you use it in a browser tab. The Python
 virtualenv is built **on your machine at install time** (needs network).
 
 ```bash
-sudo dpkg -i lifelogr-web_0.17.7_amd64.deb
+sudo dpkg -i lifelogr-web_0.18.0_amd64.deb
 sudo apt-get install -f        # pulls python3 (≥3.11), tesseract-ocr
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`); it opens a browser tab on
@@ -158,7 +166,9 @@ per-build default):
   .secret_key          # do NOT delete — encrypts your data
   media/               # uploaded images/audio/video
   tts/                 # read-aloud audio cache
+  weather/             # cached weather enrichment data
   backups/             # scheduled local backups
+  lifelogr-desktop.log # desktop shell log (desktop build only)
   server.log           # web-app log (web build only)
 ```
 
@@ -213,10 +223,10 @@ cd desktop && make build
 # → dist/lifelogr-web_<ver>_amd64.deb
 ```
 
-The `snip` (screen-capture) capability is a Cargo **feature** that's **on by
-default** (`default = ["snip"]`). The `devtools` feature (webview inspector) is
-intentionally **excluded** from default so the inspector never ships in a release
-build. Build without `snip` on machines lacking `libpipewire-0.3-dev`:
+The `snip` (screen-capture) capabilities are Cargo **features** that are **on by
+default** (`default = ["snip", "snip-wayland"]`). The `devtools` feature (webview
+inspector) is intentionally **excluded** from default so the inspector never ships in
+a release build. Build without `snip` on machines lacking `libpipewire-0.3-dev`:
 ```bash
 cd desktop/src-tauri && cargo tauri build --no-default-features
 ```
@@ -232,10 +242,12 @@ cd desktop/src-tauri && cargo tauri build --no-default-features
 | Save | `Ctrl+S` |
 | Find & replace | `Ctrl+F` |
 | Zen mode (distraction-free) | `Ctrl+.` |
-| Bold / Italic / Strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
-| Clear formatting | `Ctrl+\` |
-| Inline code (in editor) | <code>Ctrl+E</code> |
+| Bold / Italic / Strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` |
+| Inline code (while typing in the editor) | `Ctrl+K` |
+| Horizontal rule | `Ctrl+Alt+H` |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` |
+| Open Settings | `Ctrl+,` |
+| Keyboard-shortcut reference | `Ctrl+/` |
 | Close overlay / modal | `Esc` |
 
 ---

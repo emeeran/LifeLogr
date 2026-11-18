@@ -4,7 +4,7 @@
 > Your data stays on your machine. AI runs locally via Ollama by default; OCR via
 > Tesseract; read-aloud via Edge TTS. Cloud AI and cloud backup are strictly opt-in.
 
-*Version 0.17.7*
+*Version 0.18.0*
 
 ---
 
@@ -49,7 +49,7 @@
 ### Install the desktop app (Tauri)
 A native window with everything bundled. **Required if you want screen-snipping.**
 ```bash
-sudo dpkg -i LifeLogr_0.17.7_amd64.deb
+sudo dpkg -i LifeLogr_0.18.0_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu.
@@ -58,7 +58,7 @@ Launch **LifeLogr** from your app menu.
 Lighter; the backend serves the app and you use it in a browser tab. The Python
 virtualenv is built on your machine during install (needs network).
 ```bash
-sudo dpkg -i lifelogr-web_0.17.7_amd64.deb
+sudo dpkg -i lifelogr-web_0.18.0_amd64.deb
 sudo apt-get install -f
 ```
 Launch **LifeLogr** from your app menu (or run `lifelogr`). It opens a browser tab on
@@ -181,10 +181,11 @@ Notes are standalone, non-date-bound documents organized into **folders**.
 - Full markdown editor (shared with journal entries): formatting toolbar, live
   preview, find & replace.
 - **Manual save** — Notes do **not** autosave as you type. Click **Save** (or leave the
-  note) to persist. *Switching to another note without saving discards the outgoing
-  note's edits.*
-- On opening **Notes**, a **fresh blank note** is created and opened automatically
-  (ready to write or clip).
+  note) to persist. *Switching to another note with unsaved edits asks for
+  confirmation before discarding them.*
+- On opening **Notes**, the **most-recently-edited note** opens automatically
+  (pinned notes first); with no notes yet you get the empty-state panel with a
+  "Create your first notebook" shortcut.
 
 ### Embedding media
 - Drag-and-drop, paste, or use the embed (🖼️/🎵/🎬) buttons. In the desktop app you
@@ -633,8 +634,7 @@ Open from the sidebar (gear icon). Tabs:
 |---|---|
 | **Appearance** | Theme (dark mode), font family/size, auto-save interval, OCR language, default title, default template, **search mode**, **read-aloud** voice/rate/volume/pitch, and a keyboard-shortcut reference. |
 | **AI** | Provider management (add/activate/test cloud providers, or configure local Ollama), chat & embedding model selection, model pulling/refresh, AI feature toggles, Themes & Insights. |
-| **Data** | Storage location & stats, import/export, maintenance (deduplicate, vacuum, fill missing titles, integrity check), diagnostics (health, rebuild search index). |
-| **Backup** | Local backup download/restore, scheduled backup, and cloud providers (Google Drive, OneDrive, Dropbox, Box, WebDAV, Synology NAS). |
+| **Data** | Storage location & stats; pills for **Import / Export / Backup & Restore / Security / Maintenance / Storage**. Maintenance holds the deduplicate, vacuum, fill-missing-titles and rebuild-index tools plus the startup integrity report (findings appear here ~60 s after boot). Backup & Restore covers local backup download/restore, scheduled backup, and cloud providers (Google Drive, OneDrive, Dropbox, Box, WebDAV, Synology NAS). |
 | **Privacy** | Live data-egress report across all surfaces. |
 | **Dedication** | Memorial/dedication tribute (a full-bleed tribute). |
 | **About** | Version + credits, feature badges, GitHub/license links, update check, release notes (the embedded changelog), and (desktop) **System Setup** to install Ollama/GStreamer. The **Danger Zone** resets the database (requires typing `RESET`). |
@@ -654,19 +654,21 @@ Open from the sidebar (gear icon). Tabs:
 
 | Action | Shortcut |
 |---|---|
-| Global search palette | `Ctrl+K` |
+| Global search palette | `Ctrl+K` (outside a text field) |
+| Inline code (while typing in the editor) | `Ctrl+K` |
 | Screen snip (desktop, in Notes) | `Ctrl+Shift+S` |
 | Save | `Ctrl+S` |
 | Find & replace | `Ctrl+F` |
 | Zen mode (distraction-free) | `Ctrl+.` |
-| Bold / Italic / Strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
-| Clear formatting | `Ctrl+\` |
-| Inline code (in editor) | <code>Ctrl+E</code> |
+| Bold / Italic / Strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` |
+| Horizontal rule | `Ctrl+Alt+H` |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` |
+| Open Settings | `Ctrl+,` |
+| Keyboard-shortcut reference | `Ctrl+/` (or `?`) |
 | Search palette: navigate/open/close | `↑` `↓` / `Enter` / `Esc` |
 | Close overlay/modal | `Esc` |
 
-The full list is also shown in **Settings → Appearance**.
+The full list is also shown in the `Ctrl+/` dialog and **Settings → Appearance**.
 
 ---
 
@@ -691,8 +693,8 @@ You're likely using a "thinking" model on CPU. In **Settings → AI**, switch to
 non-thinking model such as `gemma3:4b`. (Or activate a cloud provider.)
 
 **I can't see my journal in the other build (desktop vs web).**
-The two builds use separate data directories by default. Relink via **Settings → Data
-→ Storage location** (carry `.secret_key`).
+The two builds use separate data directories by default. Relink via **Settings → Data →
+Storage location** (carry `.secret_key`).
 
 **Voice/video recording doesn't work.**
 Grant microphone permission; on Linux ensure GStreamer plugins are installed
@@ -701,11 +703,11 @@ Grant microphone permission; on Linux ensure GStreamer plugins are installed
 **Search isn't finding entries.**
 Keyword search works offline; semantic/hybrid modes need the embedding model — pull
 `nomic-embed-text` in Settings → AI. If results look stale, rebuild the index from
-**Settings → Data → Diagnostics → Rebuild search index**.
+**Settings → Data → Maintenance → Rebuild index**.
 
 **Database errors.**
-Back up first, then use **Settings → Backup** (or Data → Maintenance) to restore from a
-backup, vacuum, run an integrity check, or — as a last resort — reset.
+Back up first, then use **Settings → Data → Backup & Restore** (or Data → Maintenance)
+to restore from a backup, vacuum, run an integrity check, or — as a last resort — reset.
 
 ---
 
@@ -725,12 +727,14 @@ lifelogr.db.boot-bak-* # rotating boot snapshots — auto-restored if the DB cor
 .secret_key       # REQUIRED for encryption — never delete
 media/            # uploaded images/audio/video
 tts/              # read-aloud audio cache
+weather/          # cached weather enrichment data
 backups/          # scheduled local backups
+lifelogr-desktop.log # desktop shell log (desktop build only)
 server.log        # web-app log (web build only)
 ```
 
-**Privacy:** the backend binds to `127.0.0.1` only (no remote access, no auth — it's
-single-user). AI runs on-device via Ollama by default; OCR runs locally via Tesseract.
+**Privacy:** the backend binds to `127.0.0.1` only (no remote access, single-user; an
+optional bearer-token gate via `API_TOKEN` exists for non-loopback deployments). AI runs on-device via Ollama by default; OCR runs locally via Tesseract.
 Cloud AI and cloud backup are **opt-in** and use OAuth; credentials/tokens are stored
 encrypted. You can relocate the data directory at any time from **Settings → Data →
 Storage location**.

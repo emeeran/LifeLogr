@@ -5,8 +5,9 @@
 Base URL: `http://localhost:8000/api/v1`
 
 > In the **web** build the launcher picks a free local port (it prefers **18765** so
-> that OAuth sign-in callbacks complete on the loopback interface) and falls back to
-> `8000`–`8019`. The backend always binds to `127.0.0.1` (loopback only).
+> that OAuth sign-in callbacks complete on the loopback interface), falls back to
+> `8000`–`8019`, and finally to an OS-assigned ephemeral port. The backend always
+> binds to `127.0.0.1` (loopback only).
 
 ---
 
@@ -30,21 +31,34 @@ Base URL: `http://localhost:8000/api/v1`
 16. [Export](#export)
 17. [Backup & Cloud Providers](#backup--cloud-providers)
 18. [Sync](#sync)
-19. [System](#system)
-20. [Settings](#settings)
-21. [Error Responses](#error-responses)
+19. [Context](#context)
+20. [Jobs](#jobs)
+21. [System](#system)
+22. [Settings](#settings)
+23. [Error Responses](#error-responses)
 
 ---
 
 ## Authentication & Limits
 
 LifeLogr runs locally as a **single-user** app and binds to `127.0.0.1` only — there
-is **no authentication**. Behind a reverse proxy / shared deployment, add auth at the
+is **no authentication by default**. Two hardening layers exist for non-default
+deployments:
+
+- **`API_TOKEN`** (env var): when set, every `/api/*` call must carry
+  `Authorization: Bearer <token>` (constant-time compare).
+- **Host-header guard:** requests whose `Host` is not a loopback name
+  (`127.0.0.1`, `localhost`, `tauri.localhost`) are rejected with `403`
+  (DNS-rebinding defence).
+
+Behind a reverse proxy / shared deployment, set `API_TOKEN` and add auth at the
 proxy layer.
 
 **Rate limiting:** 60 requests/minute per IP, **scoped to production deployments
 only** (`APP_ENV=production`) — the desktop app does not self-throttle its background
-enrichment.
+enrichment. Additionally, **destructive** requests (database wipe/reset endpoints) are
+limited to **5 per 60 s in every environment**, and cross-origin `Origin` headers on
+destructive requests are rejected with `403`.
 
 ---
 
@@ -61,8 +75,8 @@ enrichment.
 | `DELETE` | `/entries/{entry_id}` | Soft-delete an entry |
 | `POST` | `/entries/{entry_id}/restore` | Restore a soft-deleted entry (re-indexes FTS) |
 | `POST` | `/entries/reset` | **Irreversible** — delete all entries, tags, media, recordings |
-| `POST` | `/entries/import` | Import entries from a JSON payload |
-| `POST` | `/entries/import/file` | Import from an uploaded file (`.diary` / `.json` / `.zip`) |
+| `POST` | `/entries/import` | Import entries from a JSON payload (response: `{imported, skipped, skip_reasons}` only) |
+| `POST` | `/entries/import/file` | Import from an uploaded file (`.diary` / `.json` / Daylio CSV / `.zip`) |
 | `POST` | `/entries/deduplicate` | Find & soft-delete duplicates (by date + title) |
 | `GET` | `/entries/export/markdown` | Export as Markdown ZIP |
 | `GET` | `/entries/export/archive` | Export entries + media + notes + events as the native LifeLogr archive ZIP v2 (re-importable, media links remapped) |
@@ -71,6 +85,14 @@ enrichment.
 | `GET` | `/entries/export/diarium-db` | Export as a Diarium-native `.diary` SQLite database (real 3.3.x schema, trackers + events) |
 | `GET` | `/entries/export/daylio-csv` | Export as Daylio-format CSV (Diarium's documented migration import) |
 | `GET` | `/entries/export/dayone-zip` | Export as a Day One JSON ZIP (`Journal.json` + `photos/<md5>.<ext>`) — Diarium's attachment-capable migration import. `?scope=new` (default) pushes only entries Diarium lacks; `scope=all` exports everything. `as_job=true` → `{job_id}` |
+| `GET` | `/entries/export/html-zip` | Export as a styled HTML ZIP |
+| `GET` | `/entries/trash` | List soft-deleted entries |
+| `DELETE` | `/entries/trash` | Empty the trash (permanent delete past retention) |
+| `GET` | `/entries/stats` | Entry statistics (counts, streaks) |
+| `GET` | `/entries/on-this-day` | Entries from the same date in past years |
+| `GET` | `/entries/geotags` | Distinct geotags for mapping |
+| `POST` | `/entries/backfill-titles` | AI/generate titles for untitled entries (`as_job` supported) |
+| `DELETE` | `/entries/{entry_id}/purge` | **Irreversible** — permanently delete a soft-deleted entry + its media files |
 
 ### Create Entry
 ```
@@ -121,9 +143,14 @@ and its own **media**.
 | `POST` | `/notes` | Create a note |
 | `GET` | `/notes` | List notes (paginated) |
 | `GET` | `/notes/search` | Full-text search notes |
+| `POST` | `/notes/reorder` | Batch-reorder notes (`POST /notes/folders/reorder` for folders) |
+| `POST` | `/notes/{note_id}/restore` | Restore a soft-deleted note |
+| `PATCH` | `/notes/{note_id}/pin` | Toggle pin |
+| `GET` | `/notes/export/markdown` · `/json` · `/html` | Export the whole notes collection |
+| `POST` | `/notes/import/file` | Import notes from an uploaded file |
 | `GET` | `/notes/{note_id}/export/markdown` | Export one note as a `.md` file |
 | `POST` | `/notes/import/markdown` | Import a `.md` file as a new note |
-| `POST` | `/notes/web-clip` | Clip a URL's text into a note (SSRF-hardened) |
+| `POST` | `/notes/web-clip` | Fetch a URL's text as markdown (SSRF-hardened; creates no note) |
 | `GET` | `/notes/{note_id}` | Get a note (with pages) |
 | `PATCH` | `/notes/{note_id}` | Update a note |
 | `POST` | `/notes/folders` · `GET` · `PATCH /{id}` · `DELETE /{id}` | Folder CRUD |
@@ -140,10 +167,12 @@ and its own **media**.
 
 ### Web-clip
 ```
-POST /notes/web-clip        { "url": "https://example.com/article", "note_id": 12 }
+POST /notes/web-clip        { "url": "https://example.com/article" }
 ```
 Fetches the page **server-side** through an SSRF-hardened extractor (internal /
-loopback addresses blocked on every hop, including redirects) and returns markdown.
+loopback addresses blocked on every hop, including redirects) and returns
+`{ "markdown": "…" }`. It does **not** create or attach to a note — the caller
+decides where to put the content.
 
 ---
 
@@ -181,12 +210,14 @@ Tags are **shared** across entries and notes.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/media` | Upload a media file (max 25 MB) |
+| `POST` | `/media` | Upload a media file (max 25 MB → `400`) |
 | `POST` | `/media/batch` | Upload multiple files |
+| `POST` | `/media/from-path` | Import from a local path (desktop drag-drop; sandboxed by `validate_import_path`) |
 | `GET` | `/media/all` | Media timeline (gallery) |
 | `GET` | `/media/entry/{entry_id}` | List media for an entry |
 | `GET` | `/media/{media_id}` | Media metadata |
 | `GET` | `/media/{media_id}/file` | Download the binary |
+| `GET` | `/media/{media_id}/thumb` | Cached thumbnail (≤640 px WebP; encrypted items are served decrypted from an encrypted `.webp.llm1` sibling). The UI uses this for the lightbox ≤ 2× viewport and rewrites markdown `/file` images to it |
 | `POST` | `/media/{media_id}/ocr` | OCR an image (`?lang=eng`) |
 | `DELETE` | `/media/{media_id}` | Delete media (cleans up the file) |
 
@@ -258,8 +289,9 @@ GET /search?q={query}&mode=hybrid&tag_ids=1,2&date_from=2026-01-01&date_to=2026-
 | `q` | string | — | **Required.** Query |
 | `mode` | string | `hybrid` | `keyword` · `semantic` · `hybrid` |
 | `tag_ids` | string | — | Comma-separated tag IDs |
+| `mood` | string | — | Filter by mood |
 | `date_from` / `date_to` | string | — | `YYYY-MM-DD` |
-| `offset` / `limit` | int | `0` / `20` | Pagination |
+| `offset` / `limit` | int | `0` / `20` | Pagination (`limit` capped at 100) |
 
 | Mode | Description |
 |---|---|
@@ -268,8 +300,9 @@ GET /search?q={query}&mode=hybrid&tag_ids=1,2&date_from=2026-01-01&date_to=2026-
 | `hybrid` | Keyword + semantic via Reciprocal Rank Fusion |
 
 **Response:** `GlobalSearchResponse` — `items` (each with `snippet` of highlighted
-match, `rank`, and `similarity_score`), `total`, `offset`, `limit`. Results span
-entries **and** notes.
+match, `rank`, a nullable `similarity_score`, and a `type` discriminator
+`"entry" | "note" | "reminder"`), `total`, `offset`, `limit`. Results span
+entries, notes **and** reminders.
 
 > Semantic / hybrid modes require the embedding model and enriched entries. If a cloud
 > AI provider is active, embeddings are generated through it.
@@ -287,7 +320,9 @@ if the cloud provider is unreachable.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/ai/status` | Service status (Ollama availability, model, embed model) |
-| `POST` | `/ai/pull-model?model=…` | Trigger a background Ollama model pull |
+| `POST` | `/ai/pull-model?model=…` | Trigger a background Ollama model pull → `{job_id}` |
+| `GET` | `/ai/pull-model/{job_id}` | Poll pull progress (jobs are in-memory; TTL 1 h, cap 50) |
+| `DELETE` | `/ai/pull-model/{job_id}` | Cancel a pull |
 
 ### On-demand text tools
 | Method | Path | Purpose |
@@ -310,19 +345,17 @@ Registry-driven tools — `result` returned as plain text:
 
 | `tool_id` | Output |
 |---|---|
-| `summarize` | 2–3 sentence summary |
-| `key-points` | 3–7 markdown bullets |
-| `action-items` | markdown checklist of to-dos |
+| `rewrite` | rewrite in the author's own voice; `param` = a mode (e.g. tone/style instruction set) |
+| `summarize` | summary; `param` selects a mode (sentences / bullets / actions …) |
+| `expand` | restrained elaboration in the author's voice (~30 % longer) |
 | `shorten` | condensed (~half length) |
-| `simplify` | plain-language / ELI5 rewrite |
-| `polish` | improved word choice & flow |
-| `translate` | translation into `param` language (default `Spanish`) |
-| `add-structure` | reorganized with headings/bullets |
 | `title` | concise (≤8 words) title |
+| `translate` | translation into `param` language — one of 10 fixed languages (default `Spanish`) |
 
 **Body:** `{ "text": "…", "param": "French" }` (`param` optional, validated against
 the tool's allowed values). **Response:** `{ "result": "…" }`.
-Errors: `404` unknown tool · `400` invalid `param` · `422` empty `text`.
+Errors: `404` unknown tool · `400` invalid `param` · `422` empty `text`
+(Pydantic `min_length=1`).
 
 ### Insights (background-generated, read here)
 | Method | Path | Purpose |
@@ -365,14 +398,14 @@ Read-aloud via Microsoft Edge TTS, cached on disk.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/tts/voices` | List available voices |
-| `GET` | `/tts/entry/{entry_id}?voice=…` | Speak an entry |
-| `POST` | `/tts/speak` | Speak arbitrary text |
-| `GET` | `/tts/file/{key}` | Fetch a cached TTS audio file (Range-capable) |
+| `GET` | `/tts/voices` | List available voices (server-side cached 24 h) |
+| `GET` | `/tts/entry/{entry_id}?voice=…&rate=…&volume=…&pitch=…` | Synthesize an entry → **MP3 audio blob** (Range-capable). `422` when the entry has no readable text |
+| `POST` | `/tts/speak` | Synthesize arbitrary text → `{ "key": "<cache-key>" }` (empty key for blank text) |
+| `GET` | `/tts/file/{key}` | Fetch a cached TTS audio file by key (Range-capable) |
 | `POST` | `/tts/prewarm` | Background-cache TTS for an entry |
 
-**Body (`/tts/speak`):** `{ "text": "…", "voice": "en-US-AvaNeural" }`
-**Response:** audio blob.
+**Body (`/tts/speak`):** `{ "text": "…", "voice": "en-US-AvaNeural", "rate": "+0%", "volume": "+0%", "pitch": "+0Hz" }`
+**Response:** `{ "key": "…" }` — play it back via `GET /tts/file/{key}`.
 
 ---
 
@@ -403,6 +436,16 @@ AES-256-GCM with a scrypt-derived key (per-item salt).
 | `GET` | `/notes/{note_id}/encryption/status` | Encryption status |
 
 **Body:** `{ "passphrase": "…" }`
+
+### Global text encryption
+Selection-level encrypt/decrypt of arbitrary text (used by the editor's
+encrypt-selection action). Both refuse with `403` while the app runs on the
+default `SECRET_KEY`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/encryption/encrypt-text` | Encrypt text with a passphrase |
+| `POST` | `/encryption/decrypt-text` | Decrypt a payload |
 
 ---
 
@@ -456,7 +499,8 @@ Whole-journal document exports (in addition to the per-format entry exports unde
 | `POST` | `/backup/import` | Restore from an uploaded `.tar.gz` (manifest-verified, path-traversal-safe, atomic) |
 | `POST` | `/backup/verify` | Check an uploaded archive's integrity manifest **without** restoring; returns `{valid, legacy, files, bytes, created_at, errors[], missing[]}` |
 | `POST` | `/backup/schedule` | Schedule an automated backup (cron) |
-| `GET` | `/backup/schedule/status` | Current schedule |
+| `GET` | `/backup/schedule` | Current schedule |
+| `GET` | `/backup/schedule/status` | Current schedule + last-run status |
 | `DELETE` | `/backup/schedule` | Remove the schedule |
 
 ### Config & cloud run
@@ -490,18 +534,26 @@ auto-refreshed.
 
 ---
 
-## Sync
+## Context
 
-An operation queue plus cloud push/pull (last-writer-wins on `updated_at`).
+Local-context surfaces — everything stays on-device, nothing is persisted.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/sync/enqueue` | Queue an operation for later sync |
-| `GET` | `/sync/pending` | List unsynced operations |
-| `GET` | `/sync/status` | Sync status per provider |
-| `POST` | `/sync/flush` | Mark pending operations as synced |
-| `POST` | `/sync/cloud/push` | Push pending changes to the cloud (optional E2E encryption) |
-| `POST` | `/sync/cloud/pull` | Pull & merge remote changes |
+| `POST` | `/context/photos` | List local images by date from a user-chosen directory (read-only scan) |
+| `POST` | `/context/calendar` | Parse a local `.ics` calendar file (never persisted) |
+
+---
+
+## Jobs
+
+Every endpoint that accepts `as_job=true` (large exports, imports, title
+backfill, …) returns `{ "job_id": "…" }` instead of blocking. Poll it here:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/jobs/{job_id}` | Job status |
+| `GET` | `/jobs/{job_id}/result` | Job result (when complete) |
 
 ---
 
@@ -509,7 +561,7 @@ An operation queue plus cloud push/pull (last-writer-wins on `updated_at`).
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/system/integrity` | Cached integrity report |
+| `GET` | `/system/integrity` | Cached integrity report. The startup battery runs ~60 s after boot, so the report may be empty until then; findings also surface in Settings → Data → Maintenance |
 | `POST` | `/system/integrity` | Re-run integrity checks |
 | `POST` | `/system/integrity/rebuild-search-index` | Rebuild the FTS5 search index |
 | `GET` | `/system/egress-report` | **Privacy egress report** (see below) |
@@ -540,6 +592,9 @@ The **Settings → Privacy** tab renders this report live.
 | `GET` | `/settings/storage-path` | Storage path info |
 | `POST` | `/settings/storage-path` | Relocate the data directory |
 | `POST` | `/settings/vacuum` | Vacuum the database |
+| `POST` | `/settings/encrypt-media` | Run the media-encryption migration (encrypt/decrypt all attachment files to match `ENCRYPT_MEDIA`; `400` when media encryption is off) |
+| `POST` | `/settings/recovery-kit/export` | Export a scrypt-wrapped recovery kit (`lifelogr-recovery.json`) |
+| `POST` | `/settings/recovery-kit/import` | Import a recovery kit (probe-verifies it can read the data; `confirm_replace` required to replace an active non-default key) |
 
 `GET /settings` is the API-consumer source of truth for the app version (`APP_VERSION`).
 The in-app **About** version is injected at frontend build time (`VITE_APP_VERSION`),
@@ -559,14 +614,16 @@ All errors use:
 | `200` | Success |
 | `201` | Created |
 | `204` | No Content (successful deletion) |
-| `400` | Bad Request (invalid input) |
+| `400` | Bad Request (invalid input; oversized media uploads — `MediaSizeError` — land here) |
+| `403` | Forbidden (cross-origin destructive request, untrusted `Host` header, or default-`SECRET_KEY` text encryption) |
 | `404` | Not Found |
 | `409` | Conflict |
-| `413` | Payload Too Large (media exceeds 25 MB) |
+| `413` | Payload Too Large (recordings, backup and import endpoints convert oversized uploads to `413`) |
 | `422` | Validation Error (Pydantic) |
-| `429` | Too Many Requests (rate limited, production only) |
+| `429` | Too Many Requests (rate limited; destructive endpoints 5/60 s in all environments) |
 | `500` | Internal Server Error |
 | `501` | Not Implemented (missing optional dependency) |
+| `502` | Upstream failure (e.g. TTS synthesis error) |
 
 ### Validation errors (422)
 ```json
@@ -579,7 +636,6 @@ All errors use:
 
 ### Interactive docs
 In development, interactive API docs are available at:
-- **Swagger UI:** `http://localhost:8000/docs`
-- **ReDoc:** `http://localhost:8000/redoc`
+- **Swagger UI:** `http://localhost:8000/docs` (ReDoc is permanently disabled)
 
-> These are disabled in production (`APP_ENV=production`).
+> Disabled in production (`APP_ENV=production`).

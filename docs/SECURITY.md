@@ -15,8 +15,11 @@ SECRET_KEY
 ```
 
 A packaged install generates `.secret_key` in the data directory
-automatically (mode 0600); dev/server deployments must set `SECRET_KEY`
-themselves.
+automatically (mode 0600 — the desktop/web launchers and the app's own
+managed-run path both do this); dev/server deployments must set `SECRET_KEY`
+themselves. For non-loopback deployments an optional bearer-token gate exists:
+set `API_TOKEN` and every `/api/*` call must carry
+`Authorization: Bearer …`.
 
 ## What is encrypted
 
@@ -37,6 +40,14 @@ themselves.
 - Media **filenames** and sizes (metadata columns).
 - The `SECRET_KEY` file (`.secret_key`) — it is the root; protect it with file
   permissions and, ideally, disk encryption.
+
+## Database integrity (not encryption, but loss protection)
+
+Boot safety is layered: a fast `PRAGMA quick_check` runs at boot (escalating
+to a full `integrity_check` on failure, plus a weekly full check on Sundays
+04:00), and rotating `lifelogr.db.boot-bak-*` snapshots (2 recent + weekly)
+are kept so a corrupt database is automatically restored from the newest
+intact snapshot.
 
 ## Failure mode
 
@@ -64,5 +75,7 @@ exported.
 Local-first, single-user, backend bound to `127.0.0.1`. The encryption here
 protects **data at rest** — against disk theft, backup leaks, cloud-provider
 inspection, and other people with access to your files. It does not protect
-against other processes running as your user while the app is unlocked, and
-the loopback API is unauthenticated by design (see `AUDIT.md`).
+against other processes running as your user while the app is unlocked. The
+loopback API is unauthenticated by default (an optional `API_TOKEN` bearer
+gate exists for non-loopback deployments, and a `Host`-header guard rejects
+DNS-rebinding attempts) — see `AUDIT.md`.

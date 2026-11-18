@@ -9,7 +9,42 @@ offline at any time.
 
 ---
 
-## [Unreleased]
+## [0.18.0] — 2026-11-18
+
+*(No changelog entries were recorded for the 0.17.0–0.17.7 releases; this
+section picks up from 0.16.0.)*
+
+### Changed
+- **Lightweight pass — boot proportionality:** the boot preflight now runs a
+  fast `PRAGMA quick_check` instead of a full `integrity_check` (escalating to
+  the full check only when the quick check flags a problem), a full integrity
+  scan runs weekly (Sundays 04:00) with automatic recovery from the newest
+  intact boot snapshot, and the broad startup-integrity battery (DB structure,
+  FTS, encryption-key canary, pool, data dir) is deferred to a ~60 s post-boot
+  job — boot no longer blocks on it, findings surface in
+  **Settings → Data → Maintenance**.
+- **Lightweight pass — bounded renderer & cache:** the media lightbox serves
+  `/thumb` images while the displayed size is ≤ 2× viewport (full resolution
+  only on zoom-to-100 % or download); the media timeline decodes video
+  first-frame thumbnails only for the ~12 tiles near the viewport; embedded
+  images per open editor are capped with placeholder-until-visible loading;
+  all `URL.createObjectURL` sites are revoked on unmount via a shared helper;
+  the semantic cache stores embeddings as float16 blobs with a pure-Python
+  cosine (bounded memory, identical top-k results).
+- **Lightweight pass — packaging diet:** the bundled sidecar restricts PIL
+  format plugins to the formats LifeLogr actually accepts (PNG/JPEG/WebP/
+  BMP/TIFF/GIF/MPO) and drops ImageCms/ImageFont, so freetype/littlecms leave
+  the bundle; `psmisc` moved from deb `Depends` to `Recommends` with a
+  graceful-degrade port-recovery chain (fuser → pkill → lsof) in the desktop
+  shell; frontend `dist` slimmed (Map bundle removed, memorial image
+  lazy-loaded).
+- **Notes now confirm before discarding:** switching to another note with
+  unsaved edits asks "Discard them and switch?" instead of silently dropping
+  them, and opening Notes lands on the most-recently-edited note instead of
+  auto-creating a fresh blank note every time.
+- **AI editor tools were consolidated** to six registry tools — rewrite,
+  summarize, expand, shorten, title, translate (with `summarize`/`rewrite`
+  accepting a `mode` parameter).
 
 ### Fixed
 - **Reopening the app no longer duplicates today's entry.** The auto-opened

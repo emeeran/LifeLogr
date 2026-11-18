@@ -4,7 +4,7 @@
 > [API Reference](manual/API_REFERENCE.md). This document explains **how LifeLogr is
 > built and how to work in it**, not how to use it.
 >
-> *Version 0.17.7 · last updated 2026-11-17*
+> *Version 0.18.0 · last updated 2026-11-18*
 
 ---
 
@@ -131,14 +131,21 @@ The app is built via a FastAPI factory with an `async` **lifespan** context mana
 **startup** it runs, in order:
 
 1. Load persisted runtime settings (model picks, feature toggles).
-2. `init_db()` — open the engine, run inline migrations, build FTS5.
-3. Data-integrity checks (**warn-only** — never block boot).
-4. Start the backup scheduler; schedule a reminder **catch-up** sweep ~30 s after boot.
-5. Verify backup-system health (self-heals a missing `auto_backup` job).
-6. A broad integrity battery (DB structure, FTS, encryption key).
+2. `init_db()` — open the engine, run inline migrations, build FTS5, rewrite
+   AI-provider rows that name retired models (`apply_deprecated_model_fixups`).
+3. Boot preflight: `PRAGMA quick_check` on the DB file (escalating to a full
+   `integrity_check` only on failure), then rotating snapshot rotation — see §4.3.
+4. Data-integrity checks (**warn-only** — never block boot). The broad battery
+   (DB structure, FTS, encryption-key canary, pool, data dir) is **deferred to a
+   ~60 s post-boot one-shot job**; it runs inline only as a fallback when the
+   scheduler couldn't start. Findings surface via `GET /system/integrity` and
+   **Settings → Data → Maintenance**.
+5. Start the backup scheduler; schedule a reminder **catch-up** sweep ~30 s after boot.
+6. Verify backup-system health (self-heals a missing `auto_backup` job).
 
-On **shutdown** it stops the scheduler, cancels pending enrichment tasks, disposes the
-DB engine, and closes the Ollama HTTP client.
+On **shutdown** it stops the scheduler, cancels pending enrichment and weather
+tasks, disposes the DB engine, and closes the Ollama HTTP client — all under a
+shared 2 s deadline so teardown can't hang.
 
 **Middleware stack** (registered top-down):
 
@@ -163,7 +170,7 @@ A Pydantic `BaseSettings` instance loaded from env / `.env`. Highlights:
 
 | Setting | Default | Notes |
 |---|---|---|
-| `APP_VERSION` | `0.17.7` | Keep in sync via `make bump`. API source of truth. |
+| `APP_VERSION` | `0.18.0` | Keep in sync via `make bump`. API source of truth. |
 | `APP_ENV` | `development` | `production` enables rate limiting + disables `/docs`. |
 | `SECRET_KEY` | `change-me-before-production` | AES key for encrypted credentials. **Must** be set for non-launcher runs. |
 | `DATA_DIR` | platform default (`~/.local/share/lifelogr` on Linux) | Overridable — see §8. |
@@ -174,7 +181,7 @@ A Pydantic `BaseSettings` instance loaded from env / `.env`. Highlights:
 
 **`DATA_DIR` resolution** (highest → lowest priority):
 
-1. `LIFELOGR_DATA_DIR` env var (legacy alias `DIARI_DATA_DIR` also honoured).
+1. `LIFELOGR_DATA_DIR` env var (then `DATA_DIR`).
 2. The **storage-override file** `$XDG_CONFIG_HOME/lifelogr/data-location.json`
    (`{"data_dir": "/abs/path"}`) — written by **Settings → Data → Storage location**.
    It lives *outside* `DATA_DIR` on purpose, so it survives a relocation.
@@ -182,11 +189,27 @@ A Pydantic `BaseSettings` instance loaded from env / `.env`. Highlights:
 
 ### 4.3 Database (`app/core/database.py`)
 
-- **Engine/session:** `create_async_engine` (`aiosqlite`); `expire_on_commit=False`.
+- **Engine/session:** `create_async_engine` (`aiosqlite`); `expire_on_commit=False`;
+  `pool_size` defaults to 5 (`DB_POOL_SIZE`) with `max_overflow` 10.
 - **Pragmas** (set via a `connect` event listener): `journal_mode=WAL`,
   `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=10000`,
-  `auto_vacuum=INCREMENTAL`, 4 MiB cache, temp tables in memory. SQLite uses
-  `pool_size=1` automatically.
+  `auto_vacuum=INCREMENTAL`, 4 MiB cache, temp tables in memory.
+
+#### Boot safety & integrity (proportionate checks)
+
+- The boot preflight runs a **`PRAGMA quick_check`** on the DB file, escalating
+  to a full `integrity_check` only if the quick check flags corruption
+  (`_preflight_db_file_sync`). A full check is also run **weekly** by an
+  APScheduler job (`full_integrity_check`, Sundays 04:00, registered via
+  `SchedulerService.register_weekly_integrity_check`); either path recovers
+  through `_recover_from_snapshot_sync` + `reinit_engine`.
+- Before opening, a **rotating snapshot** `lifelogr.db.boot-bak-*` is taken:
+  the 2 most recent snapshots are kept plus the newest per earlier ISO week
+  (`-wal`/`-shm` sidecars excluded), and the copy is skipped entirely when the
+  DB's size + page-count fingerprint is unchanged since the last snapshot
+  (`_rotate_boot_snapshots` / `_db_fingerprint_sync`).
+- If `PRAGMA integrity_check` fails at boot, the newest good snapshot is
+  restored and the corrupt file is quarantined (`_CORRUPT_PREFIX`).
 
 #### Inline migrations (no Alembic)
 
@@ -203,14 +226,18 @@ Schema evolution is **idempotent and inline** — `_migrate_schema()` runs on ev
 
 #### Full-text search (FTS5)
 
-- Virtual table `entries_fts` over non-encrypted, non-deleted entry titles + bodies.
-- **Seven triggers** keep it in sync, including soft-delete/restore and
-  encrypt/decrypt (ciphertext is never indexed): `fts_entry_ai/au/ad`,
-  `fts_entry_soft_del`, `fts_entry_restore`, `fts_entry_encrypt`, `fts_entry_decrypt`.
+- Two virtual tables: `entries_fts` (non-encrypted, non-deleted entry titles +
+  bodies) and `notes_fts` (note sections), installed from the generic trigger
+  contract in `core/fts.py`.
+- Triggers keep each index in sync, including soft-delete/restore and
+  encrypt/decrypt (ciphertext is never indexed): entries use
+  `fts_entry_ai/au/ad`, `fts_entry_soft_del`, `fts_entry_restore`,
+  `fts_entry_encrypt`, `fts_entry_decrypt`; notes use the `fts_note_*` set.
 - The **UPDATE** trigger uses `DELETE`+`INSERT` rather than the FTS5 `delete` command
   (a `pysqlite3` workaround).
-- `_FTS_REBUILD_VERSION` forces a one-time rebuild to heal historical drift; bump it
-  when a trigger change requires re-indexing everything.
+- `_FTS_REBUILD_VERSION` forces a one-time rebuild to heal historical drift;
+  `_FTS_TRIGGER_VERSION` gates trigger recreation; bump either when a trigger
+  change requires re-indexing.
 
 ### 4.4 Security & encryption (two distinct mechanisms)
 
@@ -283,8 +310,7 @@ never returned by the API.
   bespoke prompt + response shape each.
 - **Generic registry** `POST /ai/tool/{tool_id}` — prompt builders live in
   `app/services/ai_tool_registry.py`; result returned as plain text. Tools:
-  `summarize`, `key-points`, `action-items`, `shorten`, `simplify`, `polish`,
-  `translate`, `add-structure`, `title`.
+  `rewrite`, `summarize`, `expand`, `shorten`, `title`, `translate`.
 
 ### 4.6 Background enrichment (`app/services/enrichment_service.py`)
 
@@ -437,7 +463,7 @@ started in the lifespan.
 `installExternalLinkInterceptor()`.
 
 Routes (`router.ts`): `/` → `/calendar`; plus `/timeline`, `/notes`, `/reminders`,
-`/media`, `/settings`. There is intentionally **no `views/` directory** — screens are
+`/media`, `/stats`, `/trash`, `/settings`. There is intentionally **no `views/` directory** — screens are
 assembled from components under `components/<feature>/`.
 
 ### 5.2 API layer (`src/api/`)
@@ -451,8 +477,9 @@ propagation. **Backend origin discovery:**
 
 A readiness poller retries the backend (30 × 500 ms) before the app makes real calls.
 Domain modules (`entries.ts`, `notes.ts`, `ai.ts`, `search.ts`, `settings.ts`,
-`system.ts`, `media.ts`, `tts.ts`, `tags.ts`, `reminders.ts`, `backup.ts`, `export.ts`,
-`templates.ts`) each export a typed API object.
+`system.ts`, `media.ts`, `tts.ts`, `tags.ts`, `reminders.ts`, `backup.ts`, `data.ts`,
+`encryption.ts`, `context.ts`, `jobs.ts`, `recordings.ts`, `templates.ts`) each export a
+typed API object; export/import URL builders live in `data.ts`.
 
 ### 5.3 State — Pinia stores (`src/stores/`)
 
@@ -468,6 +495,7 @@ Domain modules (`entries.ts`, `notes.ts`, `ai.ts`, `search.ts`, `settings.ts`,
 | `systemHealth` | Integrity report, issue counts, banner |
 | `reminders` | Reminder list, CRUD, test notification |
 | `templates` | Template list, CRUD |
+| `toast` | Toast notifications |
 
 ### 5.4 Composables (`src/composables/`)
 
@@ -488,8 +516,9 @@ this array — adding a tool is a one-line registry entry (front) + a prompt bui
 Feature-grouped folders: `layout/` (AppShell, Sidebar, PanelSplitter, SplashScreen),
 `calendar/`, `entry/` (EntryDetail, EntryEditor, AiDrawerPanel, AttachmentsPanel),
 `notes/` (NotesView, NoteEditor, NoteTree), `timeline/`, `media/`, `search/`
-(SearchPalette), `settings/` (SettingsView + `tabs/` + `dialogs/`), `tags/`,
-`reminders/`, `templates/`, `scribble/`, `common/`.
+(SearchPalette), `settings/` (SettingsView + `tabs/` + `panels/` + `dialogs/`),
+`editor/`, `entry/`, `recordings/`, `stats/`, `trash/`, `reminders/`,
+`templates/`, `scribble/`, `common/`.
 
 ### 5.6 Version injection & external links
 
@@ -516,9 +545,10 @@ and kept the entry chunk small at startup.
 Single binary entry point `src/main.rs` (no `lib.rs`). `Cargo.toml` declares:
 
 ```toml
-default = ["snip"]            # screen capture ON by default
-devtools = ["tauri/devtools"] # webview inspector — intentionally NOT in default
-snip     = ["dep:xcap"]       # needs libpipewire-0.3-dev to build on Linux
+default = ["snip", "snip-wayland"] # screen capture ON by default (xcap + ashpd portals)
+devtools    = ["tauri/devtools"]   # webview inspector — intentionally NOT in default
+snip        = ["dep:xcap"]         # needs libpipewire-0.3-dev to build on Linux
+snip-wayland = ["dep:ashpd", "dep:url"] # Wayland portal capture
 ```
 
 > `devtools` is excluded from `default` deliberately, so the webview inspector **never
@@ -532,13 +562,19 @@ declares the backend as an **external binary** `lifelogr-backend`.
 
 `desktop/scripts/pyinstaller.spec` freezes the FastAPI app + all deps (Pillow,
 pytesseract, edge-tts, sounddevice/soundfile, pysqlite3-binary) into a single
-`lifelogr-backend` binary, excluding heavy unused packages (torch, scipy, matplotlib).
+`lifelogr-backend` binary, excluding heavy unused packages (torch, scipy,
+matplotlib). Pillow is dieted: only the image format plugins LifeLogr accepts
+survive (PNG/JPEG/WebP/BMP/TIFF/GIF/MPO), and `ImageCms`/`ImageFont` are
+dropped so freetype/littlecms leave the bundle. NumPy stays bundled — the
+recording denoise path needs it.
 
 Tauri's `main.rs` manages the sidecar lifecycle:
 
 - **Port:** `backend_port()` reads `DIARI_PORT`, else **18765**.
-- **Reclaim:** on startup it kills any stale backend still bound to the port
-  (owner-verified via `lsof`/`fuser` on Linux).
+- **Reclaim:** on startup it frees a port squatted by a stale backend via a
+  graceful-degrade chain — `fuser` → `pkill` → `lsof` PID + signals — with a
+  clear give-up message when none of the tools is available (`reclaim_strategy`,
+  unit-tested; `psmisc` is a deb *Recommends*, not a hard dependency).
 - **Wait for health:** polls `GET /health` until ready before loading the webview.
 - **Graceful shutdown:** `SIGTERM` → fallback `SIGKILL`.
 
@@ -560,8 +596,9 @@ the text fallback still work).
 
 `desktop/Makefile`: `build-frontend` (VITE_APP_VERSION injection) → `build-backend`
 (PyInstaller) → `build-sidecar` (copy to the target-triple path) → `build` (Tauri
-bundle). Outputs: **AppImage + deb** (Linux), **dmg** (macOS), **msi** (Windows). Deb
-`Depends` pull `tesseract-ocr`, gstreamer plugins, `libportaudio2`, `psmisc`.
+bundle). Outputs: **AppImage + deb** (Linux only — the Windows/macOS targets
+were removed in 0.16.0). Deb `Depends` pull `tesseract-ocr`, gstreamer
+plugins, `libportaudio2`; `psmisc` is a `Recommends`.
 
 > The **web build** (`scripts/build-web-deb.sh`) is the *no-Tauri* path: it ships the
 > backend source + built SPA + a bundled `uv`, **builds the venv at install time**,
@@ -606,7 +643,7 @@ SearchPalette ──GET /search?q=…&mode=hybrid──▶ search_service
 ### 7.3 Connect a cloud backup provider (OAuth)
 
 ```
-Settings → Backup ──GET /backup/google-drive/auth-url──▶ backend (builds URL + state)
+Settings → Data → Backup & Restore ──GET /backup/google-drive/auth-url──▶ backend (builds URL + state)
       │
       └─ browser opens provider consent ──▶ provider redirects to
                  http://127.0.0.1:18765/api/v1/backup/google-drive/callback?code=…&state=…
@@ -647,7 +684,7 @@ Ctrl+Shift+S ──▶ Tauri emits "snip-requested" ──▶ frontend hides app
 | `APP_ENV` | `production` enables rate limiting + hides `/docs`. |
 | `SECRET_KEY` | Root AES key for encrypted credentials. **Required for non-launcher runs.** |
 | `CORS_ORIGINS` | Allowed origins (dev). |
-| `DATA_DIR` / `LIFELOGR_DATA_DIR` (`DIARI_DATA_DIR`) | Override the data directory. |
+| `DATA_DIR` / `LIFELOGR_DATA_DIR` | Override the data directory. |
 | `DATABASE_URL` | Auto-derived from `DATA_DIR` if unset. |
 | `RATE_LIMIT` | Production rate limit (default `60/minute`). |
 | `MAX_MEDIA_SIZE_BYTES` | 25 MiB default. |
@@ -688,8 +725,8 @@ the override file and moves the directory (carrying `.secret_key`).
 | `run` | `uv run uvicorn app.main:app --reload` (dev server). |
 | `test` | Backend `pytest`. |
 | `lint` | `ruff check` + `mypy` (strict). |
-| `bump V=x.y.z` | Bump version in **all four** sources (see below). |
-| `check-version` | Fail if the four versions drift. |
+| `bump V=x.y.z` | Bump version in **all five** sources (see below). |
+| `check-version` | Fail if the five versions drift. |
 | `clean` | Remove caches. |
 
 ### Versioning (5 sources, kept in sync)
@@ -700,6 +737,7 @@ the override file and moves the directory (carrying `.secret_key`).
 2. `backend/app/core/config.py` (`APP_VERSION`)
 3. `desktop/src-tauri/Cargo.toml`
 4. `desktop/src-tauri/tauri.conf.json`
+5. `frontend/package.json`
 
 `scripts/check_version.py` enforces parity in CI. `VITE_APP_VERSION` is derived from
 `Cargo.toml` and passed to the frontend build (`desktop/Makefile`,
@@ -726,16 +764,17 @@ enforcement, and prefers port 18765.
 
 | Job | Checks |
 |---|---|
-| `backend` | ruff, **mypy strict**, pytest with **coverage gate `fail_under = 62`**. |
+| `backend` | ruff, **mypy strict**, pytest with **coverage gate `fail_under = 78`**. |
 | `frontend` | `vue-tsc` typecheck, **vitest** unit tests, production build. |
 | `e2e-settings` | Playwright e2e (settings / entries / recordings). |
-| `version-parity` | `check_version.py` across the 4 sources. |
+| `version-parity` | `check_version.py` across the 5 sources. |
 | `rust-shell` | `cargo check` on the Tauri shell (catches Rust breaks early). |
 
 Rust builds are cached via `Swatinem/rust-cache@v2` (keyed on `desktop/src-tauri`).
 
-**`build.yml`** — release artifacts (gated by `ci.yml`): Linux AppImage+deb, Windows
-msi, macOS dmg (Intel, for Rosetta compatibility).
+**`build.yml`** — release artifacts (gated by `ci.yml` via a reusable `tests` job):
+Linux AppImage + deb only, plus a `checksums.txt` of sha256 sums attached to the
+release. A tag can't produce installers unless the full CI gate is green.
 
 > `origin/main` is protected; direct push is rejected. Work on a `feature/`/`fix/` branch
 > and open a PR — the backend + frontend CI gates must pass to merge.
@@ -743,10 +782,11 @@ msi, macOS dmg (Intel, for Rosetta compatibility).
 ### Docker (optional server deployment)
 
 `Dockerfile` is a two-stage build (Node 22 → Alpine runtime) running `uvicorn` with one
-worker. `docker-compose.yml` binds `127.0.0.1:8000:8000` (loopback-only), mounts `./data`
-and `./media`, reads `backend/.env`, and uses `restart: unless-stopped`. *Note: inside
-the container the server binds `0.0.0.0` so the port forward works — keep the compose
-loopback binding.*
+worker. `docker-compose.yml` binds `127.0.0.1:8000:8000` (loopback-only), bind-mounts
+`./data` to the image's single volume `/app/backend/data` (DB, media and TTS cache all
+live under it), optionally reads `backend/.env`, and uses `restart: unless-stopped`.
+*Note: inside the container the server binds `0.0.0.0` so the port forward works — keep
+the compose loopback binding.*
 
 ---
 
@@ -756,7 +796,7 @@ loopback binding.*
 |---|---|---|
 | Backend unit | `pytest`, `pytest-asyncio` (`asyncio_mode=auto`) | `backend/tests/unit/` |
 | Backend integration | `pytest` + `httpx` | `backend/tests/integration/` |
-| Coverage gate | `coverage`, `fail_under = 62` | `backend/pyproject.toml` |
+| Coverage gate | `coverage`, `fail_under = 78` | `backend/pyproject.toml` |
 | Backend types/lint | **mypy strict**, **ruff** (`line-length=100`, `py311`) | `backend/pyproject.toml` |
 | Frontend unit | **vitest** (`happy-dom`, `src/**/*.test.ts`) | `frontend/src/**/*.test.ts` |
 | Frontend types | `vue-tsc -b` | `frontend/package.json` |
