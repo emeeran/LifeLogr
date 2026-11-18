@@ -1,0 +1,74 @@
+"""Unit tests for the generic AI tool registry and OllamaService.run_generic_tool."""
+
+from unittest.mock import patch
+
+import pytest
+
+from app.services.ollama_service import OllamaService
+
+
+class TestRunGenericTool:
+    async def test_summarize_returns_stripped_text(self):
+        with patch.object(OllamaService, "_generate", return_value="  a concise summary.  "):
+            svc = OllamaService()
+            result = await svc.run_generic_tool("summarize", "Some long text.", None)
+        assert result == "a concise summary."
+
+    async def test_translate_uses_param_in_prompt(self):
+        with patch.object(OllamaService, "_generate", return_value="bonjour") as mock_generate:
+            svc = OllamaService()
+            await svc.run_generic_tool("translate", "Hello", "French")
+        prompt = mock_generate.call_args.args[0]
+        assert "French" in prompt
+
+    async def test_translate_uses_default_param_when_none(self):
+        with patch.object(OllamaService, "_generate", return_value="hola") as mock_generate:
+            svc = OllamaService()
+            await svc.run_generic_tool("translate", "Hello", None)
+        prompt = mock_generate.call_args.args[0]
+        assert "Spanish" in prompt
+
+    async def test_unknown_tool_raises_keyerror(self):
+        svc = OllamaService()
+        with pytest.raises(KeyError):
+            await svc.run_generic_tool("nope", "text", None)
+
+    async def test_invalid_param_raises_valueerror(self):
+        svc = OllamaService()
+        with pytest.raises(ValueError):
+            await svc.run_generic_tool("translate", "text", "Klingon")
+
+    async def test_paramless_tool_ignores_param(self):
+        """A tool without a param spec accepts (and ignores) any param value."""
+        with patch.object(OllamaService, "_generate", return_value="expanded"):
+            svc = OllamaService()
+            result = await svc.run_generic_tool("expand", "text", "ignored")
+        assert result == "expanded"
+
+    async def test_expand_prompt_is_restrained(self):
+        """Expand must ask for grounded, in-voice elaboration — not the
+        sensory-purple-prose instruction that produced AI-slop output in the
+        E2E audit ("reverberate through my very being")."""
+        with patch.object(OllamaService, "_generate", return_value="x") as mock_generate:
+            svc = OllamaService()
+            await svc.run_generic_tool("expand", "text", None)
+        prompt = mock_generate.call_args.args[0]
+        assert "author's own voice" in prompt
+        assert "vivid" not in prompt.lower()
+        assert "sensory" not in prompt.lower()
+
+    async def test_rewrite_mode_param(self):
+        """The folded rewrite tool exposes its mode as the param."""
+        with patch.object(OllamaService, "_generate", return_value="rewritten") as mock_generate:
+            svc = OllamaService()
+            result = await svc.run_generic_tool("rewrite", "text", "casual")
+        assert result == "rewritten"
+        assert "casual" in mock_generate.call_args.args[0]
+        with pytest.raises(ValueError):
+            await svc.run_generic_tool("rewrite", "text", "poetic")
+
+    async def test_summarize_modes(self):
+        with patch.object(OllamaService, "_generate", return_value="- a\n- b") as mock_generate:
+            svc = OllamaService()
+            await svc.run_generic_tool("summarize", "text", "bullets")
+        assert "- " in mock_generate.call_args.args[0]

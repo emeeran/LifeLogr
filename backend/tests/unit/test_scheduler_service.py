@@ -1,0 +1,595 @@
+"""Unit tests for SchedulerService — local and cloud backup scheduling."""
+
+import json
+import os
+from pathlib import Path
+import time
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.security import encrypt
+from app.models.backup import BackupConfig
+from app.services.scheduler_service import (
+    SchedulerService,
+    _clear_legacy_schedule,
+    _get_active_schedule,
+    _last_scheduled_occurrence,
+    _load_legacy_schedule,
+    _mark_backup_run,
+    _run_cloud_backup,
+    _save_schedule,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clean_scheduler(tmp_path, monkeypatch):
+    """Reset the global scheduler singleton before and after each test.
+
+    APScheduler's AsyncIOScheduler binds to the current event loop, so
+    the singleton MUST be reset between tests to avoid "Event loop is closed"
+    errors when pytest-asyncio creates a new loop per test. The legacy schedule
+    store is redirected to a temp path so tests never touch the real data dir.
+    """
+    import app.services.scheduler_service as mod
+
+    store = tmp_path / ".backup-schedule.json"
+    monkeypatch.setattr(mod, "_schedule_store_path", lambda: store)
+
+    # Teardown any leftover state from previous test modules
+    try:
+        if mod._scheduler is not None:
+            if mod._scheduler.running:
+                mod._scheduler.shutdown(wait=False)
+    except Exception:
+        pass
+    mod._scheduler = None
+
+    yield
+
+    # Teardown after this test
+    try:
+        if mod._scheduler is not None:
+            if mod._scheduler.get_job("auto_backup"):
+                mod._scheduler.remove_job("auto_backup")
+            if mod._scheduler.get_job("backup_catchup"):
+                mod._scheduler.remove_job("backup_catchup")
+            if mod._scheduler.running:
+                mod._scheduler.shutdown(wait=False)
+    except Exception:
+        pass
+    mod._scheduler = None
+
+
+@pytest_asyncio.fixture
+async def _scheduler_db(db_engine, monkeypatch):
+    """Point the scheduler's async_session at the per-test DB.
+
+    The DB-backed schedule helpers import ``async_session`` from
+    ``app.core.database`` lazily; patching the module attribute makes them
+    read/write the same temp DB that ``db_session`` sees, so tests can set up
+    and assert via ``db_session``.
+    """
+    import app.core.database as dbmod
+
+    factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(dbmod, "async_session", factory)
+    yield
+
+
+async def _seed_cloud_config(session) -> BackupConfig:
+    """A real BackupConfig row — FK-enforced schedules need an existing parent."""
+    creds = {
+        "client_id": "test-id",
+        "client_secret": "test-secret",
+        "access_token": "token",
+        "refresh_token": "refresh",
+        "token_expiry": str(time.time() + 3600),
+    }
+    config = BackupConfig(
+        provider="google_drive",
+        credentials_encrypted=encrypt(json.dumps(creds)),
+    )
+    session.add(config)
+    await session.commit()
+    await session.refresh(config)
+    return config
+
+
+class TestScheduleBackupLocal:
+    """Tests for local filesystem backup scheduling (config_id=None)."""
+
+    async def test_schedule_local_backup(self, db_session, _clean_scheduler, _scheduler_db):
+        svc = SchedulerService(db_session)
+        result = await svc.schedule_backup(
+            cron_expr="0 2 * * *",
+            backup_path="/tmp/lifelogr-test-backups",
+            retention=5,
+        )
+
+        assert result["job_id"] == "auto_backup"
+        assert result["cron"] == "0 2 * * *"
+        assert result["config_id"] is None
+        assert result["next_run"] is not None
+
+        sched = SchedulerService.get_scheduler()
+        job = sched.get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"backup_path": "/tmp/lifelogr-test-backups", "retention": 5}
+
+    async def test_schedule_local_requires_backup_path(self, db_session, _clean_scheduler):
+        svc = SchedulerService(db_session)
+        with pytest.raises(ValueError, match="backup_path is required"):
+            await svc.schedule_backup(
+                cron_expr="0 2 * * *",
+                backup_path=None,
+                config_id=None,
+            )
+
+    async def test_invalid_cron_expression(self, db_session, _clean_scheduler):
+        svc = SchedulerService(db_session)
+        with pytest.raises(ValueError, match="Invalid cron expression"):
+            await svc.schedule_backup(
+                cron_expr="not-a-cron",
+                backup_path="/tmp/backups",
+            )
+
+    async def test_unschedule_backup(self, db_session, _clean_scheduler, _scheduler_db):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(
+            cron_expr="0 2 * * *",
+            backup_path="/tmp/backups",
+        )
+        result = await svc.unschedule_backup()
+        assert result["removed"] is True
+
+        sched = SchedulerService.get_scheduler()
+        assert sched.get_job("auto_backup") is None
+
+    async def test_get_status_no_job(self, db_session, _clean_scheduler):
+        svc = SchedulerService(db_session)
+        status = await svc.get_status()
+        assert status["backup_scheduled"] is False
+        assert status["next_run"] is None
+
+
+class TestScheduleBackupCloud:
+    """Tests for cloud backup scheduling (config_id provided)."""
+
+    async def test_schedule_cloud_backup(self, db_session, _clean_scheduler, _scheduler_db):
+        # Seed a Google Drive config
+        creds = {
+            "client_id": "test-id",
+            "client_secret": "test-secret",
+            "access_token": "token",
+            "refresh_token": "refresh",
+            "token_expiry": str(time.time() + 3600),
+        }
+        config = BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt(json.dumps(creds)),
+        )
+        db_session.add(config)
+        await db_session.commit()
+        await db_session.refresh(config)
+
+        svc = SchedulerService(db_session)
+        result = await svc.schedule_backup(
+            cron_expr="0 3 * * *",
+            config_id=config.id,
+        )
+
+        assert result["job_id"] == "auto_backup"
+        assert result["cron"] == "0 3 * * *"
+        assert result["config_id"] == config.id
+
+        sched = SchedulerService.get_scheduler()
+        job = sched.get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"config_id": config.id}
+        assert job.func_ref is not None  # points to _run_cloud_backup
+
+    async def test_reschedule_replaces_existing_job(
+        self, db_session, _clean_scheduler, _scheduler_db
+    ):
+        svc = SchedulerService(db_session)
+
+        # Schedule local first
+        await svc.schedule_backup(
+            cron_expr="0 2 * * *",
+            backup_path="/tmp/backups",
+        )
+        # Replace with cloud
+        config = await _seed_cloud_config(db_session)
+        await svc.schedule_backup(
+            cron_expr="0 3 * * *",
+            config_id=config.id,
+        )
+
+        sched = SchedulerService.get_scheduler()
+        job = sched.get_job("auto_backup")
+        # Only one job, and it's the cloud one
+        assert job.kwargs == {"config_id": config.id}
+
+
+def _seed_backups(backup_dir, count: int) -> list:
+    """Create *count* fake backup archives with distinct, ordered mtimes."""
+    files = []
+    for i in range(count):
+        f = backup_dir / f"lifelogr-backup-2025010{i + 1}-000000.tar.gz"
+        f.write_bytes(f"backup-{i}".encode())
+        # Ensure distinct mtime so sorting is deterministic
+        os.utime(str(f), (1000 + i, 1000 + i))
+        files.append(f)
+    return files
+
+
+class TestEagerRetentionPrune:
+    """Saving a local schedule enforces the new retention count immediately —
+    redundant archives are deleted at save time, not on the next run."""
+
+    async def test_schedule_local_prunes_to_new_retention(
+        self, db_session, _clean_scheduler, _scheduler_db, tmp_path
+    ):
+        _seed_backups(tmp_path, 4)
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(
+            cron_expr="0 2 * * *", backup_path=str(tmp_path), retention=1
+        )
+
+        remaining = sorted(tmp_path.glob("lifelogr-backup-*.tar.gz"))
+        assert len(remaining) == 1
+        assert remaining[0].name == "lifelogr-backup-20250104-000000.tar.gz"
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.retention == 1
+
+    async def test_schedule_cloud_does_not_prune(
+        self, db_session, _clean_scheduler, _scheduler_db, tmp_path, monkeypatch
+    ):
+        """Retention is local-mode only — saving a cloud schedule must not
+        touch any filesystem folder."""
+        import app.services.scheduler_service as sched_mod
+
+        creds = {
+            "client_id": "test-id",
+            "client_secret": "test-secret",
+            "access_token": "token",
+            "refresh_token": "refresh",
+            "token_expiry": str(time.time() + 3600),
+        }
+        config = BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt(json.dumps(creds)),
+        )
+        db_session.add(config)
+        await db_session.commit()
+        await db_session.refresh(config)
+
+        seeded = _seed_backups(tmp_path, 2)
+        mock_prune = MagicMock()
+        monkeypatch.setattr(sched_mod, "_cleanup_old_backups", mock_prune)
+
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 3 * * *", config_id=config.id)
+
+        mock_prune.assert_not_called()
+        assert all(f.exists() for f in seeded)
+
+    async def test_schedule_save_survives_prune_failure(
+        self, db_session, _clean_scheduler, _scheduler_db, tmp_path, monkeypatch
+    ):
+        """A prune that fails (permissions, etc.) must not fail the save."""
+        import app.services.scheduler_service as sched_mod
+
+        monkeypatch.setattr(
+            sched_mod,
+            "_cleanup_old_backups",
+            MagicMock(side_effect=OSError("permission denied")),
+        )
+
+        svc = SchedulerService(db_session)
+        result = await svc.schedule_backup(
+            cron_expr="0 2 * * *", backup_path=str(tmp_path), retention=2
+        )
+
+        assert result["job_id"] == "auto_backup"
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.retention == 2
+
+
+class TestRunCloudBackup:
+    """Tests for the _run_cloud_backup standalone function."""
+
+    async def test_cloud_backup_calls_backup_service(self):
+        """Verify _run_cloud_backup delegates to BackupService.run_backup()."""
+        mock_snapshot = type("Snapshot", (), {"id": 42, "status": "completed"})()
+
+        with (
+            patch("app.core.database.async_session") as mock_sf,
+            patch("app.services.backup_service.BackupService") as MockSvc,
+        ):
+            mock_session = AsyncMock()
+            mock_sf.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+            MockSvc.return_value.run_backup = AsyncMock(return_value=mock_snapshot)
+
+            await _run_cloud_backup(config_id=7)
+
+            MockSvc.assert_called_once_with(mock_session)
+            MockSvc.return_value.run_backup.assert_called_once_with(7)
+
+    async def test_cloud_backup_logs_error_without_raising(self):
+        """Verify _run_cloud_backup swallows exceptions (scheduler must not crash)."""
+        with (
+            patch("app.core.database.async_session") as mock_sf,
+            patch("app.services.backup_service.BackupService") as MockSvc,
+        ):
+            mock_session = AsyncMock()
+            mock_sf.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+            MockSvc.return_value.run_backup = AsyncMock(
+                side_effect=Exception("Google Drive API error")
+            )
+
+            # Should NOT raise — errors are logged, not propagated
+            await _run_cloud_backup(config_id=7)
+
+
+def _ensure_scheduler_running() -> None:
+    sched = SchedulerService.get_scheduler()
+    if not sched.running:
+        sched.start()
+
+
+class TestSchedulePersistence:
+    """The active schedule is persisted to the DB (source of truth) and so
+    survives app restarts (APScheduler's in-memory job store is lost on exit)."""
+
+    async def test_schedule_local_persists_to_db(self, db_session, _clean_scheduler, _scheduler_db):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x", retention=7)
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.cron == "0 2 * * *"
+        assert active.backup_path == "/tmp/x"
+        assert active.retention == 7
+        assert active.config_id is None
+
+    async def test_schedule_cloud_persists_to_db(self, db_session, _clean_scheduler, _scheduler_db):
+        config = BackupConfig(
+            provider="google_drive",
+            credentials_encrypted=encrypt("{}"),
+        )
+        db_session.add(config)
+        await db_session.commit()
+        await db_session.refresh(config)
+
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 3 * * *", config_id=config.id)
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.cron == "0 3 * * *"
+        assert active.config_id == config.id
+        assert active.backup_path is None
+
+    async def test_unschedule_clears_db(self, db_session, _clean_scheduler, _scheduler_db):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x")
+        assert (await _get_active_schedule()) is not None
+
+        await svc.unschedule_backup()
+        assert (await _get_active_schedule()) is None
+
+    async def test_reschedule_preserves_last_run(self, db_session, _clean_scheduler, _scheduler_db):
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x")
+        await _mark_backup_run()
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.last_run_at is not None
+
+        # Re-saving the schedule must not wipe the run history.
+        await svc.schedule_backup(cron_expr="30 3 * * *", backup_path="/tmp/x")
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.cron == "30 3 * * *"
+        assert active.last_run_at is not None
+
+
+class TestRestoreBackupSchedule:
+    """_restore_backup_schedule re-registers jobs after a restart (DB-backed)."""
+
+    async def test_noop_when_nothing_persisted(self, _clean_scheduler, _scheduler_db):
+        _ensure_scheduler_running()
+        await SchedulerService._restore_backup_schedule()
+        assert SchedulerService.get_scheduler().get_job("auto_backup") is None
+
+    async def test_restores_local_job_from_db(self, _clean_scheduler, _scheduler_db):
+        _ensure_scheduler_running()
+        await _save_schedule({"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3})
+        await SchedulerService._restore_backup_schedule()
+        job = SchedulerService.get_scheduler().get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"backup_path": "/tmp/x", "retention": 3}
+
+    async def test_restores_cloud_job_when_config_exists(
+        self, db_session, _clean_scheduler, _scheduler_db
+    ):
+        _ensure_scheduler_running()
+        config = BackupConfig(provider="google_drive", credentials_encrypted=encrypt("{}"))
+        db_session.add(config)
+        await db_session.commit()
+        await db_session.refresh(config)
+        await _save_schedule({"cron": "0 3 * * *", "config_id": config.id})
+
+        await SchedulerService._restore_backup_schedule()
+
+        job = SchedulerService.get_scheduler().get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"config_id": config.id}
+
+    async def test_clears_when_config_gone(
+        self, db_session, _clean_scheduler, _scheduler_db
+    ):
+        _ensure_scheduler_running()
+        # A config deleted after scheduling (the real path to a dangling
+        # schedule) → schedule is stale and must be dropped.
+        config = await _seed_cloud_config(db_session)
+        await _save_schedule({"cron": "0 3 * * *", "config_id": config.id})
+        await db_session.execute(delete(BackupConfig).where(BackupConfig.id == config.id))
+        await db_session.commit()
+
+        await SchedulerService._restore_backup_schedule()
+
+        assert SchedulerService.get_scheduler().get_job("auto_backup") is None
+        assert (await _get_active_schedule()) is None  # stale schedule dropped
+
+    async def test_survives_legacy_json_loss_via_db(
+        self, db_session, _clean_scheduler, _scheduler_db
+    ):
+        """Core regression: a schedule stored in the DB is restored even when the
+        legacy JSON file is gone — the original silent-stop bug."""
+        _ensure_scheduler_running()
+        svc = SchedulerService(db_session)
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path="/tmp/x", retention=3)
+
+        # Simulate the loss that broke the installed app: no legacy file at all.
+        _clear_legacy_schedule()
+        assert _load_legacy_schedule() is None
+
+        # Simulate a restart: drop the in-memory job, then restore.
+        SchedulerService.get_scheduler().remove_job("auto_backup")
+        assert SchedulerService.get_scheduler().get_job("auto_backup") is None
+        await SchedulerService._restore_backup_schedule()
+
+        job = SchedulerService.get_scheduler().get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"backup_path": "/tmp/x", "retention": 3}
+
+    async def test_migrates_legacy_json_to_db(self, _clean_scheduler, _scheduler_db):
+        """One-time upgrade path: a pre-upgrade legacy JSON file is migrated into
+        the DB and then removed."""
+        import app.services.scheduler_service as mod
+
+        _ensure_scheduler_running()
+        store = mod._schedule_store_path()  # tmp path (redirected by _clean_scheduler)
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(
+            json.dumps({"cron": "0 5 * * *", "backup_path": "/tmp/y", "retention": 4})
+        )
+        assert (await _get_active_schedule()) is None
+
+        await SchedulerService._restore_backup_schedule()
+
+        job = SchedulerService.get_scheduler().get_job("auto_backup")
+        assert job is not None
+        assert job.kwargs == {"backup_path": "/tmp/y", "retention": 4}
+        # DB now holds the schedule ...
+        active = await _get_active_schedule()
+        assert active is not None
+        assert active.cron == "0 5 * * *"
+        # ... and the legacy file has been removed.
+        assert _load_legacy_schedule() is None
+
+
+class TestBackupCatchup:
+    """Missed backups should run once on next startup (desktop app offline)."""
+
+    async def test_runs_local_when_stale(self, _clean_scheduler, _scheduler_db):
+        _ensure_scheduler_running()
+        await _save_schedule({"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3})
+        with patch("app.services.scheduler_service._run_backup", new=AsyncMock()) as mock_run:
+            await SchedulerService._backup_catchup()
+            mock_run.assert_awaited_once_with("/tmp/x", 3)
+
+    async def test_skips_when_already_ran(self, _clean_scheduler, _scheduler_db):
+        _ensure_scheduler_running()
+        await _save_schedule({"cron": "0 2 * * *", "backup_path": "/tmp/x", "retention": 3})
+        await _mark_backup_run()  # last_run_at ≈ now → not stale
+        with patch("app.services.scheduler_service._run_backup", new=AsyncMock()) as mock_run:
+            await SchedulerService._backup_catchup()
+            mock_run.assert_not_called()
+
+    async def test_runs_cloud_when_stale(
+        self, db_session, _clean_scheduler, _scheduler_db
+    ):
+        _ensure_scheduler_running()
+        config = await _seed_cloud_config(db_session)
+        await _save_schedule({"cron": "0 3 * * *", "config_id": config.id})
+        with patch(
+            "app.services.scheduler_service._run_cloud_backup", new=AsyncMock()
+        ) as mock_run:
+            await SchedulerService._backup_catchup()
+            mock_run.assert_awaited_once_with(config.id)
+
+
+class TestLastScheduledOccurrence:
+    """Cron → most-recent-past-fire math for the daily/weekly/monthly forms."""
+
+    def test_daily_after_time(self):
+        now = datetime(2026, 7, 7, 10, 0)
+        assert _last_scheduled_occurrence("0 2 * * *", now) == datetime(2026, 7, 7, 2, 0)
+
+    def test_daily_before_time_falls_to_yesterday(self):
+        now = datetime(2026, 7, 7, 1, 0)  # 01:00, before today's 02:00
+        assert _last_scheduled_occurrence("0 2 * * *", now) == datetime(2026, 7, 6, 2, 0)
+
+    def test_weekly_picks_correct_weekday(self):
+        now = datetime(2026, 7, 7, 12, 0)  # arbitrary Tuesday
+        res = _last_scheduled_occurrence("0 2 * * 0", now)  # 0 = Monday
+        assert res is not None
+        assert res <= now
+        assert res.weekday() == 0
+        assert (res.hour, res.minute) == (2, 0)
+        assert (res + timedelta(days=7)) > now  # truly the most recent
+
+    def test_monthly_first_of_month(self):
+        now = datetime(2026, 7, 15, 10, 0)
+        assert _last_scheduled_occurrence("0 2 1 * *", now) == datetime(2026, 7, 1, 2, 0)
+
+    def test_invalid_cron_returns_none(self):
+        assert _last_scheduled_occurrence("nope", datetime.now()) is None
+
+
+class TestLocalBackupStaging:
+    """The scheduled local backup packs to a .part file and atomically renames
+    into place, and (without a caller-supplied reporter) registers in the job
+    registry so the shutdown guard sees it — a window close can no longer
+    SIGKILL a run invisibly, and a kill mid-pack can never leave a truncated
+    file under the final name that retention counting globs."""
+
+    async def test_archive_published_atomically(self, tmp_path, _clean_scheduler):
+        from app.core.jobs import jobs
+
+        import app.services.scheduler_service as mod
+
+        jobs.reset()
+        backup_dir = tmp_path / "backups"
+        archive = Path(await mod._run_backup(str(backup_dir), retention=5))
+
+        assert archive.exists() and archive.stat().st_size > 0
+        assert list(backup_dir.glob("*.tar.gz")) == [archive]
+        assert not list(backup_dir.glob("*.part")), "staging file must not survive"
+        assert not jobs.running(), "finished run must not block shutdown"
+        jobs.reset()
+
+    async def test_stale_part_files_are_swept(self, tmp_path, _clean_scheduler):
+        import time
+
+        import app.services.scheduler_service as mod
+
+        backup_dir = tmp_path / "backups"
+        backup_dir.mkdir()
+        stale = backup_dir / "lifelogr-backup-20240101-000000.tar.gz.part"
+        stale.write_bytes(b"junk from a killed run")
+        os.utime(str(stale), (time.time() - 90_000, time.time() - 90_000))
+
+        await mod._run_backup(str(backup_dir), retention=5)
+        assert not stale.exists()
+

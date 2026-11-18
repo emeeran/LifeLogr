@@ -1,0 +1,19 @@
+# Keep development state out of the production image.
+backend/dev.db
+backend/dev.db-shm
+backend/dev.db-wal
+backend/media/
+backend/local/
+backend/tests/
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.env
+local/
+releases/
+docs/
+desktop/
+node_modules/
+**/__pycache__/
+*.pyc
+.git/

@@ -1,0 +1,4 @@
+full_date,date,weekday,time,mood,activities,note_title,note
+"May 1, 2021",2021-05-01,Saturday,08:30,good,Coffee | Gym | Reading,Slow morning,Long black and a chapter before work.
+"May 2, 2021",,,,rad,Hiking,,
+"May 3, 2021",2021-05-03,,,awful,,,Rough day at work.

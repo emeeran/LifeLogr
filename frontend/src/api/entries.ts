@@ -1,0 +1,218 @@
+import { request, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
+import type { JobStartResponse } from './backup'
+import type {
+  EntryResponse,
+  EntryListResponse,
+  EntryCreate,
+  EntryUpdate,
+  EntryListParams,
+  CalendarEntryResponse,
+  JournalStats,
+  TrashListResponse,
+} from '../types'
+
+export interface GeotagItem {
+  id: number
+  entry_date: string
+  title: string | null
+  latitude: number
+  longitude: number
+  location_name: string | null
+  is_encrypted: boolean
+  media_id: number | null
+}
+
+export interface GeotagResponse {
+  items: GeotagItem[]
+  total: number
+  offset: number
+  limit: number
+}
+
+export const entriesApi = {
+  create(data: EntryCreate): Promise<EntryResponse> {
+    return request('/entries', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  get(id: number): Promise<EntryResponse> {
+    return request(`/entries/${id}`)
+  },
+
+  /** Entries with coordinates, for the map view (lightweight projection). */
+  geotags(offset = 0, limit = 500): Promise<GeotagResponse> {
+    return request(`/entries/geotags?offset=${offset}&limit=${limit}`)
+  },
+
+  list(params?: EntryListParams): Promise<EntryListResponse> {
+    const sp = new URLSearchParams()
+    if (params?.offset != null) sp.set('offset', String(params.offset))
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    if (params?.tag_ids?.length)
+      sp.set('tag_ids', params.tag_ids.join(','))
+    if (params?.year) sp.set('year', String(params.year))
+    if (params?.month) sp.set('month', String(params.month))
+    if (params?.template_id != null)
+      sp.set('template_id', String(params.template_id))
+    const qs = sp.toString()
+    return request(`/entries${qs ? `?${qs}` : ''}`)
+  },
+
+  update(id: number, data: EntryUpdate): Promise<EntryResponse> {
+    return request(`/entries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete(id: number): Promise<void> {
+    return request(`/entries/${id}`, { method: 'DELETE' })
+  },
+
+  /** Soft-deleted entries (restorable trash), newest deletion first. */
+  trash(offset = 0, limit = 50): Promise<TrashListResponse> {
+    return request(`/entries/trash?offset=${offset}&limit=${limit}`)
+  },
+
+  restore(id: number): Promise<EntryResponse> {
+    return request(`/entries/${id}/restore`, { method: 'POST' })
+  },
+
+  /** Permanently destroy a trashed entry and its media — no recovery. */
+  purge(id: number): Promise<void> {
+    return request(`/entries/${id}/purge`, { method: 'DELETE' })
+  },
+
+  /** Permanently purge every soft-deleted entry — no recovery. */
+  emptyTrash(): Promise<{ purged: number }> {
+    return request('/entries/trash', { method: 'DELETE' })
+  },
+
+  importEntries(
+    entries: { entry_date: string; title?: string; body: string }[],
+  ): Promise<{ imported: number; skipped: number }> {
+    return request('/entries/import', {
+      method: 'POST',
+      body: JSON.stringify(entries),
+    })
+  },
+
+  importFile(file: File): Promise<{ imported: number; skipped: number }> {
+    const form = new FormData()
+    form.append('file', file)
+    // Large imports can take minutes — the request-level timeout is raised to match.
+    return request('/entries/import/file', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+
+  /** Import as a polled job — poll `jobsApi.get(job_id)` for insert progress. */
+  importFileJob(file: File): Promise<JobStartResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/entries/import/file?as_job=true', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+
+  resetDatabase(confirm: string): Promise<{ status: string; message: string }> {
+    return request('/entries/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm }),
+    })
+  },
+
+  deduplicate(): Promise<{ groups_found: number; duplicates_removed: number }> {
+    return request('/entries/deduplicate', { method: 'POST' })
+  },
+
+  /** Fill empty titles from the body's first line. Dry run by default. */
+  backfillTitles(dryRun = true): Promise<{
+    dry_run: boolean
+    candidates: number
+    updated: number
+    samples: { id: number; title: string }[]
+  }> {
+    return request(`/entries/backfill-titles?dry_run=${dryRun}`, {
+      method: 'POST',
+    })
+  },
+
+  calendarMonth(year: number, month: number): Promise<CalendarEntryResponse[]> {
+    return request(`/entries/calendar/${year}/${month}`)
+  },
+
+  /** Prior years' entries sharing today's month/day, for the composer strip. */
+  onThisDay(): Promise<CalendarEntryResponse[]> {
+    return request('/entries/on-this-day')
+  },
+
+  stats(weeks = 12): Promise<JournalStats> {
+    return request(`/entries/stats?weeks=${weeks}`)
+  },
+
+  search(query: string, offset = 0, limit = 20): Promise<EntryListResponse> {
+    return request(
+      `/entries/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`,
+    )
+  },
+
+  exportMarkdownUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/markdown${qs ? `?${qs}` : ''}`
+  },
+
+  exportJsonUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/json${qs ? `?${qs}` : ''}`
+  },
+
+  exportHtmlZipUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/html-zip${qs ? `?${qs}` : ''}`
+  },
+
+  exportDaylioCsvUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/daylio-csv${qs ? `?${qs}` : ''}`
+  },
+
+  /** Day One ZIP — the format Diarium's "Migrate from other app" imports with
+   *  attachments. ``scope=new`` (default) pushes only entries Diarium lacks. */
+  exportDayOneUrl(
+    startDate?: string,
+    endDate?: string,
+    scope: 'new' | 'all' = 'new',
+  ): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    if (scope !== 'new') sp.set('scope', scope)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/dayone-zip${qs ? `?${qs}` : ''}`
+  },
+
+  exportArchiveUrl(startDate?: string, endDate?: string): string {
+    const sp = new URLSearchParams()
+    if (startDate) sp.set('start_date', startDate)
+    if (endDate) sp.set('end_date', endDate)
+    const qs = sp.toString()
+    return `${API_ORIGIN}/api/v1/entries/export/archive${qs ? `?${qs}` : ''}`
+  },
+}

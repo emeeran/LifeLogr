@@ -1,0 +1,1413 @@
+<script setup lang="ts">
+/**
+ * NotesView — 2-pane notebook workspace (EPIM-style tree | editor).
+ *
+ * The folder rail IS the tree: notebooks expand to reveal their notes as
+ * indented leaves (pinned first). "All Notes" / "Unfiled" are virtual nodes
+ * that expand the same way. Selecting a leaf opens it in the editor on the
+ * right. Search collapses the tree into a flat results list.
+ */
+import ConfirmDialog from '../common/ConfirmDialog.vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import {
+  Plus,
+  Search,
+  NotebookPen,
+  Folder,
+  FolderOpen,
+  FileText,
+  FolderPlus,
+  Check,
+  Trash2,
+  X,
+  ChevronRight,
+  Pin,
+  Lock,
+  Inbox,
+  Upload,
+  Pencil,
+} from 'lucide-vue-next'
+import { useLocalStorage } from '@vueuse/core'
+import { useVirtualizer } from '@tanstack/vue-virtual'
+import { useNotesStore } from '../../stores/notes'
+import { useUiStore } from '../../stores/ui'
+import { notesApi } from '../../api/notes'
+import { pickFile } from '../../utils/fileDialog'
+import { tagsApi } from '../../api/tags'
+import NoteEditor from './NoteEditor.vue'
+import NoteColorPicker from './NoteColorPicker.vue'
+import FolderMovePicker from './FolderMovePicker.vue'
+import { errorMessage } from '../../utils/errorMessage'
+import { useToastStore } from '../../stores/toast'
+import { noteColorLabel, noteColorValue } from '../../utils/noteColors'
+import {
+  computeReorder,
+  resolveDrop,
+  type DropTarget,
+  type TreeDragItem,
+} from '../../composables/useNotesTreeDrag'
+import type { NoteListItem, NoteFolderResponse, TagResponse } from '../../types'
+
+const store = useNotesStore()
+const ui = useUiStore()
+const toast = useToastStore()
+const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null)
+
+// ── Drag & drop in the rail ─────────────────────────────────────────────────
+// The rail is virtualized, so a drop target is identified by the row's model
+// (TreeItem), never by DOM index. `dragging` must be a ref: WebKit refuses to
+// read dataTransfer during dragover, so the highlight needs local state.
+const dragging = ref<TreeDragItem | null>(null)
+const dropTarget = ref<DropTarget | null>(null)
+const dropBusy = ref(false)
+
+function startRowDrag(event: DragEvent, item: TreeDragItem) {
+  dragging.value = item
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(
+      'application/x-lifelogr-tree',
+      JSON.stringify(item),
+    )
+    // Plain-text fallback keeps the drag recognisable to the OS/other targets.
+    event.dataTransfer.setData('text/plain', `${item.kind}:${item.id}`)
+  }
+}
+
+function endRowDrag() {
+  dragging.value = null
+  dropTarget.value = null
+  scheduleExpand(null)
+}
+
+/** Where a `tree-row` may accept a drop (null = not a drop target). */
+function rowTarget(row: TreeItem): DropTarget | null {
+  if (row.folderId != null) return { kind: 'folder', id: row.folderId }
+  if (row.key === 'unfiled') return { kind: 'unfiled' }
+  return null
+}
+
+// ── Between-row reorder (DND-3) ─────────────────────────────────────────────
+// A note row's top/bottom half is an insertion edge *within its own section*;
+// a notebook row keeps drop-into in the middle and gains sibling reorder edges
+// only at the top/bottom (30%). Cross-section moves still use the gestures
+// that already exist (drop onto a notebook row, Unfiled, or the header).
+
+/** Ordered ids of a leaf section ('all', 'unfiled', `f<folderId>`). */
+function sectionNoteIds(sectionKey: string): number[] {
+  if (sectionKey === 'all') return allNotes.value.map((n) => n.id)
+  if (sectionKey === 'unfiled') return unfiledNotes.value.map((n) => n.id)
+  return notesIn(Number(sectionKey.slice(1))).map((n) => n.id)
+}
+
+/** Ordered sibling notebook ids under `parentId` (null = top level). */
+function siblingFolderIds(parentId: number | null): number[] {
+  return (foldersByParent.value.get(parentId) ?? []).map((f) => f.id)
+}
+
+/** Which half of the row the pointer is in (true = bottom). */
+function pointerInBottomHalf(event: DragEvent): boolean {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  return event.clientY - rect.top > rect.height / 2
+}
+
+/** Insertion edge on a note leaf (null = not an insertion point). */
+function noteInsertTarget(row: TreeItem, event: DragEvent): DropTarget | null {
+  const drag = dragging.value
+  if (!drag || drag.kind !== 'note' || !row.note || row.sectionKey == null)
+    return null
+  const section = sectionNoteIds(row.sectionKey)
+  if (!section.includes(drag.id)) return null // cross-section: keep existing gestures
+  if (!pointerInBottomHalf(event))
+    return { kind: 'note-insert', sectionKey: row.sectionKey, beforeId: row.note.id }
+  const idx = section.indexOf(row.note.id)
+  const nextId = idx >= 0 && idx + 1 < section.length ? section[idx + 1] : null
+  return { kind: 'note-insert', sectionKey: row.sectionKey, beforeId: nextId }
+}
+
+/** Drop target for a notebook row: sibling reorder edges, else move-into. */
+function folderRowTarget(row: TreeItem, event: DragEvent): DropTarget | null {
+  const base = rowTarget(row)
+  if (!base || base.kind !== 'folder' || !dragging.value) return base
+  const drag = dragging.value
+  if (drag.kind !== 'folder' || drag.id === base.id) return base
+  const targetParent =
+    store.folders.find((f) => f.id === base.id)?.parent_id ?? null
+  if (folderParent(drag.id) !== targetParent) return base // not siblings: move-into only
+  const siblings = siblingFolderIds(targetParent)
+  if (pointerInBottomHalf(event)) {
+    const idx = siblings.indexOf(base.id)
+    const nextId =
+      idx >= 0 && idx + 1 < siblings.length ? siblings[idx + 1] : null
+    return { kind: 'folder-insert', parentId: targetParent, beforeId: nextId }
+  }
+  return { kind: 'folder-insert', parentId: targetParent, beforeId: base.id }
+}
+
+/** Where the insertion line renders for this row, if it is the active target. */
+function dropLine(row: TreeItem): 'above' | 'below' | null {
+  const t = dropTarget.value
+  if (!t) return null
+  if (t.kind === 'note-insert' && row.note) {
+    if (t.beforeId === row.note.id) return 'above'
+    const section = row.sectionKey != null ? sectionNoteIds(row.sectionKey) : []
+    return t.beforeId == null &&
+      t.sectionKey === row.sectionKey &&
+      section[section.length - 1] === row.note.id
+      ? 'below'
+      : null
+  }
+  if (t.kind === 'folder-insert' && row.folderId != null) {
+    if (t.beforeId === row.folderId) return 'above'
+    const siblings = siblingFolderIds(t.parentId)
+    return t.beforeId == null &&
+      folderParent(row.folderId) === t.parentId &&
+      siblings[siblings.length - 1] === row.folderId
+      ? 'below'
+      : null
+  }
+  return null
+}
+
+function sameTarget(a: DropTarget | null, b: DropTarget | null): boolean {
+  if (!a || !b) return a === b
+  if (a.kind !== b.kind) return false
+  return a.kind !== 'folder' || b.kind !== 'folder' || a.id === b.id
+}
+
+function markDrop(event: DragEvent, target: DropTarget | null) {
+  if (!target || !dragging.value) return
+  if (dragging.value.kind === 'folder' && target.kind === 'folder') {
+    if (dragging.value.id === target.id) return // cannot drop on itself
+  }
+  // No insertion line directly above the row being dragged.
+  if (
+    target.kind === 'note-insert' &&
+    dragging.value.kind === 'note' &&
+    target.beforeId === dragging.value.id
+  )
+    return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTarget.value = target
+  // Hovering a collapsed notebook springs it open, so a nested target is
+  // reachable without dropping first.
+  scheduleExpand(
+    target.kind === 'folder' && !isExpanded(String(target.id))
+      ? String(target.id)
+      : null,
+  )
+}
+
+let expandTimer: ReturnType<typeof setTimeout> | null = null
+let expandPending: string | null = null
+
+/** Expand a collapsed notebook after a short hover during a drag. */
+function scheduleExpand(key: string | null) {
+  if (key === expandPending) return
+  if (expandTimer) {
+    clearTimeout(expandTimer)
+    expandTimer = null
+  }
+  expandPending = key
+  if (!key) return
+  expandTimer = setTimeout(() => {
+    expandTimer = null
+    expandPending = null
+    if (!expanded.value.has(key)) {
+      expanded.value = new Set([...expanded.value, key])
+    }
+  }, 600)
+}
+
+/** Parent of a notebook, for the keyboard "Move to…" menu. */
+function folderParent(folderId: number | null | undefined): number | null {
+  if (folderId == null) return null
+  return store.folders.find((f) => f.id === folderId)?.parent_id ?? null
+}
+
+async function moveFolder(folderId: number, parentId: number | null) {
+  try {
+    if (parentId == null) {
+      await store.updateFolder(folderId, { clear_parent: true })
+    } else {
+      await store.updateFolder(folderId, { parent_id: parentId })
+    }
+  } catch {
+    /* the store already toasted the failure */
+  }
+}
+
+/** Clear the highlight only when the pointer actually leaves the row. */
+function clearDropIfLeft(event: DragEvent) {
+  const element = event.currentTarget as HTMLElement | null
+  const next = event.relatedTarget as Node | null
+  if (element && next && element.contains(next)) return
+  dropTarget.value = null
+}
+
+async function applyDrop(event: DragEvent, target: DropTarget | null) {
+  event.preventDefault()
+  event.stopPropagation()
+  const item = dragging.value
+  endRowDrag()
+  if (!item || !target) return
+
+  dropBusy.value = true
+  try {
+    // Between-row reorder (DND-3): plan against the section's current order,
+    // then send one batch. null plan = the drop changed nothing.
+    if (target.kind === 'note-insert' || target.kind === 'folder-insert') {
+      const section =
+        target.kind === 'note-insert'
+          ? sectionNoteIds(target.sectionKey)
+          : siblingFolderIds(target.parentId)
+      const plan = computeReorder(section, item.id, target.beforeId)
+      if (!plan) {
+        toast.info('Already in this position')
+        return
+      }
+      await (target.kind === 'note-insert'
+        ? store.reorderNotes(plan)
+        : store.reorderFolders(plan))
+      return
+    }
+
+    const note =
+      item.kind === 'note' ? store.notes.find((n) => n.id === item.id) : null
+    const decision = resolveDrop(item, target, {
+      noteFolder: note ? (note.folder_id ?? null) : null,
+      folders: store.folders.map((f) => ({ id: f.id, parent_id: f.parent_id })),
+    })
+
+    if (decision.action === 'noop') {
+      if (decision.reason) toast.info(decision.reason)
+      return
+    }
+    if (decision.action === 'cycle') {
+      toast.error(decision.reason)
+      return
+    }
+
+    if (decision.action === 'note-to-folder') {
+      await store.updateNote(decision.noteId, { folder_id: decision.folderId })
+    } else if (decision.action === 'note-to-unfiled') {
+      await store.updateNote(decision.noteId, {
+        folder_id: null,
+        clear_folder: true,
+      })
+    } else if (decision.action === 'folder-to-parent') {
+      await store.updateFolder(decision.folderId, {
+        parent_id: decision.parentId,
+      })
+    } else {
+      await store.updateFolder(decision.folderId, { clear_parent: true })
+    }
+  } catch {
+    /* the store already toasted the failure; nothing moved */
+  } finally {
+    dropBusy.value = false
+  }
+}
+
+
+/** Read the editor's `isDirty` through the exposed instance. Vue unwraps refs
+ *  on the public instance, but handle both shapes so this guard can't no-op. */
+function noteEditorIsDirty(): boolean {
+  const d = editorRef.value?.isDirty as boolean | { value: boolean } | undefined
+  if (typeof d === 'boolean') return d
+  return d?.value === true
+}
+
+const searchQuery = ref('')
+const searchResults = ref<NoteListItem[] | null>(null)
+const allTags = ref<TagResponse[]>([])
+
+// Inline "new notebook" creator state. newFolderParent is the folder the new
+// sub-notebook is created under (null = top level).
+const showNewFolder = ref(false)
+const newFolderName = ref('')
+const newFolderParent = ref<number | null>(null)
+const folderInputRef = ref<HTMLInputElement | null>(null)
+
+// Inline note rename state (one leaf edited at a time).
+const editingNoteId = ref<number | null>(null)
+const editingNoteTitle = ref('')
+const renameNoteInputRef = ref<HTMLInputElement | null>(null)
+
+// Resizable tree rail (persisted). Drag the strip between tree and editor.
+const railWidth = useLocalStorage<number>('lifelogr-notes-rail-width', 288)
+const railDragging = ref(false)
+// Hoisted so onUnmounted can remove the exact listeners — a mouseup that never
+// fires (e.g. the component unmounts mid-drag) used to leak both.
+function onRailDragMove(ev: MouseEvent) {
+  // `startRailX`/`startRailW` are set by onRailMousedown before any move fires.
+  railWidth.value = Math.min(
+    560,
+    Math.max(200, startRailW + (ev.clientX - startRailX)),
+  )
+}
+function onRailDragUp() {
+  railDragging.value = false
+  document.removeEventListener('mousemove', onRailDragMove)
+  document.removeEventListener('mouseup', onRailDragUp)
+}
+let startRailX = 0
+let startRailW = 0
+function onRailMousedown(e: MouseEvent) {
+  e.preventDefault()
+  railDragging.value = true
+  startRailX = e.clientX
+  startRailW = railWidth.value
+  document.removeEventListener('mousemove', onRailDragMove)
+  document.removeEventListener('mouseup', onRailDragUp)
+  document.addEventListener('mousemove', onRailDragMove)
+  document.addEventListener('mouseup', onRailDragUp)
+}
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onRailDragMove)
+  document.removeEventListener('mouseup', onRailDragUp)
+})
+
+// Expanded tree nodes: 'all' | 'unfiled' | <folder id as string>
+const expanded = ref<Set<string>>(new Set(['all']))
+
+function toggleExpand(key: string) {
+  const next = new Set(expanded.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expanded.value = next
+}
+const isExpanded = (key: string) => expanded.value.has(key)
+
+/** Basic keyboard tree behaviour: ↑/↓ move between rows, →/← expand/collapse
+ *  the focused group, Enter/Space activates (native button). */
+function onTreeKeydown(e: KeyboardEvent) {
+  const container = treeScrollEl.value
+  if (!container) return
+  const item = (e.target as HTMLElement).closest<HTMLElement>(
+    '[role="treeitem"]',
+  )
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const items = Array.from(
+      container.querySelectorAll<HTMLElement>('[role="treeitem"]'),
+    )
+    const idx = item ? items.indexOf(item) : -1
+    const next = items[idx + (e.key === 'ArrowDown' ? 1 : -1)]
+    if (next) {
+      e.preventDefault()
+      next.focus()
+    }
+    return
+  }
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && item?.dataset.treeKey) {
+    e.preventDefault()
+    const key = item.dataset.treeKey
+    if (e.key === 'ArrowRight' && !isExpanded(key)) toggleExpand(key)
+    else if (e.key === 'ArrowLeft' && isExpanded(key)) toggleExpand(key)
+  }
+}
+
+// Pinned-first, then manual drag order (DND-3), then most-recently-updated.
+// Sections never reordered are all sort_order 0, so the tiebreak keeps the
+// old recent-first behaviour untouched.
+function sortedNotes(arr: NoteListItem[]): NoteListItem[] {
+  return [...arr].sort((a, b) => {
+    if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1
+    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  })
+}
+
+const unfiledNotes = computed(() =>
+  sortedNotes(store.notes.filter((n) => n.folder_id == null)),
+)
+const allNotes = computed(() => sortedNotes(store.notes))
+function notesIn(folderId: number): NoteListItem[] {
+  return sortedNotes(store.notes.filter((n) => n.folder_id === folderId))
+}
+function leafLabel(n: NoteListItem): string {
+  return n.title?.trim() || 'Untitled note'
+}
+
+// ── Colour labels (Note.color / NoteFolder.color) ──
+/** Raw stored colour of a notebook (hex or null). */
+function folderColorRaw(folderId: number | null | undefined): string | null {
+  if (folderId == null) return null
+  return store.folders.find((f) => f.id === folderId)?.color ?? null
+}
+/** Resolved tint for a notebook row. */
+function folderTint(folderId: number | null | undefined): string | null {
+  return noteColorValue(folderColorRaw(folderId))
+}
+/** A note's own colour, falling back to its notebook's. */
+function noteTint(note: NoteListItem): string | null {
+  return noteColorValue(note.color) ?? folderTint(note.folder_id)
+}
+/** Add the colour name to a row's accessible name — colour is never the only
+ *  signal (the shape/tooltip carries it too). */
+function withColour(base: string, tint: string | null): string {
+  const label = noteColorLabel(tint)
+  return label ? `${base} (${label})` : base
+}
+async function setFolderColor(folderId: number, value: string | null) {
+  try {
+    await store.updateFolder(folderId, { color: value })
+  } catch {
+    /* the store already toasted the failure */
+  }
+}
+
+// Flatten the whole rail (search list OR the expand/collapse tree) into one
+// virtualizable array so only the visible slice renders — keeps the DOM flat
+// even with "All Notes" expanded over thousands of notes.
+interface TreeItem {
+  kind:
+    | 'header'
+    | 'tree-row'
+    | 'section'
+    | 'newfolder'
+    | 'empty'
+    | 'empty-folder'
+    | 'leaf'
+  text?: string
+  key?: string
+  label?: string
+  icon?: 'inbox' | 'file' | 'folder' | 'folderopen'
+  count?: number
+  expanded?: boolean
+  folderId?: number
+  folderName?: string
+  note?: NoteListItem | null
+  depth?: number
+  /** Leaf section ('all' | 'unfiled' | `f<folderId>`) or a notebook's parent
+   *  scope ('root' | `f<parentId>`) — identifies the reorder section (DND-3). */
+  sectionKey?: string
+}
+
+// Folder hierarchy: the store holds a flat list, but folders carry parent_id.
+// Group by parent so notebooks can nest (Obsidian-style, arbitrary depth).
+const foldersByParent = computed(() => {
+  const m = new Map<number | null, NoteFolderResponse[]>()
+  for (const f of store.folders) {
+    const arr = m.get(f.parent_id) ?? []
+    arr.push(f)
+    m.set(f.parent_id, arr)
+  }
+  return m
+})
+
+// depth-based left indent for nested rows.
+function rowIndent(depth = 0) {
+  return { paddingLeft: `${6 + depth * 12}px` }
+}
+
+// Recursively flatten a folder + its sub-folders + notes into virtualizable rows.
+function emitFolder(out: TreeItem[], f: NoteFolderResponse, depth: number) {
+  const k = String(f.id)
+  out.push({
+    kind: 'tree-row',
+    key: k,
+    label: f.name,
+    icon: isExpanded(k) ? 'folderopen' : 'folder',
+    count: f.note_count,
+    expanded: isExpanded(k),
+    folderId: f.id,
+    folderName: f.name,
+    depth,
+    sectionKey: f.parent_id == null ? 'root' : `f${f.parent_id}`,
+  })
+  if (!isExpanded(k)) return
+  const kids = foldersByParent.value.get(f.id) ?? []
+  for (const c of kids) emitFolder(out, c, depth + 1)
+  if (showNewFolder.value && newFolderParent.value === f.id) {
+    out.push({ kind: 'newfolder', depth: depth + 1 })
+  }
+  const here = notesIn(f.id)
+  if (!kids.length && !here.length)
+    out.push({ kind: 'empty-folder', depth: depth + 1 })
+  else
+    for (const n of here)
+      out.push({
+        kind: 'leaf',
+        note: n,
+        depth: depth + 1,
+        sectionKey: `f${f.id}`,
+      })
+}
+
+const flatTree = computed<TreeItem[]>(() => {
+  if (searchResults.value) {
+    const out: TreeItem[] = [
+      { kind: 'header', text: `Results · ${searchResults.value.length}` },
+    ]
+    if (!searchResults.value.length)
+      out.push({
+        kind: 'empty',
+        text: `No notes match “${searchQuery.value}”.`,
+        depth: 1,
+      })
+    else
+      for (const n of searchResults.value)
+        out.push({ kind: 'leaf', note: n, depth: 1 })
+    return out
+  }
+  const out: TreeItem[] = []
+  out.push({
+    kind: 'tree-row',
+    key: 'all',
+    label: 'All Notes',
+    icon: 'inbox',
+    count: allNotes.value.length,
+    expanded: isExpanded('all'),
+    depth: 0,
+  })
+  if (isExpanded('all')) {
+    if (!allNotes.value.length)
+      out.push({ kind: 'empty', text: 'No notes yet.', depth: 1 })
+    else
+      for (const n of allNotes.value)
+        out.push({ kind: 'leaf', note: n, depth: 1, sectionKey: 'all' })
+  }
+  out.push({
+    kind: 'tree-row',
+    key: 'unfiled',
+    label: 'Unfiled',
+    icon: 'file',
+    count: unfiledNotes.value.length,
+    expanded: isExpanded('unfiled'),
+    depth: 0,
+  })
+  if (isExpanded('unfiled')) {
+    if (!unfiledNotes.value.length)
+      out.push({ kind: 'empty', text: 'Nothing unfiled.', depth: 1 })
+    else
+      for (const n of unfiledNotes.value)
+        out.push({ kind: 'leaf', note: n, depth: 1, sectionKey: 'unfiled' })
+  }
+  out.push({ kind: 'section' })
+  if (showNewFolder.value && newFolderParent.value === null)
+    out.push({ kind: 'newfolder', depth: 0 })
+  const roots = foldersByParent.value.get(null) ?? []
+  if (!roots.length && !showNewFolder.value)
+    out.push({ kind: 'empty', text: 'No notebooks — click + to create one.' })
+  for (const f of roots) emitFolder(out, f, 0)
+  return out
+})
+const treeScrollEl = ref<HTMLElement | null>(null)
+const treeVirtualizer = useVirtualizer(
+  computed(() => ({
+    count: flatTree.value.length,
+    getScrollElement: () => treeScrollEl.value,
+    estimateSize: (i: number) =>
+      flatTree.value[i].kind === 'leaf'
+        ? 24
+        : flatTree.value[i].kind === 'newfolder'
+          ? 34
+          : 26,
+    overscan: 10,
+  })),
+)
+function iconFor(icon: TreeItem['icon']) {
+  if (icon === 'inbox') return Inbox
+  if (icon === 'folderopen') return FolderOpen
+  if (icon === 'folder') return Folder
+  return FileText
+}
+
+async function loadTags() {
+  try {
+    allTags.value = await tagsApi.list()
+  } catch {
+    allTags.value = []
+  }
+}
+
+async function selectNote(id: number) {
+  // Notes autosave is OFF — switching notes with unsaved edits used to drop
+  // them silently. Same discard confirm the page tabs already use.
+  if (noteEditorIsDirty()) {
+    const discard = await askConfirm({
+      title: 'Unsaved changes',
+      message:
+        'You have unsaved changes in this note. Discard them and switch?',
+    })
+    if (!discard) return
+  }
+  await store.selectNote(id)
+}
+
+// Keep the selected note's parent node expanded so it stays visible.
+watch(
+  () => store.currentNote?.id,
+  () => {
+    const n = store.currentNote
+    if (!n) return
+    const key = n.folder_id == null ? 'unfiled' : String(n.folder_id)
+    if (!expanded.value.has(key))
+      expanded.value = new Set([...expanded.value, key])
+  },
+)
+
+async function newNote() {
+  // Default to the selected note's notebook, else the first available.
+  let folderId: number | undefined
+  if (store.currentNote?.folder_id != null)
+    folderId = store.currentNote.folder_id
+  else if (store.folders.length) folderId = store.folders[0].id
+  if (folderId == null) {
+    toast.info('Create a notebook first — every note belongs to a notebook.')
+    return
+  }
+  const n = await store.createNote({ title: '', body: '', folder_id: folderId })
+  await store.fetchNotes()
+  await store.fetchFolders()
+  await store.selectNote(n.id)
+  expanded.value = new Set([...expanded.value, String(folderId)])
+}
+
+async function onDeleted() {
+  await Promise.all([store.fetchNotes(), store.fetchFolders()])
+}
+
+// Import a single Markdown (.md) file as a new note, then open it.
+const importingMd = ref(false)
+async function importMarkdown() {
+  const file = await pickFile({ accept: '.md,.markdown' })
+  if (!file) return
+  importingMd.value = true
+  try {
+    const res = await notesApi.importMarkdownFile(file)
+    if (!res.imported || res.note_id == null) {
+      toast.error('Could not import that file — is it a valid Markdown note?')
+      return
+    }
+    await Promise.all([store.fetchNotes(), store.fetchFolders()])
+    await store.selectNote(res.note_id)
+  } catch (e: unknown) {
+    toast.error(`Import failed: ${errorMessage(e)}`)
+  } finally {
+    importingMd.value = false
+  }
+}
+
+async function onTagCreated() {
+  await loadTags()
+}
+
+function startNewFolder(parentId: number | null = null) {
+  newFolderParent.value = parentId
+  newFolderName.value = ''
+  showNewFolder.value = true
+  // Make sure the target parent is expanded so the inline input is visible.
+  if (parentId != null) {
+    const key = String(parentId)
+    if (!expanded.value.has(key))
+      expanded.value = new Set([...expanded.value, key])
+  }
+  // The rail is virtualized: between setting showNewFolder and this tick the
+  // ref can still hold a recycled row's node (truthy, but not the input), and
+  // `?.` alone doesn't guard against a wrong-typed value.
+  nextTick(() => {
+    const el = folderInputRef.value
+    if (el && typeof el.focus === 'function') el.focus()
+  })
+}
+
+async function createFolder() {
+  const name = newFolderName.value.trim()
+  if (!name) return
+  try {
+    await store.createFolder(name, newFolderParent.value)
+    showNewFolder.value = false
+    newFolderName.value = ''
+    newFolderParent.value = null
+  } catch {
+    // The notes store already toasted the failure.
+  }
+}
+
+function cancelNewFolder() {
+  showNewFolder.value = false
+  newFolderName.value = ''
+  newFolderParent.value = null
+}
+
+// ── Inline note rename / delete (on each leaf) ──
+function startRenameNote(n: NoteListItem) {
+  editingNoteId.value = n.id
+  editingNoteTitle.value = n.title ?? ''
+  nextTick(() => renameNoteInputRef.value?.focus())
+}
+function cancelRenameNote() {
+  editingNoteId.value = null
+  editingNoteTitle.value = ''
+}
+async function commitRenameNote() {
+  const id = editingNoteId.value
+  const name = editingNoteTitle.value.trim()
+  editingNoteId.value = null
+  if (id == null || !name) return
+  try {
+    await store.updateNote(id, { title: name })
+    // searchResults is component-local (the store only patches the main list
+    // and currentNote) — keep it consistent so the rename isn't stale there.
+    if (searchResults.value)
+      searchResults.value = searchResults.value.map((n) =>
+        n.id === id ? { ...n, title: name } : n,
+      )
+  } catch {
+    // The notes store already toasted the failure.
+  }
+}
+async function deleteNoteInline(n: NoteListItem) {
+  const label = n.title?.trim() || 'this untitled note'
+  if (
+    !(await askConfirm({
+      title: 'Delete note',
+      message: `Delete “${label}”? It can be restored later.`,
+    }))
+  )
+    return
+  try {
+    await store.deleteNote(n.id)
+  } catch {
+    // The notes store already toasted the failure.
+  }
+}
+
+async function removeFolder(id: number, name: string) {
+  if (
+    !(await askConfirm({
+      title: 'Delete notebook',
+      message: `Delete notebook "${name}"? Its notes will be un-filed, not deleted.`,
+    }))
+  )
+    return
+  await store.deleteFolder(id)
+  await store.fetchNotes()
+}
+
+// ── Modal confirm gate (spec §9 ED9 — no native window.confirm) ──
+const confirmReq = ref<{ title: string; message: string } | null>(null)
+let confirmResolve: ((proceed: boolean) => void) | null = null
+function askConfirm(req: { title: string; message: string }): Promise<boolean> {
+  confirmReq.value = req
+  return new Promise((resolve) => {
+    confirmResolve = resolve
+  })
+}
+function settleConfirm(proceed: boolean) {
+  confirmReq.value = null
+  confirmResolve?.(proceed)
+  confirmResolve = null
+}
+
+// Debounced full-text search (notes-only FTS). `searchSeq` invalidates the
+// response of an older request that resolves after a newer one — typing fast
+// used to let the first query's (slower) result overwrite the latest.
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+let searchSeq = 0
+watch(searchQuery, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  const seq = ++searchSeq
+  searchTimer = setTimeout(async () => {
+    const trimmed = q.trim()
+    if (!trimmed) {
+      searchResults.value = null
+      return
+    }
+    try {
+      const res = await notesApi.search(trimmed, 0, 100)
+      if (seq !== searchSeq) return // a newer keystroke already superseded this
+      searchResults.value = sortedNotes(res.items)
+    } catch (e: unknown) {
+      if (seq !== searchSeq) return
+      searchResults.value = []
+      toast.error(`Note search failed: ${errorMessage(e)}`)
+    }
+  }, 300)
+})
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
+
+onMounted(async () => {
+  ui.setView('notes')
+  await Promise.all([store.fetchNotes(), store.fetchFolders(), loadTags()])
+  // Land on the most-recently-edited note (pinned first) instead of creating
+  // an empty note every time Notes opens — that littered the DB with untitled
+  // notes. If there are none yet, the empty-state panel (with its "New note"
+  // button) is shown.
+  const target = sortedNotes(store.notes)[0]
+  if (target) await store.selectNote(target.id)
+})
+</script>
+
+<template>
+  <div class="flex h-full bg-surface">
+    <!-- Tree rail (notebooks → notes) — resizable -->
+    <aside
+      class="flex shrink-0 flex-col border-r border-border bg-editor/30"
+      :style="{ width: railWidth + 'px' }"
+    >
+      <!-- Header -->
+      <div class="flex items-center gap-1.5 border-b border-border px-3 py-2.5">
+        <NotebookPen :size="15" class="text-accent" />
+        <span class="text-sm font-semibold text-text-primary">Notes</span>
+        <span class="text-[10px] text-text-muted">({{ store.total }})</span>
+        <span class="flex-1" />
+        <button
+          class="rounded p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-accent disabled:opacity-50"
+          :disabled="importingMd"
+          :title="importingMd ? 'Importing…' : 'Import a Markdown (.md) note'"
+          :aria-label="importingMd ? 'Importing…' : 'Import a Markdown note'"
+          @click="importMarkdown"
+        >
+          <Upload :size="13" />
+        </button>
+      </div>
+
+      <!-- Search -->
+      <div class="border-b border-border px-2 py-2">
+        <div class="relative">
+          <Search
+            :size="12"
+            class="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted"
+          />
+          <input
+            v-model="searchQuery"
+            placeholder="Search notes…"
+            class="w-full rounded border border-border bg-surface-hover py-1.5 pl-7 pr-7 text-[11px] text-text-primary outline-none focus:border-accent"
+          />
+          <button
+            v-if="searchQuery"
+            @click="searchQuery = ''"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+            title="Clear search"
+            aria-label="Clear search"
+          >
+            <X :size="12" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Tree body -->
+      <div
+        ref="treeScrollEl"
+        role="tree"
+        aria-label="Notebooks and notes"
+        :aria-busy="dropBusy"
+        class="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 py-2"
+        @keydown="onTreeKeydown"
+      >
+        <div
+          :style="{
+            height: `${treeVirtualizer.getTotalSize()}px`,
+            position: 'relative',
+          }"
+        >
+          <div
+            v-for="vr in treeVirtualizer.getVirtualItems()"
+            :key="String(vr.key)"
+            :style="{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${vr.start}px)`,
+            }"
+          >
+            <!-- header (search results count) -->
+            <div v-if="flatTree[vr.index].kind === 'header'" class="px-1 pb-1">
+              <span
+                class="text-[9px] font-bold uppercase tracking-wider text-text-muted"
+                >{{ flatTree[vr.index].text }}</span
+              >
+            </div>
+            <!-- tree-row (expandable group) -->
+            <div
+              v-else-if="flatTree[vr.index].kind === 'tree-row'"
+              class="group flex items-center gap-0.5 rounded"
+              :class="{
+                'drop-into':
+                  dropTarget &&
+                  sameTarget(dropTarget, rowTarget(flatTree[vr.index])),
+                'drop-line-above':
+                  dropLine(flatTree[vr.index]) === 'above',
+                'drop-line-below':
+                  dropLine(flatTree[vr.index]) === 'below',
+              }"
+              :style="rowIndent(flatTree[vr.index].depth)"
+              @dragover="markDrop($event, folderRowTarget(flatTree[vr.index], $event))"
+              @drop="applyDrop($event, folderRowTarget(flatTree[vr.index], $event))"
+              @dragleave="clearDropIfLeft"
+            >
+              <button
+                class="tree-row flex-1"
+                role="treeitem"
+                :data-tree-key="flatTree[vr.index].key"
+                :draggable="flatTree[vr.index].folderId != null"
+                @dragstart="
+                  flatTree[vr.index].folderId != null &&
+                    startRowDrag($event, {
+                      kind: 'folder',
+                      id: flatTree[vr.index].folderId!,
+                    })
+                "
+                @dragend="endRowDrag"
+                :aria-expanded="flatTree[vr.index].expanded"
+                :aria-selected="
+                  store.currentNote?.folder_id === flatTree[vr.index].folderId
+                "
+                :aria-level="(flatTree[vr.index].depth ?? 0) + 1"
+                :aria-label="
+                  withColour(
+                    flatTree[vr.index].label!,
+                    folderTint(flatTree[vr.index].folderId),
+                  )
+                "
+                @click="toggleExpand(flatTree[vr.index].key!)"
+              >
+                <span
+                  v-if="folderTint(flatTree[vr.index].folderId)"
+                  class="folder-stripe"
+                  :style="{
+                    background: folderTint(flatTree[vr.index].folderId)!,
+                  }"
+                  aria-hidden="true"
+                />
+                <ChevronRight
+                  :size="13"
+                  class="chevron shrink-0"
+                  :class="{ open: flatTree[vr.index].expanded }"
+                />
+                <component :is="iconFor(flatTree[vr.index].icon!)" :size="12" />
+                <span class="flex-1 truncate text-left">{{
+                  flatTree[vr.index].label
+                }}</span>
+                <span class="count">{{ flatTree[vr.index].count }}</span>
+              </button>
+              <button
+                v-if="flatTree[vr.index].folderId != null"
+                @click="startNewFolder(flatTree[vr.index].folderId!)"
+                class="rounded p-1 text-text-muted opacity-0 transition-all hover:bg-surface-hover hover:text-accent group-hover:opacity-100"
+                title="New sub-notebook"
+                aria-label="New sub-notebook"
+              >
+                <FolderPlus :size="11" />
+              </button>
+              <button
+                v-if="flatTree[vr.index].folderId != null"
+                @click="
+                  removeFolder(
+                    flatTree[vr.index].folderId!,
+                    flatTree[vr.index].folderName!,
+                  )
+                "
+                class="rounded p-1 text-text-muted opacity-0 transition-all hover:bg-surface-hover hover:text-red-400 group-hover:opacity-100"
+                title="Delete notebook"
+                aria-label="Delete notebook"
+              >
+                <Trash2 :size="11" />
+              </button>
+              <NoteColorPicker
+                v-if="flatTree[vr.index].folderId != null"
+                :model-value="folderColorRaw(flatTree[vr.index].folderId)"
+                noun="notebook"
+                class="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                @update:model-value="
+                  setFolderColor(flatTree[vr.index].folderId!, $event)
+                "
+              />
+              <FolderMovePicker
+                v-if="flatTree[vr.index].folderId != null"
+                :folder-id="flatTree[vr.index].folderId!"
+                :parent-id="folderParent(flatTree[vr.index].folderId)"
+                :folders="store.folders"
+                class="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                @move="moveFolder(flatTree[vr.index].folderId!, $event)"
+              />
+            </div>
+            <!-- section (Notebooks label + new-folder button) -->
+            <div
+              v-else-if="flatTree[vr.index].kind === 'section'"
+              class="flex items-center justify-between px-1 pb-1 pt-3"
+              :class="{ 'drop-into': dropTarget?.kind === 'root' }"
+              @dragover="markDrop($event, { kind: 'root' })"
+              @drop="applyDrop($event, { kind: 'root' })"
+              @dragleave="clearDropIfLeft"
+            >
+              <span
+                class="text-[9px] font-bold uppercase tracking-wider text-text-muted"
+                >Notebooks</span
+              >
+              <button
+                @click="startNewFolder(null)"
+                class="rounded p-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-accent"
+                title="New notebook"
+                aria-label="New notebook"
+              >
+                <FolderPlus :size="12" />
+              </button>
+            </div>
+            <!-- inline new-notebook / sub-notebook input -->
+            <div
+              v-else-if="flatTree[vr.index].kind === 'newfolder'"
+              class="flex items-center gap-1 px-1 pb-1"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
+              <input
+                ref="folderInputRef"
+                v-model="newFolderName"
+                placeholder="Notebook name…"
+                class="flex-1 rounded border border-border bg-surface-hover px-2 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+                @keydown.enter="createFolder"
+                @keydown.esc="cancelNewFolder"
+              />
+              <button
+                @click="createFolder"
+                class="rounded bg-accent p-1 text-white transition-colors hover:bg-accent/90"
+                title="Create"
+                aria-label="Create notebook"
+              >
+                <Check :size="11" />
+              </button>
+              <button
+                @click="cancelNewFolder"
+                class="rounded p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+                title="Cancel"
+                aria-label="Cancel creating notebook"
+              >
+                <X :size="11" />
+              </button>
+            </div>
+            <!-- empty state -->
+            <div
+              v-else-if="flatTree[vr.index].kind === 'empty'"
+              class="px-2 py-1.5 text-[10px] italic text-text-muted"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
+              {{ flatTree[vr.index].text }}
+            </div>
+            <!-- empty folder (with add-note action) -->
+            <div
+              v-else-if="flatTree[vr.index].kind === 'empty-folder'"
+              class="px-2 py-1.5 text-[10px] italic text-text-muted"
+              :style="rowIndent(flatTree[vr.index].depth)"
+            >
+              Empty —
+              <button class="text-accent hover:underline" @click="newNote">
+                add a note
+              </button>
+            </div>
+            <!-- note leaf: click to open · double-click to rename · hover for edit/delete -->
+            <div
+              v-else
+              class="note-leaf group"
+              :class="{
+                active: store.currentNote?.id === flatTree[vr.index].note!.id,
+                'drop-line-above':
+                  dropLine(flatTree[vr.index]) === 'above',
+                'drop-line-below':
+                  dropLine(flatTree[vr.index]) === 'below',
+              }"
+              :style="rowIndent(flatTree[vr.index].depth)"
+              @dragover="markDrop($event, noteInsertTarget(flatTree[vr.index], $event))"
+              @drop="applyDrop($event, dropTarget)"
+              @dragleave="clearDropIfLeft"
+            >
+              <input
+                v-if="editingNoteId === flatTree[vr.index].note!.id"
+                ref="renameNoteInputRef"
+                v-model="editingNoteTitle"
+                class="rename-note-input"
+                @keydown.enter.prevent="commitRenameNote"
+                @keydown.esc.prevent="cancelRenameNote"
+                @blur="commitRenameNote"
+              />
+              <template v-else>
+                <button
+                  class="note-leaf-main"
+                  role="treeitem"
+                  draggable="true"
+                  @dragstart="
+                    startRowDrag($event, {
+                      kind: 'note',
+                      id: flatTree[vr.index].note!.id,
+                    })
+                  "
+                  @dragend="endRowDrag"
+                  :aria-selected="store.currentNote?.id === flatTree[vr.index].note!.id"
+                  :aria-level="(flatTree[vr.index].depth ?? 0) + 1"
+                  :title="leafLabel(flatTree[vr.index].note!)"
+                  :aria-label="
+                    withColour(
+                      leafLabel(flatTree[vr.index].note!),
+                      noteTint(flatTree[vr.index].note!),
+                    )
+                  "
+                  @click="selectNote(flatTree[vr.index].note!.id)"
+                  @dblclick="startRenameNote(flatTree[vr.index].note!)"
+                >
+                  <span
+                    v-if="noteTint(flatTree[vr.index].note!)"
+                    class="note-dot"
+                    :style="{
+                      background: noteTint(flatTree[vr.index].note!)!,
+                    }"
+                    aria-hidden="true"
+                  />
+                  <FileText
+                    :size="12"
+                    class="shrink-0"
+                    :class="
+                      flatTree[vr.index].note!.is_pinned
+                        ? 'text-accent'
+                        : 'text-text-muted'
+                    "
+                  />
+                  <span class="flex-1 truncate">{{
+                    leafLabel(flatTree[vr.index].note!)
+                  }}</span>
+                  <Pin
+                    v-if="flatTree[vr.index].note!.is_pinned"
+                    :size="9"
+                    class="shrink-0 text-accent"
+                  />
+                  <Lock
+                    v-if="flatTree[vr.index].note!.is_encrypted"
+                    :size="9"
+                    class="shrink-0 text-text-muted"
+                  />
+                </button>
+                <button
+                  class="note-leaf-action"
+                  title="Rename"
+                  aria-label="Rename note"
+                  @click.stop="startRenameNote(flatTree[vr.index].note!)"
+                >
+                  <Pencil :size="11" />
+                </button>
+                <button
+                  class="note-leaf-action"
+                  title="Delete note"
+                  aria-label="Delete note"
+                  @click.stop="deleteNoteInline(flatTree[vr.index].note!)"
+                >
+                  <Trash2 :size="11" />
+                </button>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Resize handle between tree and editor -->
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize notebooks rail"
+      class="shrink-0 w-1 cursor-col-resize transition-colors"
+      :class="railDragging ? 'bg-accent' : 'bg-border hover:bg-accent/60'"
+      title="Drag to resize"
+      @mousedown="onRailMousedown"
+    >
+      <div class="h-full w-full" :style="{ cursor: 'col-resize' }" />
+    </div>
+
+    <!-- Editor -->
+    <div class="flex min-w-0 flex-1 flex-col">
+      <NoteEditor
+        v-if="store.currentNote"
+        ref="editorRef"
+        :key="store.currentNote.id"
+        :note="store.currentNote"
+        :folders="store.folders"
+        :all-tags="allTags"
+        @deleted="onDeleted"
+        @tag-created="onTagCreated"
+        @new-note="newNote"
+      />
+      <div
+        v-else
+        class="flex flex-1 flex-col items-center justify-center gap-3 text-text-muted"
+      >
+        <div
+          class="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10"
+        >
+          <NotebookPen :size="28" class="text-accent/60" />
+        </div>
+        <div class="text-center">
+          <p class="text-sm font-medium text-text-secondary">
+            No note selected
+          </p>
+          <p v-if="store.folders.length" class="mt-0.5 text-xs">
+            Pick a note from the tree or create a new one.
+          </p>
+          <p v-else class="mt-0.5 text-xs">
+            Create your first notebook — every note lives in one.
+          </p>
+        </div>
+        <!-- No notebooks yet: the "New note" toast dead-end used to strand
+             first-run users here. Guide them to the real prerequisite. -->
+        <button
+          v-if="store.folders.length"
+          @click="newNote"
+          class="mt-1 flex items-center gap-1 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent/90"
+        >
+          <Plus :size="12" /> New note
+        </button>
+        <button
+          v-else
+          @click="startNewFolder(null)"
+          class="mt-1 flex items-center gap-1 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent/90"
+        >
+          <FolderPlus :size="12" /> Create your first notebook
+        </button>
+      </div>
+    </div>
+    <!-- Inside the root element so NotesView stays single-root and the
+         route-fade <Transition> can actually animate it. -->
+    <ConfirmDialog
+      v-if="confirmReq"
+      :title="confirmReq.title"
+      :message="confirmReq.message"
+      @confirm="settleConfirm(true)"
+      @cancel="settleConfirm(false)"
+    />
+  </div>
+</template>
+
+<style scoped>
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.32rem 0.4rem;
+  border-radius: 0.375rem;
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.tree-row:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+/* Drop target highlight while a note/notebook is dragged over a row. */
+.drop-into {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+/* Between-row insertion line (DND-3): an accent bar on the edge of the row the
+   drop would land above/below. Rows are virtualized (translateY wrappers), so
+   the line lives on the row itself rather than in a separate element. */
+.drop-line-above {
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+.drop-line-below {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+/* Colour label: a 3px stripe on notebooks, a dot on notes. Presentational
+   only — the row's aria-label names the colour, so it is never the sole cue. */
+.folder-stripe {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  margin-right: 1px;
+}
+.note-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+}
+.chevron {
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+.chevron.open {
+  transform: rotate(90deg);
+}
+.count {
+  font-size: 9px;
+  color: var(--color-text-muted);
+}
+.note-leaf {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.22rem 0.4rem;
+  border-radius: 0.375rem;
+  color: var(--color-text-secondary);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.note-leaf:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+.note-leaf.active {
+  background: rgba(88, 117, 247, 0.15);
+  color: var(--color-accent);
+  font-weight: 500;
+}
+.note-leaf-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.06rem 0.1rem;
+  background: transparent;
+  border: none;
+  font-size: 11.5px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.note-leaf-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0.15rem 0.2rem;
+  border-radius: 0.25rem;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+}
+.note-leaf:hover .note-leaf-action,
+.note-leaf.active .note-leaf-action {
+  opacity: 1;
+}
+.note-leaf-action:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+.rename-note-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.1rem 0.35rem;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-accent);
+  border-radius: 0.25rem;
+  font-size: 11.5px;
+  color: var(--color-text-primary);
+  outline: none;
+}
+</style>

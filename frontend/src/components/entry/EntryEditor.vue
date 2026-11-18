@@ -1,0 +1,2142 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useEntriesStore } from '../../stores/entries'
+import { useTagsStore } from '../../stores/tags'
+import { useUiStore } from '../../stores/ui'
+import {
+  X,
+  Eye,
+  Edit3,
+  Minimize2,
+  Maximize2,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  Sparkles,
+  Plus,
+  Lock,
+  Trash2,
+  Tag,
+  Volume2,
+  Paperclip,
+  LayoutTemplate,
+  Loader,
+  Pause,
+  CalendarClock,
+  Mic,
+  Square,
+} from 'lucide-vue-next'
+import EncryptionBadge from './EncryptionBadge.vue'
+import ConfirmDialog from '../common/ConfirmDialog.vue'
+import { ApiError, isTauri } from '../../api/client'
+import { entriesApi } from '../../api/entries'
+import EditorToolbar from '../editor/EditorToolbar.vue'
+import EditorStatusBar from './EditorStatusBar.vue'
+import EditorContextMenu from '../editor/EditorContextMenu.vue'
+import MediaViewer from '../media/MediaViewer.vue'
+import MediaGrid from '../media/MediaGrid.vue'
+import TemplatePicker from '../templates/TemplatePicker.vue'
+import EmojiPicker from '../common/EmojiPicker.vue'
+import { useTemplatesStore } from '../../stores/templates'
+import { aiStatus, suggestTags } from '../../api/ai'
+import { mediaApi } from '../../api/media'
+import type {
+  EntryCreate,
+  EntryUpdate,
+  MediaResponse,
+} from '../../types'
+import { encryptText, decryptText } from '../../api/encryption'
+import {
+  isoToDDMMYYYYInput,
+  maskDDMMYYYY,
+  parseDDMMYYYY,
+} from '../../composables/useFormat'
+import { useTtsStore } from '../../stores/tts'
+import { useDragDrop } from '../../composables/useDragDrop'
+import { useLocalStorage } from '@vueuse/core'
+import { useMarkdownPreview } from '../../composables/useMarkdownPreview'
+import { useRichTextEditor } from '../../composables/useRichTextEditor'
+import { countWords } from '../../utils/text'
+import { deriveTitle } from '../../utils/autoTitle'
+import { useAttachments } from '../../composables/useAttachments'
+import { usePasteMedia } from '../../composables/usePasteMedia'
+import { useResizableMedia } from '../../composables/useResizableMedia'
+import { useTauriDragDrop } from '../../composables/useTauriDragDrop'
+import {
+  applyMediaSize,
+  initialMediaSize,
+  insertOcrBelowImage,
+  withSizeParams,
+} from '../../utils/markdownMedia'
+import { useAutoSave } from '../../composables/useAutoSave'
+import {
+  useRecordings,
+  provideRecordings,
+} from '../../composables/useRecordings'
+import FloatingRecorder from '../recordings/FloatingRecorder.vue'
+import EntryRecordings from '../recordings/EntryRecordings.vue'
+import FloatingPlayback from '../recordings/FloatingPlayback.vue'
+import { errorMessage } from '../../utils/errorMessage'
+import { useToastStore } from '../../stores/toast'
+
+const toast = useToastStore()
+
+const entries = useEntriesStore()
+const ui = useUiStore()
+const tts = useTtsStore()
+
+const isNew = computed(() => ui.editingEntryId === -1)
+const hasEntry = computed(
+  () => ui.editingEntryId != null && ui.editingEntryId > 0,
+)
+
+// ── Voice recordings: floating recorder + embedded memo list + floating player ──
+// One shared instance (provided below) keeps all three UI pieces in sync. Capture
+// itself runs in the backend; this only drives the UI + local playback <audio>.
+async function ensureSavedForRecording(): Promise<boolean> {
+  if (hasEntry.value) return true
+  await save()
+  return hasEntry.value
+}
+const recordingsState = useRecordings(
+  () => ui.editingEntryId,
+  ensureSavedForRecording,
+)
+provideRecordings(recordingsState)
+// Toolbar trigger: the mic sits next to the read-aloud speaker (bottom bar)
+// instead of floating over the editor. The pill stays a popover above it.
+const {
+  recording: voiceRecording,
+  uploading: voiceUploading,
+  toggleRecord: toggleVoiceRecord,
+} = recordingsState
+const title = ref('')
+const body = ref('')
+const tagIds = ref<number[]>([])
+const entryDate = ref('')
+// Masked dd-mm-yyyy mirror of entryDate — the journal's date display standard.
+// entryDate stays ISO (API contract); dateDisplay is what the user edits.
+const dateDisplay = ref('')
+const dateInvalid = ref(false)
+
+/** Keep the dd-mm-yyyy mask while typing (maskDDMMYYYY) and mirror to ISO. */
+function onDateInput(e: Event) {
+  const el = e.target as HTMLInputElement
+  const masked = maskDDMMYYYY(el.value)
+  dateDisplay.value = masked
+  // Preserve caret at the end of typed content (simplest correct behavior).
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = masked.length
+  })
+  const iso = parseDDMMYYYY(masked)
+  if (iso) {
+    entryDate.value = iso
+    dateInvalid.value = false
+  } else if (masked.replace(/\D/g, '').length === 8) {
+    dateInvalid.value = true // complete but not a real calendar date
+  }
+}
+
+function onDateBlur() {
+  const iso = parseDDMMYYYY(dateDisplay.value)
+  if (iso) {
+    entryDate.value = iso
+    dateInvalid.value = false
+    dateDisplay.value = isoToDDMMYYYYInput(iso)
+  } else if (dateDisplay.value.trim()) {
+    dateInvalid.value = true
+  } else {
+    dateInvalid.value = false
+  }
+}
+
+/** Programmatic entryDate setter (load paths): keep the mask in sync. */
+function setEntryDate(iso: string) {
+  entryDate.value = iso
+  dateDisplay.value = isoToDDMMYYYYInput(iso)
+  dateInvalid.value = false
+}
+// ── Mood (spec §9 ED10) ──
+// No mood selector in the editor anymore, but the field still round-trips:
+// `mood` is loaded from the entry and re-sent on save so an existing value
+// survives a body edit (the API/model are unchanged).
+const mood = ref('')
+
+const showPreview = ref(false)
+// OCR language + busy flag for inline image OCR (parity with the Note editor).
+const ocrLang = useLocalStorage<string>('lifelogr-ocr-language', 'eng')
+// Auto-OCR images on attach (Settings → Appearance). Off = embed image only.
+const autoOcr = useLocalStorage<boolean>('lifelogr-auto-ocr-images', false)
+// Auto-title: fills an empty title from the body's first line on save. Cleared
+// while the user is typing a title (or deliberately emptied it).
+const autoTitleEnabled = useLocalStorage<boolean>('lifelogr-auto-title', true)
+const titleTouched = ref(false)
+const titleSuggestion = computed(() =>
+  !title.value.trim() && autoTitleEnabled.value ? deriveTitle(body.value) : '',
+)
+const ocrBusy = ref(false)
+const fullscreen = ref(false)
+const textarea = ref<HTMLTextAreaElement | null>(null)
+const showTemplates = ref(false)
+const showEmoji = ref(false)
+const viewerOpen = ref(false)
+const viewerIndex = ref(0)
+const showTagDropdown = ref(false)
+const aiAvailable = ref<boolean | null>(null)
+const suggestedTags = ref<string[]>([])
+const suggestingTags = ref(false)
+// Read-aloud drives the shared tts store; these mirror it for this screen.
+const ttsText = computed(() =>
+  [title.value, body.value].filter(Boolean).join('\n\n'),
+)
+const ttsPlaying = computed(() =>
+  hasEntry.value && !isEncrypted.value
+    ? tts.isPlayingEntry(ui.editingEntryId!)
+    : tts.isPlayingText(ttsText.value),
+)
+const ttsLoading = computed(() =>
+  hasEntry.value && !isEncrypted.value
+    ? tts.isLoadingEntry(ui.editingEntryId!)
+    : tts.isLoadingText(ttsText.value),
+)
+const isEncrypted = ref(false)
+const focusMode = ref(false)
+const typewriterMode = ref(false)
+const showToolbar = ref(false)
+const showContextMenu = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
+const defaultTemplateId = useLocalStorage<number | null>(
+  'lifelogr-default-template',
+  null,
+)
+// Which template the current entry was created from. Captured at creation
+// (default auto-apply or explicit pick) and sent once on create, powering the
+// Timeline template filter. null = blank / no template.
+const selectedTemplateId = ref<number | null>(null)
+
+// ── Shared editing core (selection, formatting, history, find, AI, shortcuts) ──
+const {
+  cacheSelection,
+  clearSelCache,
+  startSelCache,
+  getSelection,
+  applyToSelection,
+  insertAtCursor,
+  prependLine,
+  actions,
+  activeFormats,
+  undoStack,
+  redoStack,
+  pushHistory,
+  showFind,
+  findQuery,
+  replaceQuery,
+  findIndex,
+  findCount,
+  jumpToMatch,
+  replaceOne,
+  replaceAll,
+  onTextareaKeydown,
+  onShortcutKeydown,
+  onInput,
+  aiLoading,
+  aiResult,
+  aiResultMode,
+  aiTruncation,
+  aiParamValue,
+  runAiTool,
+  aiResultReplace,
+  aiResultInsert,
+  aiResultRetry,
+  aiResultCopy,
+  applyToolParam,
+  clearAiResult,
+} = useRichTextEditor({
+  body,
+  textarea,
+  onChange: markChanged,
+  onSave: save,
+})
+
+// Spec §9 ED1: one heading set (H1–H4 + paragraph) in both editors. The shared
+// core ships H1–H3, so the shell completes the set — `actions` is the same
+// record the toolbar dispatches into.
+actions.h4 = () => prependLine('#### ')
+actions.paragraph = () => {
+  const el = textarea.value
+  if (!el) return
+  const pos = el.selectionStart
+  const lineStart = body.value.lastIndexOf('\n', pos - 1) + 1
+  const lineEnd = body.value.indexOf('\n', pos)
+  const old = body.value.slice(lineStart, lineEnd < 0 ? undefined : lineEnd)
+  const next = old.replace(/^\s{0,3}#{1,6}\s+/, '')
+  if (next === old) return // already a paragraph line
+  body.value = body.value.slice(0, lineStart) + next + body.value.slice(lineEnd < 0 ? body.value.length : lineEnd)
+  onInput()
+  nextTick(() => {
+    el.focus()
+    el.selectionStart = el.selectionEnd = Math.max(lineStart, pos - (old.length - next.length))
+  })
+}
+
+// ── Tags are explicit (managed in the chip row at the bottom of the editor)
+//    and sent as tag_ids on save — a #token in the body is plain text. ──
+const tagsStore = useTagsStore()
+if (!tagsStore.tags.length) void tagsStore.fetchTree()
+const entryTagChips = computed(() =>
+  tagIds.value.flatMap((id) => {
+    const t = tagsStore.tags.find((x) => x.id === id)
+    return t ? [t] : []
+  }),
+)
+const tagQuery = ref('')
+const tagMenuActive = ref(false)
+const tagMenuIndex = ref(0)
+// Existing tags matching the query, minus already-chosen ones.
+const tagMenuRows = computed(() => {
+  const q = tagQuery.value.trim().toLowerCase()
+  return tagsStore.tags
+    .filter((t) => !tagIds.value.includes(t.id))
+    .filter((t) => !q || t.name.toLowerCase().includes(q))
+    .slice(0, 6)
+})
+async function addTag(name: string) {
+  const clean = name.trim().replace(/^#/, '')
+  if (!clean) return
+  const existing = tagsStore.tags.find((t) => t.name.toLowerCase() === clean.toLowerCase())
+  let id = existing?.id
+  if (id == null) {
+    try {
+      const created = await tagsStore.createTag({ name: clean })
+      if (created) id = created.id
+    } catch {
+      toast.error(`Couldn't create tag "${clean}"`)
+      return
+    }
+  }
+  if (id == null || tagIds.value.includes(id)) return
+  tagIds.value = [...tagIds.value, id]
+  markChanged()
+  tagQuery.value = ''
+  tagMenuActive.value = false
+  tagMenuIndex.value = 0
+}
+function removeTag(id: number) {
+  tagIds.value = tagIds.value.filter((t) => t !== id)
+  markChanged()
+}
+function onTagQueryKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && tagMenuRows.value.length) {
+    e.preventDefault()
+    void addTag(tagMenuRows.value[tagMenuIndex.value]?.name ?? tagQuery.value)
+  } else if (e.key === 'Escape') {
+    tagMenuActive.value = false
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    tagMenuIndex.value = Math.min(tagMenuIndex.value + 1, tagMenuRows.value.length - 1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    tagMenuIndex.value = Math.max(tagMenuIndex.value - 1, 0)
+  }
+}
+function onEditorInput() {
+  onInput()
+}
+function onEditorKeydownCapture(e: KeyboardEvent) {
+  onShortcutKeydown(e)
+}
+function onEditorBlur() {
+  startSelCache()
+}
+
+const { attachments, loadAttachments, handleFileUpload, removeAttachment } =
+  useAttachments(
+    () => hasEntry.value,
+    () => ui.editingEntryId ?? null,
+    () => entries.refreshAll(),
+  )
+const fileInput = ref<HTMLInputElement | null>(null)
+
+// Drag & Drop
+const { isDragging, handlers: dragHandlers } = useDragDrop()
+
+// Auto-save composable
+const {
+  triggerAutosave,
+  cancelSave,
+  whenIdle,
+  saveState: saveActive,
+} = useAutoSave({
+  isNew,
+  hasEntry,
+  body,
+  title,
+  entryDate,
+  tagIds,
+  templateId: () => selectedTemplateId.value,
+  editingEntryId: computed(() => ui.editingEntryId),
+  snapshot,
+  createEntry: (data) => entries.createEntry(data),
+  updateEntry: (id, data) => entries.updateEntry(id, data),
+  setEditingEntryId: (id) => {
+    ui.editingEntryId = id
+  },
+})
+
+
+// ── Dirty tracking ──
+const dirty = ref(false)
+const savedSnapshot = ref('')
+
+function markDirty() {
+  dirty.value = true
+  ui.editorIsDirty = true
+}
+
+/** Core onChange hook: mark dirty + (journal-only) typewriter scroll + autosave. */
+function markChanged() {
+  markDirty()
+  if (typewriterMode.value) {
+    nextTick(() => {
+      const el = textarea.value
+      if (!el) return
+      const { selectionStart } = el
+      const lines = body.value.slice(0, selectionStart).split('\n').length
+      const lineHeight = 24 // approximate px
+      const targetScroll = lines * lineHeight - el.clientHeight / 2
+      el.scrollTo({ top: targetScroll, behavior: 'smooth' })
+    })
+  }
+  triggerAutosave()
+}
+
+function snapshot(saved?: { body: string; title: string | null; tagIds: number[] }) {
+  // Record what actually persisted. Callers that just saved pass the payload
+  // they sent: reading the live refs after the request would capture
+  // keystrokes typed mid-flight and silently drop them.
+  const savedTitle = saved ? saved.title ?? '' : title.value
+  savedSnapshot.value = JSON.stringify({
+    body: saved?.body ?? body.value,
+    title: savedTitle,
+    tagIds: saved?.tagIds ?? tagIds.value,
+  })
+  dirty.value = false
+  ui.editorIsDirty = false
+  // Content just persisted — it is the new crash-recovery baseline.
+  draftBaseline = { title: savedTitle, body: saved?.body ?? body.value }
+}
+
+function isDirty(): boolean {
+  if (dirty.value) return true
+  const current = JSON.stringify({
+    body: body.value,
+    title: title.value,
+    tagIds: tagIds.value,
+  })
+  return current !== savedSnapshot.value
+}
+
+// ── Modal prompt (spec §9 ED9 — native window.prompt is banned here) ──
+// One small in-editor dialog serves the credential/title prompts: entry title
+// on create, encryption passphrases. Resolves null on cancel.
+interface PromptRequest {
+  title: string
+  message?: string
+  placeholder?: string
+  password?: boolean
+}
+const promptReq = ref<PromptRequest | null>(null)
+const promptValue = ref('')
+const promptInput = ref<HTMLInputElement | null>(null)
+let promptResolve: ((value: string | null) => void) | null = null
+
+function askPrompt(req: PromptRequest): Promise<string | null> {
+  promptValue.value = ''
+  promptReq.value = req
+  void nextTick(() => promptInput.value?.focus())
+  return new Promise((resolve) => {
+    promptResolve = resolve
+  })
+}
+function submitPrompt() {
+  const value = promptValue.value
+  promptReq.value = null
+  promptResolve?.(value)
+  promptResolve = null
+}
+function cancelPrompt() {
+  promptReq.value = null
+  promptResolve?.(null)
+  promptResolve = null
+}
+
+// ── Crash-recovery draft (spec §9 ED11) ──
+// Same contract as the notes editor's crash mirror: a debounced localStorage
+// mirror, restore/discard prompt, encrypted bodies never mirrored, clean
+// saves/closes discard the draft — only unclean exits offer restore. It lives
+// in this file (not useDraftRecovery) because the journal editor stays mounted
+// across entries: the mirror is per-entry, rescan runs on every load, and the
+// close path here must suppress the unmount flush.
+const ENTRY_DRAFTS_KEY = 'lifelogr-entry-drafts'
+interface EntryDraft {
+  title: string
+  body: string
+  savedAt: number
+}
+const pendingDraft = ref<EntryDraft | null>(null)
+let draftBaseline = { title: '', body: '' }
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+/** Set by close() so the unmount flush can't resurrect a discarded draft. */
+let draftCleanExit = false
+
+function draftId(): string {
+  return String(ui.editingEntryId ?? -1)
+}
+function readDrafts(): Record<string, EntryDraft> {
+  try {
+    const raw = localStorage.getItem(ENTRY_DRAFTS_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, EntryDraft>)
+      : {}
+  } catch {
+    return {} // corrupt/unavailable storage must never block the editor
+  }
+}
+function writeDraft(id: string, draft: EntryDraft | null) {
+  try {
+    const all = readDrafts()
+    if (draft) all[id] = draft
+    else delete all[id]
+    localStorage.setItem(ENTRY_DRAFTS_KEY, JSON.stringify(all))
+  } catch {
+    /* quota / privacy mode — keep writing */
+  }
+}
+function draftIsUnsaved(): boolean {
+  return (
+    title.value !== draftBaseline.title || body.value !== draftBaseline.body
+  )
+}
+/** Mirror the buffers now (no debounce) — before a buffer swap / unmount.
+ *  Takes the id explicitly: callers that flush a *switching-out* entry run
+ *  after ui.editingEntryId already moved, so the default would misfile the
+ *  outgoing buffers under the incoming entry's key. */
+function flushDraft(id: string = draftId()) {
+  if (isEncrypted.value || !draftIsUnsaved()) return
+  if (!title.value && !body.value) return
+  writeDraft(id, {
+    title: title.value,
+    body: body.value,
+    savedAt: Date.now(),
+  })
+}
+/** Called after the buffers are (re)loaded or saved — this is the baseline the
+ *  differ compares against, so a stored draft that matches it is not a loss. */
+function rescanDraft() {
+  draftBaseline = { title: title.value, body: body.value }
+  if (isEncrypted.value) {
+    writeDraft(draftId(), null)
+    pendingDraft.value = null
+    return
+  }
+  const stored = readDrafts()[draftId()]
+  pendingDraft.value =
+    stored && (stored.title || stored.body) && draftIsUnsaved() ? stored : null
+}
+function discardDraft() {
+  pendingDraft.value = null
+  writeDraft(draftId(), null)
+}
+function restoreDraft() {
+  const draft = pendingDraft.value
+  if (!draft) return
+  discardDraft()
+  title.value = draft.title
+  body.value = draft.body
+  markChanged()
+  pushHistory()
+  void nextTick(() => textarea.value?.focus())
+}
+// Debounced mirror while typing (covers the autosave window — a crash between
+// keystroke and persisted entry must not lose more than a few seconds).
+watch([title, body], () => {
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => {
+    draftTimer = null
+    if (pendingDraft.value) return // prompt unresolved — don't overwrite it
+    if (draftIsUnsaved()) flushDraft()
+    else writeDraft(draftId(), null) // saved/undone → mirror obsolete
+  }, 1000)
+})
+
+// ── Undo / Redo history ── (extracted to useEditorHistory composable)
+// ── Find & Replace ── (extracted to useFindReplace composable)
+
+// ── Stats ──
+// Only the word count is surfaced (spec §9 ED7); chars/lines/paragraphs/
+// read-time are no longer computed.
+const stats = computed(() => ({ words: countWords(body.value) }))
+
+// ── Daily goal ──
+// Today's total = the stored word counts of every entry dated today (from the
+// already-fetched month calendar — no extra requests) with the entry currently
+// being edited substituted by its live count, so the chip tracks typing.
+function todayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const daily = computed(() => {
+  const goal = ui.dailyWordGoal
+  if (!goal) return undefined
+  const today = todayIso()
+  let words = 0
+  for (const e of entries.calendarEntries) {
+    if (e.entry_date !== today) continue
+    if (hasEntry.value && e.id === ui.editingEntryId) continue
+    words += e.word_count
+  }
+  if (entryDate.value === today) words += stats.value.words
+  return { words, goal }
+})
+
+// Goal nudge: celebrate the moment today's count crosses the goal (once per
+// crossing — the chip stays green after).
+watch(daily, (now, prev) => {
+  if (!now || !prev) return
+  if (prev.words < prev.goal && now.words >= now.goal)
+    toast.success('Daily goal reached')
+})
+
+const { renderedPreview } = useMarkdownPreview(
+  () => body.value,
+  () => showPreview.value,
+)
+
+// ── Resizable preview media + per-image OCR button ──
+// Every re-render wraps <img>/<video> in .rmedia resize spans (sizes persist
+// per src) and adds a hover "OCR" pill to each image (pill clicks are handled
+// by delegation inside the composable).
+const previewEl = ref<HTMLElement | null>(null)
+const inlineViewer = ref<{
+  src: string
+  mediaType: string
+  filename?: string
+} | null>(null)
+const {
+  wrapResizableMedia,
+  onPreviewClick: onMediaPreviewClick,
+  onPreviewDblClick,
+} = useResizableMedia({
+  storageKey: 'lifelogr-entry-media-sizes',
+  ocrButton: true,
+  // Bound decode memory on long, media-heavy entries: past this many inline
+  // images the preview swaps the rest for placeholders that load on scroll.
+  maxInline: 12,
+  onOcr: (src) => {
+    const mediaId = Number(src.match(/\/media\/(\d+)\/file/)?.[1] ?? 0)
+    if (mediaId) void runEntryOcr(mediaId, src)
+  },
+  onMediaDblClick: (el) => {
+    const src = el.getAttribute('src') || ''
+    const isVideo = el.tagName === 'VIDEO'
+    inlineViewer.value = {
+      src,
+      mediaType: isVideo ? 'video' : 'image',
+      filename: src.split('/').pop()?.split('?')[0],
+    }
+  },
+  // Persist a settled resize into the body (?w=&h= on the media URL), then
+  // run the normal input chain so the entry's autosave picks it up.
+  onResize: (src, w, h) => {
+    const next = applyMediaSize(body.value, src, w, h)
+    if (next === body.value) return
+    body.value = next
+    onInput()
+  },
+})
+
+watch(
+  [renderedPreview, showPreview],
+  () => {
+    if (showPreview.value) nextTick(() => wrapResizableMedia(previewEl.value))
+  },
+  { immediate: true },
+)
+
+// ── Load entry data ──
+async function loadEntry() {
+  // Capture the identity this load is FOR. `loadEntry` awaits the network; a
+  // fast switch (or a second trigger from the watcher) must not let the stale
+  // response clobber the buffers that belong to the now-active entry.
+  const requestedId = ui.editingEntryId
+  const requestedDate = ui.newEntryDate
+  const stale = () =>
+    ui.editingEntryId !== requestedId || ui.newEntryDate !== requestedDate
+
+  body.value = ''
+  title.value = ''
+  titleTouched.value = false
+  tagIds.value = []
+  mood.value = ''
+  selectedTemplateId.value = null
+  dateInvalid.value = false
+
+  if (isNew.value) {
+    if (ui.newEntryDate) {
+      setEntryDate(ui.newEntryDate)
+    } else {
+      const d = new Date()
+      setEntryDate(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      )
+    }
+    // The auto-opened "new entry" editor must not blind-side an existing
+    // entry for the same date: typing then autosaved a SECOND entry for
+    // today (the calendar's click path resolves first; the default-open
+    // path didn't). If the loaded data knows an entry for this date, adopt
+    // it instead — but never while the buffer is dirty (the user already
+    // started writing a deliberate second entry), and only for the
+    // default-open, not an explicit "New entry" click.
+    if (!dirty.value && ui.autoOpenedEditor) {
+      const existing = entries.calendarEntries.find(
+        (e) => e.entry_date === entryDate.value,
+      )
+      if (existing) {
+        ui.startEditing(existing.id)
+        return
+      }
+    }
+    // Auto-apply default template
+    try {
+      const store = useTemplatesStore()
+      await store.fetchAll()
+      if (stale()) return
+      // If no default template selected yet, auto-pick the first built-in one
+      if (!defaultTemplateId.value && store.templates.length) {
+        const firstBuiltin = store.templates.find((t) => t.is_builtin)
+        if (firstBuiltin) defaultTemplateId.value = firstBuiltin.id
+      }
+      if (defaultTemplateId.value) {
+        const tmpl = store.templates.find(
+          (t) => t.id === defaultTemplateId.value,
+        )
+        if (tmpl) {
+          body.value = tmpl.body
+          if (!title.value) title.value = tmpl.name
+          selectedTemplateId.value = tmpl.id
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    // Apply default title if no template set one
+    if (!title.value && ui.defaultTitle) {
+      title.value = ui.defaultTitle
+    }
+  } else if (ui.editingEntryId) {
+    const entry = await entries.fetchEntry(ui.editingEntryId!)
+    if (stale()) return
+    if (entry) {
+      isEncrypted.value = entry.is_encrypted
+      if (entry.is_encrypted) {
+        body.value = ''
+        title.value = entry.title ?? ''
+      } else {
+        body.value = entry.body
+        title.value = entry.title ?? ''
+        tts.prewarmEntry(entry.id)
+      }
+      tagIds.value = entry.tags.map((t) => t.id)
+      mood.value = entry.mood ?? ''
+      setEntryDate(entry.entry_date)
+      selectedTemplateId.value = entry.template_id
+    }
+  }
+  if (stale()) return
+  pushHistory()
+  snapshot()
+  loadAttachments()
+  rescanDraft() // offer a crash draft for the entry we just loaded (ED11)
+}
+
+/** Window-level click: dismiss the context menu / AI result and decrypt an
+ *  ENC chip clicked in the preview. Named + hoisted so onUnmounted can remove
+ *  the exact same reference (an anonymous arrow here and a different one there
+ *  used to leak one listener per editor mount). */
+function onWindowClick(e: MouseEvent) {
+  // Don't dismiss while AI is running
+  if (aiLoading.value) return
+  // If AI result panel is showing, clear it (dismisses without action)
+  if (aiResult.value) {
+    clearAiResult()
+  }
+  showContextMenu.value = false
+  const target = e.target as HTMLElement
+  if (target.classList.contains('enc-block')) {
+    const enc = target.getAttribute('data-enc')
+    if (!enc) return
+    void decryptEncBlock(enc, target)
+  }
+}
+
+async function decryptEncBlock(enc: string, target: HTMLElement) {
+  const passphrase = await askPrompt({
+    title: 'Decrypt selection',
+    message: 'Enter the passphrase to decrypt this block.',
+    placeholder: 'Passphrase',
+    password: true,
+  })
+  if (!passphrase) return
+  try {
+    const res = await decryptText(enc, passphrase)
+    target.textContent = res.decrypted
+    target.classList.remove('bg-accent/10', 'text-accent')
+    target.classList.add('bg-surface-hover', 'text-text-primary')
+  } catch {
+    toast.error('Decryption failed — wrong passphrase?')
+  }
+}
+
+onMounted(() => {
+  void loadEntry()
+  void registerTauriDrop(handleDroppedPaths)
+  window.addEventListener('click', onWindowClick)
+})
+onUnmounted(() => {
+  window.removeEventListener('click', onWindowClick)
+  if (draftTimer) clearTimeout(draftTimer)
+  // Unclean exit → keep the mirror fresh; a clean close() already discarded it
+  // and flags draftCleanExit so this flush can't resurrect the draft (ED11).
+  if (!draftCleanExit) flushDraft()
+  // The buffers die with the component — a stale shared dirty flag would make
+  // the router guard prompt for edits that no longer exist anywhere.
+  ui.editorIsDirty = false
+  // An armed autosave must not fire against a dead editor: the timer survives
+  // unmount and its fire-time reads would PATCH a stale target id.
+  cancelSave()
+})
+watch([() => ui.editingEntryId, () => ui.newEntryDate], (next, prev) => {
+  // Mirror the outgoing entry before the buffers swap (same as the notes
+  // editor's page switch) — the debounced write may not have fired yet.
+  if (next[0] !== prev[0]) flushDraft(String(prev[0] ?? -1))
+  // Drop any pending autosave: it reads the buffers and the target id at
+  // fire time, so letting it fire mid-switch would PATCH the incoming entry
+  // with the outgoing entry's (or a cleared) payload. The outgoing entry's
+  // unsaved keystrokes live on in its crash draft instead.
+  cancelSave()
+  void loadEntry()
+  loadAttachments()
+})
+// The month data may land AFTER loadEntry's adoption check ran (calendar
+// fetch races the editor mount on cold start). Once it arrives, still adopt
+// an existing entry for the pristine buffer's date — dirty means the user
+// already started a deliberate second entry, and an explicit "New entry"
+// click (autoOpenedEditor cleared) must stay a new entry.
+watch(
+  () => entries.calendarEntries,
+  (list) => {
+  if (!isNew.value || dirty.value || !ui.autoOpenedEditor) return
+  const existing = list.find((e) => e.entry_date === entryDate.value)
+  if (existing) ui.startEditing(existing.id)
+  },
+)
+
+// Check AI availability once
+aiStatus()
+  .then((s) => {
+    aiAvailable.value = s.ollama_available && s.model_loaded
+  })
+  .catch(() => {
+    aiAvailable.value = false
+  })
+
+async function onEncryptionChange(encrypted: boolean) {
+  isEncrypted.value = encrypted
+  await loadEntry()
+}
+
+// ── Fullscreen escape ──
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  // Cache selection immediately before blur fires — right-click can change selection
+  cacheSelection()
+  contextMenuPos.value = { x: e.clientX, y: e.clientY - 12 }
+  showContextMenu.value = true
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+
+  // Close active overlays in priority order
+  if (promptReq.value) {
+    cancelPrompt()
+    return
+  }
+  if (showDeleteConfirm.value) {
+    showDeleteConfirm.value = false
+    return
+  }
+  if (pendingDraft.value) {
+    discardDraft()
+    return
+  }
+  if (showTemplates.value) {
+    showTemplates.value = false
+    return
+  }
+  if ((showContextMenu.value || aiResult.value) && !aiLoading.value) {
+    clearAiResult()
+    return
+  }
+  if (ui.activeDrawer) {
+    ui.closeDrawer()
+    return
+  }
+  if (showEmoji.value) {
+    showEmoji.value = false
+    return
+  }
+  if (inlineViewer.value) {
+    inlineViewer.value = null
+    return
+  }
+  if (viewerOpen.value) {
+    viewerOpen.value = false
+    return
+  }
+  if (showTagDropdown.value) {
+    showTagDropdown.value = false
+    return
+  }
+  if (showFind.value) {
+    showFind.value = false
+    return
+  }
+  if (fullscreen.value) {
+    fullscreen.value = false
+    return
+  }
+
+  // Close editor panel entirely
+  close()
+}
+
+onMounted(() => document.addEventListener('keydown', onGlobalKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onGlobalKeydown))
+
+/** Append text (e.g. OCR output requested from a drawer/panel) through the
+ *  editor's own input chain — marks dirty, triggers autosave and refreshes the
+ *  preview. Returns false when there was nothing to append. Parents must use
+ *  this instead of poking `body`/`onInput` directly. */
+function appendTextWithOcr(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  body.value = body.value ? `${body.value}\n\n${trimmed}` : trimmed
+  onInput()
+  return true
+}
+
+defineExpose({
+  isDirty,
+  save,
+  appendTextWithOcr,
+  body,
+  onInput,
+  hasEntry,
+  entryId: computed(() => ui.editingEntryId),
+  entryDate: computed(() => entryDate.value),
+  attachments,
+  handleFileUpload,
+  removeAttachment,
+  loadAttachments,
+  triggerFileInput: () => fileInput.value?.click(),
+  openViewer: (index: number) => {
+    viewerIndex.value = index
+    viewerOpen.value = true
+  },
+  getSelection,
+  applyToSelection,
+})
+
+// ── Save ──
+/** A title the user typed (or cleared) is theirs — auto-title backs off. */
+function onTitleInput() {
+  titleTouched.value = true
+  onInput()
+}
+
+/** Apply the ghost suggestion from the first body line. */
+function applyTitleSuggestion() {
+  if (!titleSuggestion.value) return
+  title.value = titleSuggestion.value
+  titleTouched.value = true
+  onInput()
+}
+
+/** Fill an empty, untouched title from the body. Safe to call on every save. */
+function autoTitleIfEmpty(): boolean {
+  if (title.value.trim() || titleTouched.value || !autoTitleEnabled.value) {
+    return false
+  }
+  const derived = deriveTitle(body.value)
+  if (!derived) return false
+  title.value = derived
+  return true
+}
+
+/** Persist the entry. Resolves `true` only when it actually saved — callers
+ *  that act on the result (AppShell's pending switch) must check it.
+ *  Spec §9 ED8: Save persists WITHOUT closing — closing is the X control. */
+async function save(): Promise<boolean> {
+  // Cancel any pending debounced autosave and let an already-in-flight one
+  // finish, so this manual save never races it (two concurrent updateEntry
+  // calls with different snapshots lose data — the stale one lands last).
+  cancelSave()
+  await whenIdle()
+  if (dateInvalid.value) {
+    toast.error('Fix the entry date — it must be a valid dd-mm-yyyy date.')
+    return false
+  }
+  try {
+    if (isNew.value) {
+      if (!body.value.trim() && !title.value.trim()) {
+        return false
+      }
+      autoTitleIfEmpty()
+      if (!title.value.trim()) {
+        const t = await askPrompt({
+          title: 'Title this entry',
+          message: 'Give the entry a title before saving.',
+          placeholder: 'Title',
+        })
+        if (t === null) return false
+        title.value = t
+      }
+      const payload: EntryCreate & { mood?: string | null } = {
+        entry_date: entryDate.value,
+        title: title.value || null,
+        body: body.value,
+        tag_ids: tagIds.value.length ? tagIds.value : undefined,
+        template_id: selectedTemplateId.value,
+        mood: mood.value || null,
+      }
+      const entry = await entriesApi.create(payload)
+      snapshot({
+        body: payload.body ?? '',
+        title: payload.title ?? null,
+        tagIds: payload.tag_ids ?? tagIds.value,
+      })
+      // The just-saved content is persisted — drop the pre-create draft so the
+      // next blank editor doesn't offer already-saved text as "recovery".
+      discardDraft()
+      entries.refreshAll()
+      entries.currentEntry = entry
+      if (!isEncrypted.value) tts.prewarmEntry(entry.id)
+      ui.detailPanelOpen = true
+      // Keep editing the entry we just created (ED8) — same transition the
+      // autosave uses, so the load watcher re-syncs the buffers from the API.
+      ui.editingEntryId = entry.id
+      return true
+    } else {
+      autoTitleIfEmpty()
+      // Allow empty body if a title is present (title-only / recording-only entries).
+      if (!body.value.trim() && !title.value.trim()) {
+        toast.info('Add a title or some text before saving')
+        return false
+      }
+      const payload: EntryUpdate & { mood?: string | null } = {
+        title: title.value || null,
+        body: body.value,
+        tag_ids: tagIds.value,
+        mood: mood.value || null,
+      }
+      await entries.updateEntry(ui.editingEntryId!, payload)
+      if (!isEncrypted.value) tts.prewarmEntry(ui.editingEntryId!)
+      snapshot({
+        body: payload.body ?? '',
+        title: payload.title ?? null,
+        tagIds: payload.tag_ids ?? tagIds.value,
+      })
+      entries.refreshAll()
+      return true
+    }
+  } catch (e: unknown) {
+    console.error('[EntryEditor] save failed:', e)
+    toast.error(`Save failed: ${errorMessage(e)}`)
+    return false
+  }
+}
+
+function close() {
+  // A deliberate close is a clean exit — discard the crash draft (ED11).
+  draftCleanExit = true
+  discardDraft()
+  entries.refreshAll()
+  ui.startEditing(null)
+}
+
+function onEmojiSelect(emoji: string) {
+  insertAtCursor(emoji)
+  showEmoji.value = false
+}
+
+async function copyToClipboard() {
+  const text = getSelection()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    toast.error('Clipboard unavailable — copy was blocked by the browser.')
+  }
+}
+
+async function cutToClipboard() {
+  const text = getSelection()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    applyToSelection('')
+  } catch {
+    // Keep the selection: cutting without a successful write would lose it.
+    toast.error('Clipboard unavailable — cut was blocked by the browser.')
+  }
+}
+
+// ── Inline media embed (image / video / audio) + OCR ──
+// Journal media uploads embed inline in the body (images as markdown, video/
+// audio as HTML tags — the preview allowlist renders both), instead of becoming
+// side-panel attachments. Encrypted entries fall back to attachments.
+async function embedMediaFile(file: File): Promise<MediaResponse | null> {
+  try {
+    const media = await mediaApi.upload(ui.editingEntryId!, file)
+    // Cap a large photo's initial width so it does not arrive at full bleed
+    // (and does not decode at full resolution in the preview).
+    const size = await initialMediaSize(file)
+    const url = size
+      ? withSizeParams(mediaApi.fileUrl(media.id), size.w, size.h)
+      : mediaApi.fileUrl(media.id)
+    embedMarkdownFor(file.name, file.type, url)
+    return media
+  } catch (e: unknown) {
+    toast.error(`Media upload failed: ${errorMessage(e)}`)
+    return null
+  }
+}
+
+/** Insert the right markdown for a media type at the cursor. */
+function embedMarkdownFor(filename: string, mime: string, url: string) {
+  const name = filename.replace(/\.[^.]+$/, '') || 'media'
+  if (mime.startsWith('image/')) {
+    applyToSelection(`![${name}](${url})`)
+  } else if (mime.startsWith('video/')) {
+    applyToSelection(
+      `\n<video controls preload="metadata" src="${url}" style="max-width:100%"></video>\n`,
+    )
+  } else if (mime.startsWith('audio/')) {
+    applyToSelection(
+      `\n<audio controls preload="metadata" src="${url}"></audio>\n`,
+    )
+  } else {
+    applyToSelection(`[${name}](${url})`)
+  }
+  showPreview.value = true
+}
+
+/** OCR a media file and insert the text directly below its embedded markdown
+ *  (plain-text blockquote — journal OCR standard). Shared by auto-OCR on
+ *  upload and the per-image hover button. */
+async function runEntryOcr(mediaId: number, url?: string) {
+  ocrBusy.value = true
+  try {
+    const { text } = await mediaApi.extractText(mediaId, ocrLang.value)
+    if (text.trim()) {
+      const target =
+        url ??
+        body.value
+          .match(new RegExp(`\\]\\(([^)]*${mediaId}/file[^)]*)\\)`))?.[1]
+      if (target) {
+        body.value = insertOcrBelowImage(body.value, target, text)
+      } else {
+        // No token to anchor under (e.g. side-panel attachment) — insert at
+        // the cursor as before.
+        applyToSelection(`\n\n> ${text.trim().replace(/\n/g, '\n> ')}\n`)
+      }
+      onInput()
+      if (!showPreview.value) showPreview.value = true
+    }
+  } catch (e: unknown) {
+    toast.error(`OCR failed: ${errorMessage(e)}`)
+  } finally {
+    ocrBusy.value = false
+  }
+}
+
+// Accepts a FileList (from the <input>) or a plain File[] (drop / paste) — no
+// fake FileList objects needed to bridge the two shapes.
+async function onFilesSelected(files: File[] | FileList | null) {
+  if (!files?.length) return
+  if (!hasEntry.value) {
+    await save()
+    if (!hasEntry.value) return
+  }
+  // Encrypted entries hide the body, so inline embed isn't possible — fall back
+  // to the side-panel attachment flow for everything.
+  if (isEncrypted.value) {
+    await handleFileUpload(files)
+    return
+  }
+  for (const file of Array.from(files)) {
+    if (
+      file.type.startsWith('image/') ||
+      file.type.startsWith('video/') ||
+      file.type.startsWith('audio/')
+    ) {
+      const media = await embedMediaFile(file)
+      if (media && file.type.startsWith('image/') && autoOcr.value) {
+        await runEntryOcr(media.id, mediaApi.fileUrl(media.id))
+      }
+    } else {
+      await handleFileUpload([file])
+    }
+  }
+}
+
+async function onDropFiles(e: DragEvent) {
+  const accepted = dragHandlers.onDrop(e)
+  if (!accepted?.length) return
+  await onFilesSelected(accepted)
+}
+
+// ── Tauri native drag-drop (paths) + clipboard paste ──
+// WebKitGTK doesn't deliver HTML5 file drops, so the desktop build receives
+// paths via Tauri's onDragDropEvent (useTauriDragDrop) and imports them via
+// POST /media/from-path. Paste (screenshots etc.) routes through usePasteMedia.
+const { isDragging: tauriDragging, register: registerTauriDrop } =
+  useTauriDragDrop()
+const dragActive = computed(() => isDragging.value || tauriDragging.value)
+const IMAGE_EXTS = [
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'tiff',
+  'tif',
+  'svg',
+]
+const AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus']
+const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'mkv', 'avi']
+
+async function handleDroppedPaths(paths: string[]) {
+  if (!paths.length) return
+  if (!hasEntry.value) {
+    await save()
+    if (!hasEntry.value) return
+  }
+  if (isEncrypted.value) {
+    toast.info(
+      'This entry is encrypted — decrypt it before dropping media so it can be embedded inline.',
+    )
+    return
+  }
+  textarea.value?.focus()
+  for (const path of paths) {
+    const name = path.split(/[\\/]/).pop() || path
+    const ext = name.split('.').pop()?.toLowerCase() ?? ''
+    try {
+      const media = await mediaApi.uploadFromPath(ui.editingEntryId!, path)
+      const url = mediaApi.fileUrl(media.id)
+      const mime = IMAGE_EXTS.includes(ext)
+        ? 'image/'
+        : AUDIO_EXTS.includes(ext)
+          ? 'audio/'
+          : VIDEO_EXTS.includes(ext)
+            ? 'video/'
+            : 'application/octet-stream'
+      embedMarkdownFor(name, mime, url)
+      if (mime === 'image/' && autoOcr.value) {
+        await runEntryOcr(media.id, url)
+      }
+    } catch (e: unknown) {
+      toast.error(`Media import failed: ${errorMessage(e)}`)
+    }
+  }
+}
+
+const { onPaste: pasteMediaHandler } = usePasteMedia({
+  uploadMedia: async (file) => {
+    if (!hasEntry.value) {
+      await save()
+      if (!hasEntry.value) return
+    }
+    if (isEncrypted.value) return false // keep default paste
+    const media = await embedMediaFile(file)
+    if (media && file.type.startsWith('image/') && autoOcr.value) {
+      await runEntryOcr(media.id, mediaApi.fileUrl(media.id))
+    }
+  },
+  applyText: (text) => applyToSelection(text),
+})
+
+// ── Attachments ── (extracted to useAttachments composable)
+
+async function openAttachDialog() {
+  if (ui.activeDrawer === 'attachments') {
+    ui.closeDrawer()
+    return
+  }
+  if (!hasEntry.value) {
+    await save()
+    if (!hasEntry.value) return
+  }
+  await loadAttachments()
+  ui.activeDrawer = 'attachments'
+  nextTick(() => fileInput.value?.click())
+}
+
+// handleFileUpload, removeAttachment — extracted to useAttachments composable
+
+async function encryptDecryptSelection() {
+  const text = getSelection()
+  if (!text) {
+    toast.info('Select some text first.')
+    return
+  }
+
+  // Check if the selected text is an encrypted block
+  const encMatch = text.match(/^<!--ENC\{(.+)\}-->$/s)
+  if (encMatch) {
+    // Decrypt mode
+    const passphrase = await askPrompt({
+      title: 'Decrypt selection',
+      message: 'Enter the passphrase to decrypt the selected block.',
+      placeholder: 'Passphrase',
+      password: true,
+    })
+    if (!passphrase) return
+    try {
+      const res = await decryptText(encMatch[1], passphrase)
+      applyToSelection(res.decrypted)
+    } catch (e: unknown) {
+      toast.error(`Decryption failed: ${errorMessage(e)}`)
+    }
+  } else {
+    // Encrypt mode
+    const passphrase = await askPrompt({
+      title: 'Encrypt selection',
+      message: 'Choose a passphrase to encrypt the selected text.',
+      placeholder: 'Passphrase',
+      password: true,
+    })
+    if (!passphrase) return
+    try {
+      const res = await encryptText(text, passphrase)
+      applyToSelection(`<!--ENC{${res.encrypted}}-->`)
+    } catch (e: unknown) {
+      toast.error(`Encryption failed: ${errorMessage(e)}`)
+    }
+  }
+}
+
+// ── Inline AI tools (context menu) ── (extracted to useAiTools composable)
+// runAiTool, aiResultReplace, aiResultInsert, aiResultRetry, aiResultCopy, clearAiResult — in composable
+
+// ── Inline AI tools (context menu + drawer) — provided by useRichTextEditor ──
+
+async function toggleTTS() {
+  try {
+    if (hasEntry.value && !isEncrypted.value) {
+      await tts.toggleEntry(ui.editingEntryId!)
+    } else {
+      if (!ttsText.value.trim()) return
+      await tts.toggleText(ttsText.value)
+    }
+  } catch (e: unknown) {
+    toast.error(`Read Aloud failed: ${errorMessage(e)}`)
+  }
+}
+
+const showDeleteConfirm = ref(false)
+
+function handleDelete() {
+  if (isNew.value) return
+  showDeleteConfirm.value = true
+}
+
+async function confirmDelete() {
+  showDeleteConfirm.value = false
+  try {
+    await entries.deleteEntry(ui.editingEntryId!)
+  } catch (e) {
+    // A 404 just means it was already gone; anything else is a real failure
+    // and closing here would silently drop the user's entry from view while
+    // it still exists server-side.
+    if (e instanceof ApiError && e.status !== 404) {
+      toast.error(`Delete failed: ${errorMessage(e)}`)
+      return
+    }
+  }
+  entries.refreshAll()
+  ui.startEditing(null)
+}
+
+function onTemplateSelect(t: { id: number; name: string; body: string }) {
+  selectedTemplateId.value = t.id
+  if (!title.value.trim()) {
+    title.value = t.name
+  }
+  if (isNew.value || !body.value.trim()) {
+    body.value = t.body
+  } else {
+    body.value += '\n\n' + t.body
+  }
+  onInput()
+}
+
+// ── AI Tag Suggestions ──
+async function fetchSuggestedTags() {
+  if (!body.value.trim()) return
+  suggestingTags.value = true
+  suggestedTags.value = []
+  try {
+    const res = await suggestTags(body.value)
+    suggestedTags.value = res.tags
+  } catch (e) {
+    toast.error(`Tag suggestions failed: ${errorMessage(e)}`)
+  } finally {
+    suggestingTags.value = false
+  }
+}
+
+async function applySuggestedTag(name: string) {
+  // Tags are explicit: attach to the entry (chip row), don't touch the body.
+  await addTag(name)
+  suggestedTags.value = suggestedTags.value.filter((t) => t !== name)
+}
+</script>
+
+<template>
+<!-- eslint-disable vue/no-v-html -- all v-html here renders output of the
+     sanitized markdown pipeline (utils/markdown.ts: marked + DOMPurify) -->
+  <div
+    class="flex flex-col h-full relative"
+    :class="[
+      fullscreen ? 'fixed inset-0 z-[100] bg-editor' : '',
+      focusMode ? 'bg-editor' : '',
+    ]"
+    @dragenter="dragHandlers.onDragenter"
+    @dragover="dragHandlers.onDragover"
+    @dragleave="dragHandlers.onDragleave"
+    @drop="onDropFiles"
+  >
+    <!-- Drag overlay -->
+    <Transition name="drag">
+      <div
+        v-if="dragActive"
+        class="absolute inset-0 z-[150] bg-accent/5 border-2 border-dashed border-accent/40 rounded-lg flex items-center justify-center pointer-events-none"
+      >
+        <div
+          class="text-sm font-medium text-accent/80 flex flex-col items-center gap-1"
+        >
+          <Paperclip :size="24" />
+          Drop image / video / audio to embed
+        </div>
+      </div>
+    </Transition>
+    <!-- Header: Title + Date + New + controls -->
+    <div
+      class="flex items-center gap-2 px-3 py-1.5 border-b border-border"
+      v-if="!focusMode"
+    >
+      <input
+        v-model="title"
+        class="flex-1 bg-transparent text-base font-semibold text-text-primary placeholder-text-muted/70 outline-none min-w-0"
+        placeholder="Title"
+        @input="onTitleInput"
+      />
+      <!-- Ghost suggestion: the title auto-title would use. Applying it makes
+           the title user-owned, so later body edits never rewrite it. -->
+      <button
+        v-if="titleSuggestion"
+        class="shrink-0 max-w-40 truncate text-[10px] text-text-muted hover:text-accent cursor-pointer transition-colors"
+        :title="`Use as title: ${titleSuggestion}`"
+        @click="applyTitleSuggestion"
+      >
+        Auto: {{ titleSuggestion }}
+      </button>
+      <input
+        :value="dateDisplay"
+        inputmode="numeric"
+        placeholder="dd-mm-yyyy"
+        maxlength="10"
+        class="bg-surface border rounded px-1.5 py-0.5 text-[11px] font-semibold shrink-0 tabular-nums"
+        :class="
+          dateInvalid
+            ? 'border-danger text-danger'
+            : 'border-border text-text-primary'
+        "
+        :aria-invalid="dateInvalid"
+        :aria-label="'Entry date (dd-mm-yyyy)'"
+        title="Entry date (dd-mm-yyyy)"
+        @input="onDateInput"
+        @blur="onDateBlur"
+      />
+      <button
+        class="p-1 rounded hover:bg-accent/15 text-accent cursor-pointer transition-colors shrink-0"
+        title="New entry"
+        aria-label="New entry"
+        @click="ui.startEditing(-1)"
+      >
+        <Plus :size="14" />
+      </button>
+      <div class="flex items-center gap-0.5 shrink-0">
+        <button
+          v-if="!isNew"
+          class="p-1 rounded hover:bg-surface-hover text-text-secondary hover:text-danger cursor-pointer transition-colors"
+          title="Delete entry"
+          aria-label="Delete entry"
+          @click="handleDelete"
+        >
+          <Trash2 :size="14" />
+        </button>
+        <button
+          class="p-1 rounded hover:bg-surface-hover text-text-secondary cursor-pointer transition-colors"
+          :title="fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'"
+          :aria-label="fullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+          @click="fullscreen = !fullscreen"
+        >
+          <Minimize2 v-if="fullscreen" :size="14" />
+          <Maximize2 v-else :size="14" />
+        </button>
+        <button
+          class="p-1 rounded hover:bg-surface-hover text-text-secondary cursor-pointer transition-colors"
+          aria-label="Close editor"
+          title="Close editor"
+          @click="close"
+        >
+          <X :size="14" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Formatting toolbar (collapsible, closed by default) -->
+    <div v-if="!showPreview && !focusMode" class="border-b border-border">
+      <button
+        class="flex items-center gap-1 w-full px-2 py-0.5 text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+        @click="showToolbar = !showToolbar"
+      >
+        <ChevronDown
+          v-if="!showToolbar"
+          :size="10"
+          class="transition-transform"
+        />
+        <ChevronUp v-else :size="10" class="transition-transform" />
+        Formatting
+      </button>
+      <Transition name="toolbar-slide">
+        <div v-if="showToolbar">
+          <EditorToolbar
+            mode="journal"
+            :active-formats="activeFormats"
+            :undo-count="undoStack.length"
+            :redo-count="redoStack.length"
+            :show-emoji="showEmoji"
+            :show-find="showFind"
+            :focus-mode="focusMode"
+            :typewriter-mode="typewriterMode"
+            :ui="ui"
+            @action="(name: string) => actions[name]?.()"
+            @toggle-emoji="showEmoji = !showEmoji"
+            @toggle-find="showFind = !showFind"
+            @toggle-focus="focusMode = !focusMode"
+            @toggle-typewriter="typewriterMode = !typewriterMode"
+          />
+        </div>
+      </Transition>
+    </div>
+
+    <!-- Find & Replace bar -->
+    <div
+      v-if="showFind"
+      class="flex items-center gap-1.5 px-2 py-1 border-b border-border bg-surface"
+    >
+      <Search :size="12" class="text-text-muted shrink-0" />
+      <input
+        v-model="findQuery"
+        class="flex-1 bg-transparent border-b border-border focus:border-accent px-1 py-0.5 text-xs text-text-primary outline-none"
+        placeholder="Find..."
+        @keydown="onShortcutKeydown"
+      />
+      <span class="text-[10px] text-text-muted whitespace-nowrap">
+        {{ findIndex >= 0 ? findIndex + 1 : 0 }}/{{ findCount }}
+      </span>
+      <button
+        class="p-0.5 rounded hover:bg-surface-hover text-text-secondary cursor-pointer"
+        title="Previous match"
+        aria-label="Previous match"
+        @click="jumpToMatch(-1)"
+      >
+        <ChevronUp :size="12" />
+      </button>
+      <button
+        class="p-0.5 rounded hover:bg-surface-hover text-text-secondary cursor-pointer"
+        title="Next match"
+        aria-label="Next match"
+        @click="jumpToMatch(1)"
+      >
+        <ChevronDown :size="12" />
+      </button>
+      <span class="w-px h-3 bg-border" />
+      <input
+        v-model="replaceQuery"
+        class="flex-1 bg-transparent border-b border-border focus:border-accent px-1 py-0.5 text-xs text-text-primary outline-none"
+        placeholder="Replace..."
+      />
+      <button
+        class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer"
+        @click="replaceOne"
+      >
+        Replace
+      </button>
+      <button
+        class="px-1.5 py-0.5 rounded text-[10px] bg-surface-hover text-text-secondary hover:text-text-primary cursor-pointer"
+        @click="replaceAll"
+      >
+        All
+      </button>
+      <button
+        class="p-0.5 rounded hover:bg-surface-hover text-text-muted cursor-pointer"
+        title="Close find and replace"
+        aria-label="Close find and replace"
+        @click="showFind = false"
+      >
+        <X :size="12" />
+      </button>
+    </div>
+
+    <!-- Body + Panels -->
+    <div class="flex-1 flex min-h-0 relative overflow-hidden">
+      <!-- Main Editor Area -->
+      <div class="flex-1 flex flex-col min-h-0">
+        <!-- Textarea / Preview -->
+        <div class="flex-1 overflow-y-auto relative min-h-0">
+          <!-- Encrypted lock screen -->
+          <div
+            v-if="isEncrypted"
+            class="flex flex-col items-center justify-center h-full gap-3 text-text-muted"
+          >
+            <Lock :size="32" class="text-accent opacity-60" />
+            <div class="text-sm font-medium text-text-secondary">
+              This entry is encrypted
+            </div>
+            <div class="text-xs">Click the unlock button to decrypt</div>
+          </div>
+          <template v-else>
+            <textarea
+              v-show="!showPreview"
+              ref="textarea"
+              v-model="body"
+              class="w-full h-full resize-none bg-transparent p-4 text-text-primary outline-none leading-relaxed placeholder:text-text-muted/60"
+              :style="{
+                fontFamily: 'var(--editor-font)',
+                fontSize: 'var(--editor-font-size)',
+              }"
+              placeholder="Write your thoughts..."
+              @input="onEditorInput"
+              @keydown="onTextareaKeydown"
+              @keydown.capture="onEditorKeydownCapture"
+              @paste="pasteMediaHandler"
+              @contextmenu="onContextMenu"
+              @keyup="cacheSelection"
+              @mouseup="cacheSelection"
+              @select="cacheSelection"
+              @focus="clearSelCache"
+              @blur="onEditorBlur"
+            />
+            <div
+              v-show="showPreview"
+              ref="previewEl"
+              class="p-4 md-body max-w-none text-text-primary overflow-y-auto h-full"
+              :style="{
+                fontFamily: 'var(--editor-font)',
+                fontSize: 'var(--editor-font-size)',
+              }"
+              v-html="renderedPreview"
+              @click="onMediaPreviewClick"
+              @dblclick="onPreviewDblClick"
+            />
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice memos embedded at the bottom of the entry -->
+    <EntryRecordings v-if="!focusMode" />
+
+    <!-- Media attachment thumbnails, pinned at the bottom of the entry -->
+    <div
+      v-if="!focusMode && hasEntry && !isEncrypted && attachments.length"
+      class="px-3 pt-2 border-t border-border"
+    >
+      <MediaGrid
+        :entry-id="ui.editingEntryId ?? 0"
+        :media-count="attachments.length"
+        @deleted="loadAttachments"
+      />
+    </div>
+
+    <!-- Tags, pinned at the bottom of the entry: the chip row IS the tag
+         editor (explicit tags — a #token in the body is plain text) -->
+    <div
+      v-if="!focusMode && !isEncrypted"
+      class="flex flex-wrap items-center gap-1.5 px-3 pt-2 border-t border-border"
+    >
+      <span
+        v-for="t in entryTagChips"
+        :key="t.id"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-accent/15 text-accent"
+        >#{{ t.name
+        }}<button
+          class="hover:text-text-primary cursor-pointer"
+          :aria-label="`Remove tag ${t.name}`"
+          title="Remove tag"
+          @click="removeTag(t.id)"
+        >
+          <X :size="10" /></button
+      ></span>
+      <div class="relative inline-flex items-center">
+        <input
+          v-model="tagQuery"
+          class="w-24 px-2 py-0.5 rounded-full text-[11px] bg-surface-hover text-text-primary placeholder:text-text-muted/70 outline-none focus:ring-1 focus:ring-accent/50"
+          placeholder="+ tag"
+          aria-label="Add tag"
+          @focus="tagMenuActive = true; tagMenuIndex = 0"
+          @blur="tagMenuActive = false"
+          @input="tagMenuIndex = 0"
+          @keydown="onTagQueryKeydown"
+        />
+        <div
+          v-if="tagMenuActive && tagMenuRows.length"
+          class="absolute bottom-full left-0 mb-1 bg-surface border border-border rounded-lg shadow-xl p-1 z-50 min-w-40"
+          role="listbox"
+          aria-label="Tag suggestions"
+        >
+          <button
+            v-for="(row, i) in tagMenuRows"
+            :key="row.id"
+            type="button"
+            role="option"
+            :aria-selected="i === tagMenuIndex"
+            class="block w-full text-left px-2 py-1 rounded text-[11px] cursor-pointer transition-colors"
+            :class="i === tagMenuIndex ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-surface-hover'"
+            @mousedown.prevent="addTag(row.name)"
+            @mousemove="tagMenuIndex = i"
+          >
+            #{{ row.name }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status bar + Bottom controls -->
+    <div class="border-t border-border" v-if="!focusMode">
+      <!-- Stats bar -->
+      <EditorStatusBar
+        :words="stats.words"
+        :save-state="saveActive"
+        :has-content="!!body.trim()"
+        :is-draft="!hasEntry && !dirty"
+        :daily="daily"
+      />
+
+      <!-- Controls bar: Edit/Preview + Tags + Save -->
+      <div class="flex items-center gap-1.5 px-3 py-1.5 relative">
+        <button
+          class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors"
+          :class="
+            !showPreview
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary'
+          "
+          aria-label="Edit mode"
+          title="Edit mode"
+          @click="showPreview = false"
+        >
+          <Edit3 :size="13" />
+        </button>
+        <button
+          class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors"
+          :class="
+            showPreview
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary'
+          "
+          aria-label="Preview mode"
+          title="Preview mode"
+          @click="showPreview = true"
+        >
+          <Eye :size="13" />
+        </button>
+        <button
+          class="flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer transition-colors relative"
+          :class="
+            tagIds.length
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary'
+          "
+          @click="showTagDropdown = !showTagDropdown"
+          title="Tags"
+          aria-label="Tags"
+        >
+          <Tag :size="13" />
+          <span v-if="tagIds.length" class="text-[9px]">{{ tagIds.length }}</span>
+        </button>
+
+        <!-- Tag dropdown -->
+        <div
+          v-if="showTagDropdown && !isEncrypted"
+          class="absolute bottom-full left-0 right-0 mb-1 mx-3 bg-surface border border-border rounded-lg shadow-xl p-2 z-50"
+        >
+          <p class="text-[10px] text-text-muted px-1 pb-1">
+            Tags are managed below the editor — use the chip row to add or
+            remove them.
+          </p>
+          <!-- AI Tag Suggestions -->
+          <div
+            v-if="aiAvailable"
+            class="mt-2 pt-2 border-t border-border space-y-1.5"
+          >
+            <button
+              @click="fetchSuggestedTags"
+              :disabled="suggestingTags || !body.trim()"
+              class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 cursor-pointer"
+            >
+              <Loader v-if="suggestingTags" :size="10" class="animate-spin" />
+              <Sparkles v-else :size="10" />
+              {{ suggestingTags ? 'Suggesting...' : 'Suggest tags' }}
+            </button>
+            <div v-if="suggestedTags.length" class="flex flex-wrap gap-1">
+              <button
+                v-for="tag in suggestedTags"
+                :key="tag"
+                @click="applySuggestedTag(tag)"
+                class="px-2 py-0.5 rounded-full text-[10px] bg-accent/15 text-accent hover:bg-accent/30 cursor-pointer transition-colors"
+              >
+                + {{ tag }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button
+          class="p-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover cursor-pointer transition-colors"
+          title="Use template"
+          aria-label="Use template"
+          @click="showTemplates = true"
+        >
+          <LayoutTemplate :size="13" />
+        </button>
+
+        <span class="w-px h-4 bg-border mx-0.5" />
+        <button
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="
+            ui.activeDrawer === 'ai'
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          title="AI Smart Actions"
+          aria-label="AI Smart Actions"
+          @click="ui.toggleDrawer('ai')"
+        >
+          <Sparkles :size="13" />
+        </button>
+        <button
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="
+            ui.activeDrawer === 'attachments'
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          @click="openAttachDialog"
+          title="Attach files"
+          aria-label="Attach files"
+        >
+          <div class="flex items-center gap-0.5">
+            <Paperclip :size="13" />
+            <span v-if="attachments.length" class="text-[9px] leading-none">{{
+              attachments.length
+            }}</span>
+          </div>
+        </button>
+        <!-- Context sidebar (local photos + ICS calendar): only rendered when
+             opted in, so off ⇒ no entry point and no filesystem traffic. -->
+        <button
+          v-if="ui.contextSidebarEnabled && isTauri"
+          class="p-1 rounded cursor-pointer transition-colors"
+          :class="
+            ui.activeDrawer === 'context'
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          title="Context (photos, calendar)"
+          aria-label="Context (photos, calendar)"
+          @click="ui.toggleDrawer('context')"
+        >
+          <CalendarClock :size="13" />
+        </button>
+        <input
+          ref="fileInput"
+          type="file"
+          multiple
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.json"
+          class="hidden"
+          @change="onFilesSelected(($event.target as HTMLInputElement).files)"
+        />
+        <EncryptionBadge
+          v-if="hasEntry"
+          :entryId="ui.editingEntryId!"
+          :isEncrypted="isEncrypted"
+          @change="onEncryptionChange"
+        />
+        <button
+          class="p-1 rounded cursor-pointer transition-colors disabled:opacity-50"
+          :class="
+            voiceRecording
+              ? 'bg-danger/20 text-danger'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          :disabled="!hasEntry || voiceUploading"
+          @click="toggleVoiceRecord()"
+          :title="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+          :aria-label="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+        >
+          <Square v-if="voiceRecording" :size="13" />
+          <Loader v-else-if="voiceUploading" :size="13" class="animate-spin" />
+          <Mic v-else :size="13" />
+        </button>
+        <button
+          class="p-1 rounded cursor-pointer transition-colors disabled:opacity-50"
+          :class="
+            ttsPlaying
+              ? 'bg-accent/20 text-accent'
+              : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+          "
+          :disabled="ttsLoading || !body.trim()"
+          @click="toggleTTS"
+          :title="ttsPlaying ? 'Stop reading' : 'Read aloud'"
+          :aria-label="ttsPlaying ? 'Stop reading' : 'Read aloud'"
+        >
+          <Pause v-if="ttsPlaying" :size="13" />
+          <Loader v-else-if="ttsLoading" :size="13" class="animate-spin" />
+          <Volume2 v-else :size="13" />
+        </button>
+
+        <div class="flex-1" />
+        <button
+          class="px-4 py-1.5 rounded bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors cursor-pointer"
+          @click="save"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+
+    <MediaViewer
+      v-if="viewerOpen"
+      :items="attachments"
+      v-model:index="viewerIndex"
+      @close="viewerOpen = false"
+    />
+
+    <!-- Single inline media opened by double-click from the preview -->
+    <MediaViewer
+      v-if="inlineViewer"
+      :items="[]"
+      :single="inlineViewer"
+      @close="inlineViewer = null"
+    />
+
+    <!-- OCR running toast -->
+    <div v-if="ocrBusy" class="ocr-toast">
+      <Loader :size="13" class="animate-spin" /> Running OCR…
+    </div>
+
+    <EmojiPicker
+      v-if="showEmoji"
+      class="absolute top-20 right-4 z-50"
+      @select="onEmojiSelect"
+      @close="showEmoji = false"
+    />
+
+    <TemplatePicker
+      v-if="showTemplates"
+      @select="onTemplateSelect"
+      @close="showTemplates = false"
+    />
+
+    <!-- Crash-recovery prompt (spec §9 ED11): a stored draft differs from the
+         persisted entry — offer restore (only unclean exits get here). -->
+    <ConfirmDialog
+      v-if="pendingDraft"
+      title="Recover unsaved changes?"
+      :message="`Unsaved changes from ${new Date(pendingDraft.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — restore them?`"
+      @confirm="restoreDraft"
+      @cancel="discardDraft"
+    />
+
+    <!-- Delete confirmation (spec §9 ED9 — no native confirm) -->
+    <ConfirmDialog
+      v-if="showDeleteConfirm"
+      title="Delete this entry?"
+      message="The entry and its media will be removed."
+      @confirm="confirmDelete"
+      @cancel="showDeleteConfirm = false"
+    />
+
+    <!-- Title / passphrase prompt (spec §9 ED9 — no native window.prompt) -->
+    <div
+      v-if="promptReq"
+      class="fixed inset-0 z-[220] flex items-center justify-center bg-black/50"
+      @click.self="cancelPrompt"
+    >
+      <div class="bg-surface rounded-lg shadow-xl w-80 border border-border p-4">
+        <h3 class="text-sm font-semibold text-text-primary mb-2">
+          {{ promptReq.title }}
+        </h3>
+        <p v-if="promptReq.message" class="text-xs text-text-secondary mb-3">
+          {{ promptReq.message }}
+        </p>
+        <input
+          ref="promptInput"
+          v-model="promptValue"
+          :type="promptReq.password ? 'password' : 'text'"
+          :placeholder="promptReq.placeholder ?? ''"
+          class="w-full bg-surface-hover border border-border rounded px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent mb-3"
+          @keydown.enter.prevent="submitPrompt"
+        />
+        <div class="flex justify-end gap-2">
+          <button
+            class="px-3 py-1.5 rounded text-xs text-text-secondary hover:text-text-primary cursor-pointer"
+            @click="cancelPrompt"
+          >
+            Cancel
+          </button>
+          <button
+            class="px-3 py-1.5 rounded bg-accent text-white text-xs cursor-pointer hover:bg-accent-hover transition-colors"
+            @click="submitPrompt"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Menu / AI Result Panel -->
+    <EditorContextMenu
+      :visible="showContextMenu"
+      :position="contextMenuPos"
+      :ai-loading="aiLoading"
+      :ai-result="aiResult"
+      :ai-result-mode="aiResultMode"
+      :ai-truncation="aiTruncation"
+      :ai-param-value="aiParamValue"
+      :selected-text="getSelection()"
+      @close="showContextMenu = false"
+      @copy="copyToClipboard"
+      @cut="cutToClipboard"
+      @bold="actions.bold()"
+      @italic="actions.italic()"
+      @table="actions.table()"
+      @hr="actions.hr()"
+      @encrypt="encryptDecryptSelection()"
+      @open-ai-drawer="ui.toggleDrawer('ai')"
+      @run-ai-tool="(mode: string) => runAiTool(mode)"
+      @ai-result-replace="aiResultReplace"
+      @ai-result-insert="aiResultInsert"
+      @ai-result-retry="aiResultRetry"
+      @ai-result-copy="aiResultCopy"
+      @apply-tool-param="(value: string) => applyToolParam(value)"
+      @close-result="clearAiResult"
+    />
+
+    <!-- Focus mode hides the controls bar; keep the recorder reachable. -->
+    <button
+      v-if="focusMode"
+      class="fixed bottom-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full shadow-lg cursor-pointer transition-all hover:scale-105 disabled:opacity-50"
+      :class="
+        voiceRecording
+          ? 'bg-danger text-white'
+          : 'bg-accent text-white hover:bg-accent-hover'
+      "
+      :disabled="!hasEntry || voiceUploading"
+      :title="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+      :aria-label="voiceRecording ? 'Stop recording' : 'Record voice memo'"
+      @click="toggleVoiceRecord()"
+    >
+      <Square v-if="voiceRecording" :size="16" />
+      <Loader v-else-if="voiceUploading" :size="16" class="animate-spin" />
+      <Mic v-else :size="18" />
+    </button>
+
+    <!-- Floating voice recorder + playback player -->
+    <FloatingRecorder v-if="!focusMode" />
+    <FloatingPlayback v-if="!focusMode" />
+  </div>
+</template>
+
+<style scoped>
+.toolbar-slide-enter-active,
+.toolbar-slide-leave-active {
+  transition: all 0.15s ease;
+  overflow: hidden;
+}
+.toolbar-slide-enter-from,
+.toolbar-slide-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.toolbar-slide-enter-to,
+.toolbar-slide-leave-from {
+  max-height: 120px;
+  opacity: 1;
+}
+.drag-enter-active,
+.drag-leave-active {
+  transition: all 0.2s ease;
+}
+.drag-enter-from,
+.drag-leave-to {
+  opacity: 0;
+}
+.md-body :deep(.enc-block) {
+  display: inline-block;
+  transition: all 0.2s;
+}
+.md-body :deep(.enc-block:hover) {
+  opacity: 0.8;
+  transform: translateY(-1px);
+}
+/* ── OCR toast ── */
+.ocr-toast {
+  position: absolute;
+  bottom: 3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+</style>

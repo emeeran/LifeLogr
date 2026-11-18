@@ -1,0 +1,6 @@
+# Tauri regenerates these capability/schema files on `tauri build` / `tauri icon`.
+# They don't belong in source control. (capabilities.json is intentionally
+# kept tracked.)
+gen/schemas/desktop-schema.json
+gen/schemas/linux-schema.json
+gen/schemas/acl-manifests.json

@@ -1,0 +1,167 @@
+"""Integration tests for entries — CRUD, soft-delete restore, 409 conflict, tags."""
+
+from httpx import AsyncClient
+
+
+async def _create_entry(client: AsyncClient, date="2026-05-08", body="Hello world", **kw):
+    payload = {"entry_date": date, "body": body, **kw}
+    r = await client.post("/api/v1/entries", json=payload)
+    assert r.status_code == 201
+    return r.json()
+
+
+class TestEntryCreate:
+    async def test_create_success(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        assert entry["entry_date"] == "2026-05-08"
+        assert entry["body"] == "Hello world"
+        assert entry["is_deleted"] is False
+
+    async def test_create_duplicate_date_succeeds(self, client: AsyncClient):
+        """Multiple entries per date are allowed (unique constraint dropped)."""
+        await _create_entry(client)
+        r = await client.post("/api/v1/entries", json={"entry_date": "2026-05-08", "body": "dup"})
+        assert r.status_code == 201
+        assert r.json()["body"] == "dup"
+
+    async def test_create_with_tags(self, client: AsyncClient):
+        # Tags are explicit: tag_ids on the payload attach; a #token in the
+        # body is plain text and does NOT create a tag (notes still do that).
+        tags_r = await client.post("/api/v1/tags", json={"name": "travel"})
+        tag_id = tags_r.json()["id"]
+        entry = await _create_entry(
+            client, body="#travel trip notes", tag_ids=[tag_id]
+        )
+        assert len(entry["tags"]) == 1
+        assert entry["tags"][0]["name"] == "travel"
+        plain = await _create_entry(client, body="#travel trip notes")
+        assert plain["tags"] == []
+
+    async def test_create_empty_body_allowed(self, client: AsyncClient):
+        """An entry with empty body is valid (title-only / recording-only entries).
+
+        Previously rejected with 422, which blocked the voice-recording flow:
+        openRecording() saves first, and a body-less entry couldn't persist.
+        """
+        r = await client.post("/api/v1/entries", json={"entry_date": "2026-05-08", "body": ""})
+        assert r.status_code == 201
+        assert r.json()["body"] == ""
+
+    async def test_create_title_only_allowed(self, client: AsyncClient):
+        """A title with empty body should also be accepted."""
+        r = await client.post(
+            "/api/v1/entries",
+            json={"entry_date": "2026-05-08", "title": "Just a title", "body": ""},
+        )
+        assert r.status_code == 201
+        assert r.json()["title"] == "Just a title"
+
+
+class TestEntryRead:
+    async def test_get_entry(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        r = await client.get(f"/api/v1/entries/{entry['id']}")
+        assert r.status_code == 200
+        assert r.json()["body"] == "Hello world"
+
+    async def test_get_missing_returns_404(self, client: AsyncClient):
+        r = await client.get("/api/v1/entries/9999")
+        assert r.status_code == 404
+
+    async def test_list_entries(self, client: AsyncClient):
+        await _create_entry(client, date="2026-05-01")
+        await _create_entry(client, date="2026-05-02", body="Second")
+        r = await client.get("/api/v1/entries")
+        data = r.json()
+        assert data["total"] >= 2
+
+    async def test_calendar_month(self, client: AsyncClient):
+        await _create_entry(client, date="2026-06-15", body="June entry")
+        r = await client.get("/api/v1/entries/calendar/2026/6")
+        items = r.json()
+        assert len(items) == 1
+        assert items[0]["entry_date"] == "2026-06-15"
+
+    async def test_calendar_month_word_counts(self, client: AsyncClient):
+        await _create_entry(client, date="2026-06-15", body="one two  three\nfour")
+        await _create_entry(client, date="2026-06-16", body="   ")
+        r = await client.get("/api/v1/entries/calendar/2026/6")
+        by_date = {i["entry_date"]: i for i in r.json()}
+        # Whitespace-run counting (matches the frontend helper): collapsed
+        # runs and newlines each delimit one word; blank bodies count 0.
+        assert by_date["2026-06-15"]["word_count"] == 4
+        assert by_date["2026-06-16"]["word_count"] == 0
+
+
+class TestEntryUpdate:
+    async def test_update_body(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"body": "Updated"})
+        assert r.status_code == 200
+        assert r.json()["body"] == "Updated"
+
+    async def test_update_tags(self, client: AsyncClient):
+        # Tags are explicit: patching tag_ids replaces the set; body-only
+        # patches never touch tags (a #token in the body is plain text).
+        entry = await _create_entry(client, body="#a")
+        tag = (await client.post("/api/v1/tags", json={"name": "b"})).json()
+        r = await client.patch(
+            f"/api/v1/entries/{entry['id']}", json={"tag_ids": [tag["id"]]}
+        )
+        tags = r.json()["tags"]
+        assert len(tags) == 1
+        assert tags[0]["name"] == "b"
+        r2 = await client.patch(f"/api/v1/entries/{entry['id']}", json={"body": "#c"})
+        assert r2.json()["tags"] == tags
+
+    async def test_update_mood(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"mood": "happy"})
+        assert r.json()["mood"] == "happy"
+
+    async def test_clear_mood(self, client: AsyncClient):
+        # spec §9 ED10: unset mood is a valid state; an explicit null clears it.
+        entry = await _create_entry(client, mood="happy")
+        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"mood": None})
+        assert r.status_code == 200
+        assert r.json()["mood"] is None
+
+
+class TestEntryDelete:
+    async def test_soft_delete(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        r = await client.delete(f"/api/v1/entries/{entry['id']}")
+        assert r.status_code == 204
+        r = await client.get(f"/api/v1/entries/{entry['id']}")
+        assert r.status_code == 404
+
+    async def test_create_after_delete_restores(self, client: AsyncClient):
+        entry = await _create_entry(client, date="2026-05-08")
+        await client.delete(f"/api/v1/entries/{entry['id']}")
+        r = await client.post(
+            "/api/v1/entries", json={"entry_date": "2026-05-08", "body": "Restored"}
+        )
+        assert r.status_code == 201
+        assert r.json()["body"] == "Restored"
+
+
+class TestEntryRestore:
+    async def test_restore_endpoint_un_deletes(self, client: AsyncClient):
+        entry = await _create_entry(client, body="recoverable text")
+        await client.delete(f"/api/v1/entries/{entry['id']}")
+        r = await client.post(f"/api/v1/entries/{entry['id']}/restore")
+        assert r.status_code == 200
+        assert r.json()["is_deleted"] is False
+        # Entry is visible again via normal GET
+        r = await client.get(f"/api/v1/entries/{entry['id']}")
+        assert r.status_code == 200
+
+    async def test_restore_missing_returns_404(self, client: AsyncClient):
+        r = await client.post("/api/v1/entries/9999/restore")
+        assert r.status_code == 404
+
+    async def test_restore_is_idempotent(self, client: AsyncClient):
+        entry = await _create_entry(client)
+        # Restoring an already-live entry should not error.
+        r = await client.post(f"/api/v1/entries/{entry['id']}/restore")
+        assert r.status_code == 200

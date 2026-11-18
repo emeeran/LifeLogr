@@ -1,0 +1,269 @@
+import { request, textRequest, UPLOAD_TIMEOUT_MS, API_ORIGIN } from './client'
+import type { JobStartResponse } from './backup'
+import type {
+  NoteResponse,
+  NoteCreate,
+  NoteUpdate,
+  NoteListResponse,
+  NoteListParams,
+  NoteFolderResponse,
+  NoteFolderCreate,
+  NoteFolderUpdate,
+  NoteEncryptionStatusResponse,
+  NoteMediaResponse,
+  NotePageResponse,
+  NotePageCreate,
+  NotePageUpdate,
+  NotePageReorderItem,
+  ReorderItem,
+} from '../types'
+
+export const notesApi = {
+  create(data: NoteCreate): Promise<NoteResponse> {
+    return request('/notes', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  get(id: number): Promise<NoteResponse> {
+    return request(`/notes/${id}`)
+  },
+
+  list(params?: NoteListParams): Promise<NoteListResponse> {
+    const sp = new URLSearchParams()
+    if (params?.offset != null) sp.set('offset', String(params.offset))
+    if (params?.limit != null) sp.set('limit', String(params.limit))
+    if (params?.folder_id != null) sp.set('folder_id', String(params.folder_id))
+    if (params?.tag_ids?.length)
+      sp.set('tag_ids', params.tag_ids.join(','))
+    if (params?.is_pinned != null) sp.set('is_pinned', String(params.is_pinned))
+    const qs = sp.toString()
+    return request(`/notes${qs ? `?${qs}` : ''}`)
+  },
+
+  search(query: string, offset = 0, limit = 20): Promise<NoteListResponse> {
+    return request(
+      `/notes/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`,
+    )
+  },
+
+  update(id: number, data: NoteUpdate): Promise<NoteResponse> {
+    return request(`/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  delete(id: number): Promise<void> {
+    return request(`/notes/${id}`, { method: 'DELETE' })
+  },
+
+  restore(id: number): Promise<NoteResponse> {
+    return request(`/notes/${id}/restore`, { method: 'POST' })
+  },
+
+  setPinned(id: number, is_pinned: boolean): Promise<NoteResponse> {
+    return request(`/notes/${id}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_pinned }),
+    })
+  },
+
+  // ── Sub-pages (EPIM-style page tabs) ──
+  createPage(noteId: number, data: NotePageCreate): Promise<NotePageResponse> {
+    return request(`/notes/${noteId}/pages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  updatePage(
+    noteId: number,
+    pageId: number,
+    data: NotePageUpdate,
+  ): Promise<NotePageResponse> {
+    return request(`/notes/${noteId}/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  deletePage(noteId: number, pageId: number): Promise<void> {
+    return request(`/notes/${noteId}/pages/${pageId}`, { method: 'DELETE' })
+  },
+  reorderPages(
+    noteId: number,
+    items: NotePageReorderItem[],
+  ): Promise<{ reordered: number }> {
+    return request(`/notes/${noteId}/pages/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  listFolders(): Promise<NoteFolderResponse[]> {
+    return request('/notes/folders')
+  },
+
+  createFolder(data: NoteFolderCreate): Promise<NoteFolderResponse> {
+    return request('/notes/folders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  updateFolder(
+    id: number,
+    data: NoteFolderUpdate,
+  ): Promise<NoteFolderResponse> {
+    return request(`/notes/folders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteFolder(id: number): Promise<void> {
+    return request(`/notes/folders/${id}`, { method: 'DELETE' })
+  },
+
+  /** Batch-set note sort_order for a rail section (DND-3 drag reorder). */
+  reorderNotes(items: ReorderItem[]): Promise<{ reordered: number }> {
+    return request('/notes/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  /** Batch-set notebook sort_order (one call instead of N PATCHes). */
+  reorderFolders(items: ReorderItem[]): Promise<{ reordered: number }> {
+    return request('/notes/folders/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  encrypt(
+    id: number,
+    passphrase: string,
+  ): Promise<NoteEncryptionStatusResponse> {
+    return request(`/notes/${id}/encryption/encrypt`, {
+      method: 'POST',
+      body: JSON.stringify({ passphrase }),
+    })
+  },
+
+  decrypt(
+    id: number,
+    passphrase: string,
+  ): Promise<NoteEncryptionStatusResponse> {
+    return request(`/notes/${id}/encryption/decrypt`, {
+      method: 'POST',
+      body: JSON.stringify({ passphrase }),
+    })
+  },
+
+  encryptionStatus(id: number): Promise<NoteEncryptionStatusResponse> {
+    return request(`/notes/${id}/encryption/status`)
+  },
+
+  uploadMedia(
+    noteId: number,
+    file: File,
+    caption?: string,
+  ): Promise<NoteMediaResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    if (caption) form.append('caption', caption)
+    return request(`/notes/${noteId}/media`, { method: 'POST', body: form })
+  },
+
+  uploadMediaFromPath(
+    noteId: number,
+    path: string,
+    caption?: string,
+  ): Promise<NoteMediaResponse> {
+    return request(`/notes/${noteId}/media/from-path`, {
+      method: 'POST',
+      body: JSON.stringify({ path, caption }),
+    })
+  },
+
+  listNoteMedia(noteId: number): Promise<NoteMediaResponse[]> {
+    return request(`/notes/${noteId}/media`)
+  },
+
+  deleteNoteMedia(noteId: number, mediaId: number): Promise<void> {
+    return request(`/notes/${noteId}/media/${mediaId}`, { method: 'DELETE' })
+  },
+
+  /** OCR a note image; the caller inserts the returned text into the note body.
+   *  `lang` is a tesseract code mirroring Settings → Appearance → "OCR language". */
+  ocrNoteMedia(
+    noteId: number,
+    mediaId: number,
+    lang = 'eng',
+  ): Promise<{ text: string }> {
+    return request(
+      `/notes/${noteId}/media/${mediaId}/ocr?lang=${encodeURIComponent(lang)}`,
+      {
+        method: 'POST',
+      },
+    )
+  },
+
+  /** Clip a web page to markdown (text fallback for the desktop image capture). */
+  webClip(url: string): Promise<{ markdown: string }> {
+    return request('/notes/web-clip', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    })
+  },
+
+  mediaFileUrl(noteId: number, mediaId: number): string {
+    return `${API_ORIGIN}/api/v1/notes/${noteId}/media/${mediaId}/file`
+  },
+
+  // ── Notes import / export ──
+  exportMarkdownUrl(): string {
+    return `${API_ORIGIN}/api/v1/notes/export/markdown`
+  },
+  exportSingleMarkdownUrl(id: number): string {
+    return `${API_ORIGIN}/api/v1/notes/${id}/export/markdown`
+  },
+  exportJsonUrl(): string {
+    return `${API_ORIGIN}/api/v1/notes/export/json`
+  },
+  /** Full notes export as HTML text (goes through the shared transport so
+   *  failures carry the backend's detail, not a bare status code). */
+  exportHtml(): Promise<string> {
+    return textRequest('/notes/export/html')
+  },
+  importFile(file: File): Promise<{ imported: number; skipped: number }> {
+    const form = new FormData()
+    form.append('file', file)
+    // Multipart imports can be large — long timeout (see api/client).
+    return request('/notes/import/file', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+  /** Import as a polled job — poll `jobsApi.get(job_id)` for insert progress. */
+  importFileJob(file: File): Promise<JobStartResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/notes/import/file?as_job=true', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+  /** Import a single .md file as one new note; returns the created note id. */
+  importMarkdownFile(
+    file: File,
+  ): Promise<{ imported: number; skipped: number; note_id: number | null }> {
+    const form = new FormData()
+    form.append('file', file)
+    return request('/notes/import/markdown', {
+      method: 'POST',
+      body: form,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    })
+  },
+}

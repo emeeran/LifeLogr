@@ -1,0 +1,594 @@
+"""Backup route handlers."""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import tempfile
+from collections.abc import Awaitable
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.jobs import ProgressReporter, start_data_job as _start_data_job
+from app.schemas.backup import (
+    BackupConfigCreate,
+    BackupConfigResponse,
+    BackupSnapshotResponse,
+    RestoreRequest,
+)
+from app.services.backup_service import BackupService
+from app.services.media_service import spool_upload
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1/backup", tags=["backup"])
+
+
+@router.post("/config", response_model=BackupConfigResponse, status_code=201)
+async def create_backup_config(data: BackupConfigCreate, db: AsyncSession = Depends(get_db)) -> Any:
+    """Create or update a cloud backup configuration."""
+    svc = BackupService(db)
+    return await svc.create_config(data)
+
+
+@router.get("/config", response_model=list[BackupConfigResponse])
+async def list_backup_configs(db: AsyncSession = Depends(get_db)) -> Any:
+    """List all backup configurations."""
+    svc = BackupService(db)
+    return await svc.get_configs()
+
+
+@router.post("/config/{config_id}/test")
+async def test_connection(config_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Test the cloud provider connection for a config."""
+    svc = BackupService(db)
+    success = await svc.test_connection(config_id)
+    return {"success": success, "message": "Connection OK" if success else "Connection failed"}
+
+
+@router.delete("/config/{config_id}", status_code=204)
+async def delete_backup_config(config_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Delete a backup configuration."""
+    svc = BackupService(db)
+    await svc.delete_config(config_id)
+
+
+@router.post("/run")
+async def run_backup(
+    request: RestoreRequest,
+    background_tasks: BackgroundTasks,
+    as_job: bool = Query(False, description="Run as a polled job; returns {job_id}"),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Run a cloud backup now.
+
+    Default (``as_job=false``) is synchronous by design: the archive upload is
+    the point of the call, and the returned snapshot carries the outcome
+    (``status=completed`` or ``failed`` with the provider's error). It used to
+    claim 202 "accepted in the background" while blocking the request for the
+    whole upload — the worst of both. Failures to even start (config missing,
+    one already running, unknown provider) map to 404/409/400.
+
+    ``as_job=true`` returns 202 ``{job_id}`` immediately; poll
+    ``GET /api/v1/jobs/{job_id}`` for archive/upload progress.
+    """
+    svc = BackupService(db)
+    if not as_job:
+        return BackupSnapshotResponse.model_validate(await svc.run_backup(request.config_id))
+
+    def _runner(report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            from app.core.database import async_session
+
+            async with async_session() as session:
+                snapshot = await BackupService(session).run_backup(
+                    request.config_id, report=report
+                )
+                if snapshot.status == "failed":
+                    raise RuntimeError(snapshot.error_message or "Backup failed")
+                return f"Backup completed ({snapshot.entries_synced} entries, {snapshot.media_synced} media)"
+
+        return _run()
+
+    return _start_data_job(background_tasks, "backup", _runner)
+
+
+@router.post("/run-now")
+async def run_configured_backup_now(
+    background_tasks: BackgroundTasks,
+    backup_path: str | None = Query(
+        None, description="Local folder — run a local backup now (no saved schedule needed)"
+    ),
+    retention: int = Query(10, ge=1, description="Local backups to keep"),
+    as_job: bool = Query(False, description="Run as a polled job; returns {job_id}"),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Run a backup immediately.
+
+    With ``backup_path`` a local backup runs to that folder right away — no
+    persisted schedule required, so "Run now" works before the user saves one.
+    Otherwise the persisted schedule runs (a local folder via ``_run_backup`` or
+    a cloud config via ``BackupService.run_backup``). Actually writes the archive
+    (unlike ``/export``, which is a throwaway copy).
+
+    ``as_job=true`` returns 202 ``{job_id}`` immediately; poll
+    ``GET /api/v1/jobs/{job_id}`` for progress.
+    """
+    from app.core.paths import resolve_backup_path
+    from app.services.scheduler_service import SchedulerService, _run_backup
+
+    if backup_path:
+        try:
+            resolved = resolve_backup_path(backup_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not as_job:
+            archive = await _run_backup(str(resolved), retention)
+            return {"mode": "local", "path": str(resolved), "archive": archive}
+
+        target = str(resolved)
+
+        def _runner(report: ProgressReporter) -> Awaitable[str]:
+            async def _run() -> str:
+                archive = await _run_backup(target, retention, report=report)
+                return f"Backup written to {archive}"
+
+            return _run()
+
+        return _start_data_job(background_tasks, "backup-local", _runner)
+
+    active = await SchedulerService(db).get_active_schedule()
+    if active is None:
+        raise HTTPException(status_code=404, detail="No backup schedule is configured")
+
+    if active.config_id is not None:
+        svc = BackupService(db)
+        if not as_job:
+            snapshot = await svc.run_backup(active.config_id)
+            return {
+                "mode": "cloud",
+                "config_id": active.config_id,
+                "status": snapshot.status,
+                "error": snapshot.error_message,
+            }
+        config_id = active.config_id
+
+        def _runner(report: ProgressReporter) -> Awaitable[str]:
+            async def _run() -> str:
+                from app.core.database import async_session
+
+                async with async_session() as session:
+                    snapshot = await BackupService(session).run_backup(
+                        config_id, report=report
+                    )
+                    if snapshot.status == "failed":
+                        raise RuntimeError(snapshot.error_message or "Backup failed")
+                    return f"Backup completed ({snapshot.entries_synced} entries, {snapshot.media_synced} media)"
+
+            return _run()
+
+        return _start_data_job(background_tasks, "backup", _runner)
+
+    if not as_job:
+        archive = await _run_backup(active.backup_path or "", active.retention)
+        return {"mode": "local", "path": active.backup_path, "archive": archive}
+
+    scheduled_path = active.backup_path or ""
+    scheduled_retention = active.retention
+
+    def _local_runner(report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            archive = await _run_backup(scheduled_path, scheduled_retention, report=report)
+            return f"Backup written to {archive}"
+
+        return _run()
+
+    return _start_data_job(background_tasks, "backup-local", _local_runner)
+
+
+@router.get("/snapshots")
+async def list_snapshots(
+    config_id: int | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """List backup snapshots with pagination."""
+    svc = BackupService(db)
+    snapshots, total = await svc.list_snapshots(config_id, offset, limit)
+    # Serialize ORM rows via the response model — returning the raw ORM objects
+    # makes pydantic v2 raise "Unable to serialize unknown type" on the response.
+    return {
+        "items": [BackupSnapshotResponse.model_validate(s).model_dump() for s in snapshots],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@router.delete("/snapshots/{snapshot_id}")
+async def delete_backup_snapshot(
+    snapshot_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Delete a snapshot's cloud backup file (if any) and the snapshot record."""
+    svc = BackupService(db)
+    return await svc.delete_backup(snapshot_id)
+
+
+@router.post("/restore")
+async def restore_backup(
+    request: RestoreRequest,
+    background_tasks: BackgroundTasks,
+    as_job: bool = Query(False, description="Run as a polled job; returns {job_id}"),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Restore journal data from a cloud backup.
+
+    Status codes are specific: 409 no backup to restore, 400 the archive or the
+    DB inside it is unusable, 502 the provider/network failed, 500 anything
+    unexpected. (Everything used to come back as a blanket 409 "Restore
+    failed", which the UI read as "your data is broken" when it was really a
+    dropped connection.)
+
+    ``as_job=true`` returns 202 ``{job_id}`` immediately; poll
+    ``GET /api/v1/jobs/{job_id}`` for download/extract/swap progress. The job
+    runs on a fresh session — the engine swap invalidates this request's.
+    """
+    from app.services.backup_service import BackupProviderError
+
+    if not as_job:
+        svc = BackupService(db)
+        try:
+            result = await svc.restore(request.config_id)
+        except BackupProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"success": True, **result}
+
+    config_id = request.config_id
+
+    def _runner(report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            from app.core.database import async_session
+
+            async with async_session() as session:
+                result = await BackupService(session).restore(config_id, report=report)
+                return (
+                    f"Restored {result.get('entries_restored', 0)} entries, "
+                    f"{result.get('media_restored', 0)} media files"
+                )
+
+        return _run()
+
+    return _start_data_job(background_tasks, "restore", _runner)
+
+
+@router.get("/export")
+async def export_local_backup(
+    background_tasks: BackgroundTasks,
+) -> FileResponse:
+    """Export the SQLite database and media files as a .tar.gz archive."""
+    from datetime import datetime, timezone
+
+    from app.core.archive import add_backup_members
+    from app.core.restore import checkpoint_wal
+
+    # Stage inside DATA_DIR (not system /tmp — tmpfs on Ubuntu 24.04, so a
+    # media-heavy archive would be packed into RAM; this project has recorded
+    # OOM incidents). Same policy as the cloud backup staging in
+    # backup_service.export_local_backup.
+    fd, staged = tempfile.mkstemp(suffix=".tar.gz", dir=str(settings.DATA_DIR))
+    os.close(fd)
+    archive_path = Path(staged)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+    db_file = settings.db_path
+    media_dir = settings.MEDIA_DIR
+
+    import asyncio
+    import tarfile
+
+    try:
+        # Checkpoint WAL before reading to ensure consistency
+        if db_file.exists():
+            await checkpoint_wal(db_file)
+
+        # Gzipping DB + media is synchronous file I/O — offload it from the loop.
+        def _pack() -> None:
+            with tarfile.open(archive_path, "w:gz") as tar:
+                add_backup_members(tar, db_file, media_dir)
+
+        await asyncio.to_thread(_pack)
+    except BaseException:
+        # A busy checkpoint or full disk must not leave a DB+media-sized
+        # orphan in DATA_DIR (accumulating on every retry).
+        archive_path.unlink(missing_ok=True)
+        raise
+
+    background_tasks.add_task(archive_path.unlink, True)
+
+    return FileResponse(
+        path=str(archive_path),
+        media_type="application/gzip",
+        filename=f"lifelogr-backup-{timestamp}.tar.gz",
+    )
+
+
+async def _spool_upload(file: UploadFile, max_bytes: int | None = None) -> Path:
+    """Stream an upload to a temp file, enforcing the import size cap."""
+    limit = settings.MAX_IMPORT_SIZE_BYTES if max_bytes is None else max_bytes
+
+    def _too_large(limit: int) -> Exception:
+        return HTTPException(
+            status_code=413,
+            detail=f"Archive exceeds the {limit}-byte import limit.",
+        )
+
+    path, _ = await spool_upload(file, limit, suffix=".tar.gz", on_overflow=_too_large)
+    return path
+
+
+@router.post("/verify")
+async def verify_backup(file: UploadFile) -> dict[str, Any]:
+    """Check an uploaded archive against its integrity manifest — no restore.
+
+    Members are hashed straight from the tar stream (nothing is extracted), so
+    this is safe to run on a backup the user is unsure about. Legacy archives
+    built before manifests existed report ``legacy: true`` with ``valid: true``
+    (there is nothing to check), which the UI shows as a warning.
+    """
+    import asyncio
+
+    from app.core.archive import verify_archive
+
+    upload_path = await _spool_upload(file)
+    try:
+        return await asyncio.to_thread(verify_archive, upload_path)
+    finally:
+        upload_path.unlink(missing_ok=True)
+
+
+@router.post("/import")
+async def import_local_backup(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    as_job: bool = Query(False, description="Restore as a polled job; returns {job_id}"),
+) -> dict[str, Any]:
+    """Import a .tar.gz archive to restore database and media files.
+
+    Streams the upload to a temp file with a hard size cap
+    (``MAX_IMPORT_SIZE_BYTES``) so an unauthenticated loopback request can't
+    exhaust memory, verifies the manifest, then extracts via the shared
+    traversal-guarded helper and atomically swaps the live data.
+
+    ``as_job=true`` spools the upload synchronously (the browser tracks that
+    part itself), then returns 202 ``{job_id}`` and runs extract/swap in the
+    background — poll ``GET /api/v1/jobs/{job_id}`` for progress.
+    """
+
+    max_bytes = settings.MAX_IMPORT_SIZE_BYTES
+    db_file_path: Path = settings.db_path
+    media_dir = settings.MEDIA_DIR
+
+    upload_path = await _spool_upload(file, max_bytes)
+
+    if as_job:
+
+        def _runner(report: ProgressReporter) -> Awaitable[str]:
+            async def _run() -> str:
+                restored = await _restore_spooled_archive(
+                    upload_path, db_file_path, media_dir, report=report
+                )
+                return f"Restored: {', '.join(restored) if restored else 'nothing'}"
+
+            return _run()
+
+        return _start_data_job(background_tasks, "restore-local", _runner)
+
+    restored = await _restore_spooled_archive(upload_path, db_file_path, media_dir)
+    return {"success": True, "restored": restored}
+
+
+async def _restore_spooled_archive(
+    upload_path: Path,
+    db_file_path: Path,
+    media_dir: Path,
+    report: ProgressReporter | None = None,
+) -> list[str]:
+    """Extract + atomically restore a spooled .tar.gz upload; unlink it after."""
+    import asyncio
+
+    from app.core.archive import extract_archive_file, verify_archive
+    from app.core.restore import atomic_restore
+
+    def _silent(phase: str, done: int = 0, total: int | None = None) -> None:
+        pass
+
+    rep = report or _silent
+    try:
+        # Integrity first: a truncated download or bit-rotted file must never
+        # reach the swap, or it would replace good data with bad.
+        rep("verify")
+        verification = await asyncio.to_thread(verify_archive, upload_path)
+        if not verification["valid"]:
+            detail = "; ".join(verification["errors"][:5]) or "integrity check failed"
+            raise HTTPException(
+                status_code=400, detail=f"Backup failed verification: {detail}"
+            )
+        if verification["legacy"]:
+            logger.warning("Restoring a legacy backup with no integrity manifest")
+
+        extract_dir = tempfile.mkdtemp()
+        try:
+            # Extraction is synchronous and can be large — offload it. The
+            # shared helper raises ValueError for a bad/unsafe archive → 400.
+            rep("extract")
+            try:
+                await asyncio.to_thread(extract_archive_file, upload_path, extract_dir)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            extracted_db = Path(extract_dir) / "diarium.diarium"
+            # Backward compat: accept old archives that used "dev.db"
+            if not extracted_db.exists():
+                extracted_db = Path(extract_dir) / "dev.db"
+            extracted_media = Path(extract_dir) / "media"
+
+            if extracted_db.exists():
+                rep("swap")
+                try:
+                    restored = await atomic_restore(
+                        extracted_db=extracted_db,
+                        extracted_media=extracted_media if extracted_media.exists() else None,
+                        live_db=db_file_path,
+                        live_media=media_dir,
+                        extracted_wal=Path(f"{extracted_db}-wal"),
+                        extracted_shm=Path(f"{extracted_db}-shm"),
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            else:
+                restored = []
+                # No DB in archive — just restore media if present
+                if extracted_media.exists():
+                    rep("swap")
+                    if media_dir.exists():
+                        shutil.rmtree(str(media_dir))
+                    shutil.copytree(str(extracted_media), str(media_dir))
+                    restored.append("media")
+        finally:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+    finally:
+        upload_path.unlink(missing_ok=True)
+
+    return restored
+
+
+# ── Automated backup scheduling ────────────────────────────────────────────────
+
+
+@router.post("/schedule")
+async def schedule_backup(
+    cron: str = Query(..., description="Cron expression (e.g., '0 2 * * *')"),
+    backup_path: str | None = Query(None, description="Directory path for local backup files"),
+    retention: int = Query(10, ge=1, le=100, description="Number of local backups to keep"),
+    config_id: int | None = Query(
+        None, description="BackupConfig ID for cloud upload (e.g., Google Drive)"
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Schedule an automated backup job.
+
+    Provide **config_id** to upload to a cloud provider (Google Drive, WebDAV),
+    or **backup_path** for local filesystem backups.
+    """
+    from sqlalchemy import select
+
+    from app.models.backup import BackupConfig
+    from app.services.scheduler_service import SchedulerService
+
+    # Validate config_id exists before scheduling
+    if config_id is not None:
+        result = await db.execute(select(BackupConfig).where(BackupConfig.id == config_id))
+        config = result.scalar_one_or_none()
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Backup config {config_id} not found")
+
+    # Local backups must target user-owned space (security: unauthenticated
+    # loopback endpoint). SchedulerService.schedule_backup re-checks defensively.
+    if backup_path and config_id is None:
+        from app.core.paths import resolve_backup_path
+
+        try:
+            resolve_backup_path(backup_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    svc = SchedulerService(db)
+    return await svc.schedule_backup(cron, backup_path, retention, config_id)
+
+
+@router.get("/schedule")
+async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Return the persisted backup schedule.
+
+    The settings tab hydrates cron/backup_path/retention from this, so the
+    values the user sees are the ones scheduled runs actually use (the
+    retention input otherwise lives only in browser localStorage and can
+    silently drift from the saved schedule).
+    """
+    from app.services.scheduler_service import SchedulerService
+
+    active = await SchedulerService(db).get_active_schedule()
+    if active is None:
+        return {
+            "configured": False,
+            "cron": None,
+            "config_id": None,
+            "backup_path": None,
+            "retention": 10,
+            "last_run": None,
+        }
+    return {
+        "configured": True,
+        "cron": active.cron,
+        "config_id": active.config_id,
+        "backup_path": active.backup_path,
+        "retention": active.retention,
+        "last_run": active.last_run_at.isoformat() if active.last_run_at else None,
+    }
+
+
+@router.get("/schedule/status")
+async def schedule_status(db: AsyncSession = Depends(get_db)) -> Any:
+    """Check the status of the backup scheduler."""
+    from app.services.scheduler_service import SchedulerService
+
+    svc = SchedulerService(db)
+    return await svc.get_status()
+
+
+@router.delete("/schedule")
+async def unschedule_backup(db: AsyncSession = Depends(get_db)) -> Any:
+    """Remove the automated backup schedule."""
+    from app.services.scheduler_service import SchedulerService
+
+    svc = SchedulerService(db)
+    return await svc.unschedule_backup()
+
+
+@router.post("/config/migrate-credentials")
+async def migrate_credential_encryption(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Upgrade all backup configs from legacy v1 to v2 (HKDF) token format.
+
+    Idempotent: v2 tokens pass through unchanged. Returns the number of tokens
+    upgraded so the v1 fallback path can be retired once this reports zero.
+    """
+    from sqlalchemy import select
+
+    from app.core.security import reencrypt, token_version
+    from app.models.backup import BackupConfig
+
+    result = await db.execute(select(BackupConfig))
+    configs = result.scalars().all()
+    upgraded = 0
+    for config in configs:
+        if token_version(config.credentials_encrypted) == 1:
+            config.credentials_encrypted = reencrypt(config.credentials_encrypted)
+            upgraded += 1
+    if upgraded:
+        await db.commit()
+    remaining = sum(1 for c in configs if token_version(c.credentials_encrypted) == 1)
+    return {
+        "checked": len(configs),
+        "upgraded": upgraded,
+        "remaining_v1": remaining,
+    }

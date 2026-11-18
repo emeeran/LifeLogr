@@ -1,0 +1,69 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "LifeLogr",
+  "version": "0.17.7",
+  "identifier": "com.lifelogr.desktop",
+  "build": {
+    "frontendDist": "../../frontend/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeBuildCommand": "bash scripts/build-frontend.sh"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "LifeLogr",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:* https://tile.openstreetmap.org; media-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:*"
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": "^(https?://|mailto:|tel:).+"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libportaudio2",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-libav",
+          "gstreamer1.0-plugins-bad",
+          "tesseract-ocr",
+          "tesseract-ocr-eng"
+        ],
+        "recommends": [
+          "psmisc"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "externalBin": [
+      "lifelogr-backend"
+    ],
+    "resources": [
+      "../scripts/setup-linux.sh"
+    ]
+  }
+}

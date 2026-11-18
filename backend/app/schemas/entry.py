@@ -1,0 +1,254 @@
+"""Pydantic schemas for journal entries."""
+
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.tag import TagBrief
+
+
+class EntryCreate(BaseModel):
+    entry_date: date
+    title: str | None = Field(default=None, max_length=255, description="Entry title")
+    body: str = Field(
+        default="",
+        max_length=1_000_000,
+        description="Markdown body (may be empty for title-only/recording-only entries)",
+    )
+    mood: str | None = Field(default=None, max_length=50, description="Mood label")
+    tag_ids: list[int] = Field(default_factory=list, description="Tag IDs to associate")
+    latitude: float | None = Field(default=None, ge=-90, le=90, description="Latitude")
+    longitude: float | None = Field(default=None, ge=-180, le=180, description="Longitude")
+    template_id: int | None = Field(
+        default=None, description="ID of the template this entry was created from, if any"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "entry_date": "2026-05-08",
+                "title": "A great day",
+                "body": "Today I built my journal.",
+                "mood": "excited",
+                "tag_ids": [1],
+                "latitude": 52.52,
+                "longitude": 13.405,
+            }
+        }
+    )
+
+
+class ResetRequest(BaseModel):
+    """Confirmation payload for the destructive database reset."""
+
+    confirm: str = Field(description='Must be exactly "RESET"')
+
+
+class EntryUpdate(BaseModel):
+    title: str | None = Field(
+        default=None, max_length=255, description="Updated title; null to clear"
+    )
+    body: str | None = Field(
+        default=None,
+        max_length=1_000_000,
+        description="Updated Markdown body; may be empty for title-only/recording-only entries",
+    )
+    mood: str | None = Field(default=None, max_length=50, description="Updated mood; null to clear")
+    tag_ids: list[int] | None = Field(
+        default=None, description="Tag IDs to associate; null to keep existing"
+    )
+    latitude: float | None = Field(default=None, ge=-90, le=90, description="Latitude")
+    longitude: float | None = Field(default=None, ge=-180, le=180, description="Longitude")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "title": "Updated title",
+                "body": "Updated thoughts.",
+                "mood": "calm",
+                "tag_ids": [1, 2],
+                "latitude": 52.52,
+                "longitude": 13.405,
+            }
+        }
+    )
+
+
+class ImportSkipReason(BaseModel):
+    """Why one imported record was skipped (index is its 0-based list position)."""
+
+    index: int
+    entry_date: str | None = None
+    title: str | None = None
+    reason: str
+
+
+class EntryEventBrief(BaseModel):
+    """A per-entry event (weather today; unknown vendor types kept verbatim)."""
+
+    id: int
+    kind: str
+    content: str
+    label: str | None = None
+
+
+class EntryResponse(BaseModel):
+    id: int
+    entry_date: date
+    title: str | None
+    body: str
+    summary: str | None = None
+    mood: str | None
+    is_deleted: bool
+    is_encrypted: bool = False
+    tags: list[TagBrief]
+    events: list[EntryEventBrief] = Field(default_factory=list)
+    media_count: int
+    has_recording: bool
+    latitude: float | None = None
+    longitude: float | None = None
+    location_name: str | None = None
+    template_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TrashItemResponse(BaseModel):
+    """One soft-deleted entry in the trash view.
+
+    Same lightweight projection as :class:`EntryListItem` plus ``deleted_at``
+    (the UI counts down to the retention sweep) and without the location/
+    template fields the trash list never renders.
+    """
+
+    id: int
+    entry_date: date
+    title: str | None
+    body_snippet: str
+    mood: str | None
+    is_encrypted: bool = False
+    tags: list[TagBrief]
+    media_count: int
+    has_recording: bool
+    deleted_at: datetime
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EntryListItem(BaseModel):
+    """Lightweight entry for list/timeline views.
+
+    Same as :class:`EntryResponse` but with the full ``body`` replaced by a
+    server-side ``body_snippet`` (≈300 chars), so list queries don't materialize
+    every entry's full body into memory. The single GET keeps ``EntryResponse``.
+    """
+
+    id: int
+    entry_date: date
+    title: str | None
+    body_snippet: str
+    summary: str | None = None
+    mood: str | None
+    is_deleted: bool
+    is_encrypted: bool = False
+    tags: list[TagBrief]
+    media_count: int
+    has_recording: bool
+    latitude: float | None = None
+    longitude: float | None = None
+    location_name: str | None = None
+    template_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CalendarEntryResponse(BaseModel):
+    """Lightweight entry projection for calendar grid rendering.
+
+    Excludes ``body``, ``summary``, ``media_count``, timestamps, and
+    location — fields the calendar grid never reads. ``word_count`` is
+    computed server-side (body never leaves the API) so the daily
+    word-count goal can total today's entries without fetching bodies.
+    """
+
+    id: int
+    entry_date: date
+    title: str | None
+    mood: str | None
+    is_encrypted: bool = False
+    word_count: int = 0
+    tags: list[TagBrief]
+
+
+class GeotagItem(BaseModel):
+    """One mappable entry for the map view (no body leaves the API)."""
+
+    id: int
+    entry_date: date
+    title: str | None
+    latitude: float
+    longitude: float
+    location_name: str | None = None
+    is_encrypted: bool = False
+    media_id: int | None = Field(
+        default=None, description="First image attachment — popup thumbnail via /media/{id}/file"
+    )
+
+
+class GeotagResponse(BaseModel):
+    items: list[GeotagItem]
+    total: int
+    offset: int
+    limit: int
+
+
+class EntryListResponse(BaseModel):
+    items: list[EntryListItem]
+    total: int
+    offset: int
+    limit: int
+
+
+class TrashListResponse(BaseModel):
+    items: list[TrashItemResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+class WeeklyCount(BaseModel):
+    """Entries written in the ISO week starting ``week_start`` (a Monday)."""
+
+    week_start: date
+    count: int
+
+
+class MoodCount(BaseModel):
+    mood: str
+    count: int
+
+
+class MediaTypeCount(BaseModel):
+    media_type: str
+    count: int
+
+
+class JournalStatsResponse(BaseModel):
+    """Aggregates for the statistics dashboard.
+
+    ``weekly`` is the trailing ``weeks``-week window (oldest first, current
+    week last) with zero-filled gaps so the chart's x-axis is continuous.
+    """
+
+    total_entries: int
+    total_words: int
+    current_streak: int
+    longest_streak: int
+    weekly: list[WeeklyCount]
+    moods: list[MoodCount]
+    media: list[MediaTypeCount]
