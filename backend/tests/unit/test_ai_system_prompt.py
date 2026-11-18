@@ -1,9 +1,9 @@
 """Tests for the shared AI system prompt, entry context, and retry temperature.
 
-Covers spec.md §10: AI1 (system message on every provider path), AI2 (entry
-context in the system channel, absent fields as "unset"), and AI5 (retry bumps
-temperature). Requests are captured with an httpx MockTransport so the actual
-wire payload of each provider path is asserted.
+Covers: the system message on every provider path, entry context in the
+system channel (absent fields as "unset"), and retry bumping temperature.
+Requests are captured with an httpx MockTransport so the actual wire payload
+of each provider path is asserted.
 """
 
 import json

@@ -1,7 +1,7 @@
 # LifeLogr — what is and is not encrypted
 
-Companion to `docs/design/media-encryption.md` (design detail) and
-`AUDIT.md` (threat-model notes). This is the user-facing summary.
+Companion to `docs/design/media-encryption.md` (design detail). This is the
+user-facing summary.
 
 ## Key hierarchy
 
@@ -78,4 +78,4 @@ inspection, and other people with access to your files. It does not protect
 against other processes running as your user while the app is unlocked. The
 loopback API is unauthenticated by default (an optional `API_TOKEN` bearer
 gate exists for non-loopback deployments, and a `Host`-header guard rejects
-DNS-rebinding attempts) — see `AUDIT.md`.
+DNS-rebinding attempts).

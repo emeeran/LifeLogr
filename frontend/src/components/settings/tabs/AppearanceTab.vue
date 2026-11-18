@@ -197,14 +197,16 @@ function resetTTSDefaults() {
 
 const shortcuts = [
   { keys: 'Ctrl + K', desc: 'Open search palette' },
-  { keys: 'Ctrl + S', desc: 'Save entry' },
+  { keys: 'Ctrl + .', desc: 'Toggle Zen mode' },
+  { keys: 'Ctrl + ,', desc: 'Open Settings' },
+  { keys: 'Ctrl + S', desc: 'Save now (notes save only this way)' },
+  { keys: 'Ctrl + F', desc: 'Find & replace' },
   { keys: 'Ctrl + B', desc: 'Bold text' },
   { keys: 'Ctrl + I', desc: 'Italic text' },
-  { keys: 'Ctrl + Shift + X', desc: 'Strikethrough' },
-  { keys: 'Ctrl + \\', desc: 'Remove formatting' },
+  { keys: 'Ctrl + U', desc: 'Strikethrough' },
+  { keys: 'Ctrl + Alt + H', desc: 'Insert horizontal rule' },
   { keys: 'Ctrl + Z', desc: 'Undo' },
   { keys: 'Ctrl + Shift + Z', desc: 'Redo' },
-  { keys: 'Ctrl + F', desc: 'Find in entry' },
   { keys: 'Escape', desc: 'Close panel / dialog' },
 ]
 

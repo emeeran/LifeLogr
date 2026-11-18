@@ -1,16 +1,16 @@
 """Registry of generic, registry-driven AI text tools.
 
-Each tool is a pure prompt builder plus generation settings. Per spec §10 the
-persona, journal-privacy framing, and paste-back output contract live in the
-shared system prompt (:data:`app.services.ollama_service.SYSTEM_PROMPT`) that
-every provider path attaches; the builders here carry ONLY tool-specific
-behavior in the user message and must not restate a persona.
+Each tool is a pure prompt builder plus generation settings. The persona,
+journal-privacy framing, and paste-back output contract live in the shared
+system prompt (:data:`app.services.ollama_service.SYSTEM_PROMPT`) that every
+provider path attaches; the builders here carry ONLY tool-specific behavior
+in the user message and must not restate a persona.
 
-The menu presents the folded 8-tool contract set (spec.md §10 / impl-contract):
-rewrite-style operations are one ``rewrite`` tool with a ``mode`` parameter,
-and summarize/key-points/actions fold into one ``summarize`` tool with a mode
-parameter. ``define`` stays reachable through its dedicated backend endpoint
-but is not part of this registry.
+The menu presents the folded tool contract set: rewrite-style operations are
+one ``rewrite`` tool with a ``mode`` parameter, and summarize/key-points/
+actions fold into one ``summarize`` tool with a mode parameter. ``define``
+stays reachable through its dedicated backend endpoint but is not part of
+this registry.
 
 Adding a new tool = add one ``AiToolSpec`` to :data:`REGISTRY` and one entry to
 the frontend registry that targets ``/ai/tool/<id>``.

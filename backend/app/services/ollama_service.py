@@ -24,7 +24,7 @@ from app.schemas.ai import (
 
 logger = logging.getLogger(__name__)
 
-# ── Shared system prompt (spec.md §10 AI1) ───────────────────────────────
+# ── Shared system prompt ─────────────────────────────────────────────────
 # Exactly one system prompt: persona, privacy framing, and the paste-back
 # output contract are identical for every tool and every provider. Tool-specific
 # behavior (mode instructions, JSON shapes) lives in the user message built by

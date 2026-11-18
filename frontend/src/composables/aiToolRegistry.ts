@@ -3,10 +3,10 @@
  *
  * Every consumer — the AI drawer, the right-click context menu, and the
  * useAiTools composable — iterates `AI_TOOLS`. The menu presents the folded
- * 8-tool contract set (spec.md §10 AI4): rewrite-style operations are one
- * "Rewrite" tool with a mode parameter, and summarize/key-points/actions fold
- * into one "Summarize" tool with a mode parameter. `define` is dropped from
- * the menu (its backend endpoint remains).
+ * tool contract set: rewrite-style operations are one "Rewrite" tool with a
+ * mode parameter, and summarize/key-points/actions fold into one "Summarize"
+ * tool with a mode parameter. `define` is dropped from the menu (its backend
+ * endpoint remains).
  *
  * Adding a tool is a data change here (plus its backend prompt builder for
  * `/ai/tool/<id>` tools).
