@@ -2724,7 +2724,7 @@ dependencies = [
 
 [[package]]
 name = "lifelogr"
-version = "0.17.7"
+version = "0.18.0"
 dependencies = [
  "ashpd",
  "env_logger",
