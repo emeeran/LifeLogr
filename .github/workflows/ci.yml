@@ -35,6 +35,14 @@ jobs:
       - name: Mypy
         run: uv run mypy app/
 
+      # The SPA catch-all route only registers when frontend/dist exists (the
+      # job doesn't build the frontend), so stub a minimal dist for the
+      # test_main_misc SPA tests — same shape the real build produces.
+      - name: Stub frontend dist for SPA tests
+        run: |
+          mkdir -p ../frontend/dist/assets
+          printf '<!doctype html><html></html>' > ../frontend/dist/index.html
+
       - name: Pytest (with coverage gate)
         run: uv run pytest tests/ -q --cov=app --cov-report=term --cov-report=xml
 
@@ -75,7 +83,9 @@ jobs:
         run: npm run build
 
   e2e-settings:
-    runs-on: ubuntu-latest
+    # Playwright has no chromium build for ubuntu 26.04 (current ubuntu-latest);
+    # pin to 24.04 until it ships one.
+    runs-on: ubuntu-24.04
     needs: frontend
     defaults:
       run:
@@ -154,6 +164,10 @@ jobs:
           workspaces: desktop/src-tauri -> target
       - name: cargo check (desktop shell, default features)
         working-directory: desktop/src-tauri
-        run: cargo check
+        # tauri-build validates that the externalBin sidecar exists even for a
+        # bare `cargo check`; this job doesn't run PyInstaller, so stub it.
+        run: |
+          touch lifelogr-backend-x86_64-unknown-linux-gnu
+          cargo check
 
 

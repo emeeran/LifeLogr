@@ -39,6 +39,23 @@ _OLLAMA_RESPONSE = {"response": "ok"}
 _OPENAI_RESPONSE = {"choices": [{"message": {"content": "ok"}}]}
 
 
+@pytest.fixture(autouse=True)
+def _no_active_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test to the local-Ollama path without touching the DB.
+
+    ``_generate`` resolves the active provider through
+    ``ai_provider_service.get_active_provider``, which lazily opens the real
+    ``async_session`` — on a machine without a booted database that raises
+    ``no such table: ai_providers``. Tests that exercise the OpenAI path
+    override this with their own ``get_active_provider`` patch.
+    """
+
+    async def _none() -> None:
+        return None
+
+    monkeypatch.setattr("app.services.ai_provider_service.get_active_provider", _none)
+
+
 class TestSystemMessageEveryProviderPath:
     """T-AI1: both provider paths carry the shared system message verbatim."""
 

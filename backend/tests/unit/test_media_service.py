@@ -136,12 +136,20 @@ class TestMediaFromPath:
         )
         assert r.status_code in (400, 403, 404, 422)
 
-    async def test_sensitive_dir_rejected(self, client: AsyncClient, tmp_path):
+    async def test_sensitive_dir_rejected(self, client: AsyncClient, tmp_path, monkeypatch):
         from pathlib import Path
 
         from app.core.exceptions import ValidationError
         from app.services.media_service import MediaService
         from app.core.database import async_session
+
+        # Repoint home at tmp_path so the test doesn't depend on the host
+        # actually having ~/.ssh/authorized_keys (CI runners don't — the file
+        # check in validate_import_path would raise NotFoundError first).
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "authorized_keys").write_bytes(b"key")
 
         entry = await _entry(client)
         secret = Path.home() / ".ssh" / "authorized_keys"
