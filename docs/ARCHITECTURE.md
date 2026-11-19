@@ -4,7 +4,7 @@
 > [API Reference](manual/API_REFERENCE.md). This document explains **how LifeLogr is
 > built and how to work in it**, not how to use it.
 >
-> *Version 0.18.0 · last updated 2026-11-18*
+> *Version 0.18.1 · last updated 2026-11-18*
 
 ---
 
@@ -170,7 +170,7 @@ A Pydantic `BaseSettings` instance loaded from env / `.env`. Highlights:
 
 | Setting | Default | Notes |
 |---|---|---|
-| `APP_VERSION` | `0.18.0` | Keep in sync via `make bump`. API source of truth. |
+| `APP_VERSION` | `0.18.1` | Keep in sync via `make bump`. API source of truth. |
 | `APP_ENV` | `development` | `production` enables rate limiting + disables `/docs`. |
 | `SECRET_KEY` | `change-me-before-production` | AES key for encrypted credentials. **Must** be set for non-launcher runs. |
 | `DATA_DIR` | platform default (`~/.local/share/lifelogr` on Linux) | Overridable — see §8. |
