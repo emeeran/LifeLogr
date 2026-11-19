@@ -11,13 +11,12 @@ const startExport = vi.fn(async (_url: string) => ({
   job_id: 'job-9',
   kind: 'export-archive',
 }))
-const result = vi.fn(async (_id: string) => new Blob(['PKzip'], { type: 'application/zip' }))
-const saveFile = vi.fn(async (_opts?: unknown) => true)
+const saveUrlAs = vi.fn(async (_url: string, _opts?: unknown) => true)
 
 vi.mock('../../../api/jobs', () => ({
   jobsApi: {
     startExport: (url: string) => startExport(url),
-    result: (id: string) => result(id),
+    result: vi.fn(async (_id: string) => new Blob(['PKzip'], { type: 'application/zip' })),
     get: vi.fn(async () => ({
       id: 'job-9',
       kind: 'export-archive',
@@ -56,7 +55,8 @@ vi.mock('../../../api/notes', () => ({
   },
 }))
 vi.mock('../../../utils/fileDialog', () => ({
-  saveFile: (...args: unknown[]) => saveFile(...(args as [])),
+  saveFile: vi.fn(async () => true),
+  saveUrlAs: (url: string, opts?: unknown) => saveUrlAs(url, opts),
   pickFile: vi.fn(),
 }))
 
@@ -69,8 +69,7 @@ async function mountPanel() {
 
 beforeEach(() => {
   startExport.mockClear()
-  result.mockClear()
-  saveFile.mockClear()
+  saveUrlAs.mockClear()
 })
 
 describe('ExportPanel mount', () => {
@@ -94,7 +93,7 @@ describe('ExportPanel mount', () => {
     wrapper.unmount()
   })
 
-  it('exports the archive via a polled job and saves the result', async () => {
+  it('exports the archive via a polled job and streams the result to disk', async () => {
     const wrapper = await mountPanel()
     const archiveButton = wrapper
       .findAll('button')
@@ -104,10 +103,11 @@ describe('ExportPanel mount', () => {
 
     // as_job=true is appended by startExport; the URL comes from the builder.
     expect(startExport).toHaveBeenCalledWith('/entries/export/archive')
-    expect(saveFile).toHaveBeenCalledTimes(1)
-    const opts = saveFile.mock.calls[0]?.[0] as {
-      defaultName?: string
-    }
+    // The result is streamed by the shell (saveUrlAs), never a webview blob —
+    // a media-sized blob through WebKitGTK's IPC OOMs the renderer.
+    expect(saveUrlAs).toHaveBeenCalledTimes(1)
+    const [url, opts] = saveUrlAs.mock.calls[0] as [string, { defaultName?: string }]
+    expect(url).toBe('/api/v1/jobs/job-9/result')
     expect(opts.defaultName).toBe('lifelogr-archive.zip')
     wrapper.unmount()
   })

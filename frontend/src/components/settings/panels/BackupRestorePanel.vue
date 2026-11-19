@@ -4,13 +4,14 @@ import { useBackupStore } from '../../../stores/backup'
 import { backupApi } from '../../../api/backup'
 import { getBackupArchiveUrl } from '../../../api/data'
 import { useEntriesStore } from '../../../stores/entries'
-import { isTauri } from '../../../api/client'
-import { saveFile, pickFile, pickFolder } from '../../../utils/fileDialog'
+import { isTauri, API_BASE_PATH } from '../../../api/client'
+import { saveUrlAs, pickFile, pickPath, pickFolder, pickAndUploadJson, uploadFileAs } from '../../../utils/fileDialog'
 import { openExternal } from '../../../utils/externalLink'
 import { useLocalStorage } from '@vueuse/core'
 import { useJobProgress } from '../../../composables/useJobProgress'
 import { useConfirm } from '../../../composables/useConfirm'
-import type { JobState } from '../../../api/jobs'
+import type { JobState, JobStartResponse } from '../../../api/jobs'
+import type { BackupVerification } from '../../../api/backup'
 import OperationProgress from '../../common/OperationProgress.vue'
 import { providerLabel, clampRetention } from '../../../utils/settings'
 import {
@@ -102,41 +103,54 @@ function formatBytesShort(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+function reportVerification(report: BackupVerification): void {
+  if (report.legacy) {
+    emit(
+      'toast',
+      'info',
+      'Legacy archive: it has no integrity manifest, so it cannot be checked (restore still works).',
+    )
+    return
+  }
+  if (report.valid) {
+    const when = report.created_at
+      ? new Date(report.created_at).toLocaleString()
+      : 'unknown date'
+    emit(
+      'toast',
+      'success',
+      `Backup verified — ${report.files} file${report.files === 1 ? '' : 's'}, ${formatBytesShort(report.bytes)}, ${when}`,
+    )
+    return
+  }
+  const first = report.errors[0] ?? 'integrity check failed'
+  emit(
+    'toast',
+    'error',
+    `Backup is damaged — ${first}${report.errors.length > 1 ? ` (+${report.errors.length - 1} more)` : ''}. Do not restore this file.`,
+  )
+}
+
 /**
  * Integrity check without a restore. The archive is uploaded and hashed
  * against its embedded manifest — nothing is extracted or replaced.
  */
 async function handleBackupVerify() {
-  const file = await pickFile({ accept: '.tar.gz,.tgz' })
-  if (!file) return
   verifying.value = true
   try {
-    const report = await backupApi.verifyLocal(file)
-    if (report.legacy) {
-      emit(
-        'toast',
-        'info',
-        'Legacy archive: it has no integrity manifest, so it cannot be checked (restore still works).',
+    if (isTauri) {
+      // Desktop: stream the archive from disk via the Rust shell — backups
+      // with media run to hundreds of MB and OOM the renderer through the webview.
+      const report = await pickAndUploadJson<BackupVerification>(
+        `${API_BASE_PATH}/backup/verify`,
+        '.tar.gz,.tgz',
       )
+      if (report) reportVerification(report)
       return
     }
-    if (report.valid) {
-      const when = report.created_at
-        ? new Date(report.created_at).toLocaleString()
-        : 'unknown date'
-      emit(
-        'toast',
-        'success',
-        `Backup verified — ${report.files} file${report.files === 1 ? '' : 's'}, ${formatBytesShort(report.bytes)}, ${when}`,
-      )
-      return
-    }
-    const first = report.errors[0] ?? 'integrity check failed'
-    emit(
-      'toast',
-      'error',
-      `Backup is damaged — ${first}${report.errors.length > 1 ? ` (+${report.errors.length - 1} more)` : ''}. Do not restore this file.`,
-    )
+    const file = await pickFile({ accept: '.tar.gz,.tgz' })
+    if (!file) return
+    reportVerification(await backupApi.verifyLocal(file))
   } catch (e: unknown) {
     emit('toast', 'error', `Verification failed: ${errorMessage(e)}`)
   } finally {
@@ -145,11 +159,10 @@ async function handleBackupVerify() {
 }
 
 async function handleBackupDownload() {
-  const resp = await fetch(getBackupArchiveUrl())
-  const blob = await resp.blob()
+  // Desktop: streamed to disk by the shell — the .tar.gz (DB + media) is far
+  // too large to shuttle through the webview's IPC (renderer OOM).
   const defaultName = `lifelogr-backup-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.tar.gz`
-  const saved = await saveFile({
-    data: blob,
+  const saved = await saveUrlAs(getBackupArchiveUrl(), {
     defaultName,
     filters: [{ name: 'Tar Archive', extensions: ['tar.gz'] }],
   })
@@ -157,8 +170,18 @@ async function handleBackupDownload() {
 }
 
 async function handleBackupRestore() {
-  const file = await pickFile({ accept: '.tar.gz,.tgz' })
-  if (!file) return
+  // Desktop: stream the archive from disk via the Rust shell (see verify).
+  let pickedPath: string | null = null
+  let file: File | null = null
+  if (isTauri) {
+    pickedPath = await pickPath({ accept: '.tar.gz,.tgz' })
+    if (!pickedPath) return
+  } else {
+    file = await pickFile({ accept: '.tar.gz,.tgz' })
+    if (!file) return
+  }
+  const name =
+    file?.name ?? pickedPath?.split('/').pop() ?? 'this archive'
   // Restore REPLACES the journal — unlike entry import, there is no merge.
   // Without this guard an older archive silently deletes everything added
   // since it was taken (entries and media).
@@ -167,7 +190,7 @@ async function handleBackupRestore() {
     !(await confirm({
       title: 'Restore backup',
       message:
-        `Restore “${file.name}”? The current journal will be REPLACED by this ` +
+        `Restore “${name}”? The current journal will be REPLACED by this ` +
         `archive — entries and media added after it was taken will be lost.`,
       confirmLabel: 'Restore',
     }))
@@ -177,8 +200,16 @@ async function handleBackupRestore() {
   try {
     // Upload happens synchronously (the request itself carries the bytes);
     // extract/swap run as a job so the restore phase shows progress.
-    const started = await backupApi.importLocal(file, { asJob: true })
-    if ('job_id' in started) {
+    const started = pickedPath
+      ? JSON.parse(
+          await uploadFileAs(
+          pickedPath,
+          `${API_BASE_PATH}/backup/import?as_job=true`,
+        ),
+        ) as JobStartResponse
+      : await backupApi.importLocal(file as File, { asJob: true })
+    if (pickedPath && !started) return
+    if (started && 'job_id' in started) {
       await trackJob('local', 'Restore', started.job_id, (j) => {
         if (j.status === 'done') {
           entriesStore.refreshAll()
@@ -187,9 +218,13 @@ async function handleBackupRestore() {
           emit('toast', 'error', `Import failed: ${j.error ?? 'unknown'}`)
         }
       })
-    } else {
+    } else if (started) {
       entriesStore.refreshAll()
-      emit('toast', 'success', `Restored — ${started.restored.join(', ')}`)
+      emit(
+        'toast',
+        'success',
+        `Restored — ${(started as { restored: string[] }).restored.join(', ')}`,
+      )
     }
   } catch (e: unknown) {
     emit('toast', 'error', `Import failed: ${errorMessage(e)}`)

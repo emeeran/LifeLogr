@@ -18,6 +18,10 @@ export function setBackendPort(port: number): void {
 
 const baseUrl = () => `${API_ORIGIN}/api/v1`
 
+/** Backend-relative path prefix for shell-side streaming commands
+ *  (saveUrlAs / uploadFileAs talk to the sidecar origin directly). */
+export const API_BASE_PATH = '/api/v1'
+
 /** Default request timeout. Generous, but no request hangs forever. */
 const DEFAULT_TIMEOUT_MS = 30_000
 /** Uploads (media / backup import / entry import) can be large and slow. */

@@ -10,7 +10,7 @@ import {
 } from '../../../api/data'
 import { useJobProgress } from '../../../composables/useJobProgress'
 import { jobsApi } from '../../../api/jobs'
-import { saveFile } from '../../../utils/fileDialog'
+import { saveFile, saveUrlAs } from '../../../utils/fileDialog'
 import {
   Download,
   FileUp,
@@ -87,9 +87,11 @@ async function downloadViaJob(
     emit('toast', 'error', `${label} failed: ${final.error ?? 'unknown'}`)
     return
   }
-  const blob = await jobsApi.result(started.job_id)
-  await saveFile({ data: blob, ...saveOpts })
-  done(label)
+  // Desktop: the shell streams the result to disk (a media-sized blob through
+  // the webview's IPC OOMs the renderer). The job's result endpoint deletes
+  // the staged file after one download, so a cancelled dialog means a re-export.
+  const saved = await saveUrlAs(`/api/v1/jobs/${started.job_id}/result`, saveOpts)
+  if (saved) done(label)
 }
 
 async function downloadBlob(
@@ -97,10 +99,8 @@ async function downloadBlob(
   label: string,
   saveOpts: { defaultName: string; filters: { name: string; extensions: string[] }[] },
 ) {
-  const resp = await fetch(url)
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-  await saveFile({ data: await resp.blob(), ...saveOpts })
-  done(label)
+  const saved = await saveUrlAs(url, saveOpts)
+  if (saved) done(label)
 }
 
 // ── Entries formats (each row states what it carries) ──

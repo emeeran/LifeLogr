@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use log::{error, info, warn};
 use tauri::{Emitter, Manager, RunEvent};
+use tauri_plugin_dialog::DialogExt;
 
 /// Owns the backend sidecar child so shutdown kills the exact process we spawned
 /// (PID-correct) instead of matching by name with `pkill -f lifelogr-backend`,
@@ -69,6 +70,328 @@ fn free_tcp_port() -> Option<u16> {
 #[tauri::command]
 fn get_backend_port() -> u16 {
     backend_port()
+}
+
+/// Filter row for the native save dialog (mirrors the webview's filter shape).
+#[derive(serde::Deserialize)]
+struct SaveFilter {
+    name: String,
+    extensions: Vec<String>,
+}
+
+/// Stream a backend GET to a user-chosen file, bytes never entering the webview.
+///
+/// The webview path (fetch → res.blob() → plugin-fs writeFile) hands the whole
+/// payload to WebKitGTK's IPC as one body; a ~200MB export amplifies into
+/// multi-GB renderer memory (observed 6–7GB scope peaks, then SIGKILL with no
+/// coredump — kernel OOM). Here the Rust side shows the native save dialog and
+/// pipes the sidecar's response straight to disk over a loopback socket.
+/// Returns false when the user cancels the dialog.
+#[tauri::command]
+async fn save_url_as(
+    app: tauri::AppHandle,
+    path_query: String,
+    default_name: String,
+    filters: Option<Vec<SaveFilter>>,
+) -> Result<bool, String> {
+    if !path_query.starts_with('/') {
+        return Err("path_query must be backend-relative".into());
+    }
+
+    // The dialog blocks its thread; keep it off the async runtime workers.
+    let chosen = {
+        let handle = app.clone();
+        let name = default_name.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut builder = handle.dialog().file().set_file_name(name);
+            for f in filters.iter().flatten() {
+                let exts: Vec<&str> = f.extensions.iter().map(String::as_str).collect();
+                builder = builder.add_filter(&f.name, &exts);
+            }
+            builder.blocking_save_file()
+        })
+        .await
+        .map_err(|e| format!("Save dialog failed: {e}"))?
+    };
+    let path = match chosen {
+        Some(tauri_plugin_dialog::FilePath::Path(p)) => p,
+        Some(tauri_plugin_dialog::FilePath::Url(u)) => u
+            .to_file_path()
+            .map_err(|_| "Invalid save location".to_string())?,
+        None => return Ok(false),
+    };
+
+    // No Origin header is sent — the documented non-browser-client path
+    // through the backend's CSRF/destructive guards.
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", backend_port()))
+        .await
+        .map_err(|e| format!("Cannot reach the backend: {e}"))?;
+    let request = format!(
+        "GET {path_query} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+    );
+    {
+        use tokio::io::AsyncWriteExt;
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .map_err(|e| format!("Request failed: {e}"))?;
+    }
+
+    // Read the response head (capped), keeping any body bytes that arrived
+    // with it. Every endpoint this command serves sends Content-Length, so
+    // chunked responses are rejected rather than risk silent corruption.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut raw = Vec::with_capacity(64 * 1024);
+    let mut buf = [0u8; 16 * 1024];
+    let body_start;
+    loop {
+        let n = stream
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("Read failed: {e}"))?;
+        if n == 0 {
+            return Err("Backend closed the connection before responding".into());
+        }
+        let search_from = raw.len().saturating_sub(3);
+        raw.extend_from_slice(&buf[..n]);
+        if let Some(pos) = raw[search_from..]
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .map(|p| p + search_from)
+        {
+            body_start = pos + 4;
+            break;
+        }
+        if raw.len() > 128 * 1024 {
+            return Err("Response head too large".into());
+        }
+    }
+    let head = std::str::from_utf8(&raw[..body_start - 4])
+        .map_err(|_| "Malformed response head".to_string())?;
+    let mut lines = head.split("\r\n");
+    let status_line = lines.next().unwrap_or_default();
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| format!("Malformed status line: {status_line}"))?;
+    if !(200..300).contains(&status) {
+        return Err(format!("Backend returned HTTP {status} for {path_query}"));
+    }
+    let mut content_length: Option<u64> = None;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            content_length = value.trim().parse().ok();
+        } else if name.trim().eq_ignore_ascii_case("transfer-encoding")
+            && value.trim().to_ascii_lowercase().contains("chunked")
+        {
+            return Err("Chunked responses are not supported here".into());
+        }
+    }
+
+    let file = tokio::fs::File::create(&path)
+        .await
+        .map_err(|e| format!("Cannot create {}: {e}", path.display()))?;
+    let mut writer = tokio::io::BufWriter::new(file);
+    let mut body = raw.split_off(body_start);
+    let fail = |err: String, path: &std::path::Path| -> String {
+        // A half-written export is worse than none — remove the partial file.
+        let _ = std::fs::remove_file(path);
+        err
+    };
+
+    match content_length {
+        Some(len) => {
+            let mut remaining = len;
+            if body.len() as u64 > remaining {
+                body.truncate(remaining as usize);
+            }
+            writer
+                .write_all(&body)
+                .await
+                .map_err(|e| fail(format!("Write failed: {e}"), &path))?;
+            remaining -= body.len() as u64;
+            while remaining > 0 {
+                let n = stream
+                    .read(&mut buf)
+                    .await
+                    .map_err(|e| fail(format!("Read failed: {e}"), &path))?;
+                if n == 0 {
+                    return Err(fail(
+                        format!("Connection closed {remaining} bytes early"),
+                        &path,
+                    ));
+                }
+                writer
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| fail(format!("Write failed: {e}"), &path))?;
+                remaining -= n as u64;
+            }
+        }
+        None => {
+            // Close-delimited fallback (Connection: close was requested).
+            writer
+                .write_all(&body)
+                .await
+                .map_err(|e| fail(format!("Write failed: {e}"), &path))?;
+            loop {
+                let n = stream
+                    .read(&mut buf)
+                    .await
+                    .map_err(|e| fail(format!("Read failed: {e}"), &path))?;
+                if n == 0 {
+                    break;
+                }
+                writer
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| fail(format!("Write failed: {e}"), &path))?;
+            }
+        }
+    }
+    writer
+        .flush()
+        .await
+        .map_err(|e| fail(format!("Write failed: {e}"), &path))?;
+    info!("Saved {path_query} to {}", path.display());
+    Ok(true)
+}
+
+/// Stream a user-picked file to a backend multipart endpoint without the bytes
+/// ever entering the webview — the upload-side mirror of `save_url_as`. The
+/// webview path (plugin-fs readFile → File → FormData fetch) pulls the whole
+/// payload through WebKitGTK's IPC; a ~200MB import amplifies into multi-GB
+/// renderer memory and the kernel kills the app (the same OOM the export path
+/// already routes around). Only the path string crosses the IPC here; the Rust
+/// side opens the file and pipes it as a multipart body over a loopback socket.
+///
+/// `file_path` comes from the webview's dialog pick (the dialog plugin
+/// auto-extends the fs scope with it). Returns the backend's response body so
+/// the caller can parse the `as_job` JSON. Errors carry the response body when
+/// the backend rejects the upload, so validation messages reach the UI.
+#[tauri::command]
+async fn upload_file_as(
+    file_path: String,
+    path_query: String,
+    field_name: String,
+) -> Result<String, String> {
+    if !path_query.starts_with('/') {
+        return Err("path_query must be backend-relative".into());
+    }
+    let path = std::path::PathBuf::from(&file_path);
+    let file = tokio::fs::File::open(&path)
+        .await
+        .map_err(|e| format!("Cannot open {}: {e}", path.display()))?;
+    let file_len = file
+        .metadata()
+        .await
+        .map_err(|e| format!("Cannot stat {}: {e}", path.display()))?
+        .len();
+    let filename = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_string())
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+
+    // Multipart body = fixed head + the file streamed straight from disk + a
+    // fixed tail; Content-Length is exact because everything is known up front.
+    let boundary = format!(
+        "lifelogr-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let head = format!(
+        "--{boundary}\r\n\
+         Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n\
+         Content-Type: application/octet-stream\r\n\
+         \r\n"
+    );
+    let tail = format!("\r\n--{boundary}--\r\n");
+    let content_length = head.len() as u64 + file_len + tail.len() as u64;
+
+    // No Origin header is sent — the documented non-browser-client path
+    // through the backend's CSRF/destructive guards.
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", backend_port()))
+        .await
+        .map_err(|e| format!("Cannot reach the backend: {e}"))?;
+    use tokio::io::AsyncWriteExt;
+    let request = format!(
+        "POST {path_query} HTTP/1.1\r\n\
+         Host: 127.0.0.1\r\n\
+         Accept: application/json\r\n\
+         Content-Type: multipart/form-data; boundary={boundary}\r\n\
+         Content-Length: {content_length}\r\n\
+         Connection: close\r\n\
+         \r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+    stream
+        .write_all(head.as_bytes())
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    // The file itself: kernel-side copies only, never held in this process.
+    let mut reader = tokio::io::BufReader::with_capacity(64 * 1024, file);
+    tokio::io::copy(&mut reader, &mut &mut stream)
+        .await
+        .map_err(|e| format!("Failed to stream {}: {e}", path.display()))?;
+    stream
+        .write_all(tail.as_bytes())
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+    stream
+        .flush()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    // Connection: close was requested, so read to EOF; the response is a small
+    // JSON document (job start / verification report / error detail).
+    use tokio::io::AsyncReadExt;
+    let mut raw = Vec::with_capacity(16 * 1024);
+    let mut buf = [0u8; 16 * 1024];
+    loop {
+        let n = stream
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("Read failed: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        raw.extend_from_slice(&buf[..n]);
+        if raw.len() > 1024 * 1024 {
+            return Err("Response too large".into());
+        }
+    }
+    let body_start = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|p| p + 4)
+        .ok_or_else(|| "Malformed response: no header block".to_string())?;
+    let head_text = std::str::from_utf8(&raw[..body_start - 4])
+        .map_err(|_| "Malformed response head".to_string())?;
+    let status_line = head_text.split("\r\n").next().unwrap_or_default();
+    let status: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| format!("Malformed status line: {status_line}"))?;
+    let body = String::from_utf8_lossy(&raw[body_start..]).into_owned();
+    if !(200..300).contains(&status) {
+        let detail: String = body.chars().take(500).collect();
+        return Err(format!("Backend returned HTTP {status}: {detail}"));
+    }
+    info!("Uploaded {} to {path_query}", path.display());
+    Ok(body)
 }
 
 /// Check which system dependencies are installed.
@@ -764,7 +1087,18 @@ fn verify_sidecar_owner(
 
 fn init_logging(data_dir: &std::path::Path) {
     let log_path = data_dir.join("lifelogr-desktop.log");
-    let log_file = std::fs::File::create(&log_path).expect("failed to create log file");
+    // Rotate the previous session's log aside instead of truncating: a
+    // crashed instance's log used to be destroyed by the very next launch,
+    // leaving nothing to diagnose OOM/SIGKILL deaths with. One generation
+    // keeps the directory bounded.
+    let rotated = data_dir.join("lifelogr-desktop.log.1");
+    let _ = std::fs::remove_file(&rotated);
+    let _ = std::fs::rename(&log_path, &rotated);
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .expect("failed to create log file");
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(env_logger::Target::Pipe(Box::new(log_file)))
         .format(|buf, record| {
@@ -994,7 +1328,9 @@ fn main() {
             run_setup,
             capture_screen,
             exit_now,
-            get_backend_port
+            get_backend_port,
+            save_url_as,
+            upload_file_as
         ])
         .setup(|app| {
             // Resolve data directory

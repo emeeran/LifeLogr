@@ -4,7 +4,8 @@ import { entriesApi } from '../../../api/entries'
 import { notesApi } from '../../../api/notes'
 import { useEntriesStore } from '../../../stores/entries'
 import { useJobProgress } from '../../../composables/useJobProgress'
-import { pickFile } from '../../../utils/fileDialog'
+import { isTauri, API_BASE_PATH } from '../../../api/client'
+import { pickFile, pickAndUploadJson } from '../../../utils/fileDialog'
 import {
   Upload,
   Loader,
@@ -19,6 +20,7 @@ import SettingsSection from '../shared/SettingsSection.vue'
 import SButton from '../shared/SButton.vue'
 import OperationProgress from '../../common/OperationProgress.vue'
 import { errorMessage } from '../../../utils/errorMessage'
+import type { JobStartResponse } from '../../../api/jobs'
 
 const emit = defineEmits<{
   toast: [type: 'success' | 'error' | 'info', message: string]
@@ -49,6 +51,24 @@ async function runJobImport(jobId: string, label: string) {
 
 async function runImport(accept: string) {
   importMenuOpen.value = false
+  if (isTauri) {
+    // Desktop: stream the picked file from disk via the Rust shell — a
+    // multi-hundred-MB archive through the webview OOMs the renderer.
+    importing.value = true
+    try {
+      const started = await pickAndUploadJson<JobStartResponse>(
+        `${API_BASE_PATH}/entries/import/file?as_job=true`,
+        accept,
+      )
+      if (!started) return
+      await runJobImport(started.job_id, 'Import')
+    } catch (e: unknown) {
+      emit('toast', 'error', `Import failed: ${errorMessage(e)}`)
+    } finally {
+      importing.value = false
+    }
+    return
+  }
   const file = await pickFile({ accept })
   if (!file) return
   importing.value = true
@@ -64,6 +84,22 @@ async function runImport(accept: string) {
 
 async function runNotesImport(accept: string) {
   notesImportMenuOpen.value = false
+  if (isTauri) {
+    importing.value = true
+    try {
+      const started = await pickAndUploadJson<JobStartResponse>(
+        `${API_BASE_PATH}/notes/import/file?as_job=true`,
+        accept,
+      )
+      if (!started) return
+      await runJobImport(started.job_id, 'Notes import')
+    } catch (e: unknown) {
+      emit('toast', 'error', `Import failed: ${errorMessage(e)}`)
+    } finally {
+      importing.value = false
+    }
+    return
+  }
   const file = await pickFile({ accept })
   if (!file) return
   importing.value = true

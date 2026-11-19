@@ -30,7 +30,12 @@ export const jobsApi = {
   /** Start an export as a polled job. Takes one of the api/*Url() builders'
    *  full URLs; `as_job=true` is appended and the JSON body returned. */
   startExport(url: string): Promise<JobStartResponse> {
-    const path = url.startsWith(API_ORIGIN) ? url.slice(API_ORIGIN.length) : url
+    let path = API_ORIGIN && url.startsWith(API_ORIGIN)
+      ? url.slice(API_ORIGIN.length)
+      : url
+    // The builders return full `${API_ORIGIN}/api/v1/…` URLs (some callers
+    // fetch them directly); request() adds the /api/v1 prefix itself.
+    if (path.startsWith('/api/v1/')) path = path.slice('/api/v1'.length)
     const sep = path.includes('?') ? '&' : '?'
     return request(`${path}${sep}as_job=true`)
   },
