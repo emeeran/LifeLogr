@@ -669,9 +669,30 @@ def _build_diarium_database_sync(
             midnight = datetime.combine(ed, datetime.min.time(), tzinfo=timezone.utc)
             unix_us = int(midnight.timestamp() * 1_000_000)
             entry_id = _DOTNET_TICKS_EPOCH + unix_us * 10
-            # Guarantee uniqueness while staying on the same calendar day.
-            while entry_id in used_entry_ids:
-                entry_id += _TICKS_PER_SECOND
+            # Entries that came from a Diarium backup keep their original
+            # DiaryEntryId, so a later restore into Diarium (which matches its
+            # migration import on date/time) and a re-import here (which
+            # matches by source identity) update the same rows instead of
+            # duplicating them. Date-derived ids only for LifeLogr-native
+            # entries — and never allowed to shadow a preserved source id.
+            source_id: int | None = None
+            if entry.external_source == "diarium" and entry.external_id:
+                try:
+                    source_id = int(entry.external_id)
+                except ValueError:
+                    source_id = None
+            if source_id is not None:
+                entry_id = source_id
+                # A midnight-timed source id can collide with a native
+                # entry's date-derived id on the same day; nudge rather than
+                # violate the PK (identity match for that one entry is lost,
+                # the content is not).
+                while entry_id in used_entry_ids:
+                    entry_id += _TICKS_PER_SECOND
+            else:
+                # Guarantee uniqueness while staying on the same calendar day.
+                while entry_id in used_entry_ids:
+                    entry_id += _TICKS_PER_SECOND
             used_entry_ids.add(entry_id)
 
             heading = (entry.title or "").strip()

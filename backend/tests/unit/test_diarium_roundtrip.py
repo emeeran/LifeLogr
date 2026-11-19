@@ -71,10 +71,7 @@ def _content_fingerprint(parsed: list[dict]) -> list[dict]:
     ]
 
 
-async def test_diary_roundtrip_and_validation(db_session):
-    original = await _import(db_session, build_diary(_SPEC, include_media=True))
-
-    # Export the imported content back to .diary and structurally validate it.
+async def _export_db_diary(db_session) -> bytes:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
@@ -95,12 +92,57 @@ async def test_diary_roundtrip_and_validation(db_session):
     staged = await build_diarium_database(list(loaded))
     exported = staged.read_bytes()  # validators/importers consume bytes
     staged.unlink(missing_ok=True)
+    return exported
+
+
+async def test_diary_roundtrip_and_validation(db_session):
+    original = await _import(db_session, build_diary(_SPEC, include_media=True))
+
+    # Export the imported content back to .diary and structurally validate it.
+    exported = await _export_db_diary(db_session)
     validate_diary(exported)  # must not raise
 
     # Re-import the export — content equivalent to the first generation.
     second = await _import(db_session, exported)
     assert len(second) == len(original)
     assert _content_fingerprint(original) == _content_fingerprint(second)
+
+
+async def test_export_preserves_source_identity(db_session):
+    """Exported DiaryEntryIds are the entries' original source ticks, so a
+    re-import (merge mode) matches existing rows instead of duplicating them.
+    Date-derived rekeys made every re-import append a full copy — a
+    LifeLogr→.diary→LifeLogr restore doubled the journal (found in the real
+    18-year-backup round trip)."""
+    from sqlalchemy import func, select
+
+    from app.models.entry import Entry
+
+    # Merge mode (skip_duplicates=True) is what stores source identity.
+    result = await _run_entry_import(
+        db_session, parse_diarium_sqlite(build_diary(_SPEC, include_media=True)), True
+    )
+    assert result["skipped"] == 0, result["skip_reasons"]
+    exported = await _export_db_diary(db_session)
+
+    parsed = parse_diarium_sqlite(exported)
+    source_ids = {e["external_id"] for e in parsed}
+    stored = {
+        row
+        for row in (
+            await db_session.execute(select(Entry.external_id))
+        ).scalars()
+        if row
+    }
+    assert source_ids == stored
+
+    # Merge re-import: identity matches → updates/backfills, zero new rows.
+    result = await _run_entry_import(db_session, parsed, True)
+    assert result["imported"] == 0, result
+    total = (
+        await db_session.execute(select(func.count()).select_from(Entry))
+    ).scalar()
+    assert total == len(_SPEC)
 
 
 def test_validator_rejects_corrupted_export():
