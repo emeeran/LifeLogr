@@ -101,6 +101,79 @@ class TestPurge:
 
 
 class TestEmptyTrash:
+    # Production DBs created these three tables before the models gained
+    # ondelete=CASCADE, and inline migrations only add columns — never rebuild
+    # tables — so the live FKs have no CASCADE clause. The set-based bulk
+    # deletes (empty trash, retention sweep) are DB-level and must therefore
+    # not rely on the database to cascade into these children.
+    _LEGACY_DDL = [
+        """CREATE TABLE media (
+	id INTEGER NOT NULL,
+	entry_id INTEGER NOT NULL,
+	filename VARCHAR NOT NULL,
+	media_type VARCHAR NOT NULL,
+	file_size INTEGER NOT NULL,
+	storage_path VARCHAR NOT NULL,
+	caption VARCHAR(500),
+	is_inline BOOLEAN NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT max_media_size CHECK (file_size <= 26214400),
+	FOREIGN KEY(entry_id) REFERENCES entries (id)
+)""",
+        "CREATE INDEX ix_media_entry_id ON media (entry_id)",
+        """CREATE TABLE entry_tags (
+	entry_id INTEGER NOT NULL,
+	tag_id INTEGER NOT NULL, tracking_value VARCHAR(500),
+	PRIMARY KEY (entry_id, tag_id),
+	UNIQUE (entry_id, tag_id),
+	FOREIGN KEY(entry_id) REFERENCES entries (id),
+	FOREIGN KEY(tag_id) REFERENCES tags (id)
+)""",
+        "CREATE INDEX ix_entry_tags_tag_id ON entry_tags (tag_id)",
+        """CREATE TABLE voice_recordings (
+	id INTEGER NOT NULL,
+	entry_id INTEGER NOT NULL,
+	media_id INTEGER NOT NULL,
+	duration_seconds FLOAT NOT NULL,
+	audio_format VARCHAR(10) NOT NULL,
+	transcription VARCHAR,
+	is_transcribed BOOLEAN NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY (id),
+	FOREIGN KEY(entry_id) REFERENCES entries (id),
+	FOREIGN KEY(media_id) REFERENCES media (id)
+)""",
+        "CREATE INDEX ix_voice_recordings_entry_id ON voice_recordings (entry_id)",
+        "CREATE INDEX ix_voice_recordings_media_id ON voice_recordings (media_id)",
+    ]
+
+    async def _rebuild_legacy_tables(self, db_session: AsyncSession) -> None:
+        """Swap in the production (pre-CASCADE) shape of the child tables.
+
+        Mirrors the DDL verbatim from a production DB; must run before any
+        rows exist so the drops can't violate the FKs they replace.
+        """
+        from sqlalchemy import text
+
+        for table in ("voice_recordings", "entry_tags", "media"):
+            await db_session.execute(text(f"DROP TABLE {table}"))
+        for ddl in self._LEGACY_DDL:
+            await db_session.execute(text(ddl))
+        await db_session.commit()
+
+    async def test_empty_trash_survives_pre_cascade_schema(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        await self._rebuild_legacy_tables(db_session)
+        entry, media, media_path = await _entry_with_media(client, db_session)
+        await client.delete(f"/api/v1/entries/{entry['id']}")
+
+        r = await client.delete("/api/v1/entries/trash")
+        assert r.status_code == 200, "bulk purge must not hit the un-cascaded FKs"
+        assert r.json() == {"purged": 1}
+        assert not media_path.exists()
+
     async def test_empty_trash_purges_deleted_keeps_live(
         self, client: AsyncClient, db_session: AsyncSession
     ):

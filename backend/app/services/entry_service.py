@@ -383,6 +383,28 @@ class EntryService:
                         exc_info=True,
                     )
 
+    async def _bulk_delete_children(self, entry_ids: set[int]) -> None:
+        """Bulk-delete the child rows whose FKs predate ``ondelete=CASCADE``.
+
+        Production DBs created media / entry_tags / voice_recordings without
+        the CASCADE clause (inline migrations add columns, never rebuild
+        tables), so a set-based ``DELETE FROM entries`` alone fails with
+        ``FOREIGN KEY constraint failed``. Delete them explicitly first —
+        voice_recordings before media, since its media_id FK is un-cascaded
+        too. Fresh schemas already cascade these (deleting twice is a no-op)
+        and the remaining children (video_notes, embeddings, prompts,
+        sentiments, events) carry CASCADE in every schema generation.
+        """
+        from app.models.media import Media
+        from app.models.recording import VoiceRecording
+        from app.models.tag import EntryTag
+
+        await self.db.execute(
+            delete(VoiceRecording).where(VoiceRecording.entry_id.in_(entry_ids))
+        )
+        await self.db.execute(delete(Media).where(Media.entry_id.in_(entry_ids)))
+        await self.db.execute(delete(EntryTag).where(EntryTag.entry_id.in_(entry_ids)))
+
     async def empty_trash(self) -> int:
         """Purge every soft-deleted entry now (the trash view's "Empty trash").
 
@@ -407,6 +429,7 @@ class EntryService:
             .scalars()
             .all()
         )
+        await self._bulk_delete_children(ids)
         await self.db.execute(delete(Entry).where(Entry.id.in_(ids)))
         await self.db.commit()
         for file_path in [
@@ -454,8 +477,9 @@ class EntryService:
             .scalars()
             .all()
         )
-        # One cascading bulk delete + one commit — a months-deep trash backlog
-        # sweeps in a single transaction's time, not per-entry round-trips.
+        # One bulk delete + one commit — a months-deep trash backlog sweeps in
+        # a single transaction's time, not per-entry round-trips.
+        await self._bulk_delete_children(expired_ids)
         await self.db.execute(delete(Entry).where(Entry.id.in_(expired_ids)))
         await self.db.commit()
         for file_path in [
