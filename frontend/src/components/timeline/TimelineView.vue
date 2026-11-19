@@ -92,7 +92,9 @@ async function loadThumbnail(entryId: number) {
     const img = media.find(
       (m) => m.media_type === 'image' || m.media_type.startsWith('image/'),
     )
-    if (img) thumbnailMap[entryId] = mediaApi.fileUrl(img.id)
+    // ≤640px cached thumbnail, not the original — full files here decoded
+    // gigabytes in WebKit and OOM-killed the machine (2026-10-27).
+    if (img) thumbnailMap[entryId] = mediaApi.thumbUrl(img.id)
   } catch {
     /* ignore */
   }

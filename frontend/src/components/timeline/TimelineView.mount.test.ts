@@ -99,4 +99,32 @@ describe('TimelineView mount', () => {
     expect(wrapper.text()).not.toContain('Failed to load')
     wrapper.unmount()
   })
+
+  it('lazy-loads entry thumbnails via /thumb, never the full file', async () => {
+    const { mediaApi } = await import('../../api/media')
+    const { entriesApi } = await import('../../api/entries')
+    vi.mocked(entriesApi.list).mockResolvedValue({
+      items: [makeEntry({ id: 7, media_count: 2 })],
+      total: 1,
+    } as never)
+    vi.mocked(mediaApi.listByEntry).mockResolvedValue([
+      { id: 101, media_type: 'image' },
+      { id: 102, media_type: 'video' },
+    ] as never)
+
+    const { default: TimelineView } = await import('./TimelineView.vue')
+    const wrapper = mount(TimelineView, {
+      global: {
+        plugins: [createPinia()],
+        stubs: { GoToDateModal: true, Teleport: true },
+      },
+    })
+    await flushPromises()
+
+    // Full originals decoded gigabytes in WebKit and OOM-killed the machine —
+    // the timeline must request the cached ≤640px thumbnail instead.
+    expect(mediaApi.thumbUrl).toHaveBeenCalledWith(101)
+    expect(mediaApi.fileUrl).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })
