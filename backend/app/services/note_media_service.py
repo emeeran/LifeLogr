@@ -25,9 +25,9 @@ from app.services.media_service import (
     unlink_media_file,
 
     _ALLOWED_MIME_PREFIXES,
-    _BLOCKED_SIGNATURES,
     _CONVERTIBLE_IMAGE_TYPES,
     MediaService,
+    check_signature,
     ensure_within_media_cap,
     read_head,
     validate_import_path,
@@ -64,6 +64,40 @@ class NoteMediaService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    @staticmethod
+    def _require_allowed_type(content_type: str) -> None:
+        if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
+            raise MediaSizeError(f"File type '{content_type}' not allowed")
+
+    @staticmethod
+    def _safe_filename(filename: str) -> str:
+        safe_name = Path(filename).name
+        if safe_name != filename or ".." in filename or "/" in filename:
+            raise MediaSizeError("Invalid filename")
+        return safe_name
+
+    async def _create_media(
+        self,
+        note_id: int,
+        safe_name: str,
+        media_type: str,
+        file_size: int,
+        rel_path: str,
+        caption: str | None,
+    ) -> NoteMedia:
+        media = NoteMedia(
+            note_id=note_id,
+            filename=safe_name,
+            media_type=media_type,
+            file_size=file_size,
+            storage_path=rel_path,
+            caption=caption,
+        )
+        self.db.add(media)
+        await self.db.commit()
+        await self.db.refresh(media)
+        return media
+
     async def upload(
         self,
         note_id: int,
@@ -74,18 +108,9 @@ class NoteMediaService:
     ) -> NoteMedia:
         """Store file on disk under MEDIA_DIR/notes/ and create a NoteMedia record."""
         ensure_within_media_cap(len(file_data))
-
-        if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
-            raise MediaSizeError(f"File type '{content_type}' not allowed")
-
-        for sig, label in _BLOCKED_SIGNATURES.items():
-            if file_data[: len(sig)] == sig:
-                logger.warning("Blocked upload of %s (detected %s)", filename, label)
-                raise MediaSizeError(f"File type not allowed: detected {label}")
-
-        safe_name = Path(filename).name
-        if safe_name != filename or ".." in filename or "/" in filename:
-            raise MediaSizeError("Invalid filename")
+        self._require_allowed_type(content_type)
+        safe_name = self._safe_filename(filename)
+        check_signature(file_data, filename)
 
         note = await self._require_note(note_id)
 
@@ -111,18 +136,9 @@ class NoteMediaService:
             file_size = len(final_data)
         await asyncio.to_thread(full_path.write_bytes, final_data)
 
-        media = NoteMedia(
-            note_id=note_id,
-            filename=safe_name,
-            media_type=media_type,
-            file_size=file_size,
-            storage_path=rel_path,
-            caption=caption,
+        return await self._create_media(
+            note_id, safe_name, media_type, file_size, rel_path, caption
         )
-        self.db.add(media)
-        await self.db.commit()
-        await self.db.refresh(media)
-        return media
 
     async def upload_file(
         self,
@@ -142,17 +158,9 @@ class NoteMediaService:
         if size is None:
             size = (await asyncio.to_thread(src.stat)).st_size
         ensure_within_media_cap(size)
-        if not any(content_type.startswith(prefix) for prefix in _ALLOWED_MIME_PREFIXES):
-            raise MediaSizeError(f"File type '{content_type}' not allowed")
-        safe_name = Path(filename).name
-        if safe_name != filename or ".." in filename or "/" in filename:
-            raise MediaSizeError("Invalid filename")
-
-        head = await asyncio.to_thread(read_head, src)
-        for sig, label in _BLOCKED_SIGNATURES.items():
-            if head[: len(sig)] == sig:
-                logger.warning("Blocked upload of %s (detected %s)", filename, label)
-                raise MediaSizeError(f"File type not allowed: detected {label}")
+        self._require_allowed_type(content_type)
+        safe_name = self._safe_filename(filename)
+        check_signature(await asyncio.to_thread(read_head, src), filename)
 
         note = await self._require_note(note_id)
 
@@ -184,18 +192,9 @@ class NoteMediaService:
             file_size = size
             await asyncio.to_thread(shutil.move, str(src), str(full_path))
 
-        media = NoteMedia(
-            note_id=note_id,
-            filename=safe_name,
-            media_type=media_type,
-            file_size=file_size,
-            storage_path=rel_path,
-            caption=caption,
+        return await self._create_media(
+            note_id, safe_name, media_type, file_size, rel_path, caption
         )
-        self.db.add(media)
-        await self.db.commit()
-        await self.db.refresh(media)
-        return media
 
     async def _require_note(self, note_id: int) -> Note:
         return await get_note_or_raise(self.db, note_id)
