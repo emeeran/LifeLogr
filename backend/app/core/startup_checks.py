@@ -91,6 +91,19 @@ async def check_backup_health() -> None:
 async def _check_backup_health_impl() -> None:
     from app.services.scheduler_service import SchedulerService, _get_active_schedule
 
+    # Boot-time reclaim of snapshots stuck in_progress by a crashed run: the
+    # desktop close guard treats in_progress as busy and would otherwise wait
+    # out its full window on every close until that config's next backup.
+    from app.core.database import async_session
+    from app.services.backup_service import reclaim_all_stale_snapshots
+
+    async with async_session() as session:
+        reclaimed = await reclaim_all_stale_snapshots(session)
+    if reclaimed:
+        logger.warning(
+            "Reclaimed %d backup snapshot(s) stuck in_progress by a crashed run", reclaimed
+        )
+
     active = await _get_active_schedule()
     if active is None:
         logger.info("No backup schedule configured")

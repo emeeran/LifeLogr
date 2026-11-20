@@ -14,8 +14,16 @@
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$TEMP/**" }],
+      "require_literal_leading_dot": false
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$TEMP/**" }],
+      "require_literal_leading_dot": false
+    },
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-read-text"
   ]

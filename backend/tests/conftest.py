@@ -1,6 +1,7 @@
 """Shared fixtures for integration tests — real async SQLite + FastAPI test client."""
 
 import os
+import shutil
 import tempfile
 from collections.abc import AsyncGenerator
 
@@ -19,6 +20,15 @@ os.environ["APP_ENV"] = "test"
 _test_data_dir = tempfile.mkdtemp(prefix="lifelogr-test-data-")
 os.environ["LIFELOGR_DATA_DIR"] = _test_data_dir
 os.environ.setdefault("DATA_DIR", _test_data_dir)
+
+
+def _cleanup_test_data_dir() -> None:
+    shutil.rmtree(_test_data_dir, ignore_errors=True)
+
+
+import atexit  # noqa: E402
+
+atexit.register(_cleanup_test_data_dir)
 
 from app.core.database import Base, get_db  # noqa: E402
 from app.core.fts import FTS_BASE_TABLES, fts_populate_sql, fts_trigger_ddl  # noqa: E402
@@ -157,6 +167,9 @@ def _isolate_scheduler_singleton():
             if sched is not None and getattr(sched, "running", False):
                 sched.shutdown(wait=False)
         except Exception:
+            # Deliberately silent (test-only): a scheduler bound to an
+            # already-closed loop raises on shutdown; dropping the reference
+            # IS the fix, and logging here would spam every test module.
             pass
         mod._scheduler = None
 

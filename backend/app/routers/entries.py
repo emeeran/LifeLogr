@@ -1290,11 +1290,7 @@ def _parse_import_file(
                                 "caption": m.get("caption"),
                                 "is_inline": m.get("is_inline"),
                                 "ref": m.get("ref"),
-                                "data": (
-                                    _read_member(z, member)
-                                    if member in media_names
-                                    else b""
-                                ),
+                                "data": (_read_member(z, member) if member in media_names else b""),
                             }
                         )
                     events_items = [
@@ -1323,17 +1319,13 @@ def _parse_import_file(
                 for item in doc.get("notes", []):
                     for m in item.get("media", []):
                         member = m.get("path", "")
-                        m["data"] = (
-                            _read_member(z, member) if member in media_names else b""
-                        )
+                        m["data"] = _read_member(z, member) if member in media_names else b""
                     archive_notes.append(item)
         else:
             with zipfile.ZipFile(upload_path, "r") as z:
                 names = _zip_members(z)
 
-                json_files = [
-                    n for n in names if n.endswith(".json") and n != "manifest.json"
-                ]
+                json_files = [n for n in names if n.endswith(".json") and n != "manifest.json"]
                 if json_files:
                     for jf in json_files:
                         try:
@@ -1342,9 +1334,7 @@ def _parse_import_file(
                         except HTTPException:
                             raise
                         except Exception:
-                            logger.warning(
-                                "Failed to parse JSON entry from %s", jf, exc_info=True
-                            )
+                            logger.warning("Failed to parse JSON entry from %s", jf, exc_info=True)
 
                 if not json_files:
                     for n in names:
@@ -1353,9 +1343,7 @@ def _parse_import_file(
                                 data = json.loads(_read_member(z, n))
                                 if isinstance(data, list):
                                     for entry in data:
-                                        entries_data.append(
-                                            parse_diarium_json_entry(entry)
-                                        )
+                                        entries_data.append(parse_diarium_json_entry(entry))
                             except HTTPException:
                                 raise
                             except Exception:
@@ -1389,9 +1377,7 @@ def _parse_import_file(
         try:
             data = json.loads(content)
         except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid JSON in {filename}: {e}"
-            ) from e
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in {filename}: {e}") from e
         # A hand-edited export may have a scalar at the top level.
         items = (
             data

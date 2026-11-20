@@ -49,7 +49,8 @@
           "gstreamer1.0-libav",
           "gstreamer1.0-plugins-bad",
           "tesseract-ocr",
-          "tesseract-ocr-eng"
+          "tesseract-ocr-eng",
+          "lsof"
         ],
         "recommends": [
           "psmisc"

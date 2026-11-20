@@ -26,6 +26,7 @@ import html
 import logging
 import os
 import re
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -230,6 +231,15 @@ def _maybe_evict() -> None:
     """
     try:
         cache_dir = settings.TTS_CACHE_DIR
+        # A crash mid-synthesis leaves dest.mp3.part behind; sweep it here so
+        # partials neither accumulate forever nor dodge the caps (only *.mp3
+        # counts below).
+        for part in cache_dir.glob("*.mp3.part"):
+            try:
+                if part.stat().st_mtime < time.time() - 3600:
+                    part.unlink()
+            except OSError:
+                logger.debug("TTS .part sweep skipped %s", part, exc_info=True)
         files = [p for p in cache_dir.glob("*.mp3")]
         count = len(files)
         size = sum(p.stat().st_size for p in files)
@@ -333,7 +343,6 @@ _VOICES_TTL_SECONDS = 24 * 3600
 @router.get("/voices")
 async def list_voices() -> Any:
     """List available Edge TTS voices."""
-    import time
 
     cached = _VOICES_CACHE.get("data")
     fetched_at = _VOICES_CACHE.get("at", 0.0)

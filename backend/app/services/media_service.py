@@ -212,7 +212,14 @@ async def spool_upload(
         return MediaSizeError(f"File exceeds {limit} bytes")
 
     build_overflow = on_overflow or _default_overflow
-    upload = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    # Spool under DATA_DIR/tmp, not system /tmp: on Ubuntu /tmp is tmpfs, so
+    # the default would push every upload (imports up to MAX_IMPORT_SIZE_BYTES)
+    # through RAM — the OOM mode this project has recorded incidents for
+    # (backup.py, export_service.py stage their archives under DATA_DIR/tmp
+    # for the same reason).
+    tmp_dir = Path(settings.DATA_DIR) / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    upload = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=str(tmp_dir))
     path = Path(upload.name)
     written = 0
     try:
@@ -326,7 +333,10 @@ def _inline_disposition(filename: str) -> dict[str, str]:
     """Inline Content-Disposition header, UTF-8 safe (same rules as Starlette)."""
     ascii_name = filename.encode("ascii", "ignore").decode()
     if ascii_name == filename:
-        return {"Content-Disposition": f'inline; filename="{filename}"'}
+        # Escape quotes/backslashes so a stored filename can't break the
+        # quoted-string parameter (upload sanitization blocks "/" but not '"').
+        escaped = filename.replace("\\", "\\\\").replace('"', '\\"')
+        return {"Content-Disposition": f'inline; filename="{escaped}"'}
     return {"Content-Disposition": f"inline; filename*=utf-8''{quote(filename, safe='')}"}
 
 

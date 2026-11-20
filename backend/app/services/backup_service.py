@@ -119,6 +119,31 @@ def _classify_restore_error(exc: Exception) -> Exception:
     return exc
 
 
+async def reclaim_all_stale_snapshots(db: AsyncSession) -> int:
+    """Fail every snapshot left ``in_progress`` by a crashed run (boot-time).
+
+    The per-config ``_reclaim_stale_snapshots`` only runs inside ``run_backup``
+    for that one config, so after a crash mid-upload the desktop close guard
+    would poll ``busy=true`` for its whole wait window on every window close
+    until that config's next backup. Same 5-minute cutoff, no config filter.
+    """
+    stale_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(tzinfo=None)
+    result = await db.execute(
+        update(BackupSnapshot)
+        .where(
+            BackupSnapshot.status == "in_progress",
+            BackupSnapshot.started_at < stale_cutoff,
+        )
+        .values(
+            status="failed",
+            error_message="Interrupted: previous run did not complete",
+            completed_at=datetime.now(timezone.utc),
+        )
+    )
+    await db.commit()
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+
 class BackupService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db

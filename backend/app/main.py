@@ -56,7 +56,7 @@ _FRONTEND_DIST = _PROJECT_ROOT / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database tables on startup, clean up on shutdown."""
-    logger.info("Starting %s (%s)", settings.APP_NAME, settings.APP_ENV)
+    logger.info("Starting %s %s (%s)", settings.APP_NAME, settings.APP_VERSION, settings.APP_ENV)
     if settings.SECRET_KEY == DEFAULT_SECRET_KEY:
         logger.warning(
             "SECRET_KEY is the default — encrypted credentials (cloud "
@@ -213,9 +213,11 @@ async def log_requests(request: Request, call_next: Any) -> Response:
     req_id = uuid4().hex[:8]
     _request_id.set(req_id)
     start = time.time()
-    logger.info("[%s] %s %s", req_id, request.method, request.url.path)
     response: Response = await call_next(request)
     elapsed = (time.time() - start) * 1000
+    # One access line per request (at completion, with status + duration) —
+    # the start line was removed: it carried no information the completion
+    # line lacks and doubled log volume for polling clients (job progress).
     # 5xx at warning level so failure triage can filter by level; access
     # lines for healthy traffic stay info.
     log = logger.warning if response.status_code >= 500 else logger.info
@@ -423,26 +425,28 @@ def _is_destructive_path(path: str) -> bool:
 
 # A second tier: irreversible single-resource operations (media/recordings/
 # video-note/note-media deletes — the files are gone for good — snapshot and
-# backup-config deletes, backup-schedule delete) and the settings endpoints
-# whose effect is wholesale even though no flag says so (storage-path hot-
-# copies the DB + media + .secret_key to an arbitrary path; recovery-kit
-# import swaps the live credential key; vacuum and encrypt-media rewrite the
-# store). These get the destructive guard's strict origin rule WITHOUT its
-# 5/60s throttle: the throttle exists for wipe endpoints, and applying it to
-# bulk media deletes would break legitimate use.
+# backup-config deletes, backup-schedule delete, note-media deletes under
+# /notes/{id}/media/) and the endpoints whose effect is wholesale even though
+# no flag says so (storage-path hot-copies the DB + media + .secret_key to an
+# arbitrary path; recovery-kit import swaps the live credential key; vacuum
+# and encrypt-media rewrite the store; the settings row and AI-provider
+# endpoints hold the AI base_urls/API keys — a hostile loopback page that can
+# POST them can silently repoint enrichment at its own server). These get the
+# destructive guard's strict origin rule WITHOUT its 5/60s throttle: the
+# throttle exists for wipe endpoints, and applying it to bulk media deletes
+# would break legitimate use.
 _STRICT_ORIGIN_DELETE_PREFIXES = (
     "/api/v1/media/",
     "/api/v1/recordings/",
     "/api/v1/video-notes/",
+    "/api/v1/notes/",
     "/api/v1/backup/snapshots/",
     "/api/v1/backup/config/",
     "/api/v1/backup/schedule",
 )
 _STRICT_ORIGIN_POST_PREFIXES = (
-    "/api/v1/settings/storage-path",
-    "/api/v1/settings/recovery-kit/",
-    "/api/v1/settings/vacuum",
-    "/api/v1/settings/encrypt-media",
+    "/api/v1/settings",
+    "/api/v1/ai/providers",
 )
 
 
@@ -724,6 +728,7 @@ async def health_check() -> Any:
         sched = SchedulerService.get_scheduler()
         checks["scheduler"] = "ok" if sched.running else "stopped"
     except Exception:
+        logger.warning("Health check: scheduler status read failed", exc_info=True)
         checks["scheduler"] = "unavailable"
 
     # 4. Ollama (soft — AI features)
@@ -762,6 +767,7 @@ async def health_check() -> Any:
         else:
             checks["app_integrity"] = "not_checked"
     except Exception:
+        logger.warning("Health check: startup-status read failed", exc_info=True)
         checks["integrity"] = "unavailable"
         checks["backup"] = "unavailable"
 

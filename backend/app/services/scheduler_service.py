@@ -307,8 +307,13 @@ class SchedulerService:
         await SchedulerService.register_db_maintenance()
         # Daily trash sweep: permanently purge entries past their retention window.
         await SchedulerService.register_trash_purge()
+        # Daily staging sweep: crash/SIGKILL mid-export otherwise orphans
+        # DB+media-sized files under DATA_DIR/tmp (and tmp*.tar.gz beside it)
+        # forever.
+        await SchedulerService.register_tmp_sweep()
         # Weekly full integrity_check: boot only runs quick_check (LW-4.1), so
-        # the exhaustive scan — and its corrupt-recovery path — lives here.
+        # the exhaustive scan lives here (corruption alerts and heals at the
+        # next boot — see _run_full_integrity_check).
         await SchedulerService.register_weekly_integrity_check()
         # Run a missed backup shortly after boot, mirroring reminder catch-up.
         if sched.running:
@@ -711,15 +716,39 @@ class SchedulerService:
         return 1
 
     @staticmethod
+    async def register_tmp_sweep() -> int:
+        """Register the daily staging sweep for orphaned export/backup files.
+
+        Export archives, spooled uploads and cloud staging files all live
+        under ``DATA_DIR/tmp`` (plus legacy ``tmp*.tar.gz`` beside it); their
+        normal cleanup is response-time unlinking or the in-memory job TTL,
+        so a crash or SIGKILL mid-export orphans them forever. Files older
+        than 24 h are unreferenced by any live request or job and are swept.
+        """
+        sched = SchedulerService.get_scheduler()
+        if not sched.running:
+            return 0
+        sched.add_job(
+            _run_tmp_sweep,
+            trigger=SchedulerService._cron_trigger("20 3 * * *"),
+            id="tmp_sweep",
+            replace_existing=True,
+            coalesce=True,
+            misfire_grace_time=3600,
+            max_instances=1,
+        )
+        return 1
+
+    @staticmethod
     async def register_weekly_integrity_check() -> int:
         """Register the weekly full ``PRAGMA integrity_check`` (LW-4.1).
 
         Boot only runs ``quick_check`` (see ``core/database``); the exhaustive
         page-level scan runs here — Sundays 04:00 local, coalesced +
         single-instance like the other maintenance jobs. On corruption it
-        reuses the boot snapshot's quarantine/restore path, then reinitialises
-        the engine so pooled connections don't keep pointing at the swapped-out
-        file. No-op (returns 0) when the scheduler isn't running. Idempotent
+        alerts (log + app-integrity report); the quarantine/restore itself
+        happens at the next boot, where the preflight runs before any session
+        opens. No-op (returns 0) when the scheduler isn't running. Idempotent
         via ``replace_existing``.
         """
         sched = SchedulerService.get_scheduler()
@@ -778,6 +807,48 @@ async def _run_trash_purge() -> None:
             await EntryService(session).purge_expired_trash()
     except Exception:
         logger.warning("Trash purge sweep failed", exc_info=True)
+
+
+# Files in DATA_DIR/tmp younger than this may still belong to a live request
+# or export job — the sweep only touches clearly-orphaned age.
+_TMP_SWEEP_MIN_AGE_SECONDS = 24 * 3600
+
+
+def _sweep_stale_tmp_sync(data_dir: Path, min_age_seconds: int) -> int:
+    """Delete staging files older than *min_age_seconds*; return the count.
+
+    Covers ``DATA_DIR/tmp`` (export archives, spooled uploads, cloud staging)
+    and the legacy ``tmp*.tar.gz`` files that used to be staged beside the DB.
+    Runs in a worker thread — pure filesystem walking.
+    """
+    cutoff = datetime.now(timezone.utc).timestamp() - min_age_seconds
+    removed = 0
+    candidates: list[Path] = (
+        list((data_dir / "tmp").glob("*")) if (data_dir / "tmp").is_dir() else []
+    )
+    candidates.extend(data_dir.glob("tmp*.tar.gz"))
+    for p in candidates:
+        try:
+            if p.is_file() and p.stat().st_mtime < cutoff:
+                p.unlink()
+                removed += 1
+        except OSError:
+            logger.warning("Tmp sweep could not remove %s", p, exc_info=True)
+    return removed
+
+
+async def _run_tmp_sweep() -> None:
+    """Sweep orphaned staging files under DATA_DIR/tmp (daily). Never raises."""
+    from app.core.config import settings
+
+    try:
+        removed = await asyncio.to_thread(
+            _sweep_stale_tmp_sync, Path(settings.DATA_DIR), _TMP_SWEEP_MIN_AGE_SECONDS
+        )
+        if removed:
+            logger.info("Tmp sweep removed %d orphaned staging file(s)", removed)
+    except Exception:
+        logger.warning("Tmp sweep failed", exc_info=True)
 
 
 async def _run_incremental_vacuum() -> None:

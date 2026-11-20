@@ -170,9 +170,7 @@ async def run_configured_backup_now(
                 "status": snapshot.status,
                 "error": snapshot.error_message,
             }
-        return _start_data_job(
-            background_tasks, "backup", _cloud_backup_runner(active.config_id)
-        )
+        return _start_data_job(background_tasks, "backup", _cloud_backup_runner(active.config_id))
 
     if not as_job:
         archive = await _run_backup(active.backup_path or "", active.retention)
@@ -445,12 +443,15 @@ async def _restore_spooled_archive(
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
             else:
                 restored = []
-                # No DB in archive — just restore media if present
+                # No DB in archive — just restore media if present, through
+                # the same atomic swap (rename-to-.bak + rollback) the full
+                # restore uses: a bare rmtree+copytree leaves the live media
+                # dir deleted or half-populated if the copy dies mid-way.
                 if extracted_media.exists():
                     rep("swap")
-                    if media_dir.exists():
-                        shutil.rmtree(str(media_dir))
-                    shutil.copytree(str(extracted_media), str(media_dir))
+                    from app.core.restore import _atomic_media_swap
+
+                    await asyncio.to_thread(_atomic_media_swap, extracted_media, media_dir)
                     restored.append("media")
         finally:
             shutil.rmtree(extract_dir, ignore_errors=True)

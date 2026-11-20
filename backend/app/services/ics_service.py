@@ -127,12 +127,19 @@ def parse_ics(text: str) -> dict[str, Any]:
         nonlocal recurring
         if "DTSTART" not in props:
             return  # a VEVENT without a start is not renderable
-        start_iso, all_day = _parse_dt(*props["DTSTART"])
-        end_iso: str | None
-        if "DTEND" in props:
-            end_iso, _ = _parse_dt(*props["DTEND"])
-        else:
-            end_iso = _end_from_duration(props)
+        try:
+            start_iso, all_day = _parse_dt(*props["DTSTART"])
+            end_iso: str | None
+            if "DTEND" in props:
+                end_iso, _ = _parse_dt(*props["DTEND"])
+            else:
+                end_iso = _end_from_duration(props)
+        except (ValueError, TypeError):
+            # One malformed date line (DTSTART:2026-13-99 …) must not 500 the
+            # whole calendar sidebar — skip the event like the other lenient
+            # importers skip a bad record.
+            warnings.append("Skipped an event with an unreadable date.")
+            return
         if "RRULE" in props and not recurring:
             warnings.append("Recurring events are shown once, at their first occurrence.")
             recurring = True
