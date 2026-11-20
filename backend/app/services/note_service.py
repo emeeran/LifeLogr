@@ -4,12 +4,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.models.note import Note, NoteFolder, NotePage, NoteTag
 from app.schemas.note import (
     FoldersReorder,
@@ -52,6 +52,7 @@ def _note_list_options() -> tuple[Any, ...]:
         load_only(
             Note.id,
             Note.folder_id,
+            Note.parent_note_id,
             Note.title,
             Note.is_pinned,
             Note.color,
@@ -89,10 +90,18 @@ class NoteService:
                 )
             )
         ).scalar_one()
+        # A nested note always lives in its parent's notebook — the rail
+        # renders one tree per section, so a cross-notebook child could not
+        # display under its parent. The parent's notebook wins.
+        folder_id = data.folder_id
+        if data.parent_note_id is not None:
+            parent = await get_note_or_raise(self.db, data.parent_note_id)
+            folder_id = parent.folder_id
         note = Note(
             title=data.title,
             body=data.body,
-            folder_id=data.folder_id,
+            folder_id=folder_id,
+            parent_note_id=data.parent_note_id,
             is_pinned=data.is_pinned,
             color=data.color,
             sort_order=max_order + 1 if max_order > 0 else 0,
@@ -169,6 +178,25 @@ class NoteService:
             note.folder_id = None
         elif data.folder_id is not None:
             note.folder_id = data.folder_id
+        # Nesting. clear_parent_note wins if both are set; a no-op cycle guard
+        # keeps the tree acyclic (can't nest a note under itself or one of its
+        # own descendants). Nesting under a note also files it into that
+        # note's notebook — the rail renders one tree per section, so a
+        # cross-notebook child could not display under its parent.
+        if data.clear_parent_note:
+            note.parent_note_id = None
+        elif data.parent_note_id is not None:
+            if data.parent_note_id == note_id:
+                raise ValidationError("A note cannot be nested under itself")
+            if await self._would_create_note_cycle(note_id, data.parent_note_id):
+                raise ValidationError("A note cannot be nested under one of its own children")
+            parent = await get_note_or_raise(self.db, data.parent_note_id)
+            note.parent_note_id = parent.id
+            note.folder_id = parent.folder_id
+        elif data.clear_folder or data.folder_id is not None:
+            # An explicit notebook move (or un-file) detaches the note: the
+            # parent stays behind, so keeping the link would orphan the tree.
+            note.parent_note_id = None
         # Tags live in the text: when the body changes, re-derive the note's tags
         # from its #tokens (the body is the source of truth for note tags).
         if data.body is not None:
@@ -198,6 +226,14 @@ class NoteService:
         note = await self.get(note_id)
         note.is_deleted = True
         note.deleted_at = datetime.now(timezone.utc)
+        # Adopt direct children into the trashed note's own parent slot so no
+        # note vanishes from the rail because its parent was deleted (the
+        # tree only renders children whose parent is live and in-section).
+        await self.db.execute(
+            update(Note)
+            .where(Note.parent_note_id == note_id)
+            .values(parent_note_id=note.parent_note_id)
+        )
         await self.db.commit()
         # Best-effort: drop from the vector cache now (ensure_fresh reloads on
         # any divergence anyway, so a miss here self-heals on the next search).
@@ -520,6 +556,21 @@ class NoteService:
             seen.add(cur)
             cur = (
                 await self.db.execute(select(NoteFolder.parent_id).where(NoteFolder.id == cur))
+            ).scalar_one_or_none()
+        return False
+
+    async def _would_create_note_cycle(self, note_id: int, new_parent_id: int) -> bool:
+        """True if nesting ``note_id`` under ``new_parent_id`` would create a
+        cycle — i.e. ``note_id`` sits somewhere in ``new_parent_id``'s own
+        ancestor chain (or the two ids are the same note)."""
+        cur: int | None = new_parent_id
+        seen: set[int] = set()
+        while cur is not None and cur not in seen:
+            if cur == note_id:
+                return True
+            seen.add(cur)
+            cur = (
+                await self.db.execute(select(Note.parent_note_id).where(Note.id == cur))
             ).scalar_one_or_none()
         return False
 

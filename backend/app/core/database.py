@@ -658,6 +658,14 @@ _COLUMN_MIGRATIONS = [
         "ALTER TABLE entries ADD COLUMN external_updated_at DATETIME",
     ),
     ("entries", "sync_hash", "ALTER TABLE entries ADD COLUMN sync_hash VARCHAR(64)"),
+    # Note-under-note nesting: optional self-FK on notes. A child inherits its
+    # parent's notebook (service-level rule), so the notes rail renders one
+    # tree per section; hard delete SET NULLs, soft delete re-parents children.
+    (
+        "notes",
+        "parent_note_id",
+        "ALTER TABLE notes ADD COLUMN parent_note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL",
+    ),
 ]
 
 _INDEX_MIGRATIONS = [

@@ -72,6 +72,13 @@ class Note(Base):
     folder_id: Mapped[int | None] = mapped_column(
         ForeignKey("note_folders.id", ondelete="SET NULL"), nullable=True
     )
+    # Note-under-note nesting. A child always lives in its parent's notebook
+    # (enforced in NoteService), so the rail can render one tree per section.
+    # Hard delete SET NULLs via the FK; soft delete re-parents children to the
+    # trashed note's own parent (see NoteService.soft_delete).
+    parent_note_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notes.id", ondelete="SET NULL"), nullable=True
+    )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     body: Mapped[str] = mapped_column(String, nullable=False)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

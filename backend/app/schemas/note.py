@@ -49,6 +49,10 @@ class NoteCreate(BaseModel):
     title: str | None = Field(default=None, max_length=255, description="Note title")
     body: str = Field(default="", max_length=1_000_000, description="Markdown body")
     folder_id: int | None = Field(default=None, description="Folder to file the note under")
+    parent_note_id: int | None = Field(
+        default=None,
+        description="Nest this note under an existing note (inherits its notebook)",
+    )
     # Note: no ``tag_ids`` — note tags are hashtag-derived from the body
     # (see app/services/hashtag.py); a client-set tag list was never applied.
     color: str | None = Field(default=None, max_length=20)
@@ -77,6 +81,13 @@ class NoteUpdate(BaseModel):
     )
     clear_folder: bool = Field(
         default=False, description="Set folder_id to None (un-file the note)"
+    )
+    parent_note_id: int | None = Field(
+        default=None,
+        description="Nest under the given note; the note moves into the parent's notebook",
+    )
+    clear_parent_note: bool = Field(
+        default=False, description="Detach the note from its parent (parent_note_id = null)."
     )
     # No ``tag_ids`` here either — tags re-derive from the body's #tokens on save.
     is_pinned: bool | None = Field(default=None)
@@ -135,6 +146,7 @@ class NotePageResponse(BaseModel):
 class NoteResponse(BaseModel):
     id: int
     folder_id: int | None
+    parent_note_id: int | None = None
     title: str | None
     body: str
     is_pinned: bool
@@ -156,6 +168,7 @@ class NoteListItem(BaseModel):
 
     id: int
     folder_id: int | None
+    parent_note_id: int | None = None
     title: str | None
     body_snippet: str
     is_pinned: bool

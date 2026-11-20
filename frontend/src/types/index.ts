@@ -195,6 +195,9 @@ export interface ReorderItem {
 export interface NoteResponse {
   id: number
   folder_id: number | null
+  /** Parent note (note-under-note nesting); null = top level. A child always
+   *  lives in its parent's notebook, so the rail renders one tree per section. */
+  parent_note_id: number | null
   title: string | null
   body: string
   is_pinned: boolean
@@ -222,6 +225,9 @@ export interface NoteUpdate {
   body?: string | null
   folder_id?: number | null
   clear_folder?: boolean
+  /** Nest under the given note (moves the note into its parent's notebook). */
+  parent_note_id?: number | null
+  clear_parent_note?: boolean
   is_pinned?: boolean | null
   color?: string | null
 }

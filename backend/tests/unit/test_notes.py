@@ -490,3 +490,112 @@ class TestNoteWebClip:
             "/api/v1/notes/web-clip", json={"url": "https://internal.example/"}
         )
         assert r.status_code == 400
+
+
+class TestNoteNesting:
+    """Note-under-note nesting: parent_note_id with same-notebook invariant."""
+
+    async def test_nest_under_sets_parent(self, client: AsyncClient):
+        parent = await _create_note(client, title="Parent")
+        child = await _create_note(client, title="Child")
+        r = await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
+        )
+        assert r.status_code == 200
+        assert r.json()["parent_note_id"] == parent["id"]
+        assert (await client.get(f"/api/v1/notes/{child['id']}")).json()[
+            "parent_note_id"
+        ] == parent["id"]
+
+    async def test_unnest_with_clear_flag(self, client: AsyncClient):
+        parent = await _create_note(client)
+        child = await _create_note(client)
+        await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
+        )
+        r = await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"clear_parent_note": True}
+        )
+        assert r.status_code == 200
+        assert r.json()["parent_note_id"] is None
+
+    async def test_nest_rejects_self(self, client: AsyncClient):
+        note = await _create_note(client)
+        r = await client.patch(
+            f"/api/v1/notes/{note['id']}", json={"parent_note_id": note["id"]}
+        )
+        assert r.status_code == 400
+
+    async def test_nest_rejects_own_descendant(self, client: AsyncClient):
+        grandparent = await _create_note(client, title="Grandparent")
+        parent = await _create_note(client, title="Parent")
+        child = await _create_note(client, title="Child")
+        await client.patch(
+            f"/api/v1/notes/{parent['id']}", json={"parent_note_id": grandparent["id"]}
+        )
+        await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
+        )
+        # grandparent under child would close a 3-cycle
+        r = await client.patch(
+            f"/api/v1/notes/{grandparent['id']}", json={"parent_note_id": child["id"]}
+        )
+        assert r.status_code == 400
+
+    async def test_nest_inherits_parents_notebook(self, client: AsyncClient):
+        folder_r = await client.post("/api/v1/notes/folders", json={"name": "Research"})
+        folder_id = folder_r.json()["id"]
+        parent = await _create_note(client, folder_id=folder_id)
+        child = await _create_note(client)  # unfiled
+        r = await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
+        )
+        assert r.status_code == 200
+        assert r.json()["folder_id"] == folder_id
+
+    async def test_folder_move_detaches(self, client: AsyncClient):
+        folder_r = await client.post("/api/v1/notes/folders", json={"name": "Other"})
+        folder_id = folder_r.json()["id"]
+        parent = await _create_note(client)
+        child = await _create_note(client)
+        await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
+        )
+        r = await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"folder_id": folder_id}
+        )
+        assert r.status_code == 200
+        assert r.json()["parent_note_id"] is None
+        assert r.json()["folder_id"] == folder_id
+
+    async def test_create_with_parent_inherits_notebook(self, client: AsyncClient):
+        folder_r = await client.post("/api/v1/notes/folders", json={"name": "Box"})
+        folder_id = folder_r.json()["id"]
+        parent = await _create_note(client, folder_id=folder_id)
+        child = await _create_note(client, parent_note_id=parent["id"])
+        assert child["parent_note_id"] == parent["id"]
+        assert child["folder_id"] == folder_id
+
+    async def test_soft_delete_adopts_children(self, client: AsyncClient):
+        grandparent = await _create_note(client, title="Grandparent")
+        parent = await _create_note(client, title="Parent")
+        child = await _create_note(client, title="Child")
+        await client.patch(
+            f"/api/v1/notes/{parent['id']}", json={"parent_note_id": grandparent["id"]}
+        )
+        await client.patch(
+            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
+        )
+        r = await client.delete(f"/api/v1/notes/{parent['id']}")
+        assert r.status_code in (200, 204)
+        # Child re-attaches to the grandparent, not to nothing.
+        assert (await client.get(f"/api/v1/notes/{child['id']}")).json()[
+            "parent_note_id"
+        ] == grandparent["id"]
+
+    async def test_nest_missing_parent_returns_404(self, client: AsyncClient):
+        note = await _create_note(client)
+        r = await client.patch(
+            f"/api/v1/notes/{note['id']}", json={"parent_note_id": 9999}
+        )
+        assert r.status_code == 404

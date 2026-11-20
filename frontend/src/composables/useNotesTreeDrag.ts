@@ -20,6 +20,8 @@ export type DropTarget =
   | { kind: 'folder'; id: number }
   | { kind: 'unfiled' }
   | { kind: 'root' }
+  /** Drop a note onto another note to nest it underneath. */
+  | { kind: 'note'; id: number }
   /** Between-row insertion (DND-3). `beforeId` is the sibling the dragged row
    *  would land above (null = end of section). Notes insert only within their
    *  own section; folders only between siblings under the same parent. */
@@ -29,6 +31,7 @@ export type DropTarget =
 export type DropResolution =
   | { action: 'note-to-folder'; noteId: number; folderId: number }
   | { action: 'note-to-unfiled'; noteId: number }
+  | { action: 'note-to-note'; noteId: number; parentId: number }
   | { action: 'folder-to-parent'; folderId: number; parentId: number }
   | { action: 'folder-to-root'; folderId: number }
   | { action: 'noop'; reason: string }
@@ -79,16 +82,35 @@ export function computeReorder(
  * Map a drag+drop pair onto a store mutation.
  *
  * `ctx.noteFolder` is the dragged note's current folder (null = unfiled);
- * `ctx.folders` is the flat folder list used for the cycle check. The component
- * cannot ask the backend first — it *silently* ignores a cyclic re-parent — so
- * the cycle must be caught here to give the user a reason.
+ * `ctx.folders` and `ctx.notes` are the flat link lists used for the cycle
+ * checks (`parent_id` / `parent_note_id` mapped onto a common shape). The
+ * component cannot ask the backend first — it *silently* ignores a cyclic
+ * re-parent — so the cycle must be caught here to give the user a reason.
  */
 export function resolveDrop(
   item: TreeDragItem,
   target: DropTarget,
-  ctx: { noteFolder: number | null; folders: readonly FolderLink[] },
+  ctx: {
+    noteFolder: number | null
+    folders: readonly FolderLink[]
+    notes: readonly FolderLink[]
+  },
 ): DropResolution {
   if (item.kind === 'note') {
+    if (target.kind === 'note') {
+      // Nest under another note. The backend re-files the child into the
+      // parent's notebook, so cross-notebook drops are fine here.
+      if (target.id === item.id) {
+        return { action: 'noop', reason: 'A note cannot nest under itself' }
+      }
+      if (ctx.notes.find((n) => n.id === item.id)?.parent_id === target.id) {
+        return { action: 'noop', reason: 'Already nested under this note' }
+      }
+      if (isDescendant(ctx.notes, item.id, target.id)) {
+        return { action: 'cycle', reason: 'A note cannot nest under its own child' }
+      }
+      return { action: 'note-to-note', noteId: item.id, parentId: target.id }
+    }
     if (target.kind === 'folder') {
       if (ctx.noteFolder === target.id) {
         return { action: 'noop', reason: 'Already in this notebook' }

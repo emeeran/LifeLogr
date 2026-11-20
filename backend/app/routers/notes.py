@@ -79,6 +79,7 @@ def _to_response(note: Note) -> NoteResponse:
     return NoteResponse(
         id=note.id,
         folder_id=note.folder_id,
+        parent_note_id=note.parent_note_id,
         title=note.title,
         body=note.body,
         is_pinned=note.is_pinned,
@@ -102,6 +103,7 @@ def _to_list_item(note: Note, snippet: str) -> NoteListItem:
     return NoteListItem(
         id=note.id,
         folder_id=note.folder_id,
+        parent_note_id=note.parent_note_id,
         title=note.title,
         body_snippet=snippet,
         is_pinned=note.is_pinned,

@@ -14,6 +14,13 @@ const FOLDERS: FolderLink[] = [
   { id: 4, parent_id: null },
 ]
 
+// Notes: 20 nests under 10, which nests under nothing; 30 is standalone.
+const NOTES: FolderLink[] = [
+  { id: 10, parent_id: null },
+  { id: 20, parent_id: 10 },
+  { id: 30, parent_id: null },
+]
+
 describe('isDescendant', () => {
   it('includes the folder itself', () => {
     expect(isDescendant(FOLDERS, 1, 1)).toBe(true)
@@ -44,6 +51,7 @@ describe('resolveDrop — notes', () => {
       resolveDrop({ kind: 'note', id: 7 }, { kind: 'folder', id: 2 }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }),
     ).toEqual({ action: 'note-to-folder', noteId: 7, folderId: 2 })
   })
@@ -53,6 +61,7 @@ describe('resolveDrop — notes', () => {
       resolveDrop({ kind: 'note', id: 7 }, { kind: 'folder', id: 1 }, {
         noteFolder: 2,
         folders: FOLDERS,
+        notes: NOTES,
       }),
     ).toEqual({ action: 'note-to-folder', noteId: 7, folderId: 1 })
   })
@@ -62,6 +71,7 @@ describe('resolveDrop — notes', () => {
       resolveDrop({ kind: 'note', id: 7 }, { kind: 'folder', id: 2 }, {
         noteFolder: 2,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('noop')
   })
@@ -71,12 +81,14 @@ describe('resolveDrop — notes', () => {
       resolveDrop({ kind: 'note', id: 7 }, { kind: 'unfiled' }, {
         noteFolder: 2,
         folders: FOLDERS,
+        notes: NOTES,
       }),
     ).toEqual({ action: 'note-to-unfiled', noteId: 7 })
     expect(
       resolveDrop({ kind: 'note', id: 7 }, { kind: 'root' }, {
         noteFolder: 2,
         folders: FOLDERS,
+        notes: NOTES,
       }),
     ).toEqual({ action: 'note-to-unfiled', noteId: 7 })
   })
@@ -86,6 +98,7 @@ describe('resolveDrop — notes', () => {
       resolveDrop({ kind: 'note', id: 7 }, { kind: 'unfiled' }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('noop')
   })
@@ -97,6 +110,7 @@ describe('resolveDrop — notebooks', () => {
       resolveDrop({ kind: 'folder', id: 4 }, { kind: 'folder', id: 1 }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }),
     ).toEqual({ action: 'folder-to-parent', folderId: 4, parentId: 1 })
   })
@@ -106,6 +120,7 @@ describe('resolveDrop — notebooks', () => {
       resolveDrop({ kind: 'folder', id: 1 }, { kind: 'folder', id: 1 }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('noop')
   })
@@ -115,12 +130,14 @@ describe('resolveDrop — notebooks', () => {
       resolveDrop({ kind: 'folder', id: 1 }, { kind: 'folder', id: 3 }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('cycle')
     expect(
       resolveDrop({ kind: 'folder', id: 2 }, { kind: 'folder', id: 3 }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('cycle')
   })
@@ -130,6 +147,7 @@ describe('resolveDrop — notebooks', () => {
       resolveDrop({ kind: 'folder', id: 3 }, { kind: 'root' }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }),
     ).toEqual({ action: 'folder-to-root', folderId: 3 })
   })
@@ -139,6 +157,7 @@ describe('resolveDrop — notebooks', () => {
       resolveDrop({ kind: 'folder', id: 1 }, { kind: 'root' }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('noop')
   })
@@ -148,6 +167,7 @@ describe('resolveDrop — notebooks', () => {
       resolveDrop({ kind: 'folder', id: 1 }, { kind: 'unfiled' }, {
         noteFolder: null,
         folders: FOLDERS,
+        notes: NOTES,
       }).action,
     ).toBe('noop')
   })
@@ -185,5 +205,47 @@ describe('computeReorder — between-row reorder plan (DND-3)', () => {
 
   it('is null when beforeId is not in the section (stale target)', () => {
     expect(computeReorder([1, 2], 1, 9)).toBeNull()
+  })
+})
+
+describe('resolveDrop — nesting a note under another note', () => {
+  it('nests onto another note', () => {
+    expect(
+      resolveDrop(
+        { kind: 'note', id: 30 },
+        { kind: 'note', id: 10 },
+        { noteFolder: null, folders: FOLDERS, notes: NOTES },
+      ),
+    ).toEqual({ action: 'note-to-note', noteId: 30, parentId: 10 })
+  })
+
+  it('is a noop on itself', () => {
+    expect(
+      resolveDrop(
+        { kind: 'note', id: 10 },
+        { kind: 'note', id: 10 },
+        { noteFolder: null, folders: FOLDERS, notes: NOTES },
+      ).action,
+    ).toBe('noop')
+  })
+
+  it('is a noop when already nested under the target', () => {
+    expect(
+      resolveDrop(
+        { kind: 'note', id: 20 },
+        { kind: 'note', id: 10 },
+        { noteFolder: null, folders: FOLDERS, notes: NOTES },
+      ).action,
+    ).toBe('noop')
+  })
+
+  it('rejects nesting under its own child (cycle)', () => {
+    expect(
+      resolveDrop(
+        { kind: 'note', id: 10 },
+        { kind: 'note', id: 20 },
+        { noteFolder: null, folders: FOLDERS, notes: NOTES },
+      ).action,
+    ).toBe('cycle')
   })
 })
