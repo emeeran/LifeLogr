@@ -14,7 +14,7 @@ from typing import Any, TypedDict, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cron_utils import last_scheduled_occurrence as _last_scheduled_occurrence
+from app.core.cron import last_scheduled_occurrence as _last_scheduled_occurrence
 from app.core.jobs import ProgressReporter, jobs
 
 logger = logging.getLogger(__name__)
@@ -343,12 +343,11 @@ class SchedulerService:
     ) -> dict[str, str | int | None]:
         """Schedule an automated backup job and persist it across restarts.
 
-        Args:
-            cron_expr: Cron expression (e.g., "0 2 * * *" for 2am daily)
-            backup_path: Directory path to store backups (local mode only)
-            retention: Number of backups to keep (local mode only, default 10)
-            config_id: BackupConfig ID for cloud upload (e.g., Google Drive).
-                       When provided, the job uses BackupService.run_backup().
+        ``cron_expr`` is a cron expression (e.g. "0 2 * * *" for 2am daily).
+        ``backup_path`` (local mode only) is the directory to store backups in,
+        keeping ``retention`` of them. ``config_id`` — a BackupConfig id for
+        cloud upload (e.g. Google Drive) — makes the job use
+        BackupService.run_backup() instead.
         """
         sched = self.get_scheduler()
         if not sched.running:

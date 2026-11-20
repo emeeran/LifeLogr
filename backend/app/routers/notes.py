@@ -228,12 +228,14 @@ async def reorder_pages(
 async def update_page(
     note_id: int, page_id: int, data: NotePageUpdate, db: AsyncSession = Depends(get_db)
 ) -> Any:
+    """Patch one page of a note."""
     svc = NoteService(db)
     return await svc.update_page(note_id, page_id, data)
 
 
 @router.delete("/{note_id}/pages/{page_id}", status_code=204)
 async def delete_page(note_id: int, page_id: int, db: AsyncSession = Depends(get_db)) -> None:
+    """Delete a page from a note."""
     svc = NoteService(db)
     await svc.delete_page(note_id, page_id)
 

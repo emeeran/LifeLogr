@@ -1401,7 +1401,9 @@ async def import_file(
                         zip_names = _zip_members(z)
                         is_dayone = any(n.endswith("Journal.json") for n in zip_names)
                 except zipfile.BadZipFile:
-                    pass
+                    # Format sniff: not a zip at all — fall through to the
+                    # non-archive importers below.
+                    logger.debug("Import sniff: %s is not a zip", upload_path.name)
 
                 if is_dayone:
                     entries_data.extend(parse_dayone_zip(content))

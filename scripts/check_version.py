@@ -74,7 +74,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"\n✔ All five sources agree: {next(iter(versions))}")
+    print(f"\nAll five sources agree: {next(iter(versions))}")
     return 0
 
 

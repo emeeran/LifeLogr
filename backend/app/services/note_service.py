@@ -336,6 +336,7 @@ class NoteService:
         return page
 
     async def update_page(self, note_id: int, page_id: int, data: NotePageUpdate) -> NotePage:
+        """Patch the mutable fields of one page (scoped to its note)."""
         page = await self._get_page(note_id, page_id)
         if data.title is not None:
             page.title = data.title
@@ -350,6 +351,7 @@ class NoteService:
         return page
 
     async def delete_page(self, note_id: int, page_id: int) -> None:
+        """Hard-delete a page row (pages have no trash; the note keeps its other pages)."""
         page = await self._get_page(note_id, page_id)
         await self.db.delete(page)
         await self.db.commit()
@@ -508,6 +510,7 @@ class NoteService:
         )
 
     async def create_folder(self, data: NoteFolderCreate) -> NoteFolder:
+        """Create a folder, optionally nested under ``parent_id`` (acyclic guard)."""
         folder = NoteFolder(
             name=data.name,
             parent_id=data.parent_id,
@@ -520,6 +523,7 @@ class NoteService:
         return folder
 
     async def update_folder(self, folder_id: int, data: NoteFolderUpdate) -> NoteFolder:
+        """Patch folder fields, including re-parenting (cycle-guarded)."""
         folder = await self._get_folder(folder_id)
         if data.name is not None:
             folder.name = data.name

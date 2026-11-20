@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from app.core.cron_utils import last_scheduled_occurrence
+from app.core.cron import last_scheduled_occurrence
 
 
 def test_daily_same_day():

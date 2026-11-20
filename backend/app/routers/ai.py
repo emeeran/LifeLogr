@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import security
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.exceptions import ValidationError
 from app.models.ai_provider import AIProvider
 from app.models.entry import Entry
 from app.models.tag import Tag
@@ -129,6 +130,8 @@ async def ai_status() -> Any:
 @router.post("/suggest-tags", response_model=TagSuggestionResponse)
 async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(get_db)) -> Any:
     """Suggest tags for a journal entry based on its content."""
+    if not settings.AI_ENABLE_TAG_SUGGESTIONS:
+        raise ValidationError("Tag suggestions are disabled in AI settings")
     # Load existing tag names
     result = await db.execute(select(Tag.name))
     existing = [row[0] for row in result]
@@ -143,6 +146,8 @@ async def suggest_tags(data: TagSuggestionRequest, db: AsyncSession = Depends(ge
 @router.post("/continue-writing", response_model=ContinueWritingResponse)
 async def continue_writing(data: ContinueWritingRequest) -> Any:
     """Generate a short continuation suggestion."""
+    if not settings.AI_ENABLE_WRITER_BLOCK_HELPER:
+        raise ValidationError("Writer's block helper is disabled in AI settings")
     svc = OllamaService()
     continuation = await svc.continue_writing(
         data.text, entry_context=_service_entry_context(data.entry_context), attempt=data.attempt
@@ -524,36 +529,23 @@ async def update_provider(
     provider_id: int, data: AIProviderUpdate, db: AsyncSession = Depends(get_db)
 ) -> Any:
     _require_remote_confirmation(data.base_url, data.confirm_remote)
-    try:
-        return _to_provider_response(await AIProviderService(db).update(provider_id, data))
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _to_provider_response(await AIProviderService(db).update(provider_id, data))
 
 
 @router.delete("/providers/{provider_id}", status_code=204)
 async def delete_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> None:
-    try:
-        await AIProviderService(db).delete(provider_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await AIProviderService(db).delete(provider_id)
 
 
 @router.post("/providers/{provider_id}/activate", response_model=AIProviderResponse)
 async def activate_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> Any:
-    try:
-        return _to_provider_response(await AIProviderService(db).activate(provider_id))
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _to_provider_response(await AIProviderService(db).activate(provider_id))
 
 
 @router.post("/providers/{provider_id}/test")
 async def test_provider(provider_id: int, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Probe the provider with a 1-token completion to verify the key/endpoint."""
-    svc = AIProviderService(db)
-    try:
-        provider = await svc._get(provider_id)  # noqa: SLF001
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    provider = await AIProviderService(db).get_or_raise(provider_id)
     api_key = security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
     try:
         model = await test_connection(provider.base_url, api_key, provider.model)
@@ -567,11 +559,7 @@ async def list_provider_models(
     provider_id: int, db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     """List the models the provider exposes (drives the model selector in the UI)."""
-    svc = AIProviderService(db)
-    try:
-        provider = await svc._get(provider_id)  # noqa: SLF001
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    provider = await AIProviderService(db).get_or_raise(provider_id)
     api_key = security.decrypt(provider.api_key_encrypted) if provider.api_key_encrypted else None
     try:
         models = await list_models(provider.base_url, api_key)

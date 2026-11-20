@@ -30,7 +30,10 @@ async def get_job_result(job_id: str, background_tasks: BackgroundTasks) -> File
     """Download a finished export job's file; deleted after serving."""
     result = jobs.take_result(job_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="No result available for this job")
+        # Covers both an unknown id and a known job whose result is absent or
+        # already taken — the registry can't tell them apart, so the message
+        # stays generic. Same 404 the exception mapping produces elsewhere.
+        raise NotFoundError("No result available for this job")
     path, name = result
     if not os.path.isfile(path):
         raise HTTPException(status_code=410, detail="Export result already downloaded or expired")

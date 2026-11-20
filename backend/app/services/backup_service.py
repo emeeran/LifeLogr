@@ -148,7 +148,7 @@ class BackupService:
         ``list_files`` swallows per-space errors, so a bad token could pass
         unnoticed); WebDAV/Box are verified with a real listing.
         """
-        config = await self._get_config(config_id)
+        config = await self.get_config_or_raise(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
         provider = self._cloud_provider_for(config, creds)
 
@@ -284,7 +284,7 @@ class BackupService:
         """
         from app.services.cloud_sync_service import GoogleDriveProvider
 
-        config = await self._get_config(config_id)
+        config = await self.get_config_or_raise(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
         # Construct (and validate the provider name) before claiming the slot,
         # so an unsupported provider is a 400 rather than a recorded failure.
@@ -441,7 +441,7 @@ class BackupService:
         remote_deleted = False
         filename = snap.backup_filename
         if filename:
-            config = await self._get_config(snap.config_id)
+            config = await self.get_config_or_raise(snap.config_id)
             creds = json.loads(decrypt(config.credentials_encrypted))
             provider = self._cloud_provider_for(config, creds)
             try:
@@ -475,7 +475,7 @@ class BackupService:
         from app.core.config import settings
         from app.core.restore import atomic_restore
 
-        config = await self._get_config(config_id)
+        config = await self.get_config_or_raise(config_id)
         creds = json.loads(decrypt(config.credentials_encrypted))
         provider = self._cloud_provider_for(config, creds)
 
@@ -581,7 +581,7 @@ class BackupService:
 
     async def delete_config(self, config_id: int) -> None:
         """Delete a backup configuration and its snapshots."""
-        config = await self._get_config(config_id)
+        config = await self.get_config_or_raise(config_id)
         # Delete child snapshots first. The snapshots' config_id is NOT NULL and
         # the relationship has no ORM cascade, so leaving it to SQLAlchemy's
         # default would null the FK and hit an IntegrityError.
@@ -600,7 +600,7 @@ class BackupService:
         note_count = (await self.db.execute(select(func.count()).select_from(Note))).scalar_one()
         return {"entries": entry_count, "media": media_count, "notes": note_count}
 
-    async def _get_config(self, config_id: int) -> BackupConfig:
+    async def get_config_or_raise(self, config_id: int) -> BackupConfig:
         """Fetch a backup config or raise NotFoundError."""
         result = await self.db.execute(select(BackupConfig).where(BackupConfig.id == config_id))
         config = result.scalar_one_or_none()

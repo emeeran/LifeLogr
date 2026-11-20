@@ -231,7 +231,7 @@ class TestNoteMediaUploadFile:
         assert media.storage_path.startswith("notes/")
         assert (settings.MEDIA_DIR / media.storage_path).is_file()
 
-    async def test_rejects_oversized_spool(self, db_session: AsyncSession, tmp_path):
+    async def test_note_media_rejects_oversized_spool(self, db_session: AsyncSession, tmp_path):
         from app.models.note import Note
         from app.services.note_media_service import NoteMediaService
 
@@ -250,7 +250,7 @@ class TestNoteMediaUploadFile:
                 size=settings.MAX_MEDIA_SIZE_BYTES + 1,
             )
 
-    async def test_rejects_blocked_signature(self, db_session: AsyncSession, tmp_path):
+    async def test_note_media_rejects_blocked_signature(self, db_session: AsyncSession, tmp_path):
         from app.models.note import Note
         from app.services.note_media_service import NoteMediaService
 

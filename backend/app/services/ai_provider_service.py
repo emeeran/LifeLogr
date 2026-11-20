@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import security
 from app.core.config import settings
+from app.core.exceptions import NotFoundError
 from app.models.ai_provider import AIProvider
 from app.schemas.ai_provider import AIProviderCreate, AIProviderUpdate
 
@@ -105,7 +106,7 @@ class AIProviderService:
         return provider
 
     async def update(self, provider_id: int, data: AIProviderUpdate) -> AIProvider:
-        provider = await self._get(provider_id)
+        provider = await self.get_or_raise(provider_id)
         if data.name is not None:
             provider.name = data.name
         if data.base_url is not None:
@@ -124,24 +125,24 @@ class AIProviderService:
         return provider
 
     async def delete(self, provider_id: int) -> None:
-        provider = await self._get(provider_id)
+        provider = await self.get_or_raise(provider_id)
         await self.db.delete(provider)
         await self.db.commit()
         invalidate_active_cache()
 
     async def activate(self, provider_id: int) -> AIProvider:
-        provider = await self._get(provider_id)
+        provider = await self.get_or_raise(provider_id)
         await self._set_only_active(provider)
         await self.db.commit()
         await self.db.refresh(provider)
         invalidate_active_cache()
         return provider
 
-    async def _get(self, provider_id: int) -> AIProvider:
+    async def get_or_raise(self, provider_id: int) -> AIProvider:
         res = await self.db.execute(select(AIProvider).where(AIProvider.id == provider_id))
         provider = res.scalar_one_or_none()
         if provider is None:
-            raise ValueError(f"AI provider {provider_id} not found")
+            raise NotFoundError(f"AI provider {provider_id} not found")
         return provider
 
     async def _set_only_active(self, provider: AIProvider) -> None:

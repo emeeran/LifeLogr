@@ -486,17 +486,11 @@ async def schedule_backup(
     Provide **config_id** to upload to a cloud provider (Google Drive, WebDAV),
     or **backup_path** for local filesystem backups.
     """
-    from sqlalchemy import select
-
-    from app.models.backup import BackupConfig
     from app.services.scheduler_service import SchedulerService
 
     # Validate config_id exists before scheduling
     if config_id is not None:
-        result = await db.execute(select(BackupConfig).where(BackupConfig.id == config_id))
-        config = result.scalar_one_or_none()
-        if not config:
-            raise HTTPException(status_code=404, detail=f"Backup config {config_id} not found")
+        await BackupService(db).get_config_or_raise(config_id)
 
     # Local backups must target user-owned space (security: unauthenticated
     # loopback endpoint). SchedulerService.schedule_backup re-checks defensively.

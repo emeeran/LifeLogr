@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import patch
 
-from app.core.cron_utils import last_scheduled_occurrence
+from app.core.cron import last_scheduled_occurrence
 from app.services.reminder_service import ReminderService
 
 

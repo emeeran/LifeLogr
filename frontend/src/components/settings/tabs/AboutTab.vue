@@ -110,7 +110,7 @@ async function runSystemSetup() {
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     setupOutput.value = (await invoke('run_setup')) as string
-    emit('toast', 'success', 'System setup complete!')
+    emit('toast', 'success', 'System setup complete')
     await checkSystemDeps()
   } catch (e: unknown) {
     setupOutput.value = errorMessage(e)

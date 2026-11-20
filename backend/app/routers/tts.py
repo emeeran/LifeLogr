@@ -245,7 +245,8 @@ def _maybe_evict() -> None:
                 count -= 1
                 size -= sz
             except OSError:
-                pass
+                # File vanished between the listing and the unlink — skip it.
+                logger.debug("TTS cache eviction skipped %s", p, exc_info=True)
         logger.info("TTS cache evicted to %d files / %.1f MB", count, size / 1_048_576)
     except Exception:
         logger.warning("TTS cache eviction failed", exc_info=True)

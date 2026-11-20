@@ -447,9 +447,10 @@ class Settings(BaseSettings):
     def validate_production(self) -> None:
         """Validate critical settings when running in production.
 
-        Only enforced for server deployments (Docker, cloud). Desktop/Tauri
-        sidecar runs locally with no external access — validation is skipped
-        (``APP_ENV`` is not ``production`` there).
+        Runs on server deployments (Docker, cloud) AND in the desktop/Tauri
+        sidecar (which sets ``APP_ENV=production``); the desktop passes because
+        the managed-run launcher provisions a per-install key and the server
+        binds to loopback only. Dev runs (``APP_ENV`` unset/local) skip it.
         """
         if not self.is_production:
             return
