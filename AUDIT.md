@@ -159,6 +159,73 @@ release. Everything else is medium/low polish.
   rotation); new growth paths found here are the spool/tmpfs and tmp-sweeper items above.
 - **Mobile/`docs/plans/PRD-mobile.md`** are untracked scaffolding, out of scope.
 
+## Missed by pipeline, caught by blind review
+
+A sanitized cold-review pass (fresh agent, no pipeline context; see
+`.pipeline/blind-review.md` for the verbatim report) found real issues the six audit
+dimensions missed. Per pipeline rules these are logged here as genuine misses, not quietly
+patched:
+
+- **HIGH — single-entry purge fails on the production schema**
+  (`backend/app/services/entry_service.py:431`): `EntryService.purge` relies on
+  `ON DELETE CASCADE`, but production tables pre-date CASCADE and the inline migrations only
+  add columns, never rebuild. `empty_trash` and `purge_expired_trash` call
+  `_bulk_delete_children` first; `purge` does not → `FOREIGN KEY constraint failed` (500) on
+  any entry with media/recordings; the entry stays stuck in trash until the daily sweep.
+  The purge tests pass only because the test schema is created fresh with CASCADE. This
+  matches the project's known schema-FK-drift history and should be treated as **blocker-class**.
+- **HIGH — port-ownership verification silently disabled without `lsof`**
+  (`desktop/src-tauri/src/main.rs:1030-1036`): `lsof` is not in the .deb depends/recommends;
+  on minimal installs a stale foreign sidecar holding the port goes undetected and
+  `stop_backend` has no PID to signal.
+- **MEDIUM — hot storage relocate loses writes in the copy window** and leaves
+  `TTS_CACHE_DIR`/`WEATHER_CACHE_DIR` pointing at the old data dir
+  (`backend/app/services/storage_service.py:146-200`, `config.py:420-428`).
+- **MEDIUM — rate limiter is active on the desktop** (`backend/app/main.py:256-262`): the
+  skip keys on `not is_production`, but the sidecar sets `APP_ENV=production` — contradicting
+  the limiter's own comment; three carve-outs already document past 429 incidents.
+- **MEDIUM — web-deb launcher lifecycle**: `--stop` kills by raw PID with no cmdline identity
+  check (PID reuse = arbitrary-process kill); single-instance check has a 30 s race with no
+  `flock`; `server.log` grows forever (desktop got rotation, web didn't).
+- **MEDIUM — `BACKUP_WAIT_LIMIT = 120s` exceeds systemd's default 90 s stop timeout**
+  (`main.rs:655`) → SIGKILL mid-teardown orphans the sidecar with the DB open.
+- **MEDIUM — AI tool replace/insert splices at stale offsets**
+  (`frontend/src/composables/useAiTools.ts:57-124`): typing while a long AI request runs
+  makes Replace/Insert mangle the wrong text span. Notably adjacent to the F2 consolidation
+  the pipeline deliberately declined — this is a real UX-integrity bug in that area, not a
+  refactor candidate.
+- **MEDIUM — Dockerfile not reproducible** (floats `uv:latest`, installs from pyproject not
+  the exported lock); .deb built without `--root-owner-group`.
+- **MEDIUM — `make docs-check` is red**: docs still say 0.18.1 while the five version
+  sources say 0.19.0 (the 0.19.0 bump skipped the docs the gate checks).
+- **LOW additions**: strict-origin list doesn't cover `DELETE /notes/{id}/media/{mid}`
+  (extends the pipeline's strict-origin finding); EntryEditor lacks the `beforeunload` guard
+  NoteEditor has (inverted priority); `confirm_remote` gate isn't a real boundary (comment
+  overstates); Rust boot panics on unwritable log dir; job poll has no backoff; remote
+  http(s) images in entries leak IPs to third parties (privacy-first app); test-only silent
+  except in `conftest.py`.
+
+## Blind-review reconciliation notes
+
+- **Corroborated (higher confidence):** crypto/HTTP-hardening strengths, OAuth design,
+  tar/zip hardening, scheduler hygiene, test hermeticity, and the strict-origin guard gaps —
+  both the audit dimensions and the blind reviewer landed on the same findings from
+  different angles.
+- **Genuine disagreement, surfaced not averaged:** the blind reviewer called DB boot safety
+  "genuinely solid … better than most desktop apps ever do" (including the fingerprint skip
+  and the weekly restore); the operations audit found the fingerprint skip misses in-place
+  writes and the weekly restore swaps the live DB under running writers (audit blockers 2–3).
+  The reconciliation here sides with the operations audit because it traced the specific
+  failure semantics (same-size UPDATEs, orphaned-inode commits) that the cold review did not
+  drill into — but the boot-safety *architecture* praise and the *specific-gap* findings are
+  compatible: the design is right, two of its details are not.
+- **Verdict delta:** blind review said "no blockers"; this audit says "ready with fixes"
+  with three blockers. The delta is mostly severity calibration (the blind reviewer graded
+  its own HIGHs as just-under-blocker; the purge FK miss it found is blocker-class here).
+- The blind reviewer's housekeeping note ("pending deletions of AUDIT.md/trash2review") was
+  an artifact of this pipeline temporarily hiding those files during the review to keep it
+  blind — restored since.
+
 ## Pipeline self-report
 
 - Phases 0–3 committed on `cleanup/pipeline-2026-11-20` (baseline, purge, debloat ×4,
