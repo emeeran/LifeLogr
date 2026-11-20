@@ -6,7 +6,7 @@ import logging
 import os
 import shutil
 import tempfile
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,42 @@ async def delete_backup_config(config_id: int, db: AsyncSession = Depends(get_db
     await svc.delete_config(config_id)
 
 
+def _cloud_backup_runner(config_id: int) -> Callable[[ProgressReporter], Awaitable[str]]:
+    """Job runner for a configured cloud backup (fresh session per job)."""
+
+    def _runner(report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            from app.core.database import async_session
+
+            async with async_session() as session:
+                snapshot = await BackupService(session).run_backup(
+                    config_id, report=report
+                )
+                if snapshot.status == "failed":
+                    raise RuntimeError(snapshot.error_message or "Backup failed")
+                return f"Backup completed ({snapshot.entries_synced} entries, {snapshot.media_synced} media)"
+
+        return _run()
+
+    return _runner
+
+
+def _local_backup_runner(
+    path: str, retention: int
+) -> Callable[[ProgressReporter], Awaitable[str]]:
+    """Job runner for a local-folder backup."""
+    from app.services.scheduler_service import _run_backup
+
+    def _runner(report: ProgressReporter) -> Awaitable[str]:
+        async def _run() -> str:
+            archive = await _run_backup(path, retention, report=report)
+            return f"Backup written to {archive}"
+
+        return _run()
+
+    return _runner
+
+
 @router.post("/run")
 async def run_backup(
     request: RestoreRequest,
@@ -83,21 +119,9 @@ async def run_backup(
     if not as_job:
         return BackupSnapshotResponse.model_validate(await svc.run_backup(request.config_id))
 
-    def _runner(report: ProgressReporter) -> Awaitable[str]:
-        async def _run() -> str:
-            from app.core.database import async_session
-
-            async with async_session() as session:
-                snapshot = await BackupService(session).run_backup(
-                    request.config_id, report=report
-                )
-                if snapshot.status == "failed":
-                    raise RuntimeError(snapshot.error_message or "Backup failed")
-                return f"Backup completed ({snapshot.entries_synced} entries, {snapshot.media_synced} media)"
-
-        return _run()
-
-    return _start_data_job(background_tasks, "backup", _runner)
+    return _start_data_job(
+        background_tasks, "backup", _cloud_backup_runner(request.config_id)
+    )
 
 
 @router.post("/run-now")
@@ -133,16 +157,11 @@ async def run_configured_backup_now(
             archive = await _run_backup(str(resolved), retention)
             return {"mode": "local", "path": str(resolved), "archive": archive}
 
-        target = str(resolved)
-
-        def _runner(report: ProgressReporter) -> Awaitable[str]:
-            async def _run() -> str:
-                archive = await _run_backup(target, retention, report=report)
-                return f"Backup written to {archive}"
-
-            return _run()
-
-        return _start_data_job(background_tasks, "backup-local", _runner)
+        return _start_data_job(
+            background_tasks,
+            "backup-local",
+            _local_backup_runner(str(resolved), retention),
+        )
 
     active = await SchedulerService(db).get_active_schedule()
     if active is None:
@@ -159,38 +178,27 @@ async def run_configured_backup_now(
                 "error": snapshot.error_message,
             }
         config_id = active.config_id
-
-        def _runner(report: ProgressReporter) -> Awaitable[str]:
-            async def _run() -> str:
-                from app.core.database import async_session
-
-                async with async_session() as session:
-                    snapshot = await BackupService(session).run_backup(
-                        config_id, report=report
-                    )
-                    if snapshot.status == "failed":
-                        raise RuntimeError(snapshot.error_message or "Backup failed")
-                    return f"Backup completed ({snapshot.entries_synced} entries, {snapshot.media_synced} media)"
-
-            return _run()
-
-        return _start_data_job(background_tasks, "backup", _runner)
+        if not as_job:
+            snapshot = await BackupService(db).run_backup(config_id)
+            return {
+                "mode": "cloud",
+                "config_id": active.config_id,
+                "status": snapshot.status,
+                "error": snapshot.error_message,
+            }
+        return _start_data_job(
+            background_tasks, "backup", _cloud_backup_runner(config_id)
+        )
 
     if not as_job:
         archive = await _run_backup(active.backup_path or "", active.retention)
         return {"mode": "local", "path": active.backup_path, "archive": archive}
 
-    scheduled_path = active.backup_path or ""
-    scheduled_retention = active.retention
-
-    def _local_runner(report: ProgressReporter) -> Awaitable[str]:
-        async def _run() -> str:
-            archive = await _run_backup(scheduled_path, scheduled_retention, report=report)
-            return f"Backup written to {archive}"
-
-        return _run()
-
-    return _start_data_job(background_tasks, "backup-local", _local_runner)
+    return _start_data_job(
+        background_tasks,
+        "backup-local",
+        _local_backup_runner(active.backup_path or "", active.retention),
+    )
 
 
 @router.get("/snapshots")

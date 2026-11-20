@@ -63,38 +63,40 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "OAuth) are keyed off it. Run a deployment that generates a key, or "
             "set SECRET_KEY in .env. (The packaged launcher does this for you.)"
         )
+    async def _startup_step(name: str, factory: Any) -> None:
+        """Run one warn-only boot step; a failure never blocks startup."""
+        try:
+            await factory()
+        except Exception:
+            logger.warning("%s", name, exc_info=True)
+
     # Load persisted runtime settings (model selections, feature toggles)
-    try:
+    async def _load_runtime_settings() -> None:
         from app.services.settings_service import load_runtime_settings
 
         load_runtime_settings()
-    except Exception:
-        logger.warning("Failed to load persisted settings", exc_info=True)
-    await init_db()
+
     # Rewrite AI-provider rows still naming a retired model (e.g. Groq's
     # 2026-08-16 decommissions) so stored configs keep working. Warn-only.
-    try:
+    async def _fix_deprecated_models() -> None:
         from app.core.database import async_session
         from app.services.ai_provider_service import apply_deprecated_model_fixups
 
         async with async_session() as session:
             await apply_deprecated_model_fixups(session)
-    except Exception:
-        logger.warning("AI-provider model fixup failed", exc_info=True)
+
     # Startup self-checks (warn-only; never block boot). See app.core.startup_checks.
-    try:
+    async def _check_data_integrity() -> None:
         from app.core.startup_checks import check_data_integrity
 
         await check_data_integrity()
-    except Exception:
-        logger.warning("Startup data-integrity check failed", exc_info=True)
-    # Start backup scheduler
-    try:
+
+    # Start backup scheduler, then schedule offline catch-up for missed
+    # reminders ~30s after boot, giving the DB and scheduler time to settle.
+    async def _start_scheduler() -> None:
         from app.services.scheduler_service import SchedulerService
 
         await SchedulerService.start()
-        # Schedule offline catch-up for missed reminders ~30s after boot,
-        # giving the DB and scheduler time to settle.
         sched = SchedulerService.get_scheduler()
         if sched.running:
             from datetime import datetime, timedelta
@@ -110,29 +112,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 max_instances=1,
                 misfire_grace_time=120,
             )
-    except Exception:
-        logger.warning("Failed to start backup scheduler", exc_info=True)
+
     # Verify the backup system is armed (self-heals a missing auto_backup job).
-    try:
+    async def _check_backup_health() -> None:
         from app.core.startup_checks import check_backup_health
 
         await check_backup_health()
-    except Exception:
-        logger.warning("Startup backup-health check failed", exc_info=True)
+
     # Broad app-integrity battery (DB structure, schema, FTS, encryption-key
     # canary, pool, data dir). Deferred to a one-shot job ~60 s after boot
     # (LW-4.3) so it never delays readiness; findings still surface through
     # /api/v1/system/integrity and the startup health banner. If the scheduler
     # could not start, run it inline — degraded, but the report still exists.
-    try:
+    async def _schedule_app_integrity() -> None:
         from app.services.scheduler_service import SchedulerService
 
         if not await SchedulerService.schedule_app_integrity_check():
             from app.core.startup_checks import check_app_integrity
 
             await check_app_integrity()
-    except Exception:
-        logger.warning("Failed to schedule the app-integrity check", exc_info=True)
+
+    await _startup_step("Failed to load persisted settings", _load_runtime_settings)
+    await init_db()
+    await _startup_step("AI-provider model fixup failed", _fix_deprecated_models)
+    await _startup_step("Startup data-integrity check failed", _check_data_integrity)
+    await _startup_step("Failed to start backup scheduler", _start_scheduler)
+    await _startup_step("Startup backup-health check failed", _check_backup_health)
+    await _startup_step(
+        "Failed to schedule the app-integrity check", _schedule_app_integrity
+    )
     yield
     logger.info("Shutting down...")
     # Every teardown step shares one deadline. The desktop shell gives the
@@ -710,6 +718,7 @@ async def health_check() -> Any:
             await conn.execute(text("SELECT count(*) FROM entries_fts"))
         checks["fts"] = "ok"
     except Exception:
+        logger.warning("Health check FTS failed", exc_info=True)
         checks["fts"] = "unavailable"
 
     # 3. Scheduler (soft)

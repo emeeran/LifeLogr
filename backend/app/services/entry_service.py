@@ -27,7 +27,7 @@ from app.schemas.entry import (
 )
 from app.schemas.tag import TagBrief
 from app.services.enrichment_service import EnrichmentService
-from app.services.weather_service import WeatherService
+from app.services.weather_service import schedule_weather
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ class EntryService:
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
             EnrichmentService.schedule(entry.id, entry.title, entry.body)
-            WeatherService.schedule(entry.id, entry.latitude, entry.longitude, entry.entry_date)
+            schedule_weather(entry.id, entry.latitude, entry.longitude, entry.entry_date)
         return entry
 
     async def _create_batched(self, data: EntryCreate) -> Entry:
@@ -310,7 +310,7 @@ class EntryService:
         # which must not be sent to the LLM or indexed.
         if not entry.is_encrypted:
             EnrichmentService.schedule(entry.id, entry.title, entry.body)
-            WeatherService.schedule(entry.id, entry.latitude, entry.longitude, entry.entry_date)
+            schedule_weather(entry.id, entry.latitude, entry.longitude, entry.entry_date)
         return entry
 
     async def merge(self, entry_ids: list[int]) -> Entry:
@@ -378,7 +378,7 @@ class EntryService:
         for e in entries:
             self._drop_from_semantic_cache(e.id)
         EnrichmentService.schedule(survivor.id, survivor.title, survivor.body)
-        WeatherService.schedule(
+        schedule_weather(
             survivor.id, survivor.latitude, survivor.longitude, survivor.entry_date
         )
         return survivor

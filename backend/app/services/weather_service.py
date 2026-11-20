@@ -208,10 +208,11 @@ async def conditions_for(lat: float, lng: float, day: date | datetime | str) -> 
             return cached["content"], cached["label"]
         except (OSError, ValueError, KeyError, TypeError):
             # Corrupt/empty cache file: drop it and fall through to a refetch.
+            logger.debug("Dropping corrupt weather cache file %s", path.name, exc_info=True)
             try:
                 path.unlink()
             except OSError:
-                pass
+                logger.debug("Could not unlink corrupt weather cache %s", path, exc_info=True)
     key = path.name
     async with await _get_lock(key):
         if path.is_file():  # re-check after acquiring the lock
@@ -219,7 +220,7 @@ async def conditions_for(lat: float, lng: float, day: date | datetime | str) -> 
                 cached = json.loads(path.read_text())
                 return cached["content"], cached["label"]
             except (OSError, ValueError, KeyError, TypeError):
-                pass
+                logger.debug("Corrupt weather cache re-read for %s; refetching", key, exc_info=True)
         try:
             return await _fetch(lat, lng, normalized, path)
         except (httpx.HTTPError, ValueError) as exc:
@@ -227,24 +228,22 @@ async def conditions_for(lat: float, lng: float, day: date | datetime | str) -> 
             return None
 
 
-class WeatherService:
-    """Schedules the detached post-save weather fetch (mirrors EnrichmentService)."""
+def schedule_weather(
+    entry_id: int, latitude: float | None, longitude: float | None, entry_date: Any
+) -> None:
+    """Fire-and-forget post-save weather fetch. Does not block the save response.
 
-    @staticmethod
-    def schedule(entry_id: int, latitude: float | None, longitude: float | None, entry_date: Any) -> None:
-        """Fire-and-forget weather fetch. Does not block the save response.
-
-        Callers guard on ``settings.WEATHER_ENABLED`` + coordinates; re-checked
-        here so a mid-flight settings toggle cannot start a stray fetch.
-        """
-        if not settings.WEATHER_ENABLED or latitude is None or longitude is None:
-            return
-        day = _as_date(entry_date)
-        if day is None:
-            return
-        task = asyncio.create_task(_run_weather(entry_id, latitude, longitude, day))
-        _pending_tasks.add(task)
-        task.add_done_callback(_pending_tasks.discard)
+    Callers guard on ``settings.WEATHER_ENABLED`` + coordinates; re-checked
+    here so a mid-flight settings toggle cannot start a stray fetch.
+    """
+    if not settings.WEATHER_ENABLED or latitude is None or longitude is None:
+        return
+    day = _as_date(entry_date)
+    if day is None:
+        return
+    task = asyncio.create_task(_run_weather(entry_id, latitude, longitude, day))
+    _pending_tasks.add(task)
+    task.add_done_callback(_pending_tasks.discard)
 
 
 async def cancel_pending() -> None:

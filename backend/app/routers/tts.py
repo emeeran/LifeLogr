@@ -282,6 +282,24 @@ async def _bg_prewarm(clean_text: str, voice: str, rate: float, volume: int, pit
         logger.warning("TTS prewarm failed", exc_info=True)
 
 
+async def _synth_or_http_error(
+    clean_text: str, voice: str, rate: float, volume: int, pitch: int, *, context: str
+) -> tuple[str, Path]:
+    """Synthesize or map the two failure modes to HTTP: 501 (missing extra),
+    502 (Edge TTS backend/network). ``context`` names the source in the log.
+    """
+    try:
+        return await _get_or_synthesize(clean_text, voice, rate, volume, pitch)
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("TTS %s generation failed: %s", context, exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail="Text-to-speech failed. Edge TTS needs internet access.",
+        ) from exc
+
+
 def _entry_text(entry: Entry) -> str:
     parts = [t for t in [entry.title, entry.body] if t]
     return "\n\n".join(parts)
@@ -357,17 +375,7 @@ async def speak_entry(
             status_code=422, detail="Entry has no readable text to read aloud"
         )
 
-    try:
-        _key, path = await _get_or_synthesize(clean, voice, rate, volume, pitch)
-    except ImportError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.error("TTS entry generation failed: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=502,
-            detail="Text-to-speech failed. Edge TTS needs internet access.",
-        ) from exc
-
+    _key, path = await _synth_or_http_error(clean, voice, rate, volume, pitch, context="entry")
     return FileResponse(path=str(path), media_type="audio/mpeg", filename="tts.mp3")
 
 
@@ -386,17 +394,9 @@ async def speak_text(req: SpeakRequest) -> dict[str, Any]:
     if not clean:
         return {"key": ""}
 
-    try:
-        key, _path = await _get_or_synthesize(clean, req.voice, req.rate, req.volume, req.pitch)
-    except ImportError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.error("TTS generation failed: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=502,
-            detail="Text-to-speech failed. Edge TTS needs internet access.",
-        ) from exc
-
+    key, _path = await _synth_or_http_error(
+        clean, req.voice, req.rate, req.volume, req.pitch, context="text"
+    )
     return {"key": key}
 
 

@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import select
 
@@ -148,87 +150,90 @@ async def _run_enrichment(entry_id: int, title: str | None, body: str) -> None:
         logger.exception("Enrichment failed for entry %d", entry_id)
 
 
-async def _generate_embedding(entry_id: int, text: str, ollama: OllamaService) -> None:
-    """Generate and store text embedding for semantic search."""
-    # Imported lazily so a repointed ``app.core.database.async_session`` (tests,
-    # restores) is followed — the module-level binding would be stale.
+async def _store_embedding(
+    model_cls: type,
+    owner_id: int,
+    text: str,
+    ollama: OllamaService,
+    *,
+    id_column: str,
+    cache_getter: Callable[[], Any],
+    label: str,
+) -> None:
+    """Embed ``text`` and replace any stored vector for the owner row.
+
+    Delete-then-insert (not a true upsert) so a changed embed model never
+    leaves two vectors for one row. Lazily imports the session factory so a
+    repointed ``app.core.database.async_session`` (tests, restores) is
+    followed — the module-level binding would be stale.
+    """
     from app.core.database import async_session
 
     try:
-        from app.models.embedding import EntryEmbedding
-
         embedding_vec = await ollama.embed(text)
         embedding_json = json.dumps(embedding_vec)
 
         async with async_session() as session:
             # Upsert: delete existing, insert new
             await session.execute(
-                EntryEmbedding.__table__.delete().where(EntryEmbedding.entry_id == entry_id)  # type: ignore[attr-defined]
+                model_cls.__table__.delete().where(getattr(model_cls, id_column) == owner_id)  # type: ignore[attr-defined]
             )
             session.add(
-                EntryEmbedding(
-                    entry_id=entry_id,
-                    embedding=embedding_json,
-                    model_name=settings.OLLAMA_EMBED_MODEL,
+                model_cls(
+                    **{
+                        id_column: owner_id,
+                        "embedding": embedding_json,
+                        "model_name": settings.OLLAMA_EMBED_MODEL,
+                    }
                 )
             )
             await session.commit()
         # Keep the in-memory vector cache in sync (best-effort; the per-search
         # count check reloads on any divergence regardless).
         try:
-            from app.services.semantic_cache import get_semantic_cache
-
-            get_semantic_cache().update_entry(entry_id, embedding_vec)
+            cache_getter().update_entry(owner_id, embedding_vec)
         except Exception:
-            logger.warning("Failed to update semantic cache for entry %d", entry_id, exc_info=True)
-        logger.info("Embedding stored for entry %d (%d dims)", entry_id, len(embedding_vec))
+            logger.warning("Failed to update semantic cache for %s %d", label, owner_id, exc_info=True)
+        logger.info("Embedding stored for %s %d (%d dims)", label, owner_id, len(embedding_vec))
 
     except Exception:
-        logger.exception("Embedding generation failed for entry %d", entry_id)
+        logger.exception("Embedding generation failed for %s %d", label, owner_id)
+
+
+async def _generate_embedding(entry_id: int, text: str, ollama: OllamaService) -> None:
+    """Generate and store text embedding for semantic search."""
+    from app.models.embedding import EntryEmbedding
+    from app.services.semantic_cache import get_semantic_cache
+
+    await _store_embedding(
+        EntryEmbedding,
+        entry_id,
+        text,
+        ollama,
+        id_column="entry_id",
+        cache_getter=get_semantic_cache,
+        label="entry",
+    )
 
 
 async def _generate_note_embedding(note_id: int, text: str, ollama: OllamaService) -> None:
     """Generate and store the note embedding for semantic search.
 
-    Mirrors :func:`_generate_embedding` but writes ``note_embeddings`` and
-    updates the note vector cache. Same embed model ⇒ same vector space as
-    entries, so one query embedding serves both kinds.
+    Same embed model ⇒ same vector space as entries, so one query embedding
+    serves both kinds.
     """
-    # Imported lazily so a repointed ``app.core.database.async_session`` (tests,
-    # restores) is followed — the module-level binding would be stale.
-    from app.core.database import async_session
+    from app.models.embedding import NoteEmbedding
+    from app.services.semantic_cache import get_note_semantic_cache
 
-    try:
-        from app.models.embedding import NoteEmbedding
-
-        embedding_vec = await ollama.embed(text)
-        embedding_json = json.dumps(embedding_vec)
-
-        async with async_session() as session:
-            # Upsert: delete existing, insert new.
-            await session.execute(
-                NoteEmbedding.__table__.delete().where(NoteEmbedding.note_id == note_id)  # type: ignore[attr-defined]
-            )
-            session.add(
-                NoteEmbedding(
-                    note_id=note_id,
-                    embedding=embedding_json,
-                    model_name=settings.OLLAMA_EMBED_MODEL,
-                )
-            )
-            await session.commit()
-        # Keep the in-memory vector cache in sync (best-effort; the per-search
-        # count check reloads on any divergence regardless).
-        try:
-            from app.services.semantic_cache import get_note_semantic_cache
-
-            get_note_semantic_cache().update_entry(note_id, embedding_vec)
-        except Exception:
-            logger.warning("Failed to update note cache for note %d", note_id, exc_info=True)
-        logger.info("Embedding stored for note %d (%d dims)", note_id, len(embedding_vec))
-
-    except Exception:
-        logger.exception("Embedding generation failed for note %d", note_id)
+    await _store_embedding(
+        NoteEmbedding,
+        note_id,
+        text,
+        ollama,
+        id_column="note_id",
+        cache_getter=get_note_semantic_cache,
+        label="note",
+    )
 
 
 # ── Embedding backfill ─────────────────────────────────────────────────────────
