@@ -803,22 +803,19 @@ async def _run_incremental_vacuum() -> None:
 
 
 async def _run_full_integrity_check() -> None:
-    """Run the exhaustive ``PRAGMA integrity_check`` and recover if corrupt (weekly).
+    """Run the exhaustive ``PRAGMA integrity_check`` and alert if corrupt (weekly).
 
     Boot only runs ``quick_check``; this job is where the full scan lives
-    (LW-4.1). On failure it walks the boot snapshot's own corrupt-recovery path
-    (quarantine the corrupt file, restore the newest intact boot snapshot), then
-    reinitialises the engine so pooled connections don't keep file descriptors
-    into the swapped-out file — the same swap ``reinit_engine`` already does
-    after a backup restore. Never raises — a maintenance task must not wedge
-    the scheduler.
+    (LW-4.1). On failure it does NOT repair in place: the old live swap
+    (quarantine + restore + ``reinit_engine``) raced in-flight writers — commits
+    landing between the unlink and the reinit wrote into the orphaned inode and
+    vanished. Quarantine + restore is only safe before any session opens, which
+    is exactly what the boot preflight does, so this job alerts loudly (log +
+    app-integrity report / health banner) and lets the next boot heal. Never
+    raises — a maintenance task must not wedge the scheduler.
     """
     from app.core.config import settings
-    from app.core.database import (
-        _integrity_check_sync,
-        _recover_from_snapshot_sync,
-        reinit_engine,
-    )
+    from app.core.database import _integrity_check_sync
 
     db_path = settings.db_path
     if not db_path.exists() or db_path.stat().st_size == 0:
@@ -831,19 +828,19 @@ async def _run_full_integrity_check() -> None:
             logger.info("Weekly full integrity check: OK")
             return
         logger.error(
-            "Weekly full integrity_check FAILED for %s (%s) — attempting boot-snapshot recovery",
+            "Weekly full integrity_check FAILED for %s (%s) — restart the app to "
+            "recover from the newest boot snapshot (live repair was removed: it "
+            "could lose in-flight writes).",
             db_path,
             result,
         )
-        recovered = await asyncio.to_thread(_recover_from_snapshot_sync, db_path, settings.DATA_DIR)
-        if not recovered:
-            logger.error(
-                "Weekly integrity check: no intact boot snapshot available — corrupt file "
-                "was quarantined; restore manually or from a backup."
-            )
-            return
-        await reinit_engine()
-        logger.info("Weekly integrity check: DB restored from boot snapshot; engine reinitialised.")
+        from app.core.startup_checks import stash_db_corruption_alert
+
+        stash_db_corruption_alert(
+            f"Database file failed the full integrity check ({result}). "
+            "Writes continue at your own risk — restart to recover from the "
+            "newest boot snapshot."
+        )
     except Exception:
         logger.warning("Weekly full integrity check failed", exc_info=True)
 

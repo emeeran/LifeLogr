@@ -201,6 +201,37 @@ def _replace_check(checks: list[dict[str, Any]], new: dict[str, Any]) -> None:
     checks.append(new)
 
 
+def stash_db_corruption_alert(detail: str) -> None:
+    """Surface a runtime-detected corrupt DB in the app-integrity report.
+
+    The weekly full integrity_check no longer repairs in place — the live-file
+    swap raced in-flight writers (commits between the unlink and the engine
+    reinit vanished into the orphaned inode). Recovery happens at the next boot
+    instead, where the preflight runs before any session opens; this alert's
+    job is to make the user restart. Uses ``_replace_check`` so a re-detection
+    updates the same entry instead of stacking duplicates.
+    """
+    report = dict(_app_integrity_result)
+    checks = list(report.get("checks") or [])
+    _replace_check(
+        checks,
+        _check(
+            "db-corrupt-runtime",
+            "Database integrity",
+            "error",
+            detail,
+            hint="Restart the app to recover automatically from the newest boot snapshot.",
+        ),
+    )
+    summary = dict(report.get("summary") or {"ok": 0, "warn": 0, "error": 0})
+    summary["error"] = int(summary.get("error", 0)) + 1
+    report["ran"] = True
+    report["checks"] = checks
+    report["summary"] = summary
+    _app_integrity_result.update(report)
+    _integrity_result.update(ok=False)
+
+
 async def _check_structure(session: AsyncSession) -> dict[str, Any]:
     try:
         res = (await session.execute(text("PRAGMA quick_check"))).scalar()

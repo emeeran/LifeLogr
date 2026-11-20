@@ -1148,6 +1148,14 @@ async def _run_json_entry_import(
                 to_enrich.append((entry.id, entry.title, entry.body))
             imported += 1
         except Exception as e:
+            # Roll back the partial flush (svc.create(commit=False) already
+            # flushed the Entry) — otherwise the "skipped" record commits with
+            # the next batch, and a flush-time failure poisons the session for
+            # every remaining record in the file.
+            await db.rollback()
+            # Flushed-and-cached Tag rows died with the rollback; stale ids
+            # would fail every later lookup.
+            tag_cache.clear()
             logger.warning("Failed to import entry (date=%s)", entry_date, exc_info=True)
             skipped += 1
             skip_reasons = _record_skip(
@@ -1219,6 +1227,206 @@ def _read_member(z: zipfile.ZipFile, name: str) -> bytes:
             ),
         )
     return z.read(name)
+
+
+def _parse_import_file(
+    filename: str, upload_path: Path
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Detect the import format and parse the spooled upload into records.
+
+    Synchronous by design and always run via ``asyncio.to_thread``: a
+    multi-gigabyte .diary SQLite parse or 2 GiB spool read must not freeze the
+    event loop — /health and the desktop shell's shutdown-state polling have to
+    stay responsive while an import is in flight (the shell reads "unreachable"
+    as "safe to kill").
+    """
+    entries_data: list[dict[str, Any]] = []
+    archive_notes: list[dict[str, Any]] = []
+
+    if filename.endswith(".diary"):
+        # Diarium .diary SQLite database — parsing lives in the importers
+        # service. The path (not the bytes) is handed over: reading a
+        # multi-gigabyte backup into memory crashed the process.
+        entries_data.extend(parse_diarium_sqlite(upload_path))
+        return entries_data, archive_notes
+
+    content = upload_path.read_bytes()
+
+    if filename.endswith(".zip"):
+        # Day One exports carry Journal.json — detect and handle first.
+        is_dayone = False
+        zip_names: list[str] = []
+        try:
+            with zipfile.ZipFile(upload_path, "r") as z:
+                zip_names = _zip_members(z)
+                is_dayone = any(n.endswith("Journal.json") for n in zip_names)
+        except zipfile.BadZipFile:
+            # Format sniff: not a zip at all — fall through to the
+            # non-archive importers below.
+            logger.debug("Import sniff: %s is not a zip", upload_path.name)
+
+        if is_dayone:
+            entries_data.extend(parse_dayone_zip(content))
+        elif "lifelogr.json" in zip_names:
+            # Native archive: lifelogr.json + media/ members. Each
+            # entry's media bytes are pulled here so the shared loop
+            # can persist them and rewrite body URLs.
+            with zipfile.ZipFile(upload_path, "r") as z:
+                media_names = set(zip_names)
+                doc = json.loads(_read_member(z, "lifelogr.json"))
+                if doc.get("format") != ARCHIVE_FORMAT:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Not a LifeLogr archive (unexpected format field)",
+                    )
+                for item in doc.get("entries", []):
+                    media_items = []
+                    for m in item.get("media", []):
+                        member = m.get("path", "")
+                        media_items.append(
+                            {
+                                "filename": m.get("filename"),
+                                "media_type": m.get("media_type"),
+                                "caption": m.get("caption"),
+                                "is_inline": m.get("is_inline"),
+                                "ref": m.get("ref"),
+                                "data": (
+                                    _read_member(z, member)
+                                    if member in media_names
+                                    else b""
+                                ),
+                            }
+                        )
+                    events_items = [
+                        {
+                            "kind": ev.get("kind"),
+                            "content": ev.get("content"),
+                            "label": ev.get("label"),
+                        }
+                        for ev in item.get("events", [])
+                    ]
+                    entries_data.append(
+                        {
+                            "entry_date": item.get("entry_date"),
+                            "title": item.get("title"),
+                            "body": item.get("body"),
+                            "mood": item.get("mood"),
+                            "tags": item.get("tags", []),
+                            "latitude": item.get("latitude"),
+                            "longitude": item.get("longitude"),
+                            "media": media_items,
+                            "events": events_items,
+                        }
+                    )
+                # v2 archives carry notes inline (v1 archives simply
+                # lack the key — same import path either way).
+                for item in doc.get("notes", []):
+                    for m in item.get("media", []):
+                        member = m.get("path", "")
+                        m["data"] = (
+                            _read_member(z, member) if member in media_names else b""
+                        )
+                    archive_notes.append(item)
+        else:
+            with zipfile.ZipFile(upload_path, "r") as z:
+                names = _zip_members(z)
+
+                json_files = [
+                    n for n in names if n.endswith(".json") and n != "manifest.json"
+                ]
+                if json_files:
+                    for jf in json_files:
+                        try:
+                            entry = json.loads(_read_member(z, jf))
+                            entries_data.append(parse_diarium_json_entry(entry))
+                        except HTTPException:
+                            raise
+                        except Exception:
+                            logger.warning(
+                                "Failed to parse JSON entry from %s", jf, exc_info=True
+                            )
+
+                if not json_files:
+                    for n in names:
+                        if n == "entries.json" or n == "diarium.json":
+                            try:
+                                data = json.loads(_read_member(z, n))
+                                if isinstance(data, list):
+                                    for entry in data:
+                                        entries_data.append(
+                                            parse_diarium_json_entry(entry)
+                                        )
+                            except HTTPException:
+                                raise
+                            except Exception:
+                                logger.warning(
+                                    "Failed to parse bulk JSON from %s", n, exc_info=True
+                                )
+
+                md_files = sorted(n for n in names if n.endswith(".md"))
+                for mf in md_files:
+                    try:
+                        raw = _read_member(z, mf).decode("utf-8")
+                        entry = parse_markdown_entry(raw)
+                    except (UnicodeDecodeError, ValueError) as e:
+                        # A Latin-1 .md or broken frontmatter must not
+                        # abort the whole import — skip the file like
+                        # the JSON branches skip a bad record.
+                        logger.warning("Skipping unparseable markdown member %s: %s", mf, e)
+                        continue
+                    if entry:
+                        # Resolve the frontmatter media manifest against
+                        # this zip's media/ members.
+                        for m in entry.get("media", []):
+                            member = m.get("path", "")
+                            m["data"] = _read_member(z, member) if member in names else b""
+                        entries_data.append(entry)
+
+    elif filename.endswith(".csv"):
+        entries_data.extend(parse_csv(content.decode("utf-8", errors="replace")))
+
+    elif filename.endswith(".json"):
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid JSON in {filename}: {e}"
+            ) from e
+        # A hand-edited export may have a scalar at the top level.
+        items = (
+            data
+            if isinstance(data, list)
+            else data.get("entries", [])
+            if isinstance(data, dict)
+            else []
+        )
+        for item in items:
+            try:
+                parsed = parse_diarium_json_entry(item)
+                if not parsed.get("body") and not parsed.get("entry_date"):
+                    parsed = {
+                        "entry_date": item.get("entry_date") or item.get("date", "")[:10],
+                        "title": item.get("title") or item.get("heading"),
+                        "body": item.get("body", ""),
+                        "mood": item.get("mood"),
+                        "tags": item.get("tags", []),
+                        "latitude": item.get("latitude"),
+                        "longitude": item.get("longitude"),
+                    }
+            except Exception as e:
+                # A malformed record must not abort the whole import: it
+                # becomes a placeholder that the loop below skips, with
+                # the reason surfaced in the response.
+                logger.warning("Skipping malformed import record", exc_info=True)
+                parsed = {
+                    "entry_date": "",
+                    "body": "",
+                    "title": item.get("title") if isinstance(item, dict) else None,
+                    "error": f"unparsable record: {e}",
+                }
+            entries_data.append(parsed)
+
+    return entries_data, archive_notes
 
 
 # ── Import-side media attachment ─────────────────────────────────────────────
@@ -1375,194 +1583,15 @@ async def import_file(
 
     filename = file.filename or ""
 
-    entries_data: list[dict[str, Any]] = []
-    archive_notes: list[dict[str, Any]] = []
-
     upload_path = await _spool_upload(file, settings.MAX_IMPORT_SIZE_BYTES)
     # .diary media blobs are read lazily from the spooled file during the
     # insert loop, so it is unlinked only after the import finishes (see the
     # .diary branch); every other format is fully parsed below and can go now.
     is_diary = filename.endswith(".diary")
     try:
-        if is_diary:
-            # Diarium .diary SQLite database — parsing lives in the importers
-            # service. The path (not the bytes) is handed over: reading a
-            # multi-gigabyte backup into memory crashed the process.
-            entries_data.extend(parse_diarium_sqlite(upload_path))
-        else:
-            content = upload_path.read_bytes()
-
-            if filename.endswith(".zip"):
-                # Day One exports carry Journal.json — detect and handle first.
-                is_dayone = False
-                zip_names: list[str] = []
-                try:
-                    with zipfile.ZipFile(upload_path, "r") as z:
-                        zip_names = _zip_members(z)
-                        is_dayone = any(n.endswith("Journal.json") for n in zip_names)
-                except zipfile.BadZipFile:
-                    # Format sniff: not a zip at all — fall through to the
-                    # non-archive importers below.
-                    logger.debug("Import sniff: %s is not a zip", upload_path.name)
-
-                if is_dayone:
-                    entries_data.extend(parse_dayone_zip(content))
-                elif "lifelogr.json" in zip_names:
-                    # Native archive: lifelogr.json + media/ members. Each
-                    # entry's media bytes are pulled here so the shared loop
-                    # can persist them and rewrite body URLs.
-                    with zipfile.ZipFile(upload_path, "r") as z:
-                        media_names = set(zip_names)
-                        doc = json.loads(_read_member(z, "lifelogr.json"))
-                        if doc.get("format") != ARCHIVE_FORMAT:
-                            raise HTTPException(
-                                status_code=422,
-                                detail="Not a LifeLogr archive (unexpected format field)",
-                            )
-                        for item in doc.get("entries", []):
-                            media_items = []
-                            for m in item.get("media", []):
-                                member = m.get("path", "")
-                                media_items.append(
-                                    {
-                                        "filename": m.get("filename"),
-                                        "media_type": m.get("media_type"),
-                                        "caption": m.get("caption"),
-                                        "is_inline": m.get("is_inline"),
-                                        "ref": m.get("ref"),
-                                        "data": (
-                                            _read_member(z, member)
-                                            if member in media_names
-                                            else b""
-                                        ),
-                                    }
-                                )
-                            events_items = [
-                                {
-                                    "kind": ev.get("kind"),
-                                    "content": ev.get("content"),
-                                    "label": ev.get("label"),
-                                }
-                                for ev in item.get("events", [])
-                            ]
-                            entries_data.append(
-                                {
-                                    "entry_date": item.get("entry_date"),
-                                    "title": item.get("title"),
-                                    "body": item.get("body"),
-                                    "mood": item.get("mood"),
-                                    "tags": item.get("tags", []),
-                                    "latitude": item.get("latitude"),
-                                    "longitude": item.get("longitude"),
-                                    "media": media_items,
-                                    "events": events_items,
-                                }
-                            )
-                        # v2 archives carry notes inline (v1 archives simply
-                        # lack the key — same import path either way).
-                        for item in doc.get("notes", []):
-                            for m in item.get("media", []):
-                                member = m.get("path", "")
-                                m["data"] = (
-                                    _read_member(z, member) if member in media_names else b""
-                                )
-                            archive_notes.append(item)
-                else:
-                    with zipfile.ZipFile(upload_path, "r") as z:
-                        names = _zip_members(z)
-
-                        json_files = [
-                            n for n in names if n.endswith(".json") and n != "manifest.json"
-                        ]
-                        if json_files:
-                            for jf in json_files:
-                                try:
-                                    entry = json.loads(_read_member(z, jf))
-                                    entries_data.append(parse_diarium_json_entry(entry))
-                                except HTTPException:
-                                    raise
-                                except Exception:
-                                    logger.warning(
-                                        "Failed to parse JSON entry from %s", jf, exc_info=True
-                                    )
-
-                        if not json_files:
-                            for n in names:
-                                if n == "entries.json" or n == "diarium.json":
-                                    try:
-                                        data = json.loads(_read_member(z, n))
-                                        if isinstance(data, list):
-                                            for entry in data:
-                                                entries_data.append(parse_diarium_json_entry(entry))
-                                    except HTTPException:
-                                        raise
-                                    except Exception:
-                                        logger.warning(
-                                            "Failed to parse bulk JSON from %s", n, exc_info=True
-                                        )
-
-                        md_files = sorted(n for n in names if n.endswith(".md"))
-                        for mf in md_files:
-                            try:
-                                raw = _read_member(z, mf).decode("utf-8")
-                                entry = parse_markdown_entry(raw)
-                            except (UnicodeDecodeError, ValueError) as e:
-                                # A Latin-1 .md or broken frontmatter must not
-                                # abort the whole import — skip the file like
-                                # the JSON branches skip a bad record.
-                                logger.warning("Skipping unparseable markdown member %s: %s", mf, e)
-                                continue
-                            if entry:
-                                # Resolve the frontmatter media manifest against
-                                # this zip's media/ members.
-                                for m in entry.get("media", []):
-                                    member = m.get("path", "")
-                                    m["data"] = _read_member(z, member) if member in names else b""
-                                entries_data.append(entry)
-
-            elif filename.endswith(".csv"):
-                entries_data.extend(parse_csv(content.decode("utf-8", errors="replace")))
-
-            elif filename.endswith(".json"):
-                try:
-                    data = json.loads(content)
-                except json.JSONDecodeError as e:
-                    raise HTTPException(
-                        status_code=400, detail=f"Invalid JSON in {filename}: {e}"
-                    ) from e
-                # A hand-edited export may have a scalar at the top level.
-                items = (
-                    data
-                    if isinstance(data, list)
-                    else data.get("entries", [])
-                    if isinstance(data, dict)
-                    else []
-                )
-                for item in items:
-                    try:
-                        parsed = parse_diarium_json_entry(item)
-                        if not parsed.get("body") and not parsed.get("entry_date"):
-                            parsed = {
-                                "entry_date": item.get("entry_date") or item.get("date", "")[:10],
-                                "title": item.get("title") or item.get("heading"),
-                                "body": item.get("body", ""),
-                                "mood": item.get("mood"),
-                                "tags": item.get("tags", []),
-                                "latitude": item.get("latitude"),
-                                "longitude": item.get("longitude"),
-                            }
-                    except Exception as e:
-                        # A malformed record must not abort the whole import: it
-                        # becomes a placeholder that the loop below skips, with
-                        # the reason surfaced in the response.
-                        logger.warning("Skipping malformed import record", exc_info=True)
-                        parsed = {
-                            "entry_date": "",
-                            "body": "",
-                            "title": item.get("title") if isinstance(item, dict) else None,
-                            "error": f"unparsable record: {e}",
-                        }
-                    entries_data.append(parsed)
+        entries_data, archive_notes = await asyncio.to_thread(
+            _parse_import_file, filename, upload_path
+        )
     finally:
         if not is_diary:
             upload_path.unlink(missing_ok=True)
@@ -1896,6 +1925,12 @@ async def _run_entry_import(
             existing_sigs[sig] = created.id
             imported += 1
         except Exception as e:
+            # Roll back the partial flush (create(commit=False) plus any media
+            # rows/files already written) so the "skipped" record can't commit
+            # with the next batch — and a flush-time failure can't poison the
+            # session for the rest of the file. Cached tag rows die with it.
+            await db.rollback()
+            tag_cache.clear()
             logger.warning(
                 "Failed to import entry (date=%s): %s", entry.get("entry_date"), e, exc_info=True
             )

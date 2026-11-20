@@ -178,6 +178,22 @@ class TestEmptyTrash:
         assert r.json() == {"purged": 1}
         assert not media_path.exists()
 
+    async def test_single_purge_survives_pre_cascade_schema(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        """DELETE /entries/{id}/purge against the production (pre-CASCADE) DDL.
+
+        Regression: purge relied on CASCADE for media/voice_recordings, which
+        the production tables don't carry — the endpoint 500'd with
+        "FOREIGN KEY constraint failed" and the entry stayed stuck in trash
+        until the daily sweep (found by the 2026-11-20 blind review)."""
+        await self._rebuild_legacy_tables(db_session)
+        entry, media, media_path = await _entry_with_media(client, db_session)
+
+        r = await client.delete(f"/api/v1/entries/{entry['id']}/purge")
+        assert r.status_code == 204, "single purge must not hit the un-cascaded FKs"
+        assert not media_path.exists()
+
     async def test_empty_trash_purges_deleted_keeps_live(
         self, client: AsyncClient, db_session: AsyncSession
     ):

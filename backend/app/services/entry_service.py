@@ -428,6 +428,11 @@ class EntryService:
             select(VideoNote).where(VideoNote.entry_id == entry.id)
         )
         video_list = video_result.scalars().all()
+        # Production tables pre-date CASCADE (same FK drift the bulk paths
+        # handle) — purge relies on the same explicit child deletes or the
+        # delete fails with "FOREIGN KEY constraint failed" on any entry that
+        # has media or recordings.
+        await self._bulk_delete_children({entry.id})
         await self.db.delete(entry)
         await self.db.commit()
 

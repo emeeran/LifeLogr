@@ -216,19 +216,31 @@ def test_preflight_skips_missing_db(tmp_path: Path) -> None:
 # ── LW-4: quick_check boot path + snapshot skip/rotation ─────────────────────
 
 
-def test_snapshot_skipped_when_db_unchanged(tmp_path: Path) -> None:
-    """An unchanged DB (same size AND page count as the newest snapshot) does
-    not produce a new copy (LW-4.2)."""
+def test_snapshot_taken_even_when_shape_unchanged(tmp_path: Path) -> None:
+    """A same-size, same-page-count edit still produces a fresh snapshot.
+
+    The old (size, page_count) fingerprint skip was removed: an in-place
+    same-length UPDATE (edited body, is_deleted flip) changes neither value,
+    so the "unchanged" snapshot could silently be weeks old when corruption
+    recovery needs it (audit blocker, 2026-11-20)."""
     db = tmp_path / "lifelogr.db"
     _make_valid_db(db)
 
     first = _create_boot_snapshot_sync(db, tmp_path, _ts="20260101-000000")
     assert first is not None
 
+    # In-place same-length rewrite: neither size nor page_count moves.
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("UPDATE t SET body = 'howdy' WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
     second = _create_boot_snapshot_sync(db, tmp_path, _ts="20260102-000000")
-    assert second is None  # skipped — fingerprint unchanged
-    snaps = list(tmp_path.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"))
-    assert [s.name for s in snaps] == [first.name]
+    assert second is not None
+    snaps = sorted(s.name for s in tmp_path.glob(f"{_BOOT_SNAPSHOT_PREFIX}*"))
+    assert snaps == sorted([first.name, second.name])
 
 
 def test_snapshot_taken_when_db_changed(tmp_path: Path) -> None:
@@ -345,24 +357,32 @@ class TestWeeklyIntegrityJob:
         mock_reinit = AsyncMock()
         monkeypatch.setattr(dbmod, "reinit_engine", mock_reinit)
         try:
+            from app.core.startup_checks import _app_integrity_result
+
+            _app_integrity_result.clear()
             from app.services.scheduler_service import _run_full_integrity_check
 
             await _run_full_integrity_check()  # must not raise
         finally:
             settings.DATABASE_URL, settings.DATA_DIR = saved
 
-        # Restored from the snapshot; corrupt file quarantined; engine swapped.
-        assert _integrity_check_sync(db) == "ok"
-        assert _row_bodies(db) == ["hello"]
-        assert list(tmp_path.glob(f"{_CORRUPT_PREFIX}*"))
-        mock_reinit.assert_awaited_once()
+        # Live repair was removed (it raced in-flight writers): the corrupt file
+        # is NOT touched, no engine swap, and the alert lands in the report.
+        assert _integrity_check_sync(db) != "ok"  # still corrupt
+        assert not list(tmp_path.glob(f"{_CORRUPT_PREFIX}*"))
+        mock_reinit.assert_not_awaited()
+        from app.core.startup_checks import get_app_integrity, get_integrity_status
+
+        report = get_app_integrity()
+        assert any(c["id"] == "db-corrupt-runtime" for c in report["checks"])
+        assert get_integrity_status()["ok"] is False
 
     async def test_never_raises_when_recovery_impossible(self, tmp_path, monkeypatch) -> None:
         from app.core.config import settings
 
         db = tmp_path / "lifelogr.db"
         _make_valid_db(db)
-        _corrupt(db)  # no snapshot exists → recovery cannot help
+        _corrupt(db)  # no snapshot exists → boot recovery won't help either
 
         saved = (settings.DATABASE_URL, settings.DATA_DIR)
         settings.DATABASE_URL = f"sqlite+aiosqlite:///{db}"
@@ -373,7 +393,8 @@ class TestWeeklyIntegrityJob:
             await _run_full_integrity_check()  # logs, does not raise
         finally:
             settings.DATABASE_URL, settings.DATA_DIR = saved
-        assert list(tmp_path.glob(f"{_CORRUPT_PREFIX}*"))  # quarantined anyway
+        # Alert-only: nothing quarantined at runtime (boot preflight owns that).
+        assert not list(tmp_path.glob(f"{_CORRUPT_PREFIX}*"))
 
     async def test_registered_through_scheduler_service(self) -> None:
         """The job goes through SchedulerService conventions (id, cron,

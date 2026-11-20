@@ -284,32 +284,6 @@ def _quick_check_sync(db_path: Path) -> str:
     return _pragma_check_sync(db_path, "quick_check")
 
 
-def _db_fingerprint_sync(path: Path) -> tuple[int, int] | None:
-    """(byte size, page count) of a SQLite file; None if unreadable or empty.
-
-    The boot-snapshot skip signal (LW-4.2): when both values match the newest
-    existing snapshot, the file cannot have grown or shrunk since that copy was
-    taken, so re-copying it buys nothing. Read ``immutable`` — the caller has
-    already checkpointed the WAL, so the main file is complete, and a sidecar
-    -creating read here would leave ``-wal``/``-shm`` litter next to snapshots.
-    """
-    try:
-        size = path.stat().st_size
-        if size == 0:
-            return None
-        conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, timeout=5)
-        try:
-            cur = conn.execute("PRAGMA page_count")
-            row = cur.fetchone()
-            return (size, int(row[0])) if row else None
-        finally:
-            conn.close()
-    except (OSError, sqlite3.DatabaseError):
-        # Unreadable/odd file → no fingerprint; the caller then falls through
-        # to the normal copy path (never skips on a missing signal).
-        return None
-
-
 def _checkpoint_wal_sync(db_path: Path) -> bool:
     """Best-effort ``wal_checkpoint(TRUNCATE)`` on a throwaway connection.
 
@@ -400,29 +374,20 @@ def _create_boot_snapshot_sync(
     """Checkpoint then copy the DB to ``data_dir/lifelogr.db.boot-bak-<ts>``; rotate.
 
     A plain ``.db`` copy (not tar+media): recovery must be bulletproof-simple and
-    the snapshot itself must be directly ``integrity_check``-able. Skips the copy
-    entirely when the live DB's (size, page_count) fingerprint is unchanged since
-    the newest existing snapshot — a same-shape file cannot differ from the copy
-    already on hand. Rotation keeps the ``retention`` newest copies plus one
-    snapshot per earlier ISO week (LW-4.2). ``_ts`` is injectable so tests can
-    force distinct filenames (real boots are ≥1 s apart).
+    the snapshot itself must be directly ``integrity_check``-able. Copied on
+    every boot — an "unchanged, skip it" fingerprint on (size, page_count) was
+    tried and removed: in-place same-length UPDATEs (an edited body, an
+    is_deleted flip) change neither, so the "newest" snapshot could silently be
+    weeks old when corruption recovery needs it. Rotation keeps the ``retention``
+    newest copies plus one snapshot per earlier ISO week (LW-4.2). ``_ts`` is
+    injectable so tests can force distinct filenames (real boots are ≥1 s apart).
     """
     if not db_path.exists() or db_path.stat().st_size == 0:
         return None
-    # Checkpoint BEFORE the unchanged-skip fingerprint: with the WAL folded in,
-    # the main file is complete, so the (immutable) page-count read is accurate.
-    # A busy checkpoint leaves the comparison unreliable → copy instead of skip.
-    checkpointed = _checkpoint_wal_sync(db_path)
-    if not checkpointed:
+    # Fold the WAL into the main file first so the copy is complete even if a
+    # later checkpoint can't run.
+    if not _checkpoint_wal_sync(db_path):
         logger.warning("Boot snapshot: WAL checkpoint busy; snapshot may lag recent commits.")
-    newest = max(_boot_snapshots(data_dir), key=lambda p: p.name, default=None)
-    if (
-        checkpointed
-        and newest is not None
-        and _db_fingerprint_sync(db_path) == _db_fingerprint_sync(newest)
-    ):
-        logger.info("Boot snapshot skipped — DB unchanged since %s", newest.name)
-        return None
     ts = _ts or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     snapshot = data_dir / f"{_BOOT_SNAPSHOT_PREFIX}{ts}"
     try:
