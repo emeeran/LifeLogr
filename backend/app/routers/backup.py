@@ -68,9 +68,7 @@ def _cloud_backup_runner(config_id: int) -> Callable[[ProgressReporter], Awaitab
             from app.core.database import async_session
 
             async with async_session() as session:
-                snapshot = await BackupService(session).run_backup(
-                    config_id, report=report
-                )
+                snapshot = await BackupService(session).run_backup(config_id, report=report)
                 if snapshot.status == "failed":
                     raise RuntimeError(snapshot.error_message or "Backup failed")
                 return f"Backup completed ({snapshot.entries_synced} entries, {snapshot.media_synced} media)"
@@ -80,9 +78,7 @@ def _cloud_backup_runner(config_id: int) -> Callable[[ProgressReporter], Awaitab
     return _runner
 
 
-def _local_backup_runner(
-    path: str, retention: int
-) -> Callable[[ProgressReporter], Awaitable[str]]:
+def _local_backup_runner(path: str, retention: int) -> Callable[[ProgressReporter], Awaitable[str]]:
     """Job runner for a local-folder backup."""
     from app.services.scheduler_service import _run_backup
 
@@ -119,9 +115,7 @@ async def run_backup(
     if not as_job:
         return BackupSnapshotResponse.model_validate(await svc.run_backup(request.config_id))
 
-    return _start_data_job(
-        background_tasks, "backup", _cloud_backup_runner(request.config_id)
-    )
+    return _start_data_job(background_tasks, "backup", _cloud_backup_runner(request.config_id))
 
 
 @router.post("/run-now")
@@ -186,9 +180,7 @@ async def run_configured_backup_now(
                 "status": snapshot.status,
                 "error": snapshot.error_message,
             }
-        return _start_data_job(
-            background_tasks, "backup", _cloud_backup_runner(config_id)
-        )
+        return _start_data_job(background_tasks, "backup", _cloud_backup_runner(config_id))
 
     if not as_job:
         archive = await _run_backup(active.backup_path or "", active.retention)
@@ -426,9 +418,7 @@ async def _restore_spooled_archive(
         verification = await asyncio.to_thread(verify_archive, upload_path)
         if not verification["valid"]:
             detail = "; ".join(verification["errors"][:5]) or "integrity check failed"
-            raise HTTPException(
-                status_code=400, detail=f"Backup failed verification: {detail}"
-            )
+            raise HTTPException(status_code=400, detail=f"Backup failed verification: {detail}")
         if verification["legacy"]:
             logger.warning("Restoring a legacy backup with no integrity manifest")
 

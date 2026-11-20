@@ -76,7 +76,9 @@ def test_duration_sets_end() -> None:
 
 
 def test_unescapes_description_newlines() -> None:
-    ics = "BEGIN:VEVENT\nDTSTART:20260401T090000\nDESCRIPTION:line one\\nline two\\, done\nEND:VEVENT"
+    ics = (
+        "BEGIN:VEVENT\nDTSTART:20260401T090000\nDESCRIPTION:line one\\nline two\\, done\nEND:VEVENT"
+    )
     (event,) = parse_ics(ics)["events"]
     assert event["description"] == "line one\nline two, done"
 

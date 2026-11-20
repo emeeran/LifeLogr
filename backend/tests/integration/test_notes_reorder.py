@@ -35,8 +35,13 @@ class TestNotesReorder:
         # Drop C before A (client sends 1-based positions for the whole section)
         r = await client.post(
             "/api/v1/notes/reorder",
-            json={"items": [{"id": c["id"], "sort_order": 1}, {"id": a["id"], "sort_order": 2},
-                            {"id": b["id"], "sort_order": 3}]},
+            json={
+                "items": [
+                    {"id": c["id"], "sort_order": 1},
+                    {"id": a["id"], "sort_order": 2},
+                    {"id": b["id"], "sort_order": 3},
+                ]
+            },
         )
         assert r.status_code == 200
         assert r.json()["reordered"] == 3
@@ -111,8 +116,13 @@ class TestFoldersReorder:
         f3 = await _create_folder(client, "Three")
         r = await client.post(
             "/api/v1/notes/folders/reorder",
-            json={"items": [{"id": f3["id"], "sort_order": 1}, {"id": f1["id"], "sort_order": 2},
-                            {"id": f2["id"], "sort_order": 3}]},
+            json={
+                "items": [
+                    {"id": f3["id"], "sort_order": 1},
+                    {"id": f1["id"], "sort_order": 2},
+                    {"id": f2["id"], "sort_order": 3},
+                ]
+            },
         )
         assert r.status_code == 200
         assert r.json()["reordered"] == 3

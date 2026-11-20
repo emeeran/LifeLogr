@@ -32,7 +32,9 @@ def managed_run(monkeypatch, tmp_path):
 async def _seed_credential(db_session) -> None:
     from app.models.backup import BackupConfig
 
-    db_session.add(BackupConfig(provider="gdrive", credentials_encrypted=security.encrypt('{"t":1}')))
+    db_session.add(
+        BackupConfig(provider="gdrive", credentials_encrypted=security.encrypt('{"t":1}'))
+    )
     await db_session.commit()
 
 
@@ -96,7 +98,9 @@ async def test_passphrase_kit_roundtrip(client: AsyncClient, db_session, managed
     assert settings.SECRET_KEY == "installed-key-0123456789abcdef"
 
 
-async def test_media_probe_fails_for_foreign_key(client: AsyncClient, db_session, managed_run) -> None:
+async def test_media_probe_fails_for_foreign_key(
+    client: AsyncClient, db_session, managed_run
+) -> None:
     # An encrypted blob on disk, so the probe has something to check.
     rel = "images/probe-target.webp"
     blob = settings.MEDIA_DIR / rel
@@ -111,8 +115,15 @@ async def test_media_probe_fails_for_foreign_key(client: AsyncClient, db_session
     entry = Entry(entry_date=date(2026, 5, 1), body="b", title="t")
     db_session.add(entry)
     await db_session.commit()
-    db_session.add(Media(entry_id=entry.id, filename="x.webp", media_type="image",
-                         file_size=blob.stat().st_size, storage_path=rel))
+    db_session.add(
+        Media(
+            entry_id=entry.id,
+            filename="x.webp",
+            media_type="image",
+            file_size=blob.stat().st_size,
+            storage_path=rel,
+        )
+    )
     await db_session.commit()
 
     r = await client.post("/api/v1/settings/recovery-kit/export", json={})
@@ -141,9 +152,7 @@ async def test_media_probe_fails_for_foreign_key(client: AsyncClient, db_session
 
 
 async def test_wrong_passphrase_refused(client: AsyncClient, managed_run) -> None:
-    r = await client.post(
-        "/api/v1/settings/recovery-kit/export", json={"passphrase": "right"}
-    )
+    r = await client.post("/api/v1/settings/recovery-kit/export", json={"passphrase": "right"})
     kit = r.json()["kit"]
     r = await client.post(
         "/api/v1/settings/recovery-kit/import",

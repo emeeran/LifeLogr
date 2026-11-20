@@ -392,9 +392,7 @@ class SchedulerService:
 
                 _cleanup_old_backups(resolve_backup_path(backup_path), retention)
             except (OSError, ValueError):
-                logger.warning(
-                    "Eager retention prune failed for %s", backup_path, exc_info=True
-                )
+                logger.warning("Eager retention prune failed for %s", backup_path, exc_info=True)
 
         job = sched.get_job("auto_backup")
         return {
@@ -838,9 +836,7 @@ async def _run_full_integrity_check() -> None:
             db_path,
             result,
         )
-        recovered = await asyncio.to_thread(
-            _recover_from_snapshot_sync, db_path, settings.DATA_DIR
-        )
+        recovered = await asyncio.to_thread(_recover_from_snapshot_sync, db_path, settings.DATA_DIR)
         if not recovered:
             logger.error(
                 "Weekly integrity check: no intact boot snapshot available — corrupt file "
@@ -959,7 +955,9 @@ async def _run_backup(
         registry_job = jobs.create("backup")
         registry_reporter = jobs.reporter(registry_job.id)
 
-        def progress(phase: str, done: int = 0, total: int | None = None, detail: str | None = None) -> None:
+        def progress(
+            phase: str, done: int = 0, total: int | None = None, detail: str | None = None
+        ) -> None:
             registry_reporter(phase, done, total, detail)
 
     def _fail_registry_job(exc: BaseException) -> None:

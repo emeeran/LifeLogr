@@ -45,9 +45,7 @@ def test_heavy_audio_modules_absent_after_app_import() -> None:
         cwd=".",
         timeout=60,
     )
-    assert result.returncode == 0, (
-        f"startup import graph pulled in heavy modules:\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"startup import graph pulled in heavy modules:\n{result.stderr}"
 
 
 def test_edge_tts_absent_before_synthesize(cache_dir, monkeypatch) -> None:
@@ -73,9 +71,7 @@ async def test_edge_tts_loaded_after_synthesize(cache_dir, monkeypatch) -> None:
         async def stream(self):
             yield {"type": "audio", "data": b"MP3DATA"}
 
-    monkeypatch.setitem(
-        sys.modules, "edge_tts", SimpleNamespace(Communicate=FakeCommunicate)
-    )
+    monkeypatch.setitem(sys.modules, "edge_tts", SimpleNamespace(Communicate=FakeCommunicate))
 
     await tts._get_or_synthesize("hello lazy", "v", 1.0, 100, 0)
 

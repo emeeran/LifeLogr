@@ -134,8 +134,10 @@ class TestFloat16Storage:
         c.update_entry(2, [0.0, 1.0])
         assert len(c._state.blobs) == c.size * c.dim * 2
         # Quantised round-trip: values come back at float16 precision.
-        assert c._row(0) == (struct.unpack("<e", struct.pack("<e", 0.6))[0],
-                             struct.unpack("<e", struct.pack("<e", 0.8))[0])
+        assert c._row(0) == (
+            struct.unpack("<e", struct.pack("<e", 0.6))[0],
+            struct.unpack("<e", struct.pack("<e", 0.8))[0],
+        )
 
     def test_zero_and_non_finite_vectors_are_not_stored(self) -> None:
         c = SemanticSearchCache()

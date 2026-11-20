@@ -141,9 +141,7 @@ class TestStrictOriginTier:
     relocate the data dir either."""
 
     async def test_a_hostile_origin_cannot_delete_media(self, client: AsyncClient):
-        r = await client.delete(
-            "/api/v1/media/999999", headers={"Origin": "http://127.0.0.1:9999"}
-        )
+        r = await client.delete("/api/v1/media/999999", headers={"Origin": "http://127.0.0.1:9999"})
         assert r.status_code == 403
 
     async def test_deletes_without_origin_are_unaffected(self, client: AsyncClient):

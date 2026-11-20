@@ -24,9 +24,7 @@ _EXPECTED = [
 
 
 async def _index_map(conn) -> dict[str, str]:
-    rows = await conn.execute(
-        text("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
-    )
+    rows = await conn.execute(text("SELECT name, tbl_name FROM sqlite_master WHERE type='index'"))
     return {name: tbl for name, tbl in rows.fetchall()}
 
 

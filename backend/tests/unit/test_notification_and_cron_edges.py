@@ -24,9 +24,7 @@ class TestNotificationArgv:
             captured["argv"] = argv  # never actually spawn anything
             return None
 
-        with patch(
-            "app.services.reminder_service.subprocess.Popen", side_effect=fake_popen
-        ):
+        with patch("app.services.reminder_service.subprocess.Popen", side_effect=fake_popen):
             ReminderService._send_notification("- 09:00 standup", "--verbose note")
 
         argv = captured["argv"]
@@ -43,9 +41,7 @@ class TestNotificationArgv:
             captured["argv"] = argv  # never actually spawn anything
             return None
 
-        with patch(
-            "app.services.reminder_service.subprocess.Popen", side_effect=fake_popen
-        ):
+        with patch("app.services.reminder_service.subprocess.Popen", side_effect=fake_popen):
             ReminderService._send_notification("Write your journal", "Time!")
 
         assert captured["argv"][:3] == ["notify-send", "-a", "LifeLogr"]
@@ -85,9 +81,7 @@ class TestCronUnsupportedForms:
         # Tuesday (numeric 1 and name "tue" both supported).
         assert last_scheduled_occurrence("0 2 * * 1", self.NOW) == datetime(2026, 7, 7, 2, 0)
         assert last_scheduled_occurrence("0 2 * * tue", self.NOW) == datetime(2026, 7, 7, 2, 0)
-        assert last_scheduled_occurrence("0 2 * * mon,fri", self.NOW) == datetime(
-            2026, 7, 6, 2, 0
-        )
+        assert last_scheduled_occurrence("0 2 * * mon,fri", self.NOW) == datetime(2026, 7, 6, 2, 0)
 
     def test_monthly_day_and_month_still_work(self) -> None:
         assert last_scheduled_occurrence("0 2 1 7 *", self.NOW) == datetime(2026, 7, 1, 2, 0)

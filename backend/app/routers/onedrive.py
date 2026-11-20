@@ -35,9 +35,7 @@ _state = OAuthStateStore()
 
 
 @router.get("/auth-url")
-async def get_auth_url(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> dict[str, str]:
+async def get_auth_url(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     """Generate the OneDrive OAuth consent URL."""
     redirect_uri = loopback_redirect_uri(request, "/api/v1/backup/onedrive/callback")
     result = await db.execute(select(BackupConfig).where(BackupConfig.provider == "onedrive"))

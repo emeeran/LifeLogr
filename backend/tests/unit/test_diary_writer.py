@@ -20,7 +20,6 @@ from app.services.export_service import build_diarium_database
 from app.services.importers.diarium import parse_diarium_sqlite
 
 
-
 async def _seed_entry_with_trackers(db_session) -> int:
     from app.models.entry import Entry
     from app.models.tag import EntryTag, Tag
@@ -63,7 +62,7 @@ async def _load(db_session, entry_id: int):
     ).scalar_one()
 
 
-def _open_diary(diary_path): 
+def _open_diary(diary_path):
     """Open a staged .diary export (build_diarium_database now returns a Path)."""
     return sqlite3.connect(str(diary_path))
 
@@ -119,10 +118,14 @@ async def test_same_day_entries_get_distinct_ticks(db_session):
     )
     await db_session.commit()
     loaded = (
-        await db_session.execute(
-            select(Entry).options(selectinload(Entry.events)).order_by(Entry.id)
+        (
+            await db_session.execute(
+                select(Entry).options(selectinload(Entry.events)).order_by(Entry.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     data = await build_diarium_database(list(loaded))
 
     conn = _open_diary(data)

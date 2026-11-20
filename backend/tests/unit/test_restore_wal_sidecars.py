@@ -29,12 +29,7 @@ from app.core.restore import (
 # The SQLite WAL magic, big-endian (the two values distinguish checksum order).
 _WAL_MAGICS = (b"\x37\x7f\x06\x82", b"\x37\x7f\x06\x83")
 
-_DDL = (
-    "CREATE TABLE entries ("
-    "id INTEGER PRIMARY KEY, "
-    "entry_date DATE NOT NULL, "
-    "body TEXT NOT NULL)"
-)
+_DDL = "CREATE TABLE entries (id INTEGER PRIMARY KEY, entry_date DATE NOT NULL, body TEXT NOT NULL)"
 
 
 @pytest.fixture(autouse=True)
@@ -172,9 +167,7 @@ class TestStaleSidecarsRemoved:
 
         import unittest.mock as mock
 
-        with mock.patch(
-            "app.core.restore._atomic_write", side_effect=OSError("disk gone")
-        ):
+        with mock.patch("app.core.restore._atomic_write", side_effect=OSError("disk gone")):
             with pytest.raises(OSError):
                 await atomic_restore(
                     extracted_db=fresh_archived,
@@ -227,9 +220,7 @@ class TestArchiveSidecarsInstalled:
         assert not Path(f"{live}-wal").exists()
         assert _bodies(live) == ["new"]
 
-    async def test_validation_covers_the_pair_not_just_the_main_file(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_validation_covers_the_pair_not_just_the_main_file(self, tmp_path: Path) -> None:
         """A main file whose schema exists only in the WAL must still validate.
 
         This is the whole reason validation happens on a scratch copy with the

@@ -65,9 +65,7 @@ class TestSearch:
 
     async def test_reminder_search(self, db_session: AsyncSession):
         """Reminders (the 'schedule') are included in global search results."""
-        r1 = Reminder(
-            title="Standup meeting", message="Daily sync notes", reminder_time=time(9, 0)
-        )
+        r1 = Reminder(title="Standup meeting", message="Daily sync notes", reminder_time=time(9, 0))
         r2 = Reminder(title="Gym session", message="Workout", reminder_time=time(18, 0))
         db_session.add_all([r1, r2])
         await db_session.commit()
@@ -117,4 +115,3 @@ class TestSearchIndexRebuild:
         first = await rebuild_search_index()
         second = await rebuild_search_index()
         assert first == second  # re-running doesn't duplicate or drop rows
-

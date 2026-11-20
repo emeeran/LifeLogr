@@ -51,22 +51,24 @@ async def _entry_with_media(
     assert r.status_code == 201
     media = r.json()
     # The API response doesn't expose storage_path; read it from the row.
-    row = (
-        await db_session.execute(select(Media).where(Media.id == media["id"]))
-    ).scalar_one()
+    row = (await db_session.execute(select(Media).where(Media.id == media["id"]))).scalar_one()
     media_path = Path(settings.MEDIA_DIR / row.storage_path)
     assert media_path.exists()
     return entry, media, media_path
 
 
 class TestSoftDeleteKeepsMedia:
-    async def test_soft_delete_keeps_media_file_and_row(self, client: AsyncClient, db_session: AsyncSession):
+    async def test_soft_delete_keeps_media_file_and_row(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
         entry, media, media_path = await _entry_with_media(client, db_session)
         r = await client.delete(f"/api/v1/entries/{entry['id']}")
         assert r.status_code == 204
         assert media_path.exists(), "trash must not destroy the attachment"
 
-    async def test_restore_recovers_entry_and_media(self, client: AsyncClient, db_session: AsyncSession):
+    async def test_restore_recovers_entry_and_media(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
         entry, media, media_path = await _entry_with_media(client, db_session)
         await client.delete(f"/api/v1/entries/{entry['id']}")
 
@@ -80,7 +82,9 @@ class TestSoftDeleteKeepsMedia:
 
 
 class TestPurge:
-    async def test_purge_removes_entry_media_row_and_file(self, client: AsyncClient, db_session: AsyncSession):
+    async def test_purge_removes_entry_media_row_and_file(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
         entry, media, media_path = await _entry_with_media(client, db_session)
         await client.delete(f"/api/v1/entries/{entry['id']}")
 
@@ -235,7 +239,9 @@ class TestRetentionSweep:
         assert purged == 0
         assert media_path.exists()
 
-    async def test_zero_retention_disables_sweep(self, client: AsyncClient, db_session: AsyncSession):
+    async def test_zero_retention_disables_sweep(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
         entry, _, media_path = await _entry_with_media(client, db_session)
         await client.delete(f"/api/v1/entries/{entry['id']}")
         await self._backdate(db_session, entry["id"], 10_000)
@@ -271,16 +277,16 @@ class TestTrashListing:
         await client.delete(f"/api/v1/entries/{first['id']}")
         await client.delete(f"/api/v1/entries/{second['id']}")
         # Make the first deletion strictly older.
-        row = (
-            await db_session.execute(select(Entry).where(Entry.id == first["id"]))
-        ).scalar_one()
+        row = (await db_session.execute(select(Entry).where(Entry.id == first["id"]))).scalar_one()
         row.deleted_at -= timedelta(seconds=5)
         await db_session.commit()
 
         r = await client.get("/api/v1/entries/trash")
         assert [i["id"] for i in r.json()["items"]] == [second["id"], first["id"]]
 
-    async def test_encrypted_entry_has_empty_snippet(self, client: AsyncClient, db_session: AsyncSession):
+    async def test_encrypted_entry_has_empty_snippet(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
         await _create_entry(client, body="secret plan")
         from app.models.entry import Entry
 
@@ -307,9 +313,7 @@ class TestTrashListing:
         for i, e in enumerate(ids):
             await client.delete(f"/api/v1/entries/{e['id']}")
             # Distinct, ordered deletions: e0 oldest, e2 newest.
-            row = (
-                await db_session.execute(select(Entry).where(Entry.id == e["id"]))
-            ).scalar_one()
+            row = (await db_session.execute(select(Entry).where(Entry.id == e["id"]))).scalar_one()
             row.deleted_at = datetime.now(timezone.utc) - timedelta(minutes=3 - i)
             await db_session.commit()
 

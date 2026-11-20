@@ -272,9 +272,7 @@ class NextcloudProvider:
         )
         if resp.status_code != 207:
             return []
-        return _multistatus_paths(
-            resp.content, _dav_root_path(self._url, self._auth[0]), prefix
-        )
+        return _multistatus_paths(resp.content, _dav_root_path(self._url, self._auth[0]), prefix)
 
     async def delete(self, path: str) -> None:
         client = self._get_client()
@@ -1238,6 +1236,3 @@ class BoxProvider(_OAuthProviderBase):
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             logger.info("Box provider HTTP client closed.")
-
-
-

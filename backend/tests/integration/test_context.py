@@ -75,7 +75,9 @@ async def test_photos_listing_respects_limit_and_truncated(client: AsyncClient, 
     assert body["truncated"] is True
 
 
-async def test_photos_rejects_path_outside_allowed_roots(client: AsyncClient, tmp_path, monkeypatch) -> None:
+async def test_photos_rejects_path_outside_allowed_roots(
+    client: AsyncClient, tmp_path, monkeypatch
+) -> None:
     from app.services import media_service
 
     # Deny the temp root the pytest tmp_path lives under.

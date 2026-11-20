@@ -46,9 +46,7 @@ def _archive(tmp_path: Path, *, tamper: bool) -> bytes:
     return buf.getvalue()
 
 
-async def test_verify_reports_a_healthy_archive(
-    client: AsyncClient, tmp_path: Path
-) -> None:
+async def test_verify_reports_a_healthy_archive(client: AsyncClient, tmp_path: Path) -> None:
     r = await client.post(
         "/api/v1/backup/verify",
         files={"file": ("backup.tar.gz", _archive(tmp_path, tamper=False))},
@@ -61,9 +59,7 @@ async def test_verify_reports_a_healthy_archive(
     assert body["database"] == "diarium.diarium"
 
 
-async def test_verify_names_the_damaged_member(
-    client: AsyncClient, tmp_path: Path
-) -> None:
+async def test_verify_names_the_damaged_member(client: AsyncClient, tmp_path: Path) -> None:
     r = await client.post(
         "/api/v1/backup/verify",
         files={"file": ("backup.tar.gz", _archive(tmp_path, tamper=True))},

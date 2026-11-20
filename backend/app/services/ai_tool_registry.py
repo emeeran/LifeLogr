@@ -100,18 +100,12 @@ _SUMMARIZE_INSTRUCTIONS: dict[str, str] = {
 
 def _rewrite_prompt(text: str, mode: str | None) -> str:
     mode = mode or "as-is"
-    return (
-        f"{_REWRITE_INSTRUCTIONS[mode]}\n\n"
-        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
-    )
+    return f"{_REWRITE_INSTRUCTIONS[mode]}\n\nText:\n{text[:MAX_TOOL_TEXT_CHARS]}"
 
 
 def _summarize_prompt(text: str, mode: str | None) -> str:
     mode = mode or "sentences"
-    return (
-        f"{_SUMMARIZE_INSTRUCTIONS[mode]}\n\n"
-        f"Text:\n{text[:MAX_TOOL_TEXT_CHARS]}"
-    )
+    return f"{_SUMMARIZE_INSTRUCTIONS[mode]}\n\nText:\n{text[:MAX_TOOL_TEXT_CHARS]}"
 
 
 def _expand_prompt(text: str, _: str | None) -> str:

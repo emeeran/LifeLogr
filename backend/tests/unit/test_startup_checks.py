@@ -269,7 +269,6 @@ class TestCheckAppIntegrity:
         assert all(c["status"] in {"ok", "warn", "error"} for c in report["checks"])
         assert sc.get_app_integrity()["ran_at"] == report["ran_at"]
 
-
     async def test_full_battery_self_heals_fts_drift(self, db_session, _scheduler_db):
         # ORM insert bypasses the FTS triggers the test schema lacks → drift.
         db_session.add(
@@ -409,8 +408,12 @@ class TestSchemaIntrospectionAccuracy:
         from app.core.database import _drop_removed_feature_tables
 
         orphans = (
-            "alembic_version", "digests", "entry_revisions",
-            "ocr_results", "plugin_hooks", "plugins",
+            "alembic_version",
+            "digests",
+            "entry_revisions",
+            "ocr_results",
+            "plugin_hooks",
+            "plugins",
         )
         async with db_engine.begin() as conn:
             for t in orphans:
@@ -426,4 +429,3 @@ class TestSchemaIntrospectionAccuracy:
                     )
                 ).scalar()
                 assert exists is None, f"{t} should have been dropped"
-

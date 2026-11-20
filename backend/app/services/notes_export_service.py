@@ -202,7 +202,9 @@ class NotesExportService:
                 items.append(self._parse_md(zf.read(name).decode("utf-8", "ignore")))
         return items
 
-    async def import_json(self, raw: bytes, report: ProgressReporter = noop_reporter) -> dict[str, Any]:
+    async def import_json(
+        self, raw: bytes, report: ProgressReporter = noop_reporter
+    ) -> dict[str, Any]:
         return await self._import_items(self.parse_json(raw), report=report)
 
     async def import_markdown_zip(

@@ -242,17 +242,12 @@ class EntryService:
         purge paths key off deleted_at, so treat null as oldest).
         """
         base_q = (
-            select(Entry)
-            .options(*_entry_list_options())
-            .where(Entry.is_deleted == True)  # noqa: E712
+            select(Entry).options(*_entry_list_options()).where(Entry.is_deleted == True)  # noqa: E712
         )
         count_q = select(func.count()).select_from(Entry).where(Entry.is_deleted == True)  # noqa: E712
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
-            base_q
-            .order_by(Entry.deleted_at.desc().nulls_last())
-            .offset(offset)
-            .limit(limit)
+            base_q.order_by(Entry.deleted_at.desc().nulls_last()).offset(offset).limit(limit)
         )
         return list(result.scalars().all()), total
 
@@ -378,9 +373,7 @@ class EntryService:
         for e in entries:
             self._drop_from_semantic_cache(e.id)
         EnrichmentService.schedule(survivor.id, survivor.title, survivor.body)
-        schedule_weather(
-            survivor.id, survivor.latitude, survivor.longitude, survivor.entry_date
-        )
+        schedule_weather(survivor.id, survivor.latitude, survivor.longitude, survivor.entry_date)
         return survivor
 
     def _drop_from_semantic_cache(self, entry_id: int) -> None:
@@ -469,9 +462,7 @@ class EntryService:
         from app.models.recording import VoiceRecording
         from app.models.tag import EntryTag
 
-        await self.db.execute(
-            delete(VoiceRecording).where(VoiceRecording.entry_id.in_(entry_ids))
-        )
+        await self.db.execute(delete(VoiceRecording).where(VoiceRecording.entry_id.in_(entry_ids)))
         await self.db.execute(delete(Media).where(Media.entry_id.in_(entry_ids)))
         await self.db.execute(delete(EntryTag).where(EntryTag.entry_id.in_(entry_ids)))
 
@@ -490,9 +481,7 @@ class EntryService:
         from app.models.video_note import VideoNote
 
         media_list = (
-            (await self.db.execute(select(Media).where(Media.entry_id.in_(ids))))
-            .scalars()
-            .all()
+            (await self.db.execute(select(Media).where(Media.entry_id.in_(ids)))).scalars().all()
         )
         video_list = (
             (await self.db.execute(select(VideoNote).where(VideoNote.entry_id.in_(ids))))
@@ -673,9 +662,7 @@ class EntryService:
         dates = sorted(d for (d,) in dates_result.all())
 
         total_entries_result = await self.db.execute(
-            select(func.count())
-            .select_from(Entry)
-            .where(Entry.is_deleted == False)  # noqa: E712
+            select(func.count()).select_from(Entry).where(Entry.is_deleted == False)  # noqa: E712
         )
         total_entries = total_entries_result.scalar_one()
 

@@ -140,9 +140,9 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
     backup_mtime: datetime | None = None
     if not owned_tmp:
         try:
-            backup_mtime = datetime.fromtimestamp(
-                db_path.stat().st_mtime, tz=timezone.utc
-            ).replace(tzinfo=None)
+            backup_mtime = datetime.fromtimestamp(db_path.stat().st_mtime, tz=timezone.utc).replace(
+                tzinfo=None
+            )
         except OSError:
             backup_mtime = None
     conn: sqlite3.Connection | None = None
@@ -160,8 +160,7 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
             r[1] == "Type" for r in conn.execute("PRAGMA table_info(Tags)").fetchall()
         )
         has_tracking = any(
-            r[1] == "TrackingValue"
-            for r in conn.execute("PRAGMA table_info(EntryTags)").fetchall()
+            r[1] == "TrackingValue" for r in conn.execute("PRAGMA table_info(EntryTags)").fetchall()
         )
         tag_sql = f"SELECT et.DiaryEntryId, t.Value{', t.Type' if has_tag_type else ''}{', et.TrackingValue' if has_tracking else ''} FROM EntryTags et JOIN Tags t ON et.DiaryTagId = t.DiaryTagId"
         if has_tag_type:
@@ -174,7 +173,13 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
         # Media blobs (photos, audio, documents) — re-attached to the imported
         # entry. DiaryMediaId is a GUID we don't need; Type maps back to our
         # categories (0 image, 1 audio, 2 unknown, 3 document, 4 video).
-        _MEDIA_TYPE_FROM_DIARIUM = {0: "image", 1: "audio", 2: "document", 3: "document", 4: "video"}
+        _MEDIA_TYPE_FROM_DIARIUM = {
+            0: "image",
+            1: "audio",
+            2: "document",
+            3: "document",
+            4: "video",
+        }
         media_map: dict[int, list[dict[str, Any]]] = {}
         try:
             # Metadata only — with a path source the blob comes out one at a
@@ -183,7 +188,7 @@ def parse_diarium_sqlite(source: Path | bytes) -> list[dict[str, Any]]:
             # (and their temp copy dies with this call), so they load eagerly.
             eager = isinstance(source, bytes)
             for mr in conn.execute(
-                'SELECT rowid, DiaryEntryId, Type, Name, FileEnding, length(Data) AS Size '
+                "SELECT rowid, DiaryEntryId, Type, Name, FileEnding, length(Data) AS Size "
                 'FROM Media ORDER BY DiaryEntryId, "Index"'
             ).fetchall():
                 if not mr["Size"]:

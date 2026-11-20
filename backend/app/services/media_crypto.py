@@ -99,8 +99,7 @@ def _nonce(prefix: bytes, chunk_index: int) -> bytes:
 def _validate_chunk_size(chunk_size: int) -> None:
     if not MIN_CHUNK_SIZE <= chunk_size <= MAX_CHUNK_SIZE:
         raise ValueError(
-            f"invalid chunk size {chunk_size} "
-            f"(expected {MIN_CHUNK_SIZE}..{MAX_CHUNK_SIZE})"
+            f"invalid chunk size {chunk_size} (expected {MIN_CHUNK_SIZE}..{MAX_CHUNK_SIZE})"
         )
 
 
@@ -133,9 +132,7 @@ def _parse_header(blob: bytes) -> _Header:
     _validate_chunk_size(chunk_size)
     expected = _encrypted_size(plaintext_len, chunk_size)
     if len(blob) != expected:
-        raise ValueError(
-            f"encrypted media size mismatch (got {len(blob)}, expected {expected})"
-        )
+        raise ValueError(f"encrypted media size mismatch (got {len(blob)}, expected {expected})")
     return _Header(chunk_size, nonce_prefix, plaintext_len)
 
 

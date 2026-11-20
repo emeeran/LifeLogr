@@ -98,9 +98,7 @@ class TestBackfillMissingEmbeddings:
                     ollama_available=True, model_name="m", model_loaded=True, model_names=["m"]
                 ),
             ),
-            patch.object(
-                enrich.OllamaService, "embed", new_callable=AsyncMock
-            ) as embed,
+            patch.object(enrich.OllamaService, "embed", new_callable=AsyncMock) as embed,
         ):
             embedded = await enrich.backfill_missing_embeddings()
 
@@ -132,9 +130,7 @@ class TestScheduleGuard:
     async def test_stale_model_row_is_reembedded(self, db_session: AsyncSession):
         """A vector from a previous embed model doesn't satisfy the sweep."""
         entry = await _entry(db_session, "stale model")
-        db_session.add(
-            EntryEmbedding(entry_id=entry.id, embedding="[0.5]", model_name="old-model")
-        )
+        db_session.add(EntryEmbedding(entry_id=entry.id, embedding="[0.5]", model_name="old-model"))
         await db_session.commit()
 
         from app.schemas.ai import AIStatusResponse

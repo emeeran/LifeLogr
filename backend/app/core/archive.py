@@ -280,10 +280,7 @@ def verify_archive(archive_path: str | Path) -> dict[str, Any]:
                 expected_hash = entry.get("sha256")
                 if isinstance(expected_size, int) and size != expected_size:
                     errors.append(f"size mismatch: {name} ({size} != {expected_size})")
-                elif (
-                    isinstance(expected_hash, str)
-                    and digest.hexdigest() != expected_hash
-                ):
+                elif isinstance(expected_hash, str) and digest.hexdigest() != expected_hash:
                     errors.append(f"checksum mismatch: {name}")
 
             return {
@@ -311,5 +308,3 @@ def verify_archive(archive_path: str | Path) -> dict[str, Any]:
             "errors": [f"unreadable archive: {exc}"],
             "missing": [],
         }
-
-

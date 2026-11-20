@@ -74,7 +74,6 @@ async def encrypt_pending_attachments(db: AsyncSession, *, dry_run: bool) -> dic
         candidates.append((media, full_path))
         plaintext_bytes += (await asyncio.to_thread(full_path.stat)).st_size
 
-
     if dry_run:
         return {
             "dry_run": True,
@@ -94,7 +93,9 @@ async def encrypt_pending_attachments(db: AsyncSession, *, dry_run: bool) -> dic
             await asyncio.to_thread(_encrypt_in_place, full_path, media.storage_path)
             updated += 1
             thumb = (
-                MediaService._thumb_path_for(media) if isinstance(media, (Media, NoteMedia)) else None
+                MediaService._thumb_path_for(media)
+                if isinstance(media, (Media, NoteMedia))
+                else None
             )
             if thumb is not None and thumb.is_file():
                 await asyncio.to_thread(thumb.unlink)

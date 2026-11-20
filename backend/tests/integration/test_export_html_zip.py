@@ -11,9 +11,7 @@ from tests.helpers.dayone_zip import PNG_1X1
 
 
 async def _seed_entry_with_photo(client: AsyncClient, day: str, filename: str) -> int:
-    r = await client.post(
-        "/api/v1/entries", json={"entry_date": day, "body": f"Photo day {day}."}
-    )
+    r = await client.post("/api/v1/entries", json={"entry_date": day, "body": f"Photo day {day}."})
     entry_id = r.json()["id"]
     r = await client.post(
         "/api/v1/media",
@@ -40,7 +38,7 @@ async def test_export_html_zip_contains_index_and_attachments(client: AsyncClien
     page = zf.read("website/index.html").decode()
     assert "Photo day 2026-06-01." in page
     # Relative reference from website/ into attachments/.
-    assert '../attachments/2026-06-01/ridge.png' in page
+    assert "../attachments/2026-06-01/ridge.png" in page
 
 
 async def test_export_html_zip_gallery_for_unreferenced_media(client: AsyncClient) -> None:

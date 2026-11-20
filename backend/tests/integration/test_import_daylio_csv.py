@@ -23,11 +23,7 @@ async def test_import_daylio_csv_end_to_end(client: AsyncClient, db_session) -> 
     body = r.json()
     assert body["imported"] == 3, body["skip_reasons"]
 
-    rows = (
-        (await db_session.execute(select(Entry).order_by(Entry.entry_date)))
-        .scalars()
-        .all()
-    )
+    rows = (await db_session.execute(select(Entry).order_by(Entry.entry_date))).scalars().all()
     assert [str(e.entry_date) for e in rows] == ["2021-05-01", "2021-05-02", "2021-05-03"]
 
     first, checkin, third = rows
@@ -37,7 +33,9 @@ async def test_import_daylio_csv_end_to_end(client: AsyncClient, db_session) -> 
     tag_names = set(
         (
             await db_session.execute(
-                select(Tag.name).join(EntryTag, EntryTag.tag_id == Tag.id).where(EntryTag.entry_id == first.id)
+                select(Tag.name)
+                .join(EntryTag, EntryTag.tag_id == Tag.id)
+                .where(EntryTag.entry_id == first.id)
             )
         ).scalars()
     )
@@ -47,9 +45,12 @@ async def test_import_daylio_csv_end_to_end(client: AsyncClient, db_session) -> 
     assert checkin.body == ""
     assert checkin.mood == "great"  # rad → great
     assert "Hiking" in {
-        t for (t,) in (
+        t
+        for (t,) in (
             await db_session.execute(
-                select(Tag.name).join(EntryTag, EntryTag.tag_id == Tag.id).where(EntryTag.entry_id == checkin.id)
+                select(Tag.name)
+                .join(EntryTag, EntryTag.tag_id == Tag.id)
+                .where(EntryTag.entry_id == checkin.id)
             )
         ).all()
     }
@@ -58,7 +59,9 @@ async def test_import_daylio_csv_end_to_end(client: AsyncClient, db_session) -> 
     assert third.body == "Rough day at work."
 
 
-async def test_import_daylio_csv_same_day_two_moods_both_survive(client: AsyncClient, db_session) -> None:
+async def test_import_daylio_csv_same_day_two_moods_both_survive(
+    client: AsyncClient, db_session
+) -> None:
     """The dedup fix: mood-only check-ins differ by mood, not just by body."""
     csv_text = (
         "full_date,date,weekday,time,mood,activities,note_title,note\n"
@@ -84,7 +87,9 @@ async def test_import_daylio_csv_same_day_two_moods_both_survive(client: AsyncCl
     assert moods == ["awful", "good"]
 
 
-async def test_import_daylio_csv_identical_note_is_duplicate(client: AsyncClient, db_session) -> None:
+async def test_import_daylio_csv_identical_note_is_duplicate(
+    client: AsyncClient, db_session
+) -> None:
     csv_text = (
         "full_date,date,weekday,time,mood,activities,note_title,note\n"
         '"May 1, 2021",2021-05-01,Saturday,08:00,good,,,Same note\n'
@@ -114,5 +119,7 @@ async def test_export_daylio_csv_round_trip_with_aliases(client: AsyncClient, db
     assert r2.json()["imported"] == 0, r2.json()["skip_reasons"]
     total = (await db_session.execute(select(func.count()).select_from(Entry))).scalar_one()
     assert total == 3
-    moods = (await db_session.execute(select(Entry.mood).order_by(Entry.entry_date))).scalars().all()
+    moods = (
+        (await db_session.execute(select(Entry.mood).order_by(Entry.entry_date))).scalars().all()
+    )
     assert moods == ["good", "great", "awful"]

@@ -356,9 +356,7 @@ class BackupService:
         try:
             files = await provider.list_files(CLOUD_BACKUP_PREFIX)
         except Exception:
-            logger.warning(
-                "Cloud backup retention: could not list remote backups", exc_info=True
-            )
+            logger.warning("Cloud backup retention: could not list remote backups", exc_info=True)
             return 0
         deleted = 0
         for name in select_stale_backups(files, keep_name, retention):
@@ -505,15 +503,10 @@ class BackupService:
                 report("verify")
                 verification = await asyncio.to_thread(verify_archive, archive)
                 if not verification["valid"]:
-                    detail = (
-                        "; ".join(verification["errors"][:5])
-                        or "integrity check failed"
-                    )
+                    detail = "; ".join(verification["errors"][:5]) or "integrity check failed"
                     raise ValidationError(f"Backup failed verification: {detail}")
                 if verification["legacy"]:
-                    logger.warning(
-                        "Restoring a legacy backup with no integrity manifest"
-                    )
+                    logger.warning("Restoring a legacy backup with no integrity manifest")
 
                 extract_dir = Path(tmpdir) / "extracted"
                 extract_dir.mkdir()

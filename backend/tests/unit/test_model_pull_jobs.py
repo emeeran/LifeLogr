@@ -97,7 +97,9 @@ class TestFailure:
     async def test_nonzero_exit_surfaces_stderr(
         self, client: httpx.AsyncClient, monkeypatch: Any
     ) -> None:
-        _install(_FakeProc(returncode=1, stderr=b"pull model manifest: file not found"), monkeypatch)
+        _install(
+            _FakeProc(returncode=1, stderr=b"pull model manifest: file not found"), monkeypatch
+        )
         r = await client.post("/api/v1/ai/pull-model", params={"model": "nope:latest"})
         job_id = r.json()["job_id"]
         data = (await _settled_status(client, job_id)).json()
@@ -154,9 +156,9 @@ class TestCancel:
     ) -> None:
         proc = _FakeProc(chunks=[b"100%\n"], returncode=0)
         _install(proc, monkeypatch)
-        job_id = (
-            await client.post("/api/v1/ai/pull-model", params={"model": "m"})
-        ).json()["job_id"]
+        job_id = (await client.post("/api/v1/ai/pull-model", params={"model": "m"})).json()[
+            "job_id"
+        ]
         await _settled_status(client, job_id)
         c = await client.delete(f"/api/v1/ai/pull-model/{job_id}")
         assert c.json()["status"] == "complete"

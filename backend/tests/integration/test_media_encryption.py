@@ -57,9 +57,7 @@ async def _encrypted_entry(db_session, *, encrypted: bool) -> Entry:
 
 async def _stored_path(db_session, media_id: int) -> Path:
     """On-disk path for a media record (MEDIA_DIR is shared across the session)."""
-    media = (
-        await db_session.execute(select(Media).where(Media.id == media_id))
-    ).scalar_one()
+    media = (await db_session.execute(select(Media).where(Media.id == media_id))).scalar_one()
     return settings.MEDIA_DIR / media.storage_path
 
 
@@ -195,10 +193,10 @@ async def test_thumbnail_of_encrypted_media_is_never_plaintext_on_disk(
     assert r.headers["content-type"] == "image/webp"
     assert r.content[:4] == b"RIFF"  # decodable WebP, i.e. plaintext in transit
 
-    media = (
-        await db_session.execute(select(Media).where(Media.id == media_id))
-    ).scalar_one()
-    expected_cache = settings.MEDIA_DIR / "thumbs" / f"image-{Path(media.storage_path).name}.webp.llm1"
+    media = (await db_session.execute(select(Media).where(Media.id == media_id))).scalar_one()
+    expected_cache = (
+        settings.MEDIA_DIR / "thumbs" / f"image-{Path(media.storage_path).name}.webp.llm1"
+    )
     thumbs = sorted((settings.MEDIA_DIR / "thumbs").glob(f"*{Path(media.storage_path).name}*"))
     assert thumbs, "encrypted cache must be written"
     for thumb in thumbs:
@@ -206,7 +204,9 @@ async def test_thumbnail_of_encrypted_media_is_never_plaintext_on_disk(
         assert not on_disk.startswith(b"RIFF"), f"plaintext thumb leaked: {thumb.name}"
         assert media_crypto.is_encrypted(on_disk)
     assert thumbs[0] == expected_cache
-    assert not (settings.MEDIA_DIR / "thumbs" / f"image-{Path(media.storage_path).name}.webp").exists()
+    assert not (
+        settings.MEDIA_DIR / "thumbs" / f"image-{Path(media.storage_path).name}.webp"
+    ).exists()
 
     # Second request serves from the encrypted cache and still decrypts.
     again = await client.get(f"/api/v1/media/{media_id}/thumb")
@@ -255,9 +255,7 @@ async def test_video_note_of_encrypted_entry_is_encrypted_and_served_plaintext(
     assert r.status_code in (200, 201), r.text
     video_id = r.json()["id"]
     video = (
-        await db_session.execute(
-            select(VideoNote).where(VideoNote.id == video_id)
-        )
+        await db_session.execute(select(VideoNote).where(VideoNote.id == video_id))
     ).scalar_one()
     blob = (settings.MEDIA_DIR / video.storage_path).read_bytes()
     assert media_crypto.is_encrypted(blob)
@@ -279,16 +277,12 @@ async def test_delete_removes_the_encrypted_thumb_cache_too(
     )
     media_id = r.json()["id"]
     await client.get(f"/api/v1/media/{media_id}/thumb")  # creates the .llm1 cache
-    media = (
-        await db_session.execute(select(Media).where(Media.id == media_id))
-    ).scalar_one()
+    media = (await db_session.execute(select(Media).where(Media.id == media_id))).scalar_one()
     thumb_prefix = f"image-{Path(media.storage_path).name}.webp"
     thumbs = (settings.MEDIA_DIR / "thumbs").glob(f"*{Path(media.storage_path).name}*")
     assert any(t.name.endswith(".llm1") for t in thumbs)
 
     await client.delete(f"/api/v1/media/{media_id}")
-    leftovers = list(
-        (settings.MEDIA_DIR / "thumbs").glob(f"*{Path(media.storage_path).name}*")
-    )
+    leftovers = list((settings.MEDIA_DIR / "thumbs").glob(f"*{Path(media.storage_path).name}*"))
     assert leftovers == [], f"thumb caches leaked: {leftovers}"
     assert thumb_prefix  # silence unused

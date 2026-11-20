@@ -65,9 +65,7 @@ class TestOnThisDayEndpoint:
         r = await client.get("/api/v1/entries/on-this-day")
         assert r.json() == []
 
-    async def test_year_1_artifacts_excluded(
-        self, client: AsyncClient, db_engine: AsyncEngine
-    ):
+    async def test_year_1_artifacts_excluded(self, client: AsyncClient, db_engine: AsyncEngine):
         # .NET-tick-epoch rows imported from a Diarium backup land on 0001-01-01.
         await _seed(db_engine, "0001-01-01", title="tick epoch artifact")
         r = await client.get("/api/v1/entries/on-this-day")
@@ -106,9 +104,7 @@ class TestOnThisDayService:
         items = await EntryService(db_session).get_on_this_day(date(2028, 2, 29))
         assert [i.title for i in items] == ["leap day"]
 
-    async def test_century_non_leap_year(
-        self, db_engine: AsyncEngine, db_session: AsyncSession
-    ):
+    async def test_century_non_leap_year(self, db_engine: AsyncEngine, db_session: AsyncSession):
         # 1900 is not a leap year (divisible by 100, not 400), so a Feb 29
         # entry from 1896 (leap) must surface on Feb 28, 1900.
         await _seed(db_engine, "1896-02-29", title="19th century leap day")
@@ -126,8 +122,7 @@ class TestReminderMemoryLine:
         async with db_engine.begin() as conn:
             await conn.execute(
                 text(_INSERT),
-                {"d": _years_ago(1), "title": "memory", "mood": None,
-                 "deleted": 0, "encrypted": 0},
+                {"d": _years_ago(1), "title": "memory", "mood": None, "deleted": 0, "encrypted": 0},
             )
             result = await conn.execute(
                 text(

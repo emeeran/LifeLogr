@@ -71,9 +71,7 @@ class TestUploadFileService:
         entry = await EntryService(db_session).create(EntryCreate(entry_date=date(2026, 5, 1)))
         spool = tmp_path / "spool.png"
         spool.write_bytes(_PNG_1x1)
-        media = await MediaService(db_session).upload_file(
-            entry.id, "pic.png", "image/png", spool
-        )
+        media = await MediaService(db_session).upload_file(entry.id, "pic.png", "image/png", spool)
         assert media.entry_id == entry.id
         assert media.media_type == "image"
         # 1×1 PNG can't shrink further — either way the file lands on disk.
@@ -109,9 +107,7 @@ class TestUploadFileService:
         spool = tmp_path / "spool.png"
         spool.write_bytes(b"MZ\x90\x00")
         with pytest.raises(MediaSizeError):
-            await MediaService(db_session).upload_file(
-                entry.id, "evil.png", "image/png", spool
-            )
+            await MediaService(db_session).upload_file(entry.id, "evil.png", "image/png", spool)
 
 
 class TestImportAllowlist:
@@ -161,9 +157,7 @@ class TestImportAllowlist:
     async def test_extra_root_via_env(self, monkeypatch, tmp_path):
         """Operator-configured roots are honoured (mirrors BACKUP_ALLOWED_ROOTS)."""
 
-        monkeypatch.setattr(
-            settings, "MEDIA_IMPORT_ALLOWED_ROOTS", str(tmp_path / "mnt")
-        )
+        monkeypatch.setattr(settings, "MEDIA_IMPORT_ALLOWED_ROOTS", str(tmp_path / "mnt"))
         roots = allowed_import_roots()
         assert (tmp_path / "mnt") in roots
 
@@ -176,9 +170,7 @@ class TestImportAllowlist:
 class TestApiStreamingWiring:
     """The media endpoints spool instead of buffering the whole body."""
 
-    async def test_oversized_upload_rejected_before_store(
-        self, client: AsyncClient, monkeypatch
-    ):
+    async def test_oversized_upload_rejected_before_store(self, client: AsyncClient, monkeypatch):
         """A tiny cap + a bigger body → 400, and nothing is written to MEDIA_DIR."""
         from app.models.media import Media
         from sqlalchemy import func, select
@@ -192,16 +184,12 @@ class TestApiStreamingWiring:
         assert r.status_code == 400
         assert "exceeds" in r.json()["detail"]
         # And no media row / no stored file leaked past the cap.
-        total = (
-            await client.get("/api/v1/media/entry/1")
-        ).json()
+        total = (await client.get("/api/v1/media/entry/1")).json()
         assert total == []
         from app.core.database import async_session
 
         async with async_session() as session:
-            count = (
-                await session.execute(select(func.count()).select_from(Media))
-            ).scalar_one()
+            count = (await session.execute(select(func.count()).select_from(Media))).scalar_one()
         assert count == 0
 
     async def test_upload_via_api_stores_file(self, client: AsyncClient):
@@ -273,6 +261,4 @@ class TestNoteMediaUploadFile:
         spool = tmp_path / "spool.png"
         spool.write_bytes(b"MZ\x90\x00")
         with pytest.raises(MediaSizeError):
-            await NoteMediaService(db_session).upload_file(
-                note.id, "evil.png", "image/png", spool
-            )
+            await NoteMediaService(db_session).upload_file(note.id, "evil.png", "image/png", spool)

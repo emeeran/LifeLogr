@@ -33,13 +33,20 @@ def weather_on(monkeypatch):
 
 
 @respx.mock
-async def test_geotagged_save_creates_weather_event(client, db_session, weather_on, tmp_path, monkeypatch):
+async def test_geotagged_save_creates_weather_event(
+    client, db_session, weather_on, tmp_path, monkeypatch
+):
     monkeypatch.setattr(settings, "WEATHER_CACHE_DIR", tmp_path)
     route = respx.get("https://api.open-meteo.com/v1/forecast").respond(json=OPEN_METEO_RESPONSE)
 
     r = await client.post(
         "/api/v1/entries",
-        json={"entry_date": DAY, "body": "Hiked Mount Tabor.", "latitude": 45.123456, "longitude": -122.6768},
+        json={
+            "entry_date": DAY,
+            "body": "Hiked Mount Tabor.",
+            "latitude": 45.123456,
+            "longitude": -122.6768,
+        },
     )
     assert r.status_code == 201
     entry_id = r.json()["id"]
@@ -67,7 +74,12 @@ async def test_no_request_when_feature_off(client, db_session, tmp_path, monkeyp
 
     r = await client.post(
         "/api/v1/entries",
-        json={"entry_date": DAY, "body": "No weather please.", "latitude": 45.12, "longitude": -122.68},
+        json={
+            "entry_date": DAY,
+            "body": "No weather please.",
+            "latitude": 45.12,
+            "longitude": -122.68,
+        },
     )
     assert r.status_code == 201
     await _drain_weather_tasks()
@@ -78,7 +90,9 @@ async def test_no_request_when_feature_off(client, db_session, tmp_path, monkeyp
 
 
 @respx.mock
-async def test_no_request_without_coordinates(client, db_session, weather_on, tmp_path, monkeypatch):
+async def test_no_request_without_coordinates(
+    client, db_session, weather_on, tmp_path, monkeypatch
+):
     monkeypatch.setattr(settings, "WEATHER_CACHE_DIR", tmp_path)
     route = respx.get("https://api.open-meteo.com/v1/forecast").respond(json=OPEN_METEO_RESPONSE)
 
@@ -90,7 +104,9 @@ async def test_no_request_without_coordinates(client, db_session, weather_on, tm
 
 
 @respx.mock
-async def test_update_does_not_duplicate_weather_event(client, db_session, weather_on, tmp_path, monkeypatch):
+async def test_update_does_not_duplicate_weather_event(
+    client, db_session, weather_on, tmp_path, monkeypatch
+):
     monkeypatch.setattr(settings, "WEATHER_CACHE_DIR", tmp_path)
     route = respx.get("https://api.open-meteo.com/v1/forecast").respond(json=OPEN_METEO_RESPONSE)
 
@@ -121,7 +137,13 @@ async def test_import_does_not_fetch_weather(client, db_session, weather_on, tmp
     route = respx.get("https://api.open-meteo.com/v1/forecast").respond(json=OPEN_METEO_RESPONSE)
 
     payload = [
-        {"entry_date": DAY, "title": "Imported", "body": "Geotagged import.", "latitude": 45.12, "longitude": -122.68},
+        {
+            "entry_date": DAY,
+            "title": "Imported",
+            "body": "Geotagged import.",
+            "latitude": 45.12,
+            "longitude": -122.68,
+        },
     ]
     r = await client.post("/api/v1/entries/import", json=payload)
     assert r.status_code == 200

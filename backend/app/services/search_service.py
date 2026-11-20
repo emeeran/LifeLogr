@@ -398,7 +398,9 @@ class SearchService:
             .where(~Note.is_deleted, ~Note.is_encrypted)
         )
         if tag_ids:
-            stmt = stmt.where(Note.id.in_(select(NoteTag.note_id).where(NoteTag.tag_id.in_(tag_ids))))
+            stmt = stmt.where(
+                Note.id.in_(select(NoteTag.note_id).where(NoteTag.tag_id.in_(tag_ids)))
+            )
         candidate_ids = [int(i) for i in (await self.db.execute(stmt)).scalars().all()]
 
         ranked = await get_note_semantic_cache().search(self.db, query_vec, candidate_ids)

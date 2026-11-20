@@ -63,9 +63,7 @@ def _content_fingerprint(parsed: list[dict]) -> list[dict]:
             "tags": sorted(e["tags"]),
             "trackers": sorted((t["name"], t["value"]) for t in e["trackers"]),
             "events": sorted((ev["kind"], ev["content"], ev["label"]) for ev in e["events"]),
-            "media": sorted(
-                (m["filename"], m["media_type"]) for m in e.get("media", [])
-            ),
+            "media": sorted((m["filename"], m["media_type"]) for m in e.get("media", [])),
         }
         for e in sorted(parsed, key=lambda e: (e["entry_date"], e["body"] or ""))
     ]
@@ -79,16 +77,20 @@ async def _export_db_diary(db_session) -> bytes:
     from app.models.tag import EntryTag
 
     loaded = (
-        await db_session.execute(
-            select(Entry)
-            .options(
-                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-                selectinload(Entry.events),
-                selectinload(Entry.media),
+        (
+            await db_session.execute(
+                select(Entry)
+                .options(
+                    selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
+                    selectinload(Entry.events),
+                    selectinload(Entry.media),
+                )
+                .order_by(Entry.entry_date, Entry.id)
             )
-            .order_by(Entry.entry_date, Entry.id)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     staged = await build_diarium_database(list(loaded))
     exported = staged.read_bytes()  # validators/importers consume bytes
     staged.unlink(missing_ok=True)
@@ -127,21 +129,13 @@ async def test_export_preserves_source_identity(db_session):
 
     parsed = parse_diarium_sqlite(exported)
     source_ids = {e["external_id"] for e in parsed}
-    stored = {
-        row
-        for row in (
-            await db_session.execute(select(Entry.external_id))
-        ).scalars()
-        if row
-    }
+    stored = {row for row in (await db_session.execute(select(Entry.external_id))).scalars() if row}
     assert source_ids == stored
 
     # Merge re-import: identity matches → updates/backfills, zero new rows.
     result = await _run_entry_import(db_session, parsed, True)
     assert result["imported"] == 0, result
-    total = (
-        await db_session.execute(select(func.count()).select_from(Entry))
-    ).scalar()
+    total = (await db_session.execute(select(func.count()).select_from(Entry))).scalar()
     assert total == len(_SPEC)
 
 

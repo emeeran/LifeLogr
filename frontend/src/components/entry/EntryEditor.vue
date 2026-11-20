@@ -57,7 +57,6 @@ import {
   maskDDMMYYYY,
   parseDDMMYYYY,
   todayIsoKey,
-  toDateKey,
 } from '../../composables/useFormat'
 import { useTtsStore } from '../../stores/tts'
 import { useDragDrop } from '../../composables/useDragDrop'

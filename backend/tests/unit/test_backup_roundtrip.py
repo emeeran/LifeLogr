@@ -21,7 +21,6 @@ from app.core.config import settings
 from app.main import app
 
 
-
 @pytest.fixture
 async def http():
     """HTTP client without the conftest get_db/db_session override — the
@@ -39,9 +38,7 @@ async def roundtrip_env(tmp_path: Path, monkeypatch):
     media_dir.mkdir(parents=True)
     monkeypatch.setattr(settings, "DATA_DIR", data_dir)
     monkeypatch.setattr(settings, "MEDIA_DIR", media_dir)
-    monkeypatch.setattr(
-        settings, "DATABASE_URL", f"sqlite+aiosqlite:///{data_dir / 'lifelogr.db'}"
-    )
+    monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite+aiosqlite:///{data_dir / 'lifelogr.db'}")
 
     from app.core.database import init_db, reinit_engine
 
@@ -86,9 +83,7 @@ async def _seed(media_dir: Path) -> dict[str, bytes]:
             [
                 EntryTag(entry_id=entry.id, tag_id=tracker.id, tracking_value="84.5kg"),
                 EntryTag(entry_id=entry.id, tag_id=plain.id),
-                EntryEvent(
-                    entry_id=entry.id, kind="weather", content="70 / 50 °F", label="Sunny"
-                ),
+                EntryEvent(entry_id=entry.id, kind="weather", content="70 / 50 °F", label="Sunny"),
                 Media(
                     entry_id=entry.id,
                     filename="photo.jpg",
@@ -126,9 +121,7 @@ async def _seed(media_dir: Path) -> dict[str, bytes]:
     return {"2026/05/photo.jpg": photo, "notes/receipt.pdf": receipt}
 
 
-async def test_backup_restore_roundtrip_is_complete(
-    roundtrip_env, http, tmp_path: Path
-) -> None:
+async def test_backup_restore_roundtrip_is_complete(roundtrip_env, http, tmp_path: Path) -> None:
     data_dir, media_dir = roundtrip_env
     seed_files = await _seed(media_dir)
 
@@ -143,7 +136,9 @@ async def test_backup_restore_roundtrip_is_complete(
 
     tf = tarfile.open(fileobj=io.BytesIO(archive))
     tar_media = {
-        m.name[len("media/"):] for m in tf.getmembers() if m.isfile() and m.name.startswith("media/")
+        m.name[len("media/") :]
+        for m in tf.getmembers()
+        if m.isfile() and m.name.startswith("media/")
     }
     assert tar_media == set(seed_files)
 
@@ -180,9 +175,7 @@ async def test_backup_restore_roundtrip_is_complete(
         assert (entry.latitude, entry.longitude) == (48.8584, 2.2945)
 
         pairs = (
-            await db.execute(
-                select(Tag, EntryTag).join(EntryTag, EntryTag.tag_id == Tag.id)
-            )
+            await db.execute(select(Tag, EntryTag).join(EntryTag, EntryTag.tag_id == Tag.id))
         ).all()
         tracker_tag, assoc = next((t, a) for t, a in pairs if t.is_tracker)
         assert tracker_tag.name == "weight"
@@ -207,9 +200,7 @@ async def test_backup_restore_roundtrip_is_complete(
         note = (await db.execute(select(Note))).scalar_one()
         assert note.title == "Roundtrip note"
         assert note.body == "Note body with token."
-        assert (
-            await db.execute(select(func.count()).select_from(NoteFolder))
-        ).scalar() == 1
+        assert (await db.execute(select(func.count()).select_from(NoteFolder))).scalar() == 1
         page = (await db.execute(select(NotePage))).scalar_one()
         assert (page.title, page.body) == ("Extra", "Page body")
         note_media = (await db.execute(select(NoteMedia))).scalar_one()

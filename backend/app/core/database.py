@@ -495,9 +495,7 @@ def _preflight_db_file_sync(db_path: Path, data_dir: Path) -> None:
     if _quick_check_sync(db_path) == "ok":
         _create_boot_snapshot_sync(db_path, data_dir)
         return
-    logger.warning(
-        "Boot quick_check flagged %s — escalating to full integrity_check", db_path
-    )
+    logger.warning("Boot quick_check flagged %s — escalating to full integrity_check", db_path)
     if _integrity_check_sync(db_path) == "ok":
         # quick_check false alarm (it scans less than the full check) — the
         # exhaustive scan is authoritative; treat the file as healthy.

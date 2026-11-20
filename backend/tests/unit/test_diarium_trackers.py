@@ -65,9 +65,7 @@ class TestParse:
             "CREATE TABLE Tags (DiaryTagId integer primary key, Value varchar);"
             "CREATE TABLE EntryTags (DiaryEntryId bigint, DiaryTagId integer);"
         )
-        conn.execute(
-            "INSERT INTO Entries VALUES (1, '', 'old', 0, 0, 0)"
-        )
+        conn.execute("INSERT INTO Entries VALUES (1, '', 'old', 0, 0, 0)")
         conn.execute("INSERT INTO Tags VALUES (1, 'ancient')")
         conn.execute("INSERT INTO EntryTags VALUES (1, 1)")
         conn.commit()
@@ -101,10 +99,10 @@ class TestImport:
                 )
             ).all()
             plain = (
-                await conn.execute(
-                    text("SELECT name FROM tags WHERE is_tracker = 0")
-                )
-            ).scalars().all()
+                (await conn.execute(text("SELECT name FROM tags WHERE is_tracker = 0")))
+                .scalars()
+                .all()
+            )
         assert plain == ["walk"]
         # 'weight' spans both entries (one reading, one NULL); 'mood-log' on the first.
         assert [(n, e, v) for n, _, e, v in trackers] == [
@@ -132,39 +130,25 @@ class TestImport:
 
 
 class TestSchemaUpgrade:
-    async def test_column_migrations_restore_tracker_columns(
-        self, db_engine: AsyncEngine
-    ):
+    async def test_column_migrations_restore_tracker_columns(self, db_engine: AsyncEngine):
         """A DB created before the feature lacks both columns; the boot-time
         column migrations add them back without touching existing rows."""
         from app.core.database import _migrate_schema
 
         async with db_engine.begin() as conn:
-            await conn.execute(
-                text("ALTER TABLE entry_tags DROP COLUMN tracking_value")
-            )
+            await conn.execute(text("ALTER TABLE entry_tags DROP COLUMN tracking_value"))
             await conn.execute(text("ALTER TABLE tags DROP COLUMN is_tracker"))
-            await conn.execute(
-                text(
-                    "INSERT INTO tags (name) VALUES ('legacy')"
-                )
-            )
+            await conn.execute(text("INSERT INTO tags (name) VALUES ('legacy')"))
 
         async with db_engine.begin() as conn:
             await _migrate_schema(conn)
 
         async with db_engine.connect() as conn:
             tag_cols = {
-                r[1]
-                for r in (
-                    await conn.execute(text("PRAGMA table_info(tags)"))
-                ).fetchall()
+                r[1] for r in (await conn.execute(text("PRAGMA table_info(tags)"))).fetchall()
             }
             assoc_cols = {
-                r[1]
-                for r in (
-                    await conn.execute(text("PRAGMA table_info(entry_tags)"))
-                ).fetchall()
+                r[1] for r in (await conn.execute(text("PRAGMA table_info(entry_tags)"))).fetchall()
             }
             name = (await conn.execute(text("SELECT name FROM tags"))).scalar()
         assert "is_tracker" in tag_cols

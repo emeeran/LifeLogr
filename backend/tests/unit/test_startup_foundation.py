@@ -32,7 +32,10 @@ def test_resolve_secret_key_no_data_dir_env_is_noop(tmp_path: Path, monkeypatch)
     monkeypatch.delenv("LIFELOGR_DATA_DIR", raising=False)
     (tmp_path / ".secret_key").write_text("filekey" * 8)
     assert _resolve_secret_key(tmp_path, _DEFAULT) == _DEFAULT
-    assert not (tmp_path / ".secret_key").exists() or (tmp_path / ".secret_key").read_text() == "filekey" * 8
+    assert (
+        not (tmp_path / ".secret_key").exists()
+        or (tmp_path / ".secret_key").read_text() == "filekey" * 8
+    )
 
 
 def test_resolve_secret_key_loads_existing_file(tmp_path: Path, monkeypatch) -> None:

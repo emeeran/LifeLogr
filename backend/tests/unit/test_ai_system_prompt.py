@@ -113,9 +113,7 @@ class TestEntryContext:
         line = format_entry_context(
             EntryContext(date="2026-10-27", title="Trip", mood="calm", tags=["work", "travel"])
         )
-        assert (
-            'date 2026-10-27; title "Trip"; mood calm; tags [work, travel]' in line
-        )
+        assert 'date 2026-10-27; title "Trip"; mood calm; tags [work, travel]' in line
         assert line.endswith("excerpt of a longer entry.")
 
     def test_missing_fields_render_as_unset(self):
@@ -145,7 +143,6 @@ class TestEntryContext:
         system = captured[0]["system"]
         assert 'title "Trip"' in system
         assert "mood unset" in system
-
 
 
 class TestRetryTemperature:

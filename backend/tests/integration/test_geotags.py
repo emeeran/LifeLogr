@@ -28,8 +28,12 @@ async def test_geotags_returns_geotagged_entries_with_thumbnail(client: AsyncCli
     )
     await _seed(client, entry_date="2026-05-02", title="No coords", body="plain")
     await _seed(
-        client, entry_date="2026-05-03", title="Null island", body="x",
-        latitude=0.0, longitude=0.0,
+        client,
+        entry_date="2026-05-03",
+        title="Null island",
+        body="x",
+        latitude=0.0,
+        longitude=0.0,
     )
 
     r = await client.get("/api/v1/entries/geotags")

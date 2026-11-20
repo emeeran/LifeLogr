@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "OAuth) are keyed off it. Run a deployment that generates a key, or "
             "set SECRET_KEY in .env. (The packaged launcher does this for you.)"
         )
+
     async def _startup_step(name: str, factory: Any) -> None:
         """Run one warn-only boot step; a failure never blocks startup."""
         try:
@@ -138,9 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _startup_step("Startup data-integrity check failed", _check_data_integrity)
     await _startup_step("Failed to start backup scheduler", _start_scheduler)
     await _startup_step("Startup backup-health check failed", _check_backup_health)
-    await _startup_step(
-        "Failed to schedule the app-integrity check", _schedule_app_integrity
-    )
+    await _startup_step("Failed to schedule the app-integrity check", _schedule_app_integrity)
     yield
     logger.info("Shutting down...")
     # Every teardown step shares one deadline. The desktop shell gives the
@@ -162,9 +161,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.warning("Shutdown step %s failed", name, exc_info=True)
         finally:
-            logger.info(
-                "Shutdown step %s took %.2fs", name, time.monotonic() - started
-            )
+            logger.info("Shutdown step %s took %.2fs", name, time.monotonic() - started)
 
     from app.core.database import engine
     from app.services.enrichment_service import cancel_pending_tasks
@@ -393,28 +390,28 @@ async def csrf_origin_guard(request: Request, call_next: Any) -> Response:
 # (method, path) pairs whose effect is irreversible wholesale. Method-aware:
 # "/api/v1/entries/trash" must guard DELETE (empty the trash) without
 # touching GET (the trash LIST the view polls).
-_DESTRUCTIVE_ROUTES = frozenset({
-    ("POST", "/api/v1/entries/reset"),
-    # Backup import/restore swap the live database — the multipart import is
-    # a CORS simple request (no preflight), so without this entry a hostile
-    # page on another loopback port could replace the DB wholesale, including
-    # the settings rows that hold AI provider base_urls and API keys.
-    ("POST", "/api/v1/backup/import"),
-    ("POST", "/api/v1/backup/restore"),
-    # Bulk import is not a swap, but one request can add thousands of rows.
-    ("POST", "/api/v1/entries/import"),
-    # Emptying the trash is wholesale destruction of everything soft-deleted.
-    ("DELETE", "/api/v1/entries/trash"),
-})
+_DESTRUCTIVE_ROUTES = frozenset(
+    {
+        ("POST", "/api/v1/entries/reset"),
+        # Backup import/restore swap the live database — the multipart import is
+        # a CORS simple request (no preflight), so without this entry a hostile
+        # page on another loopback port could replace the DB wholesale, including
+        # the settings rows that hold AI provider base_urls and API keys.
+        ("POST", "/api/v1/backup/import"),
+        ("POST", "/api/v1/backup/restore"),
+        # Bulk import is not a swap, but one request can add thousands of rows.
+        ("POST", "/api/v1/entries/import"),
+        # Emptying the trash is wholesale destruction of everything soft-deleted.
+        ("DELETE", "/api/v1/entries/trash"),
+    }
+)
 
 
 def _is_destructive(method: str, path: str) -> bool:
     """True for endpoints whose effect is irreversible wholesale (see block
     above) plus the per-entry purge, whose path carries an id."""
     return (method, path) in _DESTRUCTIVE_ROUTES or (
-        method == "DELETE"
-        and path.startswith("/api/v1/entries/")
-        and path.endswith("/purge")
+        method == "DELETE" and path.startswith("/api/v1/entries/") and path.endswith("/purge")
     )
 
 
@@ -460,6 +457,7 @@ def _needs_strict_origin(method: str, path: str) -> bool:
             and path != "/api/v1/settings/recovery-kit/export"
         )
     )
+
 
 # Irreversible endpoints also get an always-on throttle. The generic limiter
 # above is production-only (rate limiting a desktop user's own saves is
@@ -507,9 +505,7 @@ async def destructive_endpoint_guard(request: Request, call_next: Any) -> Respon
     origin = (request.headers.get("origin") or request.headers.get("referer") or "").strip()
     if origin and not _origin_allowed_for_destructive(origin, request.headers.get("host") or ""):
         logger.warning("Rejected destructive request to %s from origin %s", path, origin)
-        return JSONResponse(
-            status_code=403, content={"detail": "Cross-origin request not allowed"}
-        )
+        return JSONResponse(status_code=403, content={"detail": "Cross-origin request not allowed"})
     return await call_next(request)  # type: ignore[no-any-return]
 
 

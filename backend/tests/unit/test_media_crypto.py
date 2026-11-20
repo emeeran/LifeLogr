@@ -40,9 +40,7 @@ def _roundtrip(size: int) -> None:
     assert decrypt_media(blob, PATH, key=KEY) == data
 
 
-@pytest.mark.parametrize(
-    "size", [0, 1, 7, CHUNK - 1, CHUNK, CHUNK + 1, 2 * CHUNK + 123]
-)
+@pytest.mark.parametrize("size", [0, 1, 7, CHUNK - 1, CHUNK, CHUNK + 1, 2 * CHUNK + 123])
 def test_roundtrip_at_every_boundary(size: int) -> None:
     _roundtrip(size)
 
@@ -166,9 +164,10 @@ def test_probe_and_read_range_file(tmp_path) -> None:
     assert encrypted is True
     assert plain_len == len(data)
     assert read_range_file(path, PATH, 0, len(data), key=KEY) == data
-    assert read_range_file(path, PATH, CHUNK - 1, CHUNK + 2, key=KEY) == data[
-        CHUNK - 1 : CHUNK * 2 + 1
-    ]
+    assert (
+        read_range_file(path, PATH, CHUNK - 1, CHUNK + 2, key=KEY)
+        == data[CHUNK - 1 : CHUNK * 2 + 1]
+    )
 
     # AAD still binds the on-disk reader to the storage path.
     with pytest.raises(ValueError, match="failed authentication"):

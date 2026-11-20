@@ -56,10 +56,7 @@ class TestHybridTotals:
         """Both sides matching the same rows: union = kw + sem − overlap."""
         entries = await _entries(db_session, 3)
         db_session.add_all(
-            [
-                EntryEmbedding(entry_id=e.id, embedding=json.dumps([1.0, 0.0, 0.0]))
-                for e in entries
-            ]
+            [EntryEmbedding(entry_id=e.id, embedding=json.dumps([1.0, 0.0, 0.0])) for e in entries]
         )
         await db_session.commit()
         svc = SearchService(db_session)
@@ -97,9 +94,7 @@ class TestModeSemantics:
         assert {i.type for i in items} == {"entry"}
         assert total == 1
 
-    async def test_keyword_mode_still_includes_notes_and_reminders(
-        self, db_session: AsyncSession
-    ):
+    async def test_keyword_mode_still_includes_notes_and_reminders(self, db_session: AsyncSession):
         from datetime import time
 
         from app.models.note import Note

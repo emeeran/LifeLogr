@@ -38,9 +38,7 @@ CREATE TABLE Templates(TemplateId integer primary key autoincrement not null,
 def ticks_for(date_str: str) -> int:
     """.NET ticks for a YYYY-MM-DD date at noon UTC (matches real backups'
     local-wall-clock encoding closely enough for day-level imports)."""
-    dt = datetime.fromisoformat(date_str).replace(
-        hour=12, tzinfo=timezone.utc
-    )
+    dt = datetime.fromisoformat(date_str).replace(hour=12, tzinfo=timezone.utc)
     return DOTNET_TICKS_EPOCH + int(dt.timestamp()) * 10_000_000
 
 
@@ -95,8 +93,7 @@ def build_diary(
                 )
             for event_type, content, label in spec.get("events", []):
                 conn.execute(
-                    "INSERT INTO Events (Type, Content, Tag, DiaryEntryId) "
-                    "VALUES (?, ?, ?, ?)",
+                    "INSERT INTO Events (Type, Content, Tag, DiaryEntryId) VALUES (?, ?, ?, ?)",
                     (event_type, content, label, ticks),
                 )
             if include_media and spec.get("media"):
@@ -114,7 +111,7 @@ def build_diary(
                         name, ext, blob = item
                         media_type = 0
                     conn.execute(
-                        'INSERT INTO Media (DiaryMediaId, Type, Data, Name, FileEnding, '
+                        "INSERT INTO Media (DiaryMediaId, Type, Data, Name, FileEnding, "
                         '"Index", DiaryEntryId) VALUES (?, ?, ?, ?, ?, ?, ?)',
                         (f"guid-{ticks}-{idx}", media_type, blob, name, ext, idx, ticks),
                     )
@@ -189,9 +186,7 @@ def validate_diary(data: bytes) -> None:
             assert not missing, f"missing Diarium tables: {sorted(missing)}"
 
             now_ticks = int(
-                (
-                    _datetime.now().replace(microsecond=0) - _datetime(1, 1, 1)
-                ).total_seconds()
+                (_datetime.now().replace(microsecond=0) - _datetime(1, 1, 1)).total_seconds()
                 * 10_000_000
             )
             for row in conn.execute(
@@ -212,14 +207,10 @@ def validate_diary(data: bytes) -> None:
                 'SELECT DiaryEntryId, Type, Data, FileEnding, "Index" FROM Media'
             ).fetchall():
                 ending = row["FileEnding"] or ""
-                assert ending == "" or ending.startswith(
-                    "."
-                ), f"FileEnding not dotted: {ending!r}"
+                assert ending == "" or ending.startswith("."), f"FileEnding not dotted: {ending!r}"
                 assert row["Index"] >= 0, f"negative media Index: {row['Index']}"
             # Index must be dense from 0 within each entry.
-            for entry_id, in conn.execute(
-                "SELECT DISTINCT DiaryEntryId FROM Media"
-            ).fetchall():
+            for (entry_id,) in conn.execute("SELECT DISTINCT DiaryEntryId FROM Media").fetchall():
                 indexes = [
                     r[0]
                     for r in conn.execute(
@@ -248,9 +239,7 @@ def validate_diary(data: bytes) -> None:
                 ).fetchone()
                 max_id = conn.execute(f"SELECT COALESCE(MAX({pk}), 0) FROM {table}").fetchone()[0]
                 if row is not None:
-                    assert row[0] >= max_id, (
-                        f"sqlite_sequence behind {table}: {row[0]} < {max_id}"
-                    )
+                    assert row[0] >= max_id, f"sqlite_sequence behind {table}: {row[0]} < {max_id}"
         finally:
             conn.close()
     finally:

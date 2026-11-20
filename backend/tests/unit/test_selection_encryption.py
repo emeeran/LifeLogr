@@ -84,12 +84,12 @@ class TestSaltedV2Envelope:
         self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(settings, "SECRET_KEY", "a-real-key")
-        e1 = (
-            await client.post(_ENCRYPT, json={"text": "same", "passphrase": "pw"})
-        ).json()["encrypted"]
-        e2 = (
-            await client.post(_ENCRYPT, json={"text": "same", "passphrase": "pw"})
-        ).json()["encrypted"]
+        e1 = (await client.post(_ENCRYPT, json={"text": "same", "passphrase": "pw"})).json()[
+            "encrypted"
+        ]
+        e2 = (await client.post(_ENCRYPT, json={"text": "same", "passphrase": "pw"})).json()[
+            "encrypted"
+        ]
         assert e1 != e2, "same text + passphrase must not be ciphertext-identical"
         assert e1[3:].split(":", 1)[0] != e2[3:].split(":", 1)[0]
 

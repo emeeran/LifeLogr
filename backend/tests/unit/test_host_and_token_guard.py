@@ -67,9 +67,7 @@ class TestOptionalApiToken:
         monkeypatch.setattr(settings, "API_TOKEN", "s3cr3t-token")
         return "s3cr3t-token"
 
-    async def test_api_requires_bearer_when_set(
-        self, client: AsyncClient, token: str
-    ) -> None:
+    async def test_api_requires_bearer_when_set(self, client: AsyncClient, token: str) -> None:
         assert (await client.get(_API_PATH)).status_code == 401
         assert (
             await client.get(_API_PATH, headers={"Authorization": "Bearer wrong"})

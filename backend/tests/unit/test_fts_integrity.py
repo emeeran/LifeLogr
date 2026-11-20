@@ -172,7 +172,6 @@ class TestBootFtsBehaviour:
         """A row deleted straight from the index (missing trigger) is restored."""
         from app.core import database as dbmod
 
-
         # Point the module engine at this test DB so _setup_fts touches it.
         monkeypatch.setattr(dbmod, "engine", db_engine)
         async with db_engine.begin() as conn:
@@ -240,9 +239,7 @@ class TestBootFtsBehaviour:
             }
             stamp = (
                 await conn.execute(
-                    text(
-                        "SELECT value FROM _schema_meta WHERE key = 'fts_trigger_version'"
-                    )
+                    text("SELECT value FROM _schema_meta WHERE key = 'fts_trigger_version'")
                 )
             ).scalar()
         assert after == installed  # same triggers, same rowids → nothing recreated

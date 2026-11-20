@@ -237,9 +237,7 @@ class TestEagerRetentionPrune:
     ):
         _seed_backups(tmp_path, 4)
         svc = SchedulerService(db_session)
-        await svc.schedule_backup(
-            cron_expr="0 2 * * *", backup_path=str(tmp_path), retention=1
-        )
+        await svc.schedule_backup(cron_expr="0 2 * * *", backup_path=str(tmp_path), retention=1)
 
         remaining = sorted(tmp_path.glob("lifelogr-backup-*.tar.gz"))
         assert len(remaining) == 1
@@ -434,9 +432,7 @@ class TestRestoreBackupSchedule:
         assert job is not None
         assert job.kwargs == {"config_id": config.id}
 
-    async def test_clears_when_config_gone(
-        self, db_session, _clean_scheduler, _scheduler_db
-    ):
+    async def test_clears_when_config_gone(self, db_session, _clean_scheduler, _scheduler_db):
         _ensure_scheduler_running()
         # A config deleted after scheduling (the real path to a dangling
         # schedule) → schedule is stale and must be dropped.
@@ -480,9 +476,7 @@ class TestRestoreBackupSchedule:
         _ensure_scheduler_running()
         store = mod._schedule_store_path()  # tmp path (redirected by _clean_scheduler)
         store.parent.mkdir(parents=True, exist_ok=True)
-        store.write_text(
-            json.dumps({"cron": "0 5 * * *", "backup_path": "/tmp/y", "retention": 4})
-        )
+        store.write_text(json.dumps({"cron": "0 5 * * *", "backup_path": "/tmp/y", "retention": 4}))
         assert (await _get_active_schedule()) is None
 
         await SchedulerService._restore_backup_schedule()
@@ -516,15 +510,11 @@ class TestBackupCatchup:
             await SchedulerService._backup_catchup()
             mock_run.assert_not_called()
 
-    async def test_runs_cloud_when_stale(
-        self, db_session, _clean_scheduler, _scheduler_db
-    ):
+    async def test_runs_cloud_when_stale(self, db_session, _clean_scheduler, _scheduler_db):
         _ensure_scheduler_running()
         config = await _seed_cloud_config(db_session)
         await _save_schedule({"cron": "0 3 * * *", "config_id": config.id})
-        with patch(
-            "app.services.scheduler_service._run_cloud_backup", new=AsyncMock()
-        ) as mock_run:
+        with patch("app.services.scheduler_service._run_cloud_backup", new=AsyncMock()) as mock_run:
             await SchedulerService._backup_catchup()
             mock_run.assert_awaited_once_with(config.id)
 
@@ -592,4 +582,3 @@ class TestLocalBackupStaging:
 
         await mod._run_backup(str(backup_dir), retention=5)
         assert not stale.exists()
-

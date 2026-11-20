@@ -12,7 +12,9 @@ from app.models.media import Media
 from tests.helpers.dayone_zip import PNG_1X1
 
 
-async def test_attached_photo_lands_in_media_pipeline(client: AsyncClient, db_session, tmp_path) -> None:
+async def test_attached_photo_lands_in_media_pipeline(
+    client: AsyncClient, db_session, tmp_path
+) -> None:
     d = tmp_path / "roll"
     d.mkdir()
     photo = d / "shot.png"
@@ -24,7 +26,9 @@ async def test_attached_photo_lands_in_media_pipeline(client: AsyncClient, db_se
     assert item["path"] == str(photo)
 
     entry = (
-        await client.post("/api/v1/entries", json={"entry_date": "2026-10-25", "body": "With photo."})
+        await client.post(
+            "/api/v1/entries", json={"entry_date": "2026-10-25", "body": "With photo."}
+        )
     ).json()
     attached = await client.post(
         "/api/v1/media/from-path",

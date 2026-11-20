@@ -169,9 +169,7 @@ async def test_encrypted_entries_are_skipped_and_counted(
     client: AsyncClient, db_session, tmp_path, monkeypatch
 ) -> None:
     _media_root(tmp_path, monkeypatch)
-    await _seed_entry(
-        db_session, day=date(2026, 3, 1), body="ciphertext-blob", encrypted=True
-    )
+    await _seed_entry(db_session, day=date(2026, 3, 1), body="ciphertext-blob", encrypted=True)
 
     r = await client.get("/api/v1/entries/export/dayone-zip", params={"scope": "all"})
     doc, _ = _read_zip(r.content)

@@ -52,9 +52,7 @@ async def test_refreshes_expired_token_and_invokes_callback() -> None:
         )
     )
     respx.get(f"{OneDriveProvider.GRAPH}/children").mock(
-        return_value=httpx.Response(
-            200, json={"value": [{"name": "lifelogr-backup-2026.tar.gz"}]}
-        )
+        return_value=httpx.Response(200, json={"value": [{"name": "lifelogr-backup-2026.tar.gz"}]})
     )
 
     names = await provider.list_files("lifelogr-backup-")
@@ -99,9 +97,7 @@ async def test_dropbox_refreshes_and_invokes_2arg_callback() -> None:
 
     provider = DropboxProvider(_creds(expired=True), on_token_refresh=on_refresh)
     respx.post(DropboxProvider.TOKEN_URL).mock(
-        return_value=httpx.Response(
-            200, json={"access_token": "db-new", "expires_in": 3600}
-        )
+        return_value=httpx.Response(200, json={"access_token": "db-new", "expires_in": 3600})
     )
 
     token = await provider._ensure_valid_token()

@@ -40,9 +40,7 @@ def test_quiet_capture_is_brought_up_to_speech_level() -> None:
 
 def test_gain_is_capped_so_noise_floor_stays_noise() -> None:
     """Near-silence must not be amplified by more than _MAX_GAIN."""
-    noise = (np.random.default_rng(7).standard_normal(44100) * 1e-4).astype(np.float32)[
-        :, None
-    ]
+    noise = (np.random.default_rng(7).standard_normal(44100) * 1e-4).astype(np.float32)[:, None]
     out = _condition_audio(noise, 44100)
     assert _rms(out) / max(_rms(noise), 1e-12) <= _MAX_GAIN + 0.1
 

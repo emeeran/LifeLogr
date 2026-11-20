@@ -44,4 +44,5 @@ def _unlink_quietly(path: str) -> None:
     except OSError:
         logger.warning("Could not unlink downloaded export result %s", path)
 
+
 logger = logging.getLogger(__name__)

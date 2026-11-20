@@ -18,7 +18,6 @@ from sqlalchemy import delete, select
 from app.core.config import settings
 
 
-
 @pytest.fixture
 def media_dir(tmp_path: Path, monkeypatch) -> Path:
     d = tmp_path / "media"
@@ -109,9 +108,7 @@ async def test_archive_v2_roundtrip(db_session, client, media_dir):
     assert r.status_code == 200
     archive = r.content
 
-    doc = json.loads(
-        zipfile.ZipFile(io.BytesIO(archive)).read("lifelogr.json")
-    )
+    doc = json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("lifelogr.json"))
     assert doc["format"] == "lifelogr-archive"
     assert doc["version"] == 2
     assert doc["notes"], "v2 archive carries notes"
@@ -147,9 +144,9 @@ async def test_archive_v2_roundtrip(db_session, client, media_dir):
     note_media = (await db_session.execute(select(NoteMedia))).scalar_one()
     assert note_media.filename == "receipt.pdf"
     assert (media_dir / note_media.storage_path).read_bytes() == b"%PDF-1.7 pdf-bytes"
-    assert (
-        f"/api/v1/notes/{note.id}/media/{note_media.id}/file" in note.body
-    ), "note body URL rewritten to the imported ids"
+    assert f"/api/v1/notes/{note.id}/media/{note_media.id}/file" in note.body, (
+        "note body URL rewritten to the imported ids"
+    )
     assert "/media/55/file" not in note.body
 
 

@@ -117,10 +117,7 @@ class ReminderService:
             return ["notify-send", "-a", "LifeLogr", "--", title, message]
         if sys.platform == "darwin":
             # osascript takes a script string, so quote the text for AppleScript.
-            script = (
-                f"display notification {json.dumps(message)} "
-                f"with title {json.dumps(title)}"
-            )
+            script = f"display notification {json.dumps(message)} with title {json.dumps(title)}"
             return ["osascript", "-e", script]
         return None
 

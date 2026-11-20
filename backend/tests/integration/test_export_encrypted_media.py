@@ -38,9 +38,7 @@ def _names(content: bytes) -> list[str]:
     return zipfile.ZipFile(io.BytesIO(content)).namelist()
 
 
-async def test_html_zip_omits_encrypted_entry_attachments(
-    client: AsyncClient, db_session
-) -> None:
+async def test_html_zip_omits_encrypted_entry_attachments(client: AsyncClient, db_session) -> None:
     entry = await _seed_encrypted_entry_with_photo(client, db_session)
     r = await client.get("/api/v1/entries/export/html-zip")
     assert r.status_code == 200
@@ -59,9 +57,7 @@ async def test_markdown_zips_omit_encrypted_entry_attachments(
     r = await client.get("/api/v1/export/obsidian-vault")
     assert r.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(r.content))
-    assert not any(
-        name.startswith(f"attachments/{entry.entry_date}") for name in zf.namelist()
-    )
+    assert not any(name.startswith(f"attachments/{entry.entry_date}") for name in zf.namelist())
     page = zf.read(f"journal/2026/07/{entry.entry_date}.md").decode()
     assert "Attachments of this encrypted entry are omitted from exports." in page
 

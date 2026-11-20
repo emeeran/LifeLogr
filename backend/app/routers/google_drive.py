@@ -32,9 +32,7 @@ def get_default_credentials() -> tuple[str, str]:
 
 
 @router.get("/auth-url")
-async def get_auth_url(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> dict[str, str]:
+async def get_auth_url(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     """Generate Google Drive OAuth consent screen URL."""
     redirect_uri = loopback_redirect_uri(request, "/api/v1/backup/google-drive/callback")
     # Look for existing custom client config in database

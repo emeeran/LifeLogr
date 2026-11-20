@@ -122,7 +122,11 @@ def _content_and_label(payload: dict[str, Any]) -> tuple[str, str] | None:
     Same shape the Diarium importer writes for ``Events.Type=0`` rows.
     """
     daily = (payload or {}).get("daily") or {}
-    highs, lows, codes = daily.get("temperature_2m_max"), daily.get("temperature_2m_min"), daily.get("weather_code")
+    highs, lows, codes = (
+        daily.get("temperature_2m_max"),
+        daily.get("temperature_2m_min"),
+        daily.get("weather_code"),
+    )
     if not (isinstance(highs, list) and isinstance(lows, list) and highs and lows):
         return None
     try:
@@ -191,7 +195,9 @@ async def _fetch(lat: float, lng: float, day: date, dest: Path) -> tuple[str, st
     return result
 
 
-async def conditions_for(lat: float, lng: float, day: date | datetime | str) -> tuple[str, str] | None:
+async def conditions_for(
+    lat: float, lng: float, day: date | datetime | str
+) -> tuple[str, str] | None:
     """Return ``(content, label)`` for the day at the coordinates, or ``None``.
 
     Disk-cache first; on a miss, one Open-Meteo request (rounded coordinates

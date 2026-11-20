@@ -28,9 +28,7 @@ logger = logging.getLogger(__name__)
 
 def _require_video_mime(content_type: str) -> None:
     if not content_type.startswith("video/"):
-        raise MediaSizeError(
-            f"File type '{content_type}' not allowed; only video/* is accepted"
-        )
+        raise MediaSizeError(f"File type '{content_type}' not allowed; only video/* is accepted")
 
 
 def _storage_name(entry_id: int, filename: str) -> str:
@@ -43,9 +41,7 @@ class VideoService:
         self.db = db
         self._media_dir = Path(settings.MEDIA_DIR)
 
-    async def _create_note(
-        self, entry_id: int, filename: str, storage_name: str
-    ) -> VideoNote:
+    async def _create_note(self, entry_id: int, filename: str, storage_name: str) -> VideoNote:
         note = VideoNote(
             entry_id=entry_id,
             filename=filename,

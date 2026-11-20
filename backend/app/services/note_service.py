@@ -143,9 +143,7 @@ class NoteService:
         )
         total = (await self.db.execute(count_q)).scalar_one()
         result = await self.db.execute(
-            base_q.order_by(
-                Note.is_pinned.desc(), Note.sort_order.asc(), Note.updated_at.desc()
-            )
+            base_q.order_by(Note.is_pinned.desc(), Note.sort_order.asc(), Note.updated_at.desc())
             .offset(offset)
             .limit(limit)
         )

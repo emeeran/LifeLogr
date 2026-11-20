@@ -23,7 +23,6 @@ from app.services import media_crypto
 from app.services.note_service import get_note_or_raise
 from app.services.media_service import (
     unlink_media_file,
-
     _ALLOWED_MIME_PREFIXES,
     _CONVERTIBLE_IMAGE_TYPES,
     MediaService,
@@ -198,7 +197,6 @@ class NoteMediaService:
 
     async def _require_note(self, note_id: int) -> Note:
         return await get_note_or_raise(self.db, note_id)
-
 
     async def upload_from_path(
         self, note_id: int, path: str, caption: str | None = None

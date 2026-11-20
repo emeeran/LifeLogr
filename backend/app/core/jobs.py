@@ -191,8 +191,7 @@ class JobRegistry:
                         os.unlink(job.result_path)
                     except OSError:
                         logger.warning(
-                            "Could not unlink expired export result %s — it "
-                            "stays in DATA_DIR/tmp",
+                            "Could not unlink expired export result %s — it stays in DATA_DIR/tmp",
                             job.result_path,
                         )
 
@@ -205,7 +204,9 @@ class JobRegistry:
 jobs = JobRegistry()
 
 
-def start_data_job(background_tasks: Any, kind: str, runner: Callable[[ProgressReporter], Any]) -> dict[str, str]:
+def start_data_job(
+    background_tasks: Any, kind: str, runner: Callable[[ProgressReporter], Any]
+) -> dict[str, str]:
     """Run *runner* as a polled job behind a FastAPI BackgroundTasks.
 
     *runner* owns its DB session (the request's dies with the response),

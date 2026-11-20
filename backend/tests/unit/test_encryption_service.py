@@ -56,17 +56,13 @@ class TestEncryption:
 
     async def test_decrypt_note_wrong_passphrase_returns_400(self, client: AsyncClient):
         # Notes decrypt must also map a wrong passphrase to 400, not a 500.
-        n = await client.post(
-            "/api/v1/notes/folders", json={"name": "nb"}
-        )
+        n = await client.post("/api/v1/notes/folders", json={"name": "nb"})
         folder_id = n.json()["id"]
         note = await client.post(
             "/api/v1/notes", json={"title": "t", "body": "secret", "folder_id": folder_id}
         )
         nid = note.json()["id"]
-        await client.post(
-            f"/api/v1/notes/{nid}/encryption/encrypt", json={"passphrase": "correct"}
-        )
+        await client.post(f"/api/v1/notes/{nid}/encryption/encrypt", json={"passphrase": "correct"})
         r = await client.post(
             f"/api/v1/notes/{nid}/encryption/decrypt", json={"passphrase": "wrong"}
         )
@@ -112,9 +108,7 @@ class TestEncryption:
         # stored encryption_salt) must still decrypt via the fallback path.
         e = await _entry(client)
         svc = EncryptionService(db_session)
-        entry = (
-            await db_session.execute(select(Entry).where(Entry.id == e["id"]))
-        ).scalar_one()
+        entry = (await db_session.execute(select(Entry).where(Entry.id == e["id"]))).scalar_one()
         legacy_key = svc._derive_key("legacypw", None)
         entry.body = svc._encrypt(b"Secret diary", legacy_key)
         entry.is_encrypted = True
@@ -138,9 +132,7 @@ class TestEncryption:
         # undecryptable). Uses the retained PBKDF2 _derive_key directly.
         e = await _entry(client)
         svc = EncryptionService(db_session)
-        entry = (
-            await db_session.execute(select(Entry).where(Entry.id == e["id"]))
-        ).scalar_one()
+        entry = (await db_session.execute(select(Entry).where(Entry.id == e["id"]))).scalar_one()
         salt = b"0123456789abcdef"  # 16-byte legacy per-entry salt
         entry.body = svc._encrypt(b"Secret diary", svc._derive_key("oldpw", salt))
         entry.is_encrypted = True

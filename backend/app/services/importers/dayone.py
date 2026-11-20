@@ -96,7 +96,9 @@ def _media_for_photos(
             logger.warning("Day One photo %s not found in export ZIP — skipped", md5)
             continue
         if zf.getinfo(member).file_size > _MAX_MEMBER_BYTES:
-            logger.warning("Day One photo %s oversized (%d bytes) — skipped", md5, zf.getinfo(member).file_size)
+            logger.warning(
+                "Day One photo %s oversized (%d bytes) — skipped", md5, zf.getinfo(member).file_size
+            )
             continue
         ext = member.rsplit(".", 1)[-1].lower()
         caption = str(photo.get("caption") or "").strip()

@@ -93,9 +93,7 @@ class TestImport:
                     text("SELECT kind, content, label FROM entry_events ORDER BY id")
                 )
             ).all()
-            entry_id = (
-                await conn.execute(text("SELECT id FROM entries LIMIT 1"))
-            ).scalar()
+            entry_id = (await conn.execute(text("SELECT id FROM entries LIMIT 1"))).scalar()
         assert found == [
             ("weather", "84 / 74 °F", "Partly Cloudy"),
             ("unknown:7", "12,340", None),
@@ -140,9 +138,7 @@ class TestRoundTrip:
 
         loaded = (
             await db_session.execute(
-                select(Entry)
-                .options(selectinload(Entry.events))
-                .where(Entry.id == entry.id)
+                select(Entry).options(selectinload(Entry.events)).where(Entry.id == entry.id)
             )
         ).scalar_one()
         data = await build_diarium_database([loaded])
@@ -155,9 +151,7 @@ class TestRoundTrip:
 
 
 class TestSchemaUpgrade:
-    async def test_existing_db_gains_entry_events_on_boot(
-        self, db_engine: AsyncEngine
-    ):
+    async def test_existing_db_gains_entry_events_on_boot(self, db_engine: AsyncEngine):
         """The upgrade path: a DB created before the feature lacks the table;
         the boot-time ``create_all`` heals it without touching existing rows."""
         from app.core.database import Base
@@ -178,8 +172,7 @@ class TestSchemaUpgrade:
             exists = (
                 await conn.execute(
                     text(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name='entry_events'"
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='entry_events'"
                     )
                 )
             ).scalar()
@@ -187,9 +180,7 @@ class TestSchemaUpgrade:
         assert exists == "entry_events"
         assert kept == "kept"  # existing data untouched
 
-    async def test_legacy_table_cleanup_spares_entry_events(
-        self, db_engine: AsyncEngine
-    ):
+    async def test_legacy_table_cleanup_spares_entry_events(self, db_engine: AsyncEngine):
         from app.core.database import _drop_removed_feature_tables
 
         async with db_engine.begin() as conn:
@@ -198,8 +189,7 @@ class TestSchemaUpgrade:
             kept = (
                 await conn.execute(
                     text(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name='entry_events'"
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='entry_events'"
                     )
                 )
             ).scalar()

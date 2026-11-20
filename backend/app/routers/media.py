@@ -212,7 +212,9 @@ async def get_media_thumbnail(media_id: int, db: AsyncSession = Depends(get_db))
     source, content_type = await svc.get_thumbnail(media_id)
     if isinstance(source, bytes):
         return Response(source, media_type=content_type, headers={"Cache-Control": "no-store"})
-    return FileResponse(path=str(source), media_type=content_type, content_disposition_type="inline")
+    return FileResponse(
+        path=str(source), media_type=content_type, content_disposition_type="inline"
+    )
 
 
 @router.delete("/{media_id}", status_code=204)

@@ -29,9 +29,7 @@ class TestEntryCreate:
         # body is plain text and does NOT create a tag (notes still do that).
         tags_r = await client.post("/api/v1/tags", json={"name": "travel"})
         tag_id = tags_r.json()["id"]
-        entry = await _create_entry(
-            client, body="#travel trip notes", tag_ids=[tag_id]
-        )
+        entry = await _create_entry(client, body="#travel trip notes", tag_ids=[tag_id])
         assert len(entry["tags"]) == 1
         assert entry["tags"][0]["name"] == "travel"
         plain = await _create_entry(client, body="#travel trip notes")
@@ -105,9 +103,7 @@ class TestEntryUpdate:
         # patches never touch tags (a #token in the body is plain text).
         entry = await _create_entry(client, body="#a")
         tag = (await client.post("/api/v1/tags", json={"name": "b"})).json()
-        r = await client.patch(
-            f"/api/v1/entries/{entry['id']}", json={"tag_ids": [tag["id"]]}
-        )
+        r = await client.patch(f"/api/v1/entries/{entry['id']}", json={"tag_ids": [tag["id"]]})
         tags = r.json()["tags"]
         assert len(tags) == 1
         assert tags[0]["name"] == "b"
@@ -203,9 +199,7 @@ class TestEntryMerge:
     async def test_merge_rejects_different_dates(self, client: AsyncClient):
         a = await _create_entry(client, date="2026-05-08")
         b = await _create_entry(client, date="2026-05-09")
-        r = await client.post(
-            "/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]}
-        )
+        r = await client.post("/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]})
         assert r.status_code == 400
 
     async def test_merge_rejects_single_entry(self, client: AsyncClient):
@@ -229,9 +223,7 @@ class TestEntryMerge:
             sa_update(EntryModel).where(EntryModel.id == b["id"]).values(is_encrypted=True)
         )
         await db_session.commit()
-        r = await client.post(
-            "/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]}
-        )
+        r = await client.post("/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]})
         assert r.status_code == 400
 
     async def test_merge_repoints_media(self, client: AsyncClient, db_session):
@@ -251,9 +243,7 @@ class TestEntryMerge:
             )
         )
         await db_session.commit()
-        r = await client.post(
-            "/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]}
-        )
+        r = await client.post("/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]})
         assert r.status_code == 200
         row = (await db_session.execute(sa_select(MediaModel))).scalars().first()
         assert row is not None and row.entry_id == a["id"]

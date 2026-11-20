@@ -43,9 +43,7 @@ def _iso(d: date) -> str:
 
 
 class TestStreaks:
-    async def test_streak_ending_yesterday_still_counts(
-        self, db_engine: AsyncEngine, db_session
-    ):
+    async def test_streak_ending_yesterday_still_counts(self, db_engine: AsyncEngine, db_session):
         today = date.today()
         await _seed(db_engine, _iso(today - timedelta(days=1)))
         await _seed(db_engine, _iso(today - timedelta(days=2)))
@@ -60,9 +58,7 @@ class TestStreaks:
         stats = await EntryService(db_session).get_stats()
         assert stats.current_streak == 3
 
-    async def test_gap_breaks_current_streak(
-        self, db_engine: AsyncEngine, db_session
-    ):
+    async def test_gap_breaks_current_streak(self, db_engine: AsyncEngine, db_session):
         today = date.today()
         await _seed(db_engine, _iso(today))
         await _seed(db_engine, _iso(today - timedelta(days=3)))
@@ -70,9 +66,7 @@ class TestStreaks:
         assert stats.current_streak == 1
         assert stats.longest_streak == 1
 
-    async def test_longest_streak_spans_history(
-        self, db_engine: AsyncEngine, db_session
-    ):
+    async def test_longest_streak_spans_history(self, db_engine: AsyncEngine, db_session):
         base = date(2024, 3, 1)
         for i in range(5):  # a 5-day run in the past
             await _seed(db_engine, _iso(base + timedelta(days=i)))
@@ -80,9 +74,7 @@ class TestStreaks:
         assert stats.longest_streak == 5
         assert stats.current_streak == 0  # nothing near today
 
-    async def test_multiple_entries_same_day_count_once(
-        self, db_engine: AsyncEngine, db_session
-    ):
+    async def test_multiple_entries_same_day_count_once(self, db_engine: AsyncEngine, db_session):
         today = date.today()
         await _seed(db_engine, _iso(today), body="a")
         await _seed(db_engine, _iso(today), body="b")
@@ -116,9 +108,7 @@ class TestAggregates:
         assert stats.weekly[-1].week_start == this_monday
         assert stats.weekly[0].week_start == this_monday - timedelta(weeks=11)
 
-    async def test_mood_and_media_distributions(
-        self, db_engine: AsyncEngine, db_session
-    ):
+    async def test_mood_and_media_distributions(self, db_engine: AsyncEngine, db_session):
         await _seed(db_engine, "2026-01-01", mood="good")
         await _seed(db_engine, "2026-01-02", mood="good")
         await _seed(db_engine, "2026-01-03", mood="awful")
@@ -152,9 +142,7 @@ class TestEndpoint:
         assert body["moods"] == []
         assert body["media"] == []
 
-    async def test_endpoint_reports_seeded_data(
-        self, client: AsyncClient, db_engine: AsyncEngine
-    ):
+    async def test_endpoint_reports_seeded_data(self, client: AsyncClient, db_engine: AsyncEngine):
         today = date.today()
         await _seed(db_engine, _iso(today), body="hello world", mood="great")
         r = await client.get("/api/v1/entries/stats")

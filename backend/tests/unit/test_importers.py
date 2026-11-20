@@ -67,9 +67,7 @@ def test_parse_csv_tag_split_pipe():
 
 
 def test_parse_csv_daylio_mood_only_checkin_survives():
-    text = build_daylio_csv(
-        [{"full_date": "May 2, 2021", "mood": "rad", "activities": "Hiking"}]
-    )
+    text = build_daylio_csv([{"full_date": "May 2, 2021", "mood": "rad", "activities": "Hiking"}])
     rows = parse_csv(text)
     assert len(rows) == 1
     assert rows[0]["entry_date"] == "2021-05-02"  # human-readable full_date parsed
@@ -172,9 +170,7 @@ def _dayone_photo_entry(**overrides) -> dict:
 
 
 def test_parse_dayone_zip_extracts_photo_media():
-    rows = parse_dayone_zip(
-        build_dayone_zip([_dayone_photo_entry()], photos={MD5_1: PNG_1X1})
-    )
+    rows = parse_dayone_zip(build_dayone_zip([_dayone_photo_entry()], photos={MD5_1: PNG_1X1}))
     assert len(rows) == 1
     media = rows[0]["media"]
     assert len(media) == 1
@@ -202,11 +198,7 @@ def test_parse_dayone_zip_skips_hidden_and_missing_photo_members():
     md5_missing = "b" * 32
     rows = parse_dayone_zip(
         build_dayone_zip(
-            [
-                _dayone_photo_entry(
-                    photos=[{"md5": MD5_1, "hidden": True}, {"md5": md5_missing}]
-                )
-            ],
+            [_dayone_photo_entry(photos=[{"md5": MD5_1, "hidden": True}, {"md5": md5_missing}])],
             photos={MD5_1: PNG_1X1},
         )
     )
@@ -298,7 +290,12 @@ async def test_import_csv_via_endpoint(client):
 
 def test_parse_diarium_json_entry_strips_html_and_maps_mood():
     parsed = parse_diarium_json_entry(
-        {"date": "2026-03-04T00:00:00", "heading": "<b>Title</b>", "html": "<p>Body</p>", "rating": 5}
+        {
+            "date": "2026-03-04T00:00:00",
+            "heading": "<b>Title</b>",
+            "html": "<p>Body</p>",
+            "rating": 5,
+        }
     )
     assert parsed["entry_date"] == "2026-03-04"
     assert parsed["title"] == "Title"  # HTML stripped from heading
@@ -379,7 +376,9 @@ async def test_export_diarium_db_builds_diarium_schema(client, db_session, tmp_p
     # DiaryEntryId is .NET ticks; the importer's offset converts it back to the date.
     ticks = row["DiaryEntryId"]
     us = (ticks - 621355968000000000) / 10
-    assert datetime.fromtimestamp(us / 1_000_000, tz=timezone.utc).strftime("%Y-%m-%d") == "2026-01-15"
+    assert (
+        datetime.fromtimestamp(us / 1_000_000, tz=timezone.utc).strftime("%Y-%m-%d") == "2026-01-15"
+    )
     conn.close()
 
 
@@ -480,9 +479,7 @@ def test_parse_diarium_sqlite_imports_tags_and_persons_skips_trackers(tmp_path):
     conn = _real_diarium_db(tmp_path)
     target = datetime(2026, 1, 15, tzinfo=timezone.utc)
     ticks = 621355968000000000 + int(target.timestamp()) * 10_000_000
-    conn.execute(
-        "INSERT INTO Entries VALUES (?, 'Title', '<p>Body</p>', 3, 0.0, 0.0)", (ticks,)
-    )
+    conn.execute("INSERT INTO Entries VALUES (?, 'Title', '<p>Body</p>', 3, 0.0, 0.0)", (ticks,))
     for tag_id, value, tag_type in [(1, "work", 0), (2, "Alice", 1), (3, "Gym", 2)]:
         conn.execute(
             "INSERT INTO Tags (DiaryTagId, Value, Type) VALUES (?, ?, ?)",
@@ -505,7 +502,10 @@ def test_parse_diarium_sqlite_imports_tags_and_persons_skips_trackers(tmp_path):
 def test_parse_diarium_json_entry_accepts_real_diarium_shape():
     """Diarium's own JSON object model: tick-keyed, capitalized field names."""
     # 2026-01-15 00:00:00 local as .NET ticks.
-    ticks = 621355968000000000 + int(datetime(2026, 1, 15, tzinfo=timezone.utc).timestamp()) * 10_000_000
+    ticks = (
+        621355968000000000
+        + int(datetime(2026, 1, 15, tzinfo=timezone.utc).timestamp()) * 10_000_000
+    )
     parsed = parse_diarium_json_entry(
         {
             "DiaryEntryId": ticks,
@@ -671,7 +671,6 @@ async def test_markdown_zip_export_import_round_trips_media(
 ):
     """Markdown ZIP: frontmatter media manifest re-attaches files on import."""
     from sqlalchemy import text as sa_text
-
 
     entry, media, blob = await _seed_entry_with_media(db_session, monkeypatch, tmp_path)
 

@@ -50,9 +50,7 @@ class TagService:
         if not parent_ids:
             return {}
         rows = await self.db.execute(
-            select(Tag.parent_id, Tag)
-            .where(Tag.parent_id.in_(parent_ids))
-            .order_by(Tag.name)
+            select(Tag.parent_id, Tag).where(Tag.parent_id.in_(parent_ids)).order_by(Tag.name)
         )
         children: dict[int, list[Tag]] = {pid: [] for pid in parent_ids}
         for parent_id, tag in rows.all():

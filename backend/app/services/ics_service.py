@@ -134,9 +134,7 @@ def parse_ics(text: str) -> dict[str, Any]:
         else:
             end_iso = _end_from_duration(props)
         if "RRULE" in props and not recurring:
-            warnings.append(
-                "Recurring events are shown once, at their first occurrence."
-            )
+            warnings.append("Recurring events are shown once, at their first occurrence.")
             recurring = True
         events.append(
             {

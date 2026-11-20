@@ -49,6 +49,7 @@ def loopback_redirect_uri(request: Request, path: str) -> str:
         hostname = f"[{hostname.strip('[]')}]"  # IPv6 literals need brackets in URLs
     return f"http://{hostname}:{port}{path}"
 
+
 _SUCCESS_HTML = """<!DOCTYPE html><html><head><title>__TITLE__</title>
 <style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 .card{text-align:center;background:#1e293b;padding:3rem;border-radius:1.5rem;max-width:450px;border:1px solid #334155}

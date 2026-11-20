@@ -109,6 +109,7 @@ def _skip_encrypted_media(entry: Entry, media: Any, fmt: str) -> None:
         fmt,
     )
 
+
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -199,18 +200,14 @@ class ExportService:
         """Render one entry as the shared HTML fragment (single-file + ZIP exports)."""
         tags = [a.tag.name for a in entry.tag_associations if a.tag]
         title_part = f" — {html.escape(entry.title)}" if entry.title else ""
-        mood_part = (
-            f'<span class="mood">{html.escape(entry.mood)}</span> · ' if entry.mood else ""
-        )
+        mood_part = f'<span class="mood">{html.escape(entry.mood)}</span> · ' if entry.mood else ""
         tag_html = " ".join(f'<span class="tag">{html.escape(t)}</span>' for t in tags)
         if tag_html:
             tag_html = f"<div>{tag_html}</div>"
         # Mirrors the Markdown export's frontmatter `attachments_note`: the body
         # stays ciphertext and attachments are omitted, so say so in the document.
         note_part = (
-            f'<div class="encrypted-note">{ENCRYPTED_NOTE_TEXT}</div>'
-            if entry.is_encrypted
-            else ""
+            f'<div class="encrypted-note">{ENCRYPTED_NOTE_TEXT}</div>' if entry.is_encrypted else ""
         )
         return _ENTRY_HTML.format(
             date=html.escape(str(entry.entry_date)),
@@ -226,9 +223,7 @@ class ExportService:
     ) -> str:
         """Export entries as a single styled HTML document."""
         entries = await self._get_entries(start_date, end_date)
-        parts = [
-            self._entry_fragment(entry, self._md.render(entry.body)) for entry in entries
-        ]
+        parts = [self._entry_fragment(entry, self._md.render(entry.body)) for entry in entries]
 
         content = "\n".join(parts)
         return _HTML_TEMPLATE.format(title=html.escape("LifeLogr Export"), content=content)
@@ -250,15 +245,15 @@ class ExportService:
         page, mirroring the Markdown vault ZIP. Attachments not already
         referenced by the body render as a figure gallery under the entry.
         """
-        entries = await load_export_entries(
-            self.db, start_date, end_date, with_media=True
-        )
+        entries = await load_export_entries(self.db, start_date, end_date, with_media=True)
 
         # Zip assembly reads every attachment from disk — off the event loop,
         # same as the Markdown vault path.
         return await asyncio.to_thread(self._build_html_zip, entries, report)
 
-    def _build_html_zip(self, entries: list[Entry], report: ProgressReporter = noop_reporter) -> Path:
+    def _build_html_zip(
+        self, entries: list[Entry], report: ProgressReporter = noop_reporter
+    ) -> Path:
         """Synchronously assemble the HTML archive ZIP for ``entries``.
 
         Same-day entries sharing an attachment filename would silently
@@ -319,18 +314,17 @@ class ExportService:
                     template = _FIGURE_HTML.get(media.media_type, _FIGURE_HTML["document"])
                     gallery_parts.append(
                         template.format(
-                            src=f"../{zip_media_path}", name=html.escape(media.filename or "attachment")
+                            src=f"../{zip_media_path}",
+                            name=html.escape(media.filename or "attachment"),
                         )
                     )
 
                 gallery_html = (
-                    "\n  <div class=\"gallery\">" + "".join(gallery_parts) + "</div>"
+                    '\n  <div class="gallery">' + "".join(gallery_parts) + "</div>"
                     if gallery_parts
                     else ""
                 )
-                parts.append(
-                    self._entry_fragment(entry, body_html, gallery_html)
-                )
+                parts.append(self._entry_fragment(entry, body_html, gallery_html))
                 if report is not None:
                     report("render", entry_index + 1, len(entries))
 
@@ -433,9 +427,7 @@ class ExportService:
         self, start_date: date | None = None, end_date: date | None = None
     ) -> Path:
         """Export entries as an Obsidian vault ZIP, staged under DATA_DIR/tmp."""
-        entries = await load_export_entries(
-            self.db, start_date, end_date, with_media=True
-        )
+        entries = await load_export_entries(self.db, start_date, end_date, with_media=True)
 
         # Zip assembly reads every attachment from disk and deflate-compresses it
         # (plus markdown per entry) — CPU + blocking file I/O, so offload it.
@@ -781,8 +773,7 @@ def _build_diarium_database_sync(
                 else:
                     event_type = 0
                 conn.execute(
-                    "INSERT INTO Events (Type, Content, Tag, DiaryEntryId) "
-                    "VALUES (?, ?, ?, ?)",
+                    "INSERT INTO Events (Type, Content, Tag, DiaryEntryId) VALUES (?, ?, ?, ?)",
                     (event_type, event.content, event.label, entry_id),
                 )
         conn.commit()
@@ -845,15 +836,11 @@ def _dayone_photo_type(media: Any) -> tuple[str, str]:
     ext = ext.lower() if dot and ext else ""
     kind = (media.media_type or "").lower()
     if not ext:
-        ext = {"image": "jpg", "audio": "mp3", "video": "mp4", "document": "pdf"}.get(
-            kind, "bin"
-        )
+        ext = {"image": "jpg", "audio": "mp3", "video": "mp4", "document": "pdf"}.get(kind, "bin")
     return ext, _DAYONE_TYPE_BY_EXT.get(ext, _DAYONE_TYPE_BY_MEDIA.get(kind, ext))
 
 
-async def build_dayone_zip(
-    entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> Path:
+async def build_dayone_zip(entries: list[Entry], report: ProgressReporter = noop_reporter) -> Path:
     """Build a Day One JSON export ZIP, staged under DATA_DIR/tmp.
 
     Returns the staged file for Diarium's migration import.
@@ -867,9 +854,7 @@ async def build_dayone_zip(
     return await asyncio.to_thread(_build_dayone_zip_sync, entries, report)
 
 
-def _build_dayone_zip_sync(
-    entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> Path:
+def _build_dayone_zip_sync(entries: list[Entry], report: ProgressReporter = noop_reporter) -> Path:
     import hashlib
     import json
     import zipfile
@@ -980,13 +965,20 @@ def _build_dayone_zip_sync(
 # the vendor forum): full_date, date, weekday, time, mood, activities,
 # note_title, note. Mood uses Daylio's five words — LifeLogr's "great" maps to
 # Daylio's "rad" (both are the top of the 5-point scale Diarium rates 1–5).
-_DAYLIO_HEADER = ["full_date", "date", "weekday", "time", "mood", "activities", "note_title", "note"]
+_DAYLIO_HEADER = [
+    "full_date",
+    "date",
+    "weekday",
+    "time",
+    "mood",
+    "activities",
+    "note_title",
+    "note",
+]
 _MOOD_TO_DAYLIO = {"awful": "awful", "bad": "bad", "meh": "meh", "good": "good", "great": "rad"}
 
 
-def build_markdown_zip(
-    entries: list[Entry], report: ProgressReporter = noop_reporter
-) -> Path:
+def build_markdown_zip(entries: list[Entry], report: ProgressReporter = noop_reporter) -> Path:
     """Diarium-compatible markdown vault ZIP, staged under DATA_DIR/tmp;
     *report* gets render/media ticks."""
     out_path = stage_export_file()
@@ -1023,8 +1015,7 @@ def build_markdown_zip(
                 for m in entry.media
                 # Attachments of an encrypted entry never export (the body is
                 # ciphertext, so the files would be orphaned plaintext).
-                if not entry.is_encrypted
-                and (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
+                if not entry.is_encrypted and (Path(settings.MEDIA_DIR) / m.storage_path).is_file()
             ]
             if exportable_media:
                 frontmatter += "media:\n"
@@ -1061,6 +1052,7 @@ def build_markdown_zip(
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
     return out_path
+
 
 def build_daylio_csv(entries: list[Entry]) -> bytes:
     """Serialize entries into Daylio CSV text (as bytes) for Diarium import.
@@ -1135,16 +1127,13 @@ def build_archive(
     from app.core.config import settings
 
     media_total = sum(
-        1
-        for e in entries
-        for m in e.media
-        if (settings.MEDIA_DIR / m.storage_path).is_file()
+        1 for e in entries for m in e.media if (settings.MEDIA_DIR / m.storage_path).is_file()
     )
     media_total += sum(
         1
         for n in notes or []
         for m in n.get("media", [])
-        if (settings.MEDIA_DIR / m["path"][len("media/"):]).is_file()
+        if (settings.MEDIA_DIR / m["path"][len("media/") :]).is_file()
     )
     media_done = 0
     if report is not None:
@@ -1209,7 +1198,7 @@ def build_archive(
         # entry media's YYYY/MM paths).
         for note in notes or []:
             for m in note.get("media", []):
-                src = settings.MEDIA_DIR / m["path"][len("media/"):]
+                src = settings.MEDIA_DIR / m["path"][len("media/") :]
                 if src.is_file():
                     zf.write(str(src), m["path"])
                     media_done += 1

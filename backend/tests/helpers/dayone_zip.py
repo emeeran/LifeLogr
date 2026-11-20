@@ -26,7 +26,9 @@ def photo_bytes(data: bytes = PNG_1X1) -> tuple[str, bytes]:
     return hashlib.md5(data, usedforsecurity=False).hexdigest(), data
 
 
-def build_dayone_zip(entries: list[dict[str, Any]], photos: dict[str, bytes] | None = None) -> bytes:
+def build_dayone_zip(
+    entries: list[dict[str, Any]], photos: dict[str, bytes] | None = None
+) -> bytes:
     """Build a Day One export ZIP.
 
     *entries* are raw Day One entry dicts (``creationDate``, ``text``, …).

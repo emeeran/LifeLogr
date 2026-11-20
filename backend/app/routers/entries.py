@@ -312,9 +312,7 @@ async def list_geotags(
         filters.append(Entry.entry_date <= end_date)
 
     total = (
-        await db.execute(
-            select(sa_func.count()).select_from(Entry).where(*filters)
-        )
+        await db.execute(select(sa_func.count()).select_from(Entry).where(*filters))
     ).scalar_one()
     rows = (
         (
@@ -333,9 +331,7 @@ async def list_geotags(
 
     items = []
     for entry in rows:
-        first_image = next(
-            (m for m in entry.media if m.media_type == "image"), None
-        )
+        first_image = next((m for m in entry.media if m.media_type == "image"), None)
         # The query filters both coordinates non-null (and the map client
         # requires them) — narrow so the strict schema constructor type-checks.
         assert entry.latitude is not None and entry.longitude is not None
@@ -391,9 +387,7 @@ async def _export_entries(
     )
 
 
-async def _run_note_archive_import(
-    db: AsyncSession, items: list[dict[str, Any]]
-) -> dict[str, Any]:
+async def _run_note_archive_import(db: AsyncSession, items: list[dict[str, Any]]) -> dict[str, Any]:
     """Restore the notes carried in a native archive (v2) after the entries."""
     from app.services.notes_export_service import NotesExportService
 
@@ -496,7 +490,11 @@ async def _run_export(
             return await build(session, report)
 
         return start_export_job(
-            background_tasks, kind, filename, _build, session_factory=async_session,
+            background_tasks,
+            kind,
+            filename,
+            _build,
+            session_factory=async_session,
         )
 
     staged = await build(db, noop_reporter)
@@ -525,8 +523,13 @@ async def export_markdown(
         return await asyncio.to_thread(build_markdown_zip, entries, report)
 
     return await _run_export(
-        background_tasks, "export-markdown", "diarium-export.zip",
-        "application/zip", as_job, db, _build,
+        background_tasks,
+        "export-markdown",
+        "diarium-export.zip",
+        "application/zip",
+        as_job,
+        db,
+        _build,
     )
 
 
@@ -548,13 +551,16 @@ async def export_html_zip(
     """
 
     async def _build(session: AsyncSession, report: ProgressReporter) -> Path:
-        return await ExportService(session).export_html_zip(
-            start_date, end_date, report=report
-        )
+        return await ExportService(session).export_html_zip(start_date, end_date, report=report)
 
     return await _run_export(
-        background_tasks, "export-html-zip", "lifelogr-export-html.zip",
-        "application/zip", as_job, db, _build,
+        background_tasks,
+        "export-html-zip",
+        "lifelogr-export-html.zip",
+        "application/zip",
+        as_job,
+        db,
+        _build,
     )
 
 
@@ -649,8 +655,13 @@ async def export_archive(
         return await asyncio.to_thread(build_archive, entries, notes, report)
 
     return await _run_export(
-        background_tasks, "export-archive", "lifelogr-archive.zip",
-        "application/zip", as_job, db, _build,
+        background_tasks,
+        "export-archive",
+        "lifelogr-archive.zip",
+        "application/zip",
+        as_job,
+        db,
+        _build,
     )
 
 
@@ -718,8 +729,13 @@ async def export_diarium_db(
         return await build_diarium_database(entries, report=report)
 
     return await _run_export(
-        background_tasks, "export-diary", "lifelogr-export.diary",
-        "application/octet-stream", as_job, db, _build,
+        background_tasks,
+        "export-diary",
+        "lifelogr-export.diary",
+        "application/octet-stream",
+        as_job,
+        db,
+        _build,
     )
 
 
@@ -759,16 +775,19 @@ async def export_dayone_zip(
         return await build_dayone_zip(entries, report=report)
 
     return await _run_export(
-        background_tasks, "export-dayone", "lifelogr-dayone.zip",
-        "application/zip", as_job, db, _build,
+        background_tasks,
+        "export-dayone",
+        "lifelogr-dayone.zip",
+        "application/zip",
+        as_job,
+        db,
+        _build,
     )
 
 
 @router.post("/backfill-titles", response_model=dict)
 async def backfill_titles(
-    dry_run: bool = Query(
-        True, description="Report what would change without writing (default)."
-    ),
+    dry_run: bool = Query(True, description="Report what would change without writing (default)."),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Derive titles for untitled entries from their first meaningful line.
@@ -805,9 +824,7 @@ async def backfill_titles(
     for entry_id, body, mood, latitude, longitude, sync_hash in rows:
         derived = derive_title(body)
         if derived:
-            candidates.append(
-                (entry_id, derived, body, mood, latitude, longitude, sync_hash)
-            )
+            candidates.append((entry_id, derived, body, mood, latitude, longitude, sync_hash))
 
     if dry_run:
         return {
@@ -815,8 +832,7 @@ async def backfill_titles(
             "candidates": len(candidates),
             "updated": 0,
             "samples": [
-                {"id": entry_id, "title": derived}
-                for entry_id, derived, *_ in candidates[:5]
+                {"id": entry_id, "title": derived} for entry_id, derived, *_ in candidates[:5]
             ],
         }
 
@@ -824,9 +840,7 @@ async def backfill_titles(
     for entry_id, derived, body, mood, latitude, longitude, sync_hash in candidates:
         values: dict[str, Any] = {"title": derived}
         if sync_hash is not None:
-            values["sync_hash"] = _entry_text_hash(
-                derived, body, mood, latitude, longitude
-            )
+            values["sync_hash"] = _entry_text_hash(derived, body, mood, latitude, longitude)
         await db.execute(update(Entry).where(Entry.id == entry_id).values(**values))
         updated += 1
     await db.commit()
@@ -835,10 +849,7 @@ async def backfill_titles(
         "dry_run": False,
         "candidates": len(candidates),
         "updated": updated,
-        "samples": [
-            {"id": entry_id, "title": derived}
-            for entry_id, derived, *_ in candidates[:5]
-        ],
+        "samples": [{"id": entry_id, "title": derived} for entry_id, derived, *_ in candidates[:5]],
     }
 
 
@@ -1223,9 +1234,7 @@ def _remap_media_urls(body: str, ref_map: dict[int, int]) -> str:
     """Rewrite /api/v1/media/{old}/file references to their imported ids."""
     if not ref_map:
         return body
-    return _MEDIA_URL_RE.sub(
-        lambda m: f"/api/v1/media/{ref_map[int(m.group(1))]}/file", body
-    )
+    return _MEDIA_URL_RE.sub(lambda m: f"/api/v1/media/{ref_map[int(m.group(1))]}/file", body)
 
 
 async def _attach_imported_media(
@@ -1453,9 +1462,7 @@ async def import_file(
                             for m in item.get("media", []):
                                 member = m.get("path", "")
                                 m["data"] = (
-                                    _read_member(z, member)
-                                    if member in media_names
-                                    else b""
+                                    _read_member(z, member) if member in media_names else b""
                                 )
                             archive_notes.append(item)
                 else:
@@ -1484,9 +1491,7 @@ async def import_file(
                                         data = json.loads(_read_member(z, n))
                                         if isinstance(data, list):
                                             for entry in data:
-                                                entries_data.append(
-                                                    parse_diarium_json_entry(entry)
-                                                )
+                                                entries_data.append(parse_diarium_json_entry(entry))
                                     except HTTPException:
                                         raise
                                     except Exception:
@@ -1503,18 +1508,14 @@ async def import_file(
                                 # A Latin-1 .md or broken frontmatter must not
                                 # abort the whole import — skip the file like
                                 # the JSON branches skip a bad record.
-                                logger.warning(
-                                    "Skipping unparseable markdown member %s: %s", mf, e
-                                )
+                                logger.warning("Skipping unparseable markdown member %s: %s", mf, e)
                                 continue
                             if entry:
                                 # Resolve the frontmatter media manifest against
                                 # this zip's media/ members.
                                 for m in entry.get("media", []):
                                     member = m.get("path", "")
-                                    m["data"] = (
-                                        _read_member(z, member) if member in names else b""
-                                    )
+                                    m["data"] = _read_member(z, member) if member in names else b""
                                 entries_data.append(entry)
 
             elif filename.endswith(".csv"):
@@ -1529,8 +1530,10 @@ async def import_file(
                     ) from e
                 # A hand-edited export may have a scalar at the top level.
                 items = (
-                    data if isinstance(data, list)
-                    else data.get("entries", []) if isinstance(data, dict)
+                    data
+                    if isinstance(data, list)
+                    else data.get("entries", [])
+                    if isinstance(data, dict)
                     else []
                 )
                 for item in items:
@@ -1658,9 +1661,7 @@ async def _run_entry_import(
             existing_sigs[
                 (
                     str(_ed),
-                    hashlib.sha256(
-                        ((_prefix or "") + "\x00" + (_mood or "")).encode()
-                    ).hexdigest(),
+                    hashlib.sha256(((_prefix or "") + "\x00" + (_mood or "")).encode()).hexdigest(),
                 )
             ] = _id
 
@@ -1882,9 +1883,7 @@ async def _run_entry_import(
                     "diarium" if ext_id else None
                 )
                 created.external_id = ext_id
-                created.external_updated_at = _coerce_datetime(
-                    entry.get("external_updated_at")
-                )
+                created.external_updated_at = _coerce_datetime(entry.get("external_updated_at"))
                 created.sync_hash = _entry_text_hash(
                     created.title, created.body, created.mood, created.latitude, created.longitude
                 )
@@ -1974,9 +1973,7 @@ async def _entry_media_hashes(db: AsyncSession, entry_id: int) -> Counter[str]:
     for storage_path in paths:
         try:
             digests[
-                hashlib.sha256(
-                    (Path(settings.MEDIA_DIR) / storage_path).read_bytes()
-                ).hexdigest()
+                hashlib.sha256((Path(settings.MEDIA_DIR) / storage_path).read_bytes()).hexdigest()
             ] += 1
         except OSError:
             logger.warning("Imported media missing on disk, cannot fingerprint: %s", storage_path)
@@ -2064,9 +2061,7 @@ async def _merge_existing_entry(
         tag_id: value
         for tag_id, value in (
             await db.execute(
-                select(EntryTag.tag_id, EntryTag.tracking_value).where(
-                    EntryTag.entry_id == row.id
-                )
+                select(EntryTag.tag_id, EntryTag.tracking_value).where(EntryTag.entry_id == row.id)
             )
         ).all()
     }

@@ -6,7 +6,6 @@ from sqlalchemy import select
 from app.models.note import NotePage
 
 
-
 async def _make_note(client: AsyncClient, **kw) -> dict:
     payload = {"title": "Note", "body": "main body", **kw}
     r = await client.post("/api/v1/notes", json=payload)
@@ -152,21 +151,15 @@ async def test_page_color_roundtrip(client: AsyncClient):
     got = (await client.get(f"/api/v1/notes/{nid}")).json()
     assert got["pages"][0]["color"] == "#e11d48"
 
-    r = await client.patch(
-        f"/api/v1/notes/{nid}/pages/{page['id']}", json={"color": "#0284c7"}
-    )
+    r = await client.patch(f"/api/v1/notes/{nid}/pages/{page['id']}", json={"color": "#0284c7"})
     assert r.status_code == 200, r.text
     assert r.json()["color"] == "#0284c7"
 
     # Unset (empty string clears the label, matching Note/Folder behaviour).
-    r = await client.patch(
-        f"/api/v1/notes/{nid}/pages/{page['id']}", json={"color": ""}
-    )
+    r = await client.patch(f"/api/v1/notes/{nid}/pages/{page['id']}", json={"color": ""})
     assert r.status_code == 200, r.text
     assert r.json()["color"] == ""
 
     # PATCH without a colour leaves the stored value untouched.
-    r = await client.patch(
-        f"/api/v1/notes/{nid}/pages/{page['id']}", json={"title": "renamed"}
-    )
+    r = await client.patch(f"/api/v1/notes/{nid}/pages/{page['id']}", json={"title": "renamed"})
     assert r.json()["color"] == ""

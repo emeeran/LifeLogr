@@ -42,6 +42,7 @@ def unlink_media_file(path: Path, *, context: str) -> None:
     except OSError:
         logger.warning("Could not remove %s file %s", context, path, exc_info=True)
 
+
 # Magic-number signatures for dangerous file types (reject these)
 _BLOCKED_SIGNATURES: dict[bytes, str] = {
     b"MZ": "Windows executable",
@@ -154,9 +155,7 @@ def validate_import_path(path: str) -> Path:
 
     home = Path.home().resolve()
     if not any(_is_under(p, root) for root in allowed_import_roots()):
-        raise ValidationError(
-            "Imports are restricted to files under your home directory"
-        ) from None
+        raise ValidationError("Imports are restricted to files under your home directory") from None
     if _has_hidden_component(p, home):
         raise ValidationError("Imports from hidden folders are not allowed") from None
     for sensitive in (
@@ -297,7 +296,9 @@ async def media_file_response(
                         media_crypto.read_range_file, path, storage_path, start, length
                     )
                 except ValueError:
-                    logger.warning("Decrypt failed serving %s (range %s)", storage_path, range_header)
+                    logger.warning(
+                        "Decrypt failed serving %s (range %s)", storage_path, range_header
+                    )
                     raise ConflictError(
                         "Attachment cannot be decrypted with this installation's key"
                     ) from None
@@ -305,7 +306,10 @@ async def media_file_response(
                     data,
                     status_code=206,
                     media_type=content_type,
-                    headers={**headers, "Content-Range": f"bytes {start}-{start + length - 1}/{plaintext_len}"},
+                    headers={
+                        **headers,
+                        "Content-Range": f"bytes {start}-{start + length - 1}/{plaintext_len}",
+                    },
                 )
 
     try:
@@ -314,9 +318,7 @@ async def media_file_response(
         )
     except ValueError:
         logger.warning("Decrypt failed serving %s", storage_path)
-        raise ConflictError(
-            "Attachment cannot be decrypted with this installation's key"
-        ) from None
+        raise ConflictError("Attachment cannot be decrypted with this installation's key") from None
     return Response(data, media_type=content_type, headers=headers)
 
 
@@ -325,9 +327,7 @@ def _inline_disposition(filename: str) -> dict[str, str]:
     ascii_name = filename.encode("ascii", "ignore").decode()
     if ascii_name == filename:
         return {"Content-Disposition": f'inline; filename="{filename}"'}
-    return {
-        "Content-Disposition": f"inline; filename*=utf-8''{quote(filename, safe='')}"
-    }
+    return {"Content-Disposition": f"inline; filename*=utf-8''{quote(filename, safe='')}"}
 
 
 # Extension → MIME mapping for path-based imports (Tauri native drag-drop gives
@@ -437,7 +437,9 @@ class MediaService:
             # Attachments of encrypted items never touch disk in the clear
             # (docs/design/media-encryption.md §5). file_size records the
             # ciphertext — the bytes actually on disk and in backups.
-            final_data = await asyncio.to_thread(media_crypto.encrypt_media, final_data, storage_path)
+            final_data = await asyncio.to_thread(
+                media_crypto.encrypt_media, final_data, storage_path
+            )
             file_size = len(final_data)
         await asyncio.to_thread(full_path.write_bytes, final_data)
 
@@ -496,7 +498,9 @@ class MediaService:
         if encrypt:
             if not convert:
                 final_data = await asyncio.to_thread(src.read_bytes)
-            final_data = await asyncio.to_thread(media_crypto.encrypt_media, final_data, storage_path)
+            final_data = await asyncio.to_thread(
+                media_crypto.encrypt_media, final_data, storage_path
+            )
             file_size = len(final_data)
             await asyncio.to_thread(full_path.write_bytes, final_data)
         elif convert:
@@ -600,9 +604,7 @@ class MediaService:
         data = await asyncio.to_thread(full_path.read_bytes)
         if media_crypto.looks_encrypted(data):
             # In-memory decrypt (OCR path); never writes a plaintext temp file.
-            data = await asyncio.to_thread(
-                media_crypto.decrypt_media, data, media.storage_path
-            )
+            data = await asyncio.to_thread(media_crypto.decrypt_media, data, media.storage_path)
         return data, content_type, media.filename
 
     async def get_file_path(self, media_id: int) -> tuple[Path, str, str]:
@@ -665,7 +667,9 @@ class MediaService:
                 except Exception:
                     # A corrupt/undecodable image must never 500 the timeline grid —
                     # fall back to streaming the original instead.
-                    logger.warning("Thumbnail generation failed for media %s", media_id, exc_info=True)
+                    logger.warning(
+                        "Thumbnail generation failed for media %s", media_id, exc_info=True
+                    )
                     return full_path, content_type
             return thumb_path, "image/webp"
 

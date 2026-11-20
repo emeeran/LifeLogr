@@ -286,17 +286,11 @@ class TestNoteMediaOcr:
         )
         mid = up.json()["id"]
 
-        text = (
-            await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr")
-        ).json()["text"]
+        text = (await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr")).json()["text"]
         # Frontend inserts OCR text into the body, then autosave PATCHes.
-        await client.patch(
-            f"/api/v1/notes/{note['id']}", json={"body": f"snip note\n\n{text}"}
-        )
+        await client.patch(f"/api/v1/notes/{note['id']}", json={"body": f"snip note\n\n{text}"})
 
-        found = (
-            await client.get("/api/v1/notes/search", params={"q": "quantumwidget"})
-        ).json()
+        found = (await client.get("/api/v1/notes/search", params={"q": "quantumwidget"})).json()
         assert any(n["id"] == note["id"] for n in found["items"])
 
     async def test_ocr_rejects_non_image(self, client: AsyncClient):
@@ -311,9 +305,7 @@ class TestNoteMediaOcr:
         r = await client.post(f"/api/v1/notes/{note['id']}/media/{mid}/ocr")
         assert r.status_code == 400
 
-    async def test_ocr_missing_binary_returns_500_with_hint(
-        self, client: AsyncClient, monkeypatch
-    ):
+    async def test_ocr_missing_binary_returns_500_with_hint(self, client: AsyncClient, monkeypatch):
         def boom(data: bytes, lang: str = "eng") -> str:
             raise FileNotFoundError("tesseract not found")
 
@@ -373,9 +365,7 @@ class TestNoteMediaOcr:
         assert r.status_code == 400
         assert "h4x" in r.json()["detail"]
 
-    async def test_ocr_missing_language_pack_returns_500(
-        self, client: AsyncClient, monkeypatch
-    ):
+    async def test_ocr_missing_language_pack_returns_500(self, client: AsyncClient, monkeypatch):
         from app.services.ocr_service import OcrLanguageUnavailable
 
         def fake_ocr(data: bytes, lang: str = "eng") -> str:
@@ -453,9 +443,7 @@ class TestNoteWebClip:
 
     async def test_rejects_invalid_scheme(self, client: AsyncClient):
         # Pydantic HttpUrl only allows http/https → 422 validation error.
-        r = await client.post(
-            "/api/v1/notes/web-clip", json={"url": "file:///etc/passwd"}
-        )
+        r = await client.post("/api/v1/notes/web-clip", json={"url": "file:///etc/passwd"})
         assert r.status_code == 422
 
     async def test_blocks_redirect_to_internal(self, client: AsyncClient, monkeypatch):
@@ -486,9 +474,7 @@ class TestNoteWebClip:
         monkeypatch.setattr(
             "app.services.web_clip_service._hostname_resolves_internal", lambda host: True
         )
-        r = await client.post(
-            "/api/v1/notes/web-clip", json={"url": "https://internal.example/"}
-        )
+        r = await client.post("/api/v1/notes/web-clip", json={"url": "https://internal.example/"})
         assert r.status_code == 400
 
 
@@ -510,20 +496,14 @@ class TestNoteNesting:
     async def test_unnest_with_clear_flag(self, client: AsyncClient):
         parent = await _create_note(client)
         child = await _create_note(client)
-        await client.patch(
-            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
-        )
-        r = await client.patch(
-            f"/api/v1/notes/{child['id']}", json={"clear_parent_note": True}
-        )
+        await client.patch(f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]})
+        r = await client.patch(f"/api/v1/notes/{child['id']}", json={"clear_parent_note": True})
         assert r.status_code == 200
         assert r.json()["parent_note_id"] is None
 
     async def test_nest_rejects_self(self, client: AsyncClient):
         note = await _create_note(client)
-        r = await client.patch(
-            f"/api/v1/notes/{note['id']}", json={"parent_note_id": note["id"]}
-        )
+        r = await client.patch(f"/api/v1/notes/{note['id']}", json={"parent_note_id": note["id"]})
         assert r.status_code == 400
 
     async def test_nest_rejects_own_descendant(self, client: AsyncClient):
@@ -533,9 +513,7 @@ class TestNoteNesting:
         await client.patch(
             f"/api/v1/notes/{parent['id']}", json={"parent_note_id": grandparent["id"]}
         )
-        await client.patch(
-            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
-        )
+        await client.patch(f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]})
         # grandparent under child would close a 3-cycle
         r = await client.patch(
             f"/api/v1/notes/{grandparent['id']}", json={"parent_note_id": child["id"]}
@@ -558,12 +536,8 @@ class TestNoteNesting:
         folder_id = folder_r.json()["id"]
         parent = await _create_note(client)
         child = await _create_note(client)
-        await client.patch(
-            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
-        )
-        r = await client.patch(
-            f"/api/v1/notes/{child['id']}", json={"folder_id": folder_id}
-        )
+        await client.patch(f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]})
+        r = await client.patch(f"/api/v1/notes/{child['id']}", json={"folder_id": folder_id})
         assert r.status_code == 200
         assert r.json()["parent_note_id"] is None
         assert r.json()["folder_id"] == folder_id
@@ -583,9 +557,7 @@ class TestNoteNesting:
         await client.patch(
             f"/api/v1/notes/{parent['id']}", json={"parent_note_id": grandparent["id"]}
         )
-        await client.patch(
-            f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]}
-        )
+        await client.patch(f"/api/v1/notes/{child['id']}", json={"parent_note_id": parent["id"]})
         r = await client.delete(f"/api/v1/notes/{parent['id']}")
         assert r.status_code in (200, 204)
         # Child re-attaches to the grandparent, not to nothing.
@@ -595,7 +567,5 @@ class TestNoteNesting:
 
     async def test_nest_missing_parent_returns_404(self, client: AsyncClient):
         note = await _create_note(client)
-        r = await client.patch(
-            f"/api/v1/notes/{note['id']}", json={"parent_note_id": 9999}
-        )
+        r = await client.patch(f"/api/v1/notes/{note['id']}", json={"parent_note_id": 9999})
         assert r.status_code == 404

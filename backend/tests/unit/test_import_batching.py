@@ -70,9 +70,7 @@ class TestBatchedCommit:
             EnrichmentService, "schedule", staticmethod(lambda eid, title, body: None)
         )
 
-    async def test_small_import_commits_once(
-        self, client: AsyncClient, db_session, monkeypatch
-    ):
+    async def test_small_import_commits_once(self, client: AsyncClient, db_session, monkeypatch):
         self._stub_enrichment(monkeypatch)
         counter = _CommitCounter(db_session)
         try:
@@ -152,10 +150,10 @@ class TestPartialImportSemantics:
         assert reasons[4] == "missing entry_date or body"
 
         stored = (
-            await db_session.execute(
-                select(Entry).where(Entry.entry_date >= date(2026, 10, 1))
-            )
-        ).scalars().all()
+            (await db_session.execute(select(Entry).where(Entry.entry_date >= date(2026, 10, 1))))
+            .scalars()
+            .all()
+        )
         assert {e.body for e in stored} == {"good row 0", "good row 1", "good row 2", "good row 3"}
 
     async def test_the_failing_row_itself_is_not_persisted(self, client: AsyncClient, db_session):

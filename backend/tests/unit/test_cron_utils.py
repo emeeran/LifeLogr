@@ -24,13 +24,13 @@ def test_daily_before_time_rolls_back_a_day():
 def test_weekly_named_days():
     # "0 9 * * mon,wed,fri" = 09:00 on Mon/Wed/Fri.
     # 2026-01-16 is Friday; 2026-01-15 is Thursday.
-    assert last_scheduled_occurrence("0 9 * * mon,wed,fri", datetime(2026, 1, 16, 10, 0)) == datetime(
-        2026, 1, 16, 9, 0
-    )
+    assert last_scheduled_occurrence(
+        "0 9 * * mon,wed,fri", datetime(2026, 1, 16, 10, 0)
+    ) == datetime(2026, 1, 16, 9, 0)
     # Thursday doesn't match -> rolls back to Wednesday 2026-01-14 09:00.
-    assert last_scheduled_occurrence("0 9 * * mon,wed,fri", datetime(2026, 1, 15, 10, 0)) == datetime(
-        2026, 1, 14, 9, 0
-    )
+    assert last_scheduled_occurrence(
+        "0 9 * * mon,wed,fri", datetime(2026, 1, 15, 10, 0)
+    ) == datetime(2026, 1, 14, 9, 0)
 
 
 def test_monthly_last_day():

@@ -74,9 +74,7 @@ class TestEntryImportProgress:
 
 
 class TestImportFileJob:
-    async def test_as_job_runs_to_done(
-        self, client: AsyncClient, db_session: AsyncSession
-    ) -> None:
+    async def test_as_job_runs_to_done(self, client: AsyncClient, db_session: AsyncSession) -> None:
         diary = build_diary(
             [
                 {"date": "2026-02-01", "heading": "Day one", "text": "<p>hello</p>"},

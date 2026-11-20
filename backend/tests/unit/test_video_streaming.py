@@ -29,16 +29,14 @@ class TestVideoFileEndpoint:
         r = await client.get(f"/api/v1/videos/{note.id}/file")
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("video/")
-        assert 'inline' in r.headers.get("content-disposition", "")
+        assert "inline" in r.headers.get("content-disposition", "")
         assert r.headers.get("accept-ranges") == "bytes"
         assert r.content == _MP4_STUB
 
     async def test_range_request_returns_partial_content(self, client: AsyncClient, db_session):
         """The whole point: seeking needs Range support."""
         note = await _video(db_session)
-        r = await client.get(
-            f"/api/v1/videos/{note.id}/file", headers={"Range": "bytes=4-15"}
-        )
+        r = await client.get(f"/api/v1/videos/{note.id}/file", headers={"Range": "bytes=4-15"})
         assert r.status_code == 206
         assert r.content == _MP4_STUB[4:16]
         assert r.headers["content-range"].startswith("bytes 4-15/")

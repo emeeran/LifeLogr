@@ -78,6 +78,7 @@ def _service_entry_context(data: Any) -> EntryContext | None:
         tags=tuple(data.tags),
     )
 
+
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
 

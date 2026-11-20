@@ -47,9 +47,7 @@ class TestHealthOllamaProbeCache:
             assert await main._ollama_probe_status() == "ok"
             assert route.call_count == 2
 
-    async def test_health_reports_cached_probe(
-        self, client: AsyncClient, monkeypatch
-    ) -> None:
+    async def test_health_reports_cached_probe(self, client: AsyncClient, monkeypatch) -> None:
         """/health surfaces the cached status and never re-probes inside the TTL."""
         import time as _time
 

@@ -242,9 +242,7 @@ async def vacuum_database(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     # this correct everywhere).
     bind = db.get_bind()
     sync_engine: Engine = bind if isinstance(bind, Engine) else bind.engine
-    sync_url = str(sync_engine.url.render_as_string(hide_password=False)).replace(
-        "+aiosqlite", ""
-    )
+    sync_url = str(sync_engine.url.render_as_string(hide_password=False)).replace("+aiosqlite", "")
     await asyncio.to_thread(_vacuum_sync, sync_url)
     after = db_file_size()
     return {"status": "ok", "reclaimed_bytes": max(0, before - after)}
@@ -252,9 +250,7 @@ async def vacuum_database(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
 
 @router.post("/encrypt-media")
 async def encrypt_media_migration(
-    dry_run: bool = Query(
-        True, description="Report what would change without writing (default)."
-    ),
+    dry_run: bool = Query(True, description="Report what would change without writing (default)."),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Encrypt existing attachments of encrypted entries/notes (SEC-MEDIA-5).
@@ -269,9 +265,7 @@ async def encrypt_media_migration(
     from app.services.media_migration import encrypt_pending_attachments
 
     if not settings.ENCRYPT_MEDIA:
-        raise ValidationError(
-            "Media encryption is disabled — set ENCRYPT_MEDIA to enable it"
-        )
+        raise ValidationError("Media encryption is disabled — set ENCRYPT_MEDIA to enable it")
     report = await encrypt_pending_attachments(db, dry_run=dry_run)
     return report
 
@@ -327,9 +321,7 @@ async def import_recovery_kit(
     from app.services.recovery_kit import RecoveryKitError, import_kit
 
     try:
-        return await import_kit(
-            db, data.kit, data.passphrase, confirm_replace=data.confirm_replace
-        )
+        return await import_kit(db, data.kit, data.passphrase, confirm_replace=data.confirm_replace)
     except RecoveryKitError as exc:
         raise ValidationError(str(exc)) from None
 

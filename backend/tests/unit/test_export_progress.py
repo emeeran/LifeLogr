@@ -79,7 +79,6 @@ class TestArchiveExportProgress:
         for _, done, total in events[:-1]:
             assert done <= total
 
-
     def test_zero_media_no_nan(self, tmp_path, monkeypatch) -> None:
         from app.services.export_service import build_archive
 
@@ -104,9 +103,7 @@ class TestExportJob:
             return b"export-bytes"
 
         tasks = BackgroundTasks()
-        body = start_export_job(
-            tasks, "export-archive", "out.zip", builder, session_factory=None
-        )
+        body = start_export_job(tasks, "export-archive", "out.zip", builder, session_factory=None)
         await tasks()
 
         job = jobs.get(body["job_id"])

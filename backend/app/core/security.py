@@ -125,7 +125,7 @@ def rekey(secret_key: str) -> None:
     """
     global _v2_key, _v1_key  # noqa: PLW0603
     material = secret_key.encode()
-    _v2_key = HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=_V2_SALT, info=_V2_INFO
-    ).derive(material)
+    _v2_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=_V2_SALT, info=_V2_INFO).derive(
+        material
+    )
     _v1_key = material.ljust(32, b"\0")[:32]

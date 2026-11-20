@@ -58,7 +58,11 @@ class TestBatchedListing:
         deleted = (
             await client.post(
                 "/api/v1/entries",
-                json={"entry_date": date(2026, 5, 2).isoformat(), "body": "y", "tag_ids": [ids["child"]]},
+                json={
+                    "entry_date": date(2026, 5, 2).isoformat(),
+                    "body": "y",
+                    "tag_ids": [ids["child"]],
+                },
             )
         ).json()
         await client.delete(f"/api/v1/entries/{deleted['id']}")

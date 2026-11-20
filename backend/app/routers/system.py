@@ -109,9 +109,7 @@ async def _busy_state(db: AsyncSession) -> dict[str, Any]:
     in_progress = (
         (
             await db.execute(
-                select(BackupSnapshot.config_id).where(
-                    BackupSnapshot.status == "in_progress"
-                )
+                select(BackupSnapshot.config_id).where(BackupSnapshot.status == "in_progress")
             )
         )
         .scalars()

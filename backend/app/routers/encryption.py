@@ -20,9 +20,7 @@ from app.services.encryption_service import EncryptionService
 
 router = APIRouter(prefix="/api/v1/entries/{entry_id}/encryption", tags=["encryption"])
 global_router = APIRouter(prefix="/api/v1/encryption", tags=["encryption"])
-note_encryption_router = APIRouter(
-    prefix="/api/v1/notes/{note_id}/encryption", tags=["encryption"]
-)
+note_encryption_router = APIRouter(prefix="/api/v1/notes/{note_id}/encryption", tags=["encryption"])
 
 
 @router.post("/encrypt", response_model=EncryptionStatusResponse)

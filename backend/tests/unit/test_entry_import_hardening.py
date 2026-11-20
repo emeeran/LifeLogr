@@ -28,9 +28,7 @@ class TestTagIdsHonoured:
         db_session.add(tag)
         await db_session.commit()
 
-        entry = await _create_entry(
-            client, "2026-06-01", "no hashtags here", tag_ids=[tag.id]
-        )
+        entry = await _create_entry(client, "2026-06-01", "no hashtags here", tag_ids=[tag.id])
         assert [t["name"] for t in entry["tags"]] == ["imported-tag"]
 
     async def test_create_ignores_body_hashtags(self, client: AsyncClient):
@@ -94,18 +92,16 @@ class TestTagIdsHonoured:
         assert r.json()["skipped"] == 0
 
         row = (
-            await db_session.execute(
-                select(Entry).where(Entry.entry_date == date(2026, 7, 1))
-            )
+            await db_session.execute(select(Entry).where(Entry.entry_date == date(2026, 7, 1)))
         ).scalar_one()
 
         tag_names = {
             t.name
             for t in (
                 await db_session.execute(
-                    select(Tag).join(EntryTag, EntryTag.tag_id == Tag.id).where(
-                        EntryTag.entry_id == row.id
-                    )
+                    select(Tag)
+                    .join(EntryTag, EntryTag.tag_id == Tag.id)
+                    .where(EntryTag.entry_id == row.id)
                 )
             ).scalars()
         }
@@ -135,9 +131,9 @@ class TestTagIdsHonoured:
             t.name
             for t in (
                 await db_session.execute(
-                    select(Tag).join(EntryTag, EntryTag.tag_id == Tag.id).where(
-                        EntryTag.entry_id == row.id
-                    )
+                    select(Tag)
+                    .join(EntryTag, EntryTag.tag_id == Tag.id)
+                    .where(EntryTag.entry_id == row.id)
                 )
             ).scalars()
         }
@@ -167,9 +163,7 @@ class TestGeoPassthrough:
 
 
 class TestTagFilterDedupes:
-    async def test_entry_with_two_matching_tags_appears_once(
-        self, client: AsyncClient, db_session
-    ):
+    async def test_entry_with_two_matching_tags_appears_once(self, client: AsyncClient, db_session):
         t1 = Tag(name="one")
         t2 = Tag(name="two")
         db_session.add_all([t1, t2])
@@ -178,7 +172,10 @@ class TestTagFilterDedupes:
         entry = await _create_entry(client, "2026-06-10", "tagged entry")
         entry_id = entry["id"]
         db_session.add_all(
-            [EntryTag(entry_id=int(entry_id), tag_id=t1.id), EntryTag(entry_id=int(entry_id), tag_id=t2.id)]
+            [
+                EntryTag(entry_id=int(entry_id), tag_id=t1.id),
+                EntryTag(entry_id=int(entry_id), tag_id=t2.id),
+            ]
         )
         await db_session.commit()
         await _create_entry(client, "2026-06-11", "untagged entry")
@@ -228,9 +225,7 @@ class TestImportHardening:
         assert "Archive member" in r.json()["detail"]
 
     async def test_import_reports_skip_reasons(self, client: AsyncClient, db_session):
-        db_session.add(
-            Entry(entry_date=date(2026, 7, 5), title="Existing", body="dup body here")
-        )
+        db_session.add(Entry(entry_date=date(2026, 7, 5), title="Existing", body="dup body here"))
         await db_session.commit()
 
         payload = {
@@ -310,10 +305,14 @@ class TestDeduplicateDeterminism:
         assert data["groups_found"] == 1
 
         surviving = (
-            await db_session.execute(
-                select(Entry).where(Entry.entry_date == date(2026, 8, 1), ~Entry.is_deleted)
+            (
+                await db_session.execute(
+                    select(Entry).where(Entry.entry_date == date(2026, 8, 1), ~Entry.is_deleted)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert [e.id for e in surviving] == [e1.id]  # lowest id kept
 
     async def test_distinct_dates_are_not_merged(self, client, db_session):
@@ -353,17 +352,13 @@ class TestResetDerivation:
         tables = {
             row[0]
             for row in (
-                await db_session.execute(
-                    text("SELECT name FROM sqlite_master WHERE type='table'")
-                )
+                await db_session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
             ).all()
         }
         wiped = {}
         for t in ("entries", "notes", "note_folders", "note_pages", "tags", "entry_tags"):
             if t in tables:
-                wiped[t] = (
-                    await db_session.execute(text(f"SELECT COUNT(*) FROM {t}"))
-                ).scalar()
+                wiped[t] = (await db_session.execute(text(f"SELECT COUNT(*) FROM {t}"))).scalar()
         assert wiped and all(v == 0 for v in wiped.values())
 
     async def test_protected_tables_exclude_config(self):
@@ -391,9 +386,7 @@ class TestFolderCounts:
             "/api/v1/notes", json={"title": "n2", "body": "b2", "folder_id": folder["id"]}
         )
 
-        r2 = await client.patch(
-            f"/api/v1/notes/folders/{folder['id']}", json={"color": "#ff0000"}
-        )
+        r2 = await client.patch(f"/api/v1/notes/folders/{folder['id']}", json={"color": "#ff0000"})
         assert r2.status_code == 200
         assert r2.json()["note_count"] == 2
 
@@ -403,9 +396,7 @@ class TestFolderCounts:
     async def test_list_folders_does_not_load_note_bodies(self, client, db_session):
         from app.services.note_service import NoteService
 
-        folder = (
-            await client.post("/api/v1/notes/folders", json={"name": "Heavy"})
-        ).json()
+        folder = (await client.post("/api/v1/notes/folders", json={"name": "Heavy"})).json()
         await client.post(
             "/api/v1/notes", json={"title": "big", "body": "X" * 5000, "folder_id": folder["id"]}
         )

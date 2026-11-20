@@ -160,9 +160,7 @@ class TestCloudRetention:
 
         with (
             patch("app.services.cloud_sync_service.BoxProvider", return_value=fake),
-            patch.object(
-                BackupService, "_build_backup_archive", AsyncMock(return_value=archive)
-            ),
+            patch.object(BackupService, "_build_backup_archive", AsyncMock(return_value=archive)),
             patch.object(
                 BackupService, "count_all", AsyncMock(return_value={"entries": 0, "media": 0})
             ),
@@ -189,9 +187,7 @@ class TestCloudRetention:
 
         with (
             patch("app.services.cloud_sync_service.BoxProvider", return_value=fake),
-            patch.object(
-                BackupService, "_build_backup_archive", AsyncMock(return_value=archive)
-            ),
+            patch.object(BackupService, "_build_backup_archive", AsyncMock(return_value=archive)),
             patch.object(
                 BackupService, "count_all", AsyncMock(return_value={"entries": 0, "media": 0})
             ),
@@ -254,9 +250,7 @@ class TestInProgressClaim:
         snapshot = await BackupService(db_session)._begin_snapshot(config.id)
         assert snapshot.status == "in_progress"
         reclaimed = (
-            await db_session.execute(
-                text_select_interrupted(config.id)
-            )
+            await db_session.execute(text_select_interrupted(config.id))
         ).scalar_one_or_none()
         assert reclaimed == "Interrupted: previous run did not complete"
 
@@ -316,9 +310,7 @@ class TestProviderDispatch:
         await db_session.refresh(config)
         assert token_version(config.credentials_encrypted) == 1  # legacy token in place
 
-        provider = BackupService(db_session)._cloud_provider_for(
-            config, json.loads(legacy_creds)
-        )
+        provider = BackupService(db_session)._cloud_provider_for(config, json.loads(legacy_creds))
         await provider._on_token_refresh("new-token", "9999")
 
         assert token_version(config.credentials_encrypted) == 2
@@ -417,9 +409,7 @@ class TestRestoreErrorMapping:
 
         with (
             patch("app.services.cloud_sync_service.NextcloudProvider", return_value=fake),
-            patch(
-                "app.core.restore.atomic_restore", new=AsyncMock(return_value=["database"])
-            ),
+            patch("app.core.restore.atomic_restore", new=AsyncMock(return_value=["database"])),
             patch(
                 "app.services.backup_service._count_all_fresh",
                 AsyncMock(return_value={"entries": 0, "media": 0, "notes": 0}),
@@ -469,9 +459,7 @@ class TestRestoreSessionHygiene:
         with (
             patch("app.services.cloud_sync_service.BoxProvider", return_value=fake),
             patch.object(BackupService, "count_all", new=spy_count_all),
-            patch(
-                "app.core.database.async_session", _FreshSessionFactory(fresh_session)
-            ),
+            patch("app.core.database.async_session", _FreshSessionFactory(fresh_session)),
             patch(
                 "app.core.restore.atomic_restore",
                 new=AsyncMock(return_value=["database", "media"]),

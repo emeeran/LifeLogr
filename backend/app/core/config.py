@@ -284,7 +284,8 @@ class Settings(BaseSettings):
     API_TOKEN: str = Field(
         # LIFEOGRF_API_TOKEN: historic misspelling shipped in an early release
         # and kept so existing .env files keep working (commit c279ecb era).
-        default="", validation_alias=AliasChoices("API_TOKEN", "LIFEOGRF_API_TOKEN")
+        default="",
+        validation_alias=AliasChoices("API_TOKEN", "LIFEOGRF_API_TOKEN"),
     )
     # Cloud archive retention (how many recent cloud backups to keep).
     # String on purpose: a hand-edited value falls back to the default at
@@ -294,9 +295,7 @@ class Settings(BaseSettings):
     # LIFEOGRF_ alias matches the historic API_TOKEN convention).
     ENRICHMENT_CONCURRENCY: str = Field(
         default="",
-        validation_alias=AliasChoices(
-            "ENRICHMENT_CONCURRENCY", "LIFEOGRF_ENRICHMENT_CONCURRENCY"
-        ),
+        validation_alias=AliasChoices("ENRICHMENT_CONCURRENCY", "LIFEOGRF_ENRICHMENT_CONCURRENCY"),
     )
     # Extra allowed import roots, comma-separated (external drives etc.).
     MEDIA_IMPORT_ALLOWED_ROOTS: str = ""

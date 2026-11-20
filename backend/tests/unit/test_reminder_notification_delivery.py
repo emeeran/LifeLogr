@@ -58,24 +58,26 @@ class TestDelivery:
     def test_missing_binary_warns_once_per_platform(self, monkeypatch: Any) -> None:
         _reset_warned()
         monkeypatch.setattr(sys, "platform", "linux")
-        with patch(
-            "app.services.reminder_service.subprocess.Popen",
-            side_effect=FileNotFoundError("no notify-send"),
-        ) as popen, patch.object(rs.logger, "warning") as warn:
+        with (
+            patch(
+                "app.services.reminder_service.subprocess.Popen",
+                side_effect=FileNotFoundError("no notify-send"),
+            ) as popen,
+            patch.object(rs.logger, "warning") as warn,
+        ):
             for _ in range(3):
                 ReminderService._send_notification("t", "m")
         assert popen.call_count == 3  # still tries every time, never raises
         assert warn.call_count == 1
         assert "platform=" in str(warn.call_args)
 
-    def test_unsupported_platform_spawns_nothing_and_warns_once(
-        self, monkeypatch: Any
-    ) -> None:
+    def test_unsupported_platform_spawns_nothing_and_warns_once(self, monkeypatch: Any) -> None:
         _reset_warned()
         monkeypatch.setattr(sys, "platform", "win32")
-        with patch("app.services.reminder_service.subprocess.Popen") as popen, patch.object(
-            rs.logger, "warning"
-        ) as warn:
+        with (
+            patch("app.services.reminder_service.subprocess.Popen") as popen,
+            patch.object(rs.logger, "warning") as warn,
+        ):
             for _ in range(2):
                 ReminderService._send_notification("t", "m")
         popen.assert_not_called()

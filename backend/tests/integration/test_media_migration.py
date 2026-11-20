@@ -62,9 +62,7 @@ async def test_migration_disabled_without_flag(client: AsyncClient) -> None:
     assert "ENCRYPT_MEDIA" in r.json()["detail"]
 
 
-async def test_dry_run_counts_without_writing(
-    client: AsyncClient, db_session, encrypt_on
-) -> None:
+async def test_dry_run_counts_without_writing(client: AsyncClient, db_session, encrypt_on) -> None:
     # Flag was off at upload time → legacy plaintext media on an encrypted parent.
     _media_id, media = await _upload_to(client, db_session, encrypted=True)
     path = settings.MEDIA_DIR / media.storage_path
@@ -123,9 +121,7 @@ async def test_apply_purges_plaintext_thumb_of_encrypted_media(
     assert not thumb.exists()
 
 
-async def test_plaintext_items_never_touched(
-    client: AsyncClient, db_session, encrypt_on
-) -> None:
+async def test_plaintext_items_never_touched(client: AsyncClient, db_session, encrypt_on) -> None:
     _media_id, media = await _upload_to(client, db_session, encrypted=False)
     path = settings.MEDIA_DIR / media.storage_path
     before = path.read_bytes()

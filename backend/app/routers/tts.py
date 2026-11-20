@@ -371,9 +371,7 @@ async def speak_entry(
     if not clean:
         # An empty 200 audio/mpeg would reach the audio element and surface as
         # an opaque MediaError ("no supported source"); fail loudly instead.
-        raise HTTPException(
-            status_code=422, detail="Entry has no readable text to read aloud"
-        )
+        raise HTTPException(status_code=422, detail="Entry has no readable text to read aloud")
 
     _key, path = await _synth_or_http_error(clean, voice, rate, volume, pitch, context="entry")
     return FileResponse(path=str(path), media_type="audio/mpeg", filename="tts.mp3")

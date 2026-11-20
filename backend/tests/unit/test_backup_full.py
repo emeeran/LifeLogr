@@ -853,9 +853,7 @@ class TestScheduledBackupExecution:
         assert data["retention"] == 10
         assert data["last_run"] is None
 
-    async def test_get_schedule_round_trips_local_schedule(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_get_schedule_round_trips_local_schedule(self, client: AsyncClient) -> None:
         """GET /schedule returns the persisted schedule the UI hydrates from."""
         backup_dir = tempfile.mkdtemp()
         try:
@@ -879,9 +877,7 @@ class TestScheduledBackupExecution:
             await client.delete("/api/v1/backup/schedule")
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    async def test_get_schedule_returns_cloud_config_id(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_get_schedule_returns_cloud_config_id(self, client: AsyncClient) -> None:
         """A cloud schedule reports its config_id and no local path."""
         cr = await client.post(
             "/api/v1/backup/config",
@@ -1062,9 +1058,7 @@ class TestBackupPathContainment:
 
 
 class TestImportSizeCap:
-    async def test_oversized_import_returns_413(
-        self, client: AsyncClient, monkeypatch
-    ) -> None:
+    async def test_oversized_import_returns_413(self, client: AsyncClient, monkeypatch) -> None:
         monkeypatch.setattr(settings, "MAX_IMPORT_SIZE_BYTES", 256)
         r = await client.post(
             "/api/v1/backup/import",

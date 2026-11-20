@@ -78,9 +78,7 @@ class TestMultistatusParsing:
         assert _multistatus_paths(b"<not-xml", "/x/", "p") == []
 
     def test_skips_the_root_collection_itself(self) -> None:
-        body = _propfind(
-            [""], host_root="/remote.php/dav/files/alex/"
-        )  # the collection's own href
+        body = _propfind([""], host_root="/remote.php/dav/files/alex/")  # the collection's own href
         assert (
             _multistatus_paths(
                 body, _dav_root_path("https://cloud.example.com", "alex"), "lifelogr"
@@ -114,9 +112,9 @@ class TestNextcloudProvider:
 
         assert backups == ["lifelogr-backup-20260101-000000.tar.gz"]
         # The returned names are directly usable for a download/delete.
-        respx.get("https://cloud.example.com/remote.php/dav/files/alex/lifelogr-backup-20260101-000000.tar.gz").mock(
-            return_value=httpx.Response(200, content=b"archive")
-        )
+        respx.get(
+            "https://cloud.example.com/remote.php/dav/files/alex/lifelogr-backup-20260101-000000.tar.gz"
+        ).mock(return_value=httpx.Response(200, content=b"archive"))
         assert await provider.download(backups[0]) == b"archive"
         await provider.close()
 
@@ -160,9 +158,7 @@ class TestNextcloudProvider:
         )
         route = respx.get(
             "https://cloud.example.com/remote.php/dav/files/alex/lifelogr-backup-big.tar.gz"
-        ).mock(
-            return_value=httpx.Response(200, content=b"x" * (3 * 1024 * 1024 + 17))
-        )
+        ).mock(return_value=httpx.Response(200, content=b"x" * (3 * 1024 * 1024 + 17)))
         dest = tmp_path / "out.tar.gz"
 
         await provider.download_to_file("lifelogr-backup-big.tar.gz", str(dest))
@@ -265,9 +261,9 @@ class TestGoogleDriveStreaming:
         multipart = respx.post(
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
         ).mock(return_value=httpx.Response(200, json={"id": "new"}))
-        respx.post(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable"
-        ).mock(return_value=httpx.Response(500))
+        respx.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable").mock(
+            return_value=httpx.Response(500)
+        )
 
         await provider.upload_file("lifelogr-backup-small.tar.gz", str(archive))
         assert multipart.called
@@ -281,9 +277,7 @@ class TestGoogleDriveStreaming:
             return_value=httpx.Response(200, json={"files": [{"id": "file-1"}]})
         )
         respx.post("https://oauth2.googleapis.com/token").mock(
-            return_value=httpx.Response(
-                200, json={"access_token": "fresh", "expires_in": 3600}
-            )
+            return_value=httpx.Response(200, json={"access_token": "fresh", "expires_in": 3600})
         )
         respx.get("https://www.googleapis.com/drive/v3/files/file-1?alt=media").mock(
             return_value=httpx.Response(200, content=b"archive-bytes")

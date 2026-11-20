@@ -290,8 +290,9 @@ async def test_oauth_callback_exchanges_with_matching_redirect_uri(client, db_se
     )
     assert response.status_code == 200
     assert token_route.calls.last.request.content
-    assert b"redirect_uri=http%3A%2F%2F127.0.0.1%3A8123%2Fapi%2Fv1%2Fbackup%2Fgoogle-drive%2Fcallback" in (
-        token_route.calls.last.request.content
+    assert (
+        b"redirect_uri=http%3A%2F%2F127.0.0.1%3A8123%2Fapi%2Fv1%2Fbackup%2Fgoogle-drive%2Fcallback"
+        in (token_route.calls.last.request.content)
     )
 
 

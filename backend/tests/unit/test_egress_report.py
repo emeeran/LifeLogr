@@ -23,7 +23,16 @@ async def test_egress_report_schema_is_stable(client: AsyncClient) -> None:
     assert r.status_code == 200
     data = r.json()
 
-    for name in ("cloud_ai", "cloud_backup", "web_clip", "ocr", "embeddings", "read_aloud", "weather", "map_tiles"):
+    for name in (
+        "cloud_ai",
+        "cloud_backup",
+        "web_clip",
+        "ocr",
+        "embeddings",
+        "read_aloud",
+        "weather",
+        "map_tiles",
+    ):
         assert name in data, name
 
     for name in ("cloud_ai", "web_clip", "ocr", "embeddings", "read_aloud", "weather", "map_tiles"):

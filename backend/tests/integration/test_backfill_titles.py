@@ -17,9 +17,7 @@ async def _seed(db_session, day: date, body: str, title: str | None = None) -> E
     return entry
 
 
-async def test_dry_run_reports_candidates_without_writing(
-    client: AsyncClient, db_session
-) -> None:
+async def test_dry_run_reports_candidates_without_writing(client: AsyncClient, db_session) -> None:
     entry = await _seed(db_session, date(2026, 1, 2), "# A real first line\n\nBody.")
     await _seed(db_session, date(2026, 1, 3), "Has a title already.", title="Kept")
     await _seed(db_session, date(2026, 1, 4), "![](/api/v1/media/1/file)")
@@ -36,9 +34,7 @@ async def test_dry_run_reports_candidates_without_writing(
     assert refreshed.title is None
 
 
-async def test_apply_fills_only_empty_titles(
-    client: AsyncClient, db_session
-) -> None:
+async def test_apply_fills_only_empty_titles(client: AsyncClient, db_session) -> None:
     first = await _seed(db_session, date(2026, 2, 1), "- bought tickets")
     titled = await _seed(db_session, date(2026, 2, 2), "Text.", title="Mine")
     photo = await _seed(db_session, date(2026, 2, 3), "![Sunset](x.jpg)")
@@ -58,21 +54,15 @@ async def test_apply_fills_only_empty_titles(
     assert titles[empty.id] is None
 
 
-async def test_backfill_refreshes_the_sync_fingerprint(
-    client: AsyncClient, db_session
-) -> None:
+async def test_backfill_refreshes_the_sync_fingerprint(client: AsyncClient, db_session) -> None:
     """A backfilled title must not read as a local edit to the next Diarium pull."""
     entry = await _seed(db_session, date(2026, 3, 1), "hello world")
     entry.sync_hash = "stale-hash"
     await db_session.commit()
 
-    await client.post(
-        "/api/v1/entries/backfill-titles", params={"dry_run": "false"}
-    )
+    await client.post("/api/v1/entries/backfill-titles", params={"dry_run": "false"})
     row = (
-        await db_session.execute(
-            select(Entry.title, Entry.sync_hash).where(Entry.id == entry.id)
-        )
+        await db_session.execute(select(Entry.title, Entry.sync_hash).where(Entry.id == entry.id))
     ).one()
     assert row.title == "hello world"
     assert row.sync_hash != "stale-hash"

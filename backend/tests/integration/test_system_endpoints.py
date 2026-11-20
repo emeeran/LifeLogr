@@ -27,9 +27,7 @@ async def test_client_error_is_accepted_and_deduplicated(client: AsyncClient) ->
 
 
 async def test_client_error_rejects_oversized_message(client: AsyncClient) -> None:
-    r = await client.post(
-        "/api/v1/system/client-errors", json={"message": "x" * 501}
-    )
+    r = await client.post("/api/v1/system/client-errors", json={"message": "x" * 501})
     assert r.status_code == 422
 
 
@@ -47,9 +45,7 @@ async def test_shutdown_state_is_idle_on_an_empty_database(client: AsyncClient) 
 async def test_shutdown_state_reports_an_in_progress_backup(
     client: AsyncClient, db_session
 ) -> None:
-    config = BackupConfig(
-        provider="local_file", label="test", credentials_encrypted="{}"
-    )
+    config = BackupConfig(provider="local_file", label="test", credentials_encrypted="{}")
     db_session.add(config)
     await db_session.flush()
     db_session.add(BackupSnapshot(config_id=config.id, status="in_progress"))
@@ -61,12 +57,8 @@ async def test_shutdown_state_reports_an_in_progress_backup(
     assert body["backups_in_progress"] == 1
 
 
-async def test_completed_backup_does_not_block_shutdown(
-    client: AsyncClient, db_session
-) -> None:
-    config = BackupConfig(
-        provider="local_file", label="done", credentials_encrypted="{}"
-    )
+async def test_completed_backup_does_not_block_shutdown(client: AsyncClient, db_session) -> None:
+    config = BackupConfig(provider="local_file", label="done", credentials_encrypted="{}")
     db_session.add(config)
     await db_session.flush()
     db_session.add(BackupSnapshot(config_id=config.id, status="completed"))

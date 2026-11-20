@@ -193,7 +193,9 @@ async def _store_embedding(
         try:
             cache_getter().update_entry(owner_id, embedding_vec)
         except Exception:
-            logger.warning("Failed to update semantic cache for %s %d", label, owner_id, exc_info=True)
+            logger.warning(
+                "Failed to update semantic cache for %s %d", label, owner_id, exc_info=True
+            )
         logger.info("Embedding stored for %s %d (%d dims)", label, owner_id, len(embedding_vec))
 
     except Exception:

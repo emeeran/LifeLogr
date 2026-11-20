@@ -24,11 +24,7 @@ async def test_import_dayone_zip_with_photos_end_to_end(client: AsyncClient, db_
     body = r.json()
     assert body["imported"] == 3, body["skip_reasons"]
 
-    rows = (
-        (await db_session.execute(select(Entry).order_by(Entry.entry_date)))
-        .scalars()
-        .all()
-    )
+    rows = (await db_session.execute(select(Entry).order_by(Entry.entry_date))).scalars().all()
     assert [str(e.entry_date) for e in rows] == ["2024-02-01", "2024-02-02", "2024-02-03"]
 
     # Text + photo entry: tag and location preserved.
@@ -36,10 +32,16 @@ async def test_import_dayone_zip_with_photos_end_to_end(client: AsyncClient, db_
     assert first.title == "Ridge hike"
     assert first.latitude == 45.5 and first.longitude == -122.6
     tag_names = (
-        await db_session.execute(
-            select(Tag.name).join(EntryTag, EntryTag.tag_id == Tag.id).where(EntryTag.entry_id == first.id)
+        (
+            await db_session.execute(
+                select(Tag.name)
+                .join(EntryTag, EntryTag.tag_id == Tag.id)
+                .where(EntryTag.entry_id == first.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert tag_names == ["hiking"]
 
     # Photo-only entry: empty body, one attached image on disk.
@@ -56,9 +58,7 @@ async def test_import_dayone_zip_with_photos_end_to_end(client: AsyncClient, db_
     assert stored.is_file()
     # The text+photo entry carries the same image.
     first_media = (
-        (await db_session.execute(select(Media).where(Media.entry_id == first.id)))
-        .scalars()
-        .all()
+        (await db_session.execute(select(Media).where(Media.entry_id == first.id))).scalars().all()
     )
     assert len(first_media) == 1
 

@@ -395,9 +395,7 @@ class OllamaService:
             client = _get_client()
             # Availability probe is on every settings/AI panel render and gates
             # enrichment — never wait the generation timeout for it.
-            response = await client.get(
-                f"{self.base_url}/api/tags", timeout=_status_timeout()
-            )
+            response = await client.get(f"{self.base_url}/api/tags", timeout=_status_timeout())
             response.raise_for_status()
             data: dict[str, Any] = response.json()
             models = [m.get("name", "") for m in data.get("models", [])]

@@ -50,9 +50,7 @@ async def db_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         for base in FTS_BASE_TABLES:
-            await conn.execute(
-                text(f"CREATE VIRTUAL TABLE {base}_fts USING fts5(title, body)")
-            )
+            await conn.execute(text(f"CREATE VIRTUAL TABLE {base}_fts USING fts5(title, body)"))
             await conn.execute(text(fts_populate_sql(base)))
             for ddl in fts_trigger_ddl(base):
                 await conn.execute(text(ddl))
@@ -165,4 +163,3 @@ def _isolate_scheduler_singleton():
     _reset()
     yield
     _reset()
-

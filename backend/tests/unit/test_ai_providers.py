@@ -45,7 +45,9 @@ async def test_create_provider_hides_key_and_activates(client):
 
 async def test_activate_is_exclusive(client, db_session):
     a = await AIProviderService(db_session).create(
-        AIProviderCreate(name="A", preset="openai", base_url="https://a/v1", model="m", is_active=True)
+        AIProviderCreate(
+            name="A", preset="openai", base_url="https://a/v1", model="m", is_active=True
+        )
     )
     b = await AIProviderService(db_session).create(
         AIProviderCreate(name="B", preset="groq", base_url="https://b/v1", model="m")
@@ -69,8 +71,8 @@ async def test_cloud_provider_routes_to_openai_endpoint(db_session):
         )
     )
     with respx.mock(base_url="https://api.groq.com") as mock:
-        mock.post("/openai/v1/chat/completions").respond(json=
-            {"choices": [{"message": {"content": "cloud-reply"}}]}
+        mock.post("/openai/v1/chat/completions").respond(
+            json={"choices": [{"message": {"content": "cloud-reply"}}]}
         )
         out = await OllamaService()._generate("hello")
     # Cloud path extracts choices[0].message.content → proves OpenAI-compatible routing.
@@ -127,7 +129,9 @@ async def test_connection_raises_on_timeout():
 async def test_connection_without_key_omits_auth_header():
     from app.services.ai_provider_service import test_connection
 
-    route = respx.post("https://provider.test/v1/chat/completions").respond(200, json={"model": "m"})
+    route = respx.post("https://provider.test/v1/chat/completions").respond(
+        200, json={"model": "m"}
+    )
     await test_connection("https://provider.test/v1", None, "m")
     assert "Authorization" not in route.calls.last.request.headers
 
@@ -151,7 +155,6 @@ async def test_list_models_missing_data_returns_empty():
 
     respx.get("https://provider.test/v1/models").respond(200, json={})
     assert await list_models("https://provider.test/v1", "key") == []
-
 
 
 # ── Retired-model fixups (Groq decommissions) ────────────────────────────────
