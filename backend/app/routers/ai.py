@@ -504,7 +504,12 @@ async def list_providers(db: AsyncSession = Depends(get_db)) -> Any:
 def _require_remote_confirmation(base_url: str | None, confirm_remote: bool) -> None:
     """Same gate as the settings router's OLLAMA_BASE_URL: a non-loopback
     base_url receives every entry body, so a drive-by request must not be
-    able to plant a silent exfiltration endpoint."""
+    able to plant a silent exfiltration endpoint.
+
+    NOTE: ``confirm_remote`` is a speed bump, not a security boundary — the
+    caller supplies it in the same request. The actual defence is the
+    Origin/Host guard stack (a hostile loopback page is rejected before this
+    code runs) plus CORS preflight on these JSON endpoints."""
     if not base_url:
         return
     from app.core.config import is_loopback_host

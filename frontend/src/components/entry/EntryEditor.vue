@@ -803,13 +803,26 @@ async function decryptEncBlock(enc: string, target: HTMLElement) {
   }
 }
 
+// Warn before closing the tab/window while the editor holds unsaved edits.
+// Autosave and crash drafts soften the loss, but a confirm-free close can
+// still drop keystrokes that never made it to a save — same guard as the
+// notes editor.
+function beforeUnloadGuard(e: BeforeUnloadEvent) {
+  if (isDirty()) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
 onMounted(() => {
   void loadEntry()
   void registerTauriDrop(handleDroppedPaths)
   window.addEventListener('click', onWindowClick)
+  window.addEventListener('beforeunload', beforeUnloadGuard)
 })
 onUnmounted(() => {
   window.removeEventListener('click', onWindowClick)
+  window.removeEventListener('beforeunload', beforeUnloadGuard)
   if (draftTimer) clearTimeout(draftTimer)
   // Unclean exit → keep the mirror fresh; a clean close() already discarded it
   // and flags draftCleanExit so this flush can't resurrect the draft (ED11).

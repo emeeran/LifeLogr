@@ -175,6 +175,7 @@ if [ -z "$DATA_DIR" ] && [ -f "$OVERRIDE_FILE" ]; then
 fi
 [ -z "$DATA_DIR" ] && DATA_DIR="$XDG_DATA_HOME/lifelogr"
 STATE_FILE="$DATA_DIR/runtime"        # plain text: "<pid> <port>"
+LOCK_FILE="$DATA_DIR/.launcher.lock"  # flock target (never deleted — see below)
 LOG_FILE="$DATA_DIR/server.log"
 SECRET_FILE="$DATA_DIR/.secret_key"
 
@@ -191,6 +192,16 @@ fi
 PYTHON="$VENV/bin/python"
 
 mkdir -p "$DATA_DIR/media"
+
+# ── launcher lock ──────────────────────────────────────────────────────────
+# Hold an exclusive flock on $DATA_DIR/.launcher.lock for this process's whole
+# lifetime so the single-instance check + state-file write below is atomic —
+# without it, a double launch during the ~30s readiness wait could start two
+# uvicorn writers on the same SQLite DB. flock releases automatically when the
+# process exits (normal exit, die(), --stop, or a crash), so there is nothing
+# to clean up; the lock file itself stays in place (removing it would race
+# with another launcher opening it).
+exec 9>> "$LOCK_FILE"
 
 # Persistent SECRET_KEY (generated once, reused so encryption keys stay stable).
 if [ -z "${SECRET_KEY:-}" ]; then
@@ -212,13 +223,25 @@ read_state() {  # echoes "<pid> <port>" or nothing
     return 0
 }
 
+# True only if $1 is genuinely one of our uvicorn servers. Guards against the
+# pid in the state file having been recycled to an unrelated process after a
+# crash — same identity check as the package's preinst hook.
+is_server_pid() {
+    kill -0 "$1" 2>/dev/null && grep -qa "app.main:app" "/proc/$1/cmdline" 2>/dev/null
+}
+
 # ── subcommands ──
 case "${1:-}" in
     --stop)
         st="$(read_state)"; pid="${st% *}"; port="${st##* }"
-        if [ -n "$st" ] && kill -0 "$pid" 2>/dev/null; then
+        # Serialize with an in-flight launch (best-effort; the lock also
+        # releases automatically when we exit below).
+        flock -w 5 9 2>/dev/null || echo "lifelogr: warning — another launch is in progress; stopping anyway." >&2
+        if [ -n "$st" ] && is_server_pid "$pid"; then
             kill "$pid" 2>/dev/null || true; sleep 1; kill -9 "$pid" 2>/dev/null || true
             echo "lifelogr: stopped (was pid $pid, port $port)."
+        elif [ -n "$st" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "lifelogr: warning — pid $pid is not a LifeLogr server (recycled pid?); refusing to kill it." >&2
         else
             echo "lifelogr: not running."
         fi
@@ -232,6 +255,11 @@ case "${1:-}" in
 esac
 
 # ── single instance: focus + reopen browser if already running ──
+# Take the launcher lock (see note at the top) so check-then-write of the
+# state file below is atomic even across the ~30s readiness wait.
+if ! flock -n 9; then
+    die "another lifelogr launch is already in progress (lock held: $LOCK_FILE) — if no launch is visible, wait a few seconds or delete $LOCK_FILE"
+fi
 st="$(read_state)"; pid="${st% *}"; port="${st##* }"
 if [ -n "$st" ] && kill -0 "$pid" 2>/dev/null; then
     echo "lifelogr: already running at http://127.0.0.1:$port — opening browser."
@@ -262,6 +290,11 @@ else:
 PY
 )"
 [ -n "$PORT" ] || die "could not allocate a free port"
+
+# Rotate the previous log so server.log can't grow forever (keep one old copy).
+if [ -f "$LOG_FILE" ]; then
+    mv -f "$LOG_FILE" "$LOG_FILE.1"
+fi
 
 echo "lifelogr: starting on http://127.0.0.1:$PORT ..."
 cd "$BACKEND"
@@ -461,7 +494,9 @@ chmod 755 "$STAGE/DEBIAN/postrm"
 
 # ── 5. Build the .deb ─────────────────────────────────────────────────────
 echo "[4/4] Building .deb package..."
-dpkg-deb --build "$STAGE" "$ROOT/dist/${PKG_NAME}_${VERSION}_${ARCH}.deb"
+# --root-owner-group: files in the package are owned root:root regardless of
+# who built it (deterministic; no build-user uid leaking into the archive).
+dpkg-deb --build --root-owner-group "$STAGE" "$ROOT/dist/${PKG_NAME}_${VERSION}_${ARCH}.deb"
 
 DEB_SIZE=$(du -sh "$ROOT/dist/${PKG_NAME}_${VERSION}_${ARCH}.deb" | cut -f1)
 echo ""

@@ -258,26 +258,26 @@ RATE_LIMIT, RATE_WINDOW = _parse_rate_limit(settings.RATE_LIMIT)
 @app.middleware("http")
 async def rate_limiter(request: Request, call_next: Any) -> Response:
     # Rate limiting only matters for multi-tenant server deployments. The
-    # desktop/Tauri sidecar is single-user on loopback, where limiting the
-    # user's own bulk imports/enrichment is actively harmful.
-    if not settings.is_production:
+    # desktop/Tauri sidecar and the web-deb launcher are single-user on
+    # loopback, where limiting the user's own bulk imports/enrichment is
+    # actively harmful. Both are detected via the managed-run marker (they set
+    # DATA_DIR / LIFELOGR_DATA_DIR) — NOT via APP_ENV, which the sidecar sets
+    # to "production" for other validation reasons.
+    from app.core.config import _is_managed_run
+
+    if not settings.is_production or _is_managed_run():
         return await call_next(request)  # type: ignore[no-any-return]
-    # Skip rate limiting for static assets, health, tests, and media file/thumb
+    # Skip rate limiting for static assets, health, and media file/thumb
     # streaming: the media timeline loads ~50 files per page, so counting them
-    # against a 60/min budget 429s the user's own thumbnails (the packaged
-    # sidecar runs with APP_ENV=production).
+    # against a 60/min budget 429s the user's own thumbnails.
     if request.url.path.startswith(("/static", "/health", "/favicon")) or (
         request.url.path.startswith("/api/v1/media/")
         and request.url.path.endswith(("/file", "/thumb"))
     ):
         return await call_next(request)  # type: ignore[no-any-return]
-    # The shell polls shutdown-state every 300 ms while closing and the SPA
-    # polls running jobs at 1 Hz. A 429 here is worse than useless: the close
-    # guard parses the body, finds no `busy`, and kills the backend mid-job —
-    # exactly what the poll exists to prevent.
-    if request.url.path.startswith("/api/v1/system/shutdown-state") or (
-        request.method == "GET" and request.url.path.startswith("/api/v1/jobs")
-    ):
+    # The SPA polls running jobs at 1 Hz. A 429 here is worse than useless:
+    # the poll is how the UI shows long exports/imports finishing.
+    if request.method == "GET" and request.url.path.startswith("/api/v1/jobs"):
         return await call_next(request)  # type: ignore[no-any-return]
 
     client_ip = request.client.host if request.client else "unknown"
@@ -710,12 +710,14 @@ async def health_check() -> Any:
         checks["database"] = "error"
         healthy = False
 
-    # 2. FTS5 (soft — search feature)
+    # 2. FTS5 (soft — search feature). LIMIT 1 proves the virtual table
+    # answers without the full index walk that count(*) does on a big journal
+    # — this probe runs on every /health poll.
     try:
         from app.core.database import engine
 
         async with engine.connect() as conn:
-            await conn.execute(text("SELECT count(*) FROM entries_fts"))
+            await conn.execute(text("SELECT rowid FROM entries_fts LIMIT 1"))
         checks["fts"] = "ok"
     except Exception:
         logger.warning("Health check FTS failed", exc_info=True)

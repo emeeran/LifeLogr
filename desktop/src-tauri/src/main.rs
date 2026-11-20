@@ -652,7 +652,9 @@ fn reclaim_port(port: u16) {
 const SIDECAR_GRACE: Duration = Duration::from_millis(2_500);
 
 /// How long the close guard will wait for an in-flight backup before giving up.
-const BACKUP_WAIT_LIMIT: Duration = Duration::from_secs(120);
+/// Under systemd's default TimeoutStopSec=90 a longer wait gets the whole
+/// desktop app SIGKILLed mid-teardown, orphaning the sidecar with the DB open.
+const BACKUP_WAIT_LIMIT: Duration = Duration::from_secs(75);
 
 /// `signal(pid, SIGTERM/SIGKILL)` without pulling in a process-name match.
 const SIGTERM: i32 = 15;

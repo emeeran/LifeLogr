@@ -11,13 +11,16 @@ FROM python:3.11-alpine
 
 WORKDIR /app
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install uv (pinned — a floating tag would make builds non-reproducible).
+COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
 
-# Install Python deps (core only — no heavy system libs needed).
+# Install Python deps from the committed uv.lock (frozen export — same command
+# the .deb path uses), NOT a fresh resolution of pyproject.toml floors.
 # `all` pulls the ocr/tts/image extras; `pdf` was never a valid extra name.
-COPY backend/pyproject.toml backend/.python-version ./
-RUN uv pip install --system -r pyproject.toml --extra all
+COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
+RUN uv export --frozen --no-dev --no-emit-project --no-hashes --extra all \
+      --format requirements-txt -o requirements.txt \
+ && uv pip install --system -r requirements.txt
 
 # Copy backend code
 COPY backend/ ./backend/

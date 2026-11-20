@@ -65,7 +65,7 @@ jobs:
 
       - name: Build backend binary
         run: |
-          cd backend && uv sync
+          cd backend && uv sync --frozen
           uv run pyinstaller ../desktop/scripts/pyinstaller.spec \
             --noconfirm --distpath ../desktop/dist --workpath ../desktop/build/pyinstaller
 

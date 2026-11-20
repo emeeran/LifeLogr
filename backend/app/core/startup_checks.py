@@ -478,7 +478,7 @@ def _check_connection_pool() -> dict[str, Any]:
 
 
 def _check_data_dir() -> dict[str, Any]:
-    from app.core.config import settings
+    from app.core.config import _is_managed_run, settings
 
     issues: list[str] = []
     dd = settings.DATA_DIR
@@ -487,8 +487,8 @@ def _check_data_dir() -> dict[str, Any]:
     db = settings.db_path
     if not (db.exists() and db.stat().st_size > 0):
         issues.append(f"{db.name} missing or empty")
-    if os.environ.get("DATA_DIR") and not (dd / ".secret_key").exists():
-        issues.append(".secret_key missing (desktop sidecar)")
+    if _is_managed_run() and not (dd / ".secret_key").exists():
+        issues.append(".secret_key missing (managed run)")
     for sub in ("media", "tts"):
         if not (dd / sub).is_dir():
             issues.append(f"{sub}/ missing")

@@ -27,7 +27,7 @@ help:
 	@echo ""
 
 setup:
-	cd $(BACKEND) && $(UV) sync
+	cd $(BACKEND) && $(UV) sync --frozen
 	cd $(FE) && npm ci
 
 test:

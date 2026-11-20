@@ -208,6 +208,11 @@ async def oauth_callback_flow(
         logger.warning("%s token exchange failed", label, exc_info=True)
         return error_page(f"Failed to connect to {label}. Please retry.")
 
+    # A 200 with an error-shaped body (proxy captive portal, provider hiccup)
+    # can omit access_token — render the styled error page instead of an
+    # unhandled KeyError → 500.
+    if not tokens.get("access_token"):
+        return error_page(f"{label} did not return a valid token. Please retry.")
     refresh_token = tokens.get("refresh_token")
     if not refresh_token and allow_stored_refresh_token:
         refresh_token = stored.get("refresh_token")

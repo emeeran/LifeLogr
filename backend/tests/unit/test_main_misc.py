@@ -61,6 +61,10 @@ class TestRateLimiter:
     @pytest.fixture
     def production(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(settings, "APP_ENV", "production")
+        # The limiter also skips managed desktop/launcher runs (DATA_DIR set);
+        # these tests simulate a non-managed server deployment.
+        monkeypatch.delenv("LIFELOGR_DATA_DIR", raising=False)
+        monkeypatch.delenv("DATA_DIR", raising=False)
         main._rate_store.clear()
         monkeypatch.setattr(main, "RATE_LIMIT", 2)
         monkeypatch.setattr(main, "RATE_WINDOW", 60.0)

@@ -1,10 +1,12 @@
 """Tests for reminder scheduling via APScheduler (sync_reminders / catch-up)."""
 
+from datetime import datetime, timedelta, time, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from app.services.scheduler_service import SchedulerService
+from app.services.scheduler_service import SchedulerService, _reminder_due_for_catchup
 
 
 @pytest.fixture(autouse=True)
@@ -139,3 +141,73 @@ class TestCatchup:
         with patch("app.core.database.async_session", side_effect=RuntimeError):
             # Should not raise.
             await SchedulerService.schedule_catchup()
+
+
+class TestReminderDueForCatchup:
+    """Direct tests for the offline catch-up predicate (previously untested).
+
+    The predicate carries the documented naive-UTC-vs-local fix and weekday
+    filtering — a regression silently drops or double-fires offline reminders
+    (audit 2026-11-20)."""
+
+    FRI = datetime(2026, 11, 20, 15, 0)  # weekday 4 (Friday), 15:00 local
+
+    @staticmethod
+    def _reminder(time_of_day: time, days: str = "0,1,2,3,4,5,6", last_fired=None):
+        return SimpleNamespace(
+            reminder_time=time_of_day, days_of_week=days, last_fired_at=last_fired
+        )
+
+    @pytest.fixture(autouse=True)
+    def _freeze_local_now(self, monkeypatch):
+        """Pin datetime.now() inside the predicate to a fixed local instant.
+
+        The predicate reads wall-clock local time (naive) — tests pin it so
+        weekday/time-of-day branches are deterministic on any host TZ.
+        """
+        import app.services.scheduler_service as sched_mod
+
+        real_datetime = datetime
+
+        class _PinnedDatetime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):  # noqa: ANN001
+                if tz is not None:
+                    return cls.FRI.replace(tzinfo=timezone.utc).astimezone(tz)
+                return cls.FRI
+
+        _PinnedDatetime.FRI = type(self).FRI
+        monkeypatch.setattr(sched_mod, "datetime", _PinnedDatetime)
+
+    def test_not_active_today_is_not_due(self):
+        assert not _reminder_due_for_catchup(
+            self._reminder(time(14, 0), days="0,1,2,3"), now_utc=self.FRI
+        )
+
+    def test_time_still_ahead_is_not_due(self):
+        assert not _reminder_due_for_catchup(self._reminder(time(16, 0)), now_utc=self.FRI)
+
+    def test_passed_never_fired_is_due(self):
+        assert _reminder_due_for_catchup(self._reminder(time(14, 0)), now_utc=self.FRI)
+
+    def test_fired_today_utc_naive_is_not_due(self):
+        """A naive last_fired_at is UTC (SQLite strips the offset) — fired
+        today local must NOT re-fire, even though the UTC-stripped clock time
+        may look like yesterday in local terms."""
+        fired_local_today = self.FRI.replace(hour=9, minute=0)
+        naive_utc = fired_local_today.astimezone().astimezone(timezone.utc).replace(tzinfo=None)
+        assert not _reminder_due_for_catchup(
+            self._reminder(time(9, 0), last_fired=naive_utc), now_utc=self.FRI
+        )
+
+    def test_fired_days_ago_is_due_again(self):
+        fired = (self.FRI - timedelta(days=3)).replace(hour=9, minute=0)
+        naive_utc = fired.astimezone().astimezone(timezone.utc).replace(tzinfo=None)
+        assert _reminder_due_for_catchup(
+            self._reminder(time(14, 0), last_fired=naive_utc), now_utc=self.FRI
+        )
+
+    def test_unparseable_days_of_week_fires_every_day(self):
+        assert _reminder_due_for_catchup(
+            self._reminder(time(14, 0), days="garbage"), now_utc=self.FRI
+        )

@@ -492,9 +492,13 @@ async def init_db() -> None:
     # construction; skip it. A *server* deployment that sets neither DATA_DIR
     # nor APP_ENV=production ... still gets the guard the moment it claims
     # production (settings.is_production), so misconfigured servers fail fast.
-    import os
 
-    is_desktop_sidecar = bool(os.environ.get("DATA_DIR"))
+    # Managed-run detection via the shared signal (DATA_DIR *or*
+    # LIFELOGR_DATA_DIR) — the web-deb launcher sets only the latter, and the
+    # boot preflight below must cover it too, not just the desktop sidecar.
+    from app.core.config import _is_managed_run
+
+    is_desktop_sidecar = _is_managed_run()
     if settings.is_production and not is_desktop_sidecar:
         settings.validate_production()
 

@@ -89,6 +89,49 @@ describe('useJobProgress', () => {
     expect(error.value).toBeNull()
   })
 
+  it('backs off exponentially on consecutive failures and resets on success', async () => {
+    mockedGet
+      .mockRejectedValueOnce(new Error('down'))
+      .mockRejectedValueOnce(new Error('still down'))
+      .mockRejectedValueOnce(new Error('still down'))
+      .mockResolvedValue(makeJob({ status: 'done', percent: null }))
+    const { watch, error } = useJobProgress()
+    watch('job-1')
+    await vi.advanceTimersByTimeAsync(0)
+    // Failure 1 → retry after 1s (the base cadence).
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(error.value).toBe('still down')
+    // Failure 2 → retry after 2s; a 1s advance must not poll yet.
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockedGet).toHaveBeenCalledTimes(3)
+    // Failure 3 → retry after 4s, then a success resets the cadence.
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(mockedGet).toHaveBeenCalledTimes(4)
+    expect(error.value).toBeNull()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(mockedGet).toHaveBeenCalledTimes(4) // stopped at the terminal state
+  })
+
+  it('caps the failure backoff at 15s', async () => {
+    mockedGet.mockRejectedValue(new Error('backend down'))
+    const { watch } = useJobProgress()
+    watch('job-1')
+    await vi.advanceTimersByTimeAsync(0)
+    let calls = 1
+    let delay = 1000
+    // Consecutive failures: 1s, 2s, 4s, 8s, 15s, 15s …
+    for (const expected of [1000, 2000, 4000, 8000, 15_000, 15_000]) {
+      await vi.advanceTimersByTimeAsync(expected)
+      calls += 1
+      expect(mockedGet).toHaveBeenCalledTimes(calls)
+      delay = expected
+    }
+    expect(delay).toBe(15_000)
+  })
+
   it('watch() supersedes a previous job id', async () => {
     // Echo the requested id — the fixture default is job-1, which would
     // mask which poll wrote last.

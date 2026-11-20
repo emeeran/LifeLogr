@@ -24,7 +24,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --frozen --group dev
 
       - name: Install tesseract (OCR tests skip without it)
         run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
@@ -110,7 +110,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: uv sync --group dev
+        run: uv sync --frozen --group dev
 
       # The Playwright webServer only starts the Vite dev server; the spec hits
       # the backend through Vite's /api proxy (→ :8000), so start a throwaway

@@ -188,10 +188,41 @@ async def relocate_storage(
             _cleanup(staged)
             raise
 
+    # 3.5 Re-stage the DB files so commits that landed during the (potentially
+    # long) media copy + validation aren't silently dropped when the engine
+    # swaps to the target — the old file is abandoned at the commit point.
+    # A second checkpoint folds those late writes into the main file first.
+    await _checkpoint_live(old_db, session)
+    for p in (
+        old_db,
+        old_db.with_suffix(old_db.suffix + "-wal"),
+        old_db.with_suffix(old_db.suffix + "-shm"),
+    ):
+        if p.exists():
+            _atomic_write(p, target / p.name)
+    if staged_db.exists():
+        try:
+            validate_extracted_db(staged_db)
+        except ValueError:
+            logger.error("Re-staged database failed validation; aborting relocate")
+            _cleanup(staged)
+            raise
+
     copied_bytes = await asyncio.to_thread(_tree_size, target)
 
     # 4. Commit point: persist intent, then mutate singleton + swap engine.
     write_storage_override(target)
+    # Cache dirs default to subdirs of DATA_DIR ("tts", "weather"); repoint
+    # any that still resolve under the old location so nothing keeps writing
+    # into a directory the user believes is vacated (and may delete).
+    cache_moves: list[tuple[str, Path]] = []
+    for attr in ("TTS_CACHE_DIR", "WEATHER_CACHE_DIR"):
+        cur = Path(getattr(settings, attr))
+        if cur.is_relative_to(old_dir):
+            new_dir = target / cur.relative_to(old_dir)
+            new_dir.mkdir(parents=True, exist_ok=True)
+            cache_moves.append((attr, cur))
+            setattr(settings, attr, new_dir)
     try:
         settings.DATA_DIR = target
         settings.MEDIA_DIR = target / "media"
@@ -208,6 +239,8 @@ async def relocate_storage(
         settings.DATA_DIR = old_dir
         settings.MEDIA_DIR = old_dir / "media"
         settings.DATABASE_URL = f"sqlite+aiosqlite:///{old_db}"
+        for attr, old_cache in cache_moves:
+            setattr(settings, attr, old_cache)
         try:
             await reinit_engine()  # release the target; engine now on old path
             _cleanup(staged)  # remove orphaned copies

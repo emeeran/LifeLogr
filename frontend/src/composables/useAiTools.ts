@@ -98,8 +98,28 @@ export function useAiTools(
     }
   }
 
+  /** The request can run for minutes on a local model; typing while it runs
+   *  shifts the captured offsets. Splicing into a stale span would silently
+   *  mangle unrelated text, so both apply paths re-validate the anchor first
+   *  and bail out (result stays up for Copy) when it has moved. */
+  function aiAnchorIsStale(atEnd = false): boolean {
+    const original = aiOriginalText.value
+    // runAiTool always captures a non-empty selection, so the empty case is
+    // only the legacy append-at-end flow — there is no anchor to invalidate.
+    if (!original) return atEnd && aiOriginalEnd.value > body.value.length
+    return atEnd
+      ? body.value.slice(aiOriginalEnd.value - original.length, aiOriginalEnd.value) !== original
+      : body.value.slice(aiOriginalStart.value, aiOriginalEnd.value) !== original
+  }
+
   function aiResultReplace() {
     if (!aiResult.value) return
+    if (aiAnchorIsStale()) {
+      useToastStore().error(
+        'The text changed while the AI tool ran — reselect and try again.',
+      )
+      return
+    }
     if (aiOriginalText.value) {
       const el = textarea.value
       if (el) {
@@ -119,6 +139,14 @@ export function useAiTools(
   function aiResultInsert() {
     if (!aiResult.value) return
     const end = aiOriginalEnd.value
+    // Insert lands right after the original selection — verifying the text
+    // just before `end` still matches confirms the point hasn't moved.
+    if (aiAnchorIsStale(true)) {
+      useToastStore().error(
+        'The text changed while the AI tool ran — reselect and try again.',
+      )
+      return
+    }
     body.value =
       body.value.slice(0, end) + '\n' + aiResult.value + body.value.slice(end)
     pushHistory()

@@ -4,6 +4,9 @@ import { jobsApi, type JobState } from '../api/jobs'
 import { errorMessage } from '../utils/errorMessage'
 
 const POLL_MS = 1000
+/** Failed polls double their delay up to this cap so a down backend isn't
+ *  hammered at 1 Hz for the whole job window. */
+const MAX_POLL_MS = 15_000
 
 /**
  * Poll a backend job until it finishes. Exposes the latest `JobState` plus
@@ -16,6 +19,8 @@ export function useJobProgress() {
   let timer: ReturnType<typeof setTimeout> | null = null
   let currentJobId: string | null = null
   let disposed = false
+  /** Delay for the next poll after a failure; doubles per consecutive miss. */
+  let failureDelayMs = POLL_MS
 
   const running = computed(() => job.value?.status === 'running')
   const failed = computed(() => job.value?.status === 'failed')
@@ -29,6 +34,8 @@ export function useJobProgress() {
       timer = null
     }
     currentJobId = null
+    // A fresh watch (or terminal state) starts the cadence over.
+    failureDelayMs = POLL_MS
   }
 
   async function poll(jobId: string) {
@@ -38,6 +45,7 @@ export function useJobProgress() {
       if (jobId !== currentJobId) return // superseded mid-flight
       job.value = state
       error.value = null
+      failureDelayMs = POLL_MS // healthy poll — the cadence resets
       if (state.status === 'running') {
         timer = setTimeout(() => poll(jobId), POLL_MS)
       } else {
@@ -67,9 +75,11 @@ export function useJobProgress() {
         return
       }
       // A single failed poll shouldn't kill the watch — the backend may be
-      // mid-restart (e.g. right after a restore). Retry within the window.
+      // mid-restart (e.g. right after a restore). Retry with exponential
+      // backoff (1s → 15s cap) so a down backend isn't polled at 1 Hz.
       error.value = errorMessage(e) || 'Failed to fetch progress'
-      timer = setTimeout(() => poll(jobId), POLL_MS)
+      timer = setTimeout(() => poll(jobId), failureDelayMs)
+      failureDelayMs = Math.min(failureDelayMs * 2, MAX_POLL_MS)
     }
   }
 
