@@ -11,7 +11,7 @@ import secrets
 import uuid
 import zipfile
 from collections import Counter
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -73,6 +73,7 @@ from app.services.export_service import (
     build_daylio_csv,
     build_dayone_zip,
     build_diarium_database,
+    load_export_entries,
 )
 from app.services.importers import (
     parse_csv,
@@ -379,34 +380,15 @@ async def _export_entries(
     *,
     only_new: bool = False,
 ) -> list[Entry]:
-    """Shared export query: non-deleted entries + tags + media, date-filtered.
-
-    ``only_new`` keeps just the entries a Diarium push has not covered yet: rows
-    with no source identity, on days Diarium does not already have. Days it does
-    have are skipped because Diarium's migration import matches on date/time —
-    pushing a date-only entry onto a day it already holds would duplicate it.
-    """
-    q = (
-        select(Entry)
-        .where(Entry.is_deleted.is_(False))
-        .options(
-            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-            selectinload(Entry.media),
-            selectinload(Entry.events),
-        )
-        .order_by(Entry.entry_date, Entry.id)
+    """Archive-grade export query: tags + media + events eager-loaded."""
+    return await load_export_entries(
+        session,
+        start_date,
+        end_date,
+        only_new=only_new,
+        with_media=True,
+        with_events=True,
     )
-    if only_new:
-        diarium_days = select(Entry.entry_date).where(
-            Entry.external_id.is_not(None), Entry.is_deleted.is_(False)
-        )
-        q = q.where(Entry.external_id.is_(None), Entry.entry_date.not_in(diarium_days))
-    if start_date:
-        q = q.where(Entry.entry_date >= start_date)
-    if end_date:
-        q = q.where(Entry.entry_date <= end_date)
-    result = await session.execute(q)
-    return list(result.scalars().all())
 
 
 async def _run_note_archive_import(
@@ -491,6 +473,36 @@ def _staged_file_response(path: Path, filename: str, media_type: str) -> FileRes
     )
 
 
+async def _run_export(
+    background_tasks: BackgroundTasks,
+    kind: str,
+    filename: str,
+    media_type: str,
+    as_job: bool,
+    db: AsyncSession,
+    build: Callable[[AsyncSession, ProgressReporter], Awaitable[Path]],
+) -> Any:
+    """Shared export plumbing: a polled job when ``as_job``, else a staged file.
+
+    ``build(session, report)`` returns the staged file path. In job mode it
+    runs against a fresh session with a live progress reporter; in request
+    mode against ``db`` with a no-op reporter, and the result is served (and
+    unlinked) via :func:`_staged_file_response`.
+    """
+    if as_job:
+        from app.core.database import async_session
+
+        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
+            return await build(session, report)
+
+        return start_export_job(
+            background_tasks, kind, filename, _build, session_factory=async_session,
+        )
+
+    staged = await build(db, noop_reporter)
+    return _staged_file_response(staged, filename, media_type)
+
+
 @router.get("/export/markdown")
 async def export_markdown(
     background_tasks: BackgroundTasks,
@@ -506,22 +518,16 @@ async def export_markdown(
     ``as_job=true`` returns ``{job_id}``; download the finished archive from
     ``GET /api/v1/jobs/{job_id}/result``.
     """
-    if as_job:
-        from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
-            entries = await _export_entries(session, start_date, end_date)
-            return await asyncio.to_thread(build_markdown_zip, entries, report)
+    async def _build(session: AsyncSession, report: ProgressReporter) -> Path:
+        entries = await _export_entries(session, start_date, end_date)
+        # Zip assembly (deflate + copying every media file) is blocking — offload it.
+        return await asyncio.to_thread(build_markdown_zip, entries, report)
 
-        return start_export_job(
-            background_tasks, "export-markdown", "diarium-export.zip", _build,
-            session_factory=async_session,
-        )
-
-    entries = await _export_entries(db, start_date, end_date)
-    # Zip assembly (deflate + copying every media file) is blocking — offload it.
-    staged = await asyncio.to_thread(build_markdown_zip, entries)
-    return _staged_file_response(staged, "diarium-export.zip", "application/zip")
+    return await _run_export(
+        background_tasks, "export-markdown", "diarium-export.zip",
+        "application/zip", as_job, db, _build,
+    )
 
 
 @router.get("/export/html-zip")
@@ -541,22 +547,15 @@ async def export_html_zip(
     ``GET /api/v1/jobs/{job_id}/result``.
     """
 
-    start = start_date
-    end = end_date
-
-    if as_job:
-        from app.core.database import async_session
-
-        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
-            return await ExportService(session).export_html_zip(start, end, report=report)
-
-        return start_export_job(
-            background_tasks, "export-html-zip", "lifelogr-export-html.zip", _build,
-            session_factory=async_session,
+    async def _build(session: AsyncSession, report: ProgressReporter) -> Path:
+        return await ExportService(session).export_html_zip(
+            start_date, end_date, report=report
         )
 
-    staged = await ExportService(db).export_html_zip(start, end)
-    return _staged_file_response(staged, "lifelogr-export-html.zip", "application/zip")
+    return await _run_export(
+        background_tasks, "export-html-zip", "lifelogr-export-html.zip",
+        "application/zip", as_job, db, _build,
+    )
 
 
 @router.get("/export/diarium")
@@ -574,23 +573,7 @@ async def export_diarium(
     both this shape and Diarium's capitalized tick-keyed object model).
     """
     mood_to_rating = {"awful": 1, "bad": 2, "meh": 3, "good": 4, "great": 5}
-
-    q = (
-        select(Entry)
-        .where(Entry.is_deleted.is_(False))
-        .options(
-            selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-        )
-        .order_by(Entry.entry_date)
-    )
-
-    if start_date:
-        q = q.where(Entry.entry_date >= start_date)
-    if end_date:
-        q = q.where(Entry.entry_date <= end_date)
-
-    result = await db.execute(q)
-    entries = list(result.scalars().all())
+    entries = await _export_entries(db, start_date, end_date)
 
     def _build_json() -> bytes:
         export_items = []
@@ -632,18 +615,7 @@ async def export_daylio_csv(
     note; mood words awful/bad/meh/good/rad). CSV carries text, mood and tags;
     use the .diary export for a full-fidelity backup restore instead.
     """
-    q = (
-        select(Entry)
-        .where(Entry.is_deleted.is_(False))
-        .options(selectinload(Entry.tag_associations).selectinload(EntryTag.tag))
-        .order_by(Entry.entry_date, Entry.id)
-    )
-    if start_date:
-        q = q.where(Entry.entry_date >= start_date)
-    if end_date:
-        q = q.where(Entry.entry_date <= end_date)
-    result = await db.execute(q)
-    entries = list(result.scalars().all())
+    entries = await _export_entries(db, start_date, end_date)
 
     buf = io.BytesIO(await asyncio.to_thread(build_daylio_csv, entries))
     buf.seek(0)
@@ -670,23 +642,16 @@ async def export_archive(
     recreated and body URLs are rewritten to the new ids. ``as_job=true``
     returns ``{job_id}``; download from ``GET /api/v1/jobs/{job_id}/result``.
     """
-    if as_job:
-        from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
-            entries = await _export_entries(session, start_date, end_date)
-            notes = await _load_archive_notes(session)
-            return await asyncio.to_thread(build_archive, entries, notes, report)
+    async def _build(session: AsyncSession, report: ProgressReporter) -> Path:
+        entries = await _export_entries(session, start_date, end_date)
+        notes = await _load_archive_notes(session)
+        return await asyncio.to_thread(build_archive, entries, notes, report)
 
-        return start_export_job(
-            background_tasks, "export-archive", "lifelogr-archive.zip", _build,
-            session_factory=async_session,
-        )
-
-    entries = await _export_entries(db, start_date, end_date)
-    notes = await _load_archive_notes(db)
-    staged = await asyncio.to_thread(build_archive, entries, notes)
-    return _staged_file_response(staged, "lifelogr-archive.zip", "application/zip")
+    return await _run_export(
+        background_tasks, "export-archive", "lifelogr-archive.zip",
+        "application/zip", as_job, db, _build,
+    )
 
 
 @router.get("/export/json")
@@ -700,18 +665,7 @@ async def export_json(
     Schema: ``{"app":"lifelogr","version":1,"entries":[{entry_date,title,body,mood,tags}]}``.
     Round-trips through the ``/import/file`` JSON importer.
     """
-    q = (
-        select(Entry)
-        .where(Entry.is_deleted.is_(False))
-        .options(selectinload(Entry.tag_associations).selectinload(EntryTag.tag))
-        .order_by(Entry.entry_date)
-    )
-    if start_date:
-        q = q.where(Entry.entry_date >= start_date)
-    if end_date:
-        q = q.where(Entry.entry_date <= end_date)
-    result = await db.execute(q)
-    entries = list(result.scalars().all())
+    entries = await _export_entries(db, start_date, end_date)
 
     def _build_json() -> bytes:
         items: list[dict[str, Any]] = []
@@ -757,22 +711,16 @@ async def export_diarium_db(
     ``as_job=true`` returns ``{job_id}``; download from
     ``GET /api/v1/jobs/{job_id}/result``.
     """
-    if as_job:
-        from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
-            entries = await _export_entries(session, start_date, end_date)
-            return await build_diarium_database(entries, report=report)
+    async def _build(session: AsyncSession, report: ProgressReporter) -> Path:
+        entries = await _export_entries(session, start_date, end_date)
+        # build_diarium_database offloads its SQLite build to a worker thread.
+        return await build_diarium_database(entries, report=report)
 
-        return start_export_job(
-            background_tasks, "export-diary", "lifelogr-export.diary", _build,
-            session_factory=async_session,
-        )
-
-    entries = await _export_entries(db, start_date, end_date)
-    # build_diarium_database offloads its SQLite build to a worker thread.
-    staged = await build_diarium_database(entries)
-    return _staged_file_response(staged, "lifelogr-export.diary", "application/octet-stream")
+    return await _run_export(
+        background_tasks, "export-diary", "lifelogr-export.diary",
+        "application/octet-stream", as_job, db, _build,
+    )
 
 
 @router.get("/export/dayone-zip")
@@ -805,21 +753,15 @@ async def export_dayone_zip(
             status_code=400, detail=f"Unknown scope {scope!r}; expected 'new' or 'all'."
         )
     only_new = scope == "new"
-    if as_job:
-        from app.core.database import async_session
 
-        async def _build(report: ProgressReporter, session: AsyncSession) -> Path:
-            entries = await _export_entries(session, start_date, end_date, only_new=only_new)
-            return await build_dayone_zip(entries, report=report)
+    async def _build(session: AsyncSession, report: ProgressReporter) -> Path:
+        entries = await _export_entries(session, start_date, end_date, only_new=only_new)
+        return await build_dayone_zip(entries, report=report)
 
-        return start_export_job(
-            background_tasks, "export-dayone", "lifelogr-dayone.zip", _build,
-            session_factory=async_session,
-        )
-
-    entries = await _export_entries(db, start_date, end_date, only_new=only_new)
-    staged = await build_dayone_zip(entries)
-    return _staged_file_response(staged, "lifelogr-dayone.zip", "application/zip")
+    return await _run_export(
+        background_tasks, "export-dayone", "lifelogr-dayone.zip",
+        "application/zip", as_job, db, _build,
+    )
 
 
 @router.post("/backfill-titles", response_model=dict)

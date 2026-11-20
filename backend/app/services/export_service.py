@@ -31,6 +31,48 @@ logger = logging.getLogger(__name__)
 ENCRYPTED_NOTE_TEXT = "Attachments of this encrypted entry are omitted from exports."
 
 
+async def load_export_entries(
+    session: AsyncSession,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    *,
+    only_new: bool = False,
+    with_media: bool = False,
+    with_events: bool = False,
+) -> list[Entry]:
+    """Non-deleted entries (+ tags) for every export endpoint, date-filtered.
+
+    ``only_new`` keeps just the entries a Diarium push has not covered yet: rows
+    with no source identity, on days Diarium does not already have. Days it does
+    have are skipped because Diarium's migration import matches on date/time —
+    pushing a date-only entry onto a day it already holds would duplicate it.
+    Callers building archives also ask for ``media``/``events``; the lighter
+    JSON/CSV serializers skip those eager-loads.
+    """
+    eager_loads = [selectinload(Entry.tag_associations).selectinload(EntryTag.tag)]
+    if with_media:
+        eager_loads.append(selectinload(Entry.media))
+    if with_events:
+        eager_loads.append(selectinload(Entry.events))
+    q = (
+        select(Entry)
+        .where(Entry.is_deleted.is_(False))
+        .options(*eager_loads)
+        .order_by(Entry.entry_date, Entry.id)
+    )
+    if only_new:
+        diarium_days = select(Entry.entry_date).where(
+            Entry.external_id.is_not(None), Entry.is_deleted.is_(False)
+        )
+        q = q.where(Entry.external_id.is_(None), Entry.entry_date.not_in(diarium_days))
+    if start_date:
+        q = q.where(Entry.entry_date >= start_date)
+    if end_date:
+        q = q.where(Entry.entry_date <= end_date)
+    result = await session.execute(q)
+    return list(result.scalars().all())
+
+
 def stage_export_file(suffix: str = ".export") -> Path:
     """Create a staged export file under ``DATA_DIR/tmp`` and return its path.
 
@@ -151,22 +193,7 @@ class ExportService:
     async def _get_entries(
         self, start_date: date | None = None, end_date: date | None = None
     ) -> list[Entry]:
-        q = (
-            select(Entry)
-            .where(Entry.is_deleted == False)  # noqa: E712
-            .options(
-                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-            )
-            .order_by(Entry.entry_date)
-        )
-
-        if start_date:
-            q = q.where(Entry.entry_date >= start_date)
-        if end_date:
-            q = q.where(Entry.entry_date <= end_date)
-
-        result = await self.db.execute(q)
-        return list(result.scalars().all())
+        return await load_export_entries(self.db, start_date, end_date)
 
     def _entry_fragment(self, entry: Entry, body_html: str, gallery_html: str = "") -> str:
         """Render one entry as the shared HTML fragment (single-file + ZIP exports)."""
@@ -223,23 +250,9 @@ class ExportService:
         page, mirroring the Markdown vault ZIP. Attachments not already
         referenced by the body render as a figure gallery under the entry.
         """
-        from sqlalchemy.orm import selectinload
-
-        q = (
-            select(Entry)
-            .where(Entry.is_deleted == False)  # noqa: E712
-            .options(
-                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-                selectinload(Entry.media),
-            )
-            .order_by(Entry.entry_date)
+        entries = await load_export_entries(
+            self.db, start_date, end_date, with_media=True
         )
-        if start_date:
-            q = q.where(Entry.entry_date >= start_date)
-        if end_date:
-            q = q.where(Entry.entry_date <= end_date)
-        result = await self.db.execute(q)
-        entries = list(result.scalars().all())
 
         # Zip assembly reads every attachment from disk — off the event loop,
         # same as the Markdown vault path.
@@ -420,25 +433,9 @@ class ExportService:
         self, start_date: date | None = None, end_date: date | None = None
     ) -> Path:
         """Export entries as an Obsidian vault ZIP, staged under DATA_DIR/tmp."""
-        from sqlalchemy.orm import selectinload
-
-        q = (
-            select(Entry)
-            .where(Entry.is_deleted == False)  # noqa: E712
-            .options(
-                selectinload(Entry.tag_associations).selectinload(EntryTag.tag),
-                selectinload(Entry.media),
-            )
-            .order_by(Entry.entry_date)
+        entries = await load_export_entries(
+            self.db, start_date, end_date, with_media=True
         )
-
-        if start_date:
-            q = q.where(Entry.entry_date >= start_date)
-        if end_date:
-            q = q.where(Entry.entry_date <= end_date)
-
-        result = await self.db.execute(q)
-        entries = list(result.scalars().all())
 
         # Zip assembly reads every attachment from disk and deflate-compresses it
         # (plus markdown per entry) — CPU + blocking file I/O, so offload it.
