@@ -18,8 +18,9 @@ const props = defineProps<{
   /** Help sentence under the encrypt prompt (what stays unencrypted). */
   scopeNote: string
   checkStatus: () => Promise<{ is_encrypted: boolean }>
-  encrypt: (passphrase: string) => Promise<void>
-  decrypt: (passphrase: string) => Promise<void>
+  /** Return values are ignored — callers pass the API's typed responses. */
+  encrypt: (passphrase: string) => Promise<unknown>
+  decrypt: (passphrase: string) => Promise<unknown>
 }>()
 const emit = defineEmits<{ change: [encrypted: boolean] }>()
 

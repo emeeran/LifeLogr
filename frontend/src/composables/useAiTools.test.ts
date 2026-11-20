@@ -25,7 +25,7 @@ const mockedCall = vi.mocked(callAiTool)
 
 /** A runAiTool call whose result we resolve manually, simulating a slow model. */
 function makeDeferredResult() {
-  let resolve!: (result: { text: string }) => void
+  let resolve!: (result: { text: string; suggestions: never[] }) => void
   mockedCall.mockReturnValue(
     new Promise((r) => {
       resolve = r
