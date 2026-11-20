@@ -1,5 +1,17 @@
 # Production Readiness Audit — 2026-11-20
 
+> **Fix status (2026-11-20, post-audit):** all three blockers, all high items, and nearly
+> all medium items are FIXED on this branch (commits `6c8ba9f`, `631461a`, `c5b001d` — see
+> the c5b001d message for the full list). Still open, deliberately:
+> the web-deb port-fallback OAuth surfacing (needs a product decision: warn vs refuse),
+> an explicit event-loop liveness field in `/health`, remote http(s) images in entries
+> (privacy product call), legacy v1 credential-key forced re-encryption, shell-open
+> allowlist tightening and CRLF-escaping in the Rust `save_url_as`/`upload_file_as`
+> commands, and the accepted risks listed at the bottom. The Tauri `fs` findings were fixed
+> by scoping both permissions to `$HOME/**`/`$TEMP/**` rather than dropping plugin-fs.
+
+
+
 Six parallel audit dimensions (correctness/error-handling, security, config/environment,
 observability, testing/CI, operational readiness), each independently verified with file:line
 references. Post-cleanup state: cleanup/pipeline-2026-11-20 @ phase(3), all suites green
@@ -25,7 +37,7 @@ release. Everything else is medium/low polish.
 
 ## Blockers (must fix before next release)
 
-- [ ] `backend/app/routers/entries.py:1391-1393` — **import path blocks the event loop and
+- [x] **FIXED** — `backend/app/routers/entries.py` — **import path blocks the event loop and
   reads up to 2 GiB into RAM**: `parse_diarium_sqlite(upload_path)` (sync, unbounded SQLite
   fetchall) runs directly in the async handler; `upload_path.read_bytes()` loads the spooled
   upload (cap 2 GiB, `config.py:330`) before any format branch; zip member parsing is sync
@@ -35,13 +47,13 @@ release. Everything else is medium/low polish.
   sidecar mid-import — defeating the close guard. Fix: offload parse to a thread/job
   (`asyncio.to_thread` or move into the existing `as_job` path) and stream the spool instead
   of `read_bytes`. *(Found independently by both the correctness and operations audits.)*
-- [ ] `backend/app/core/database.py:419-425` — **boot-snapshot skip fingerprint misses
+- [x] **FIXED (always copy)** — `backend/app/core/database.py` — **boot-snapshot skip fingerprint misses
   in-place writes**: the snapshot is skipped when `(st_size, page_count)` matches the newest
   snapshot, but same-length row edits (body edit, `is_deleted` flip) change neither. Every
   such day skips snapshotting, so "newest good snapshot" can be weeks old — and the
   corruption-recovery path restores exactly that. Fix: fingerprint on data (e.g. WAL
   salt/mtime, or always copy — snapshots are cheap relative to the risk).
-- [ ] `backend/app/services/scheduler_service.py:805-848` → `core/database.py:438-480` —
+- [x] **FIXED (alert-only at runtime; boot preflight owns the restore)** — `backend/app/services/scheduler_service.py` —
   **weekly integrity restore swaps the live DB under running writers**: `_recover_from_snapshot_sync`
   unlinks the live file while pooled sessions hold fds; commits between unlink and
   `reinit_engine()` vanish into the orphaned inode. No quiesce, no post-restore re-check
