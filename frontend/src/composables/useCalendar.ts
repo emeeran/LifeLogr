@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { toDateKey } from './useFormat'
 
 export function useCalendar() {
   const today = new Date()
@@ -48,7 +49,7 @@ export function useCalendar() {
       const y = month.value === 1 ? year.value - 1 : year.value
       days.push({
         date: d,
-        dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        dateStr: toDateKey(y, m, d),
         isCurrentMonth: false,
       })
     }
@@ -57,7 +58,7 @@ export function useCalendar() {
     for (let d = 1; d <= daysInMonth; d++) {
       days.push({
         date: d,
-        dateStr: `${year.value}-${String(month.value).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        dateStr: toDateKey(year.value, month.value, d),
         isCurrentMonth: true,
       })
     }
@@ -69,7 +70,7 @@ export function useCalendar() {
       const y = month.value === 12 ? year.value + 1 : year.value
       days.push({
         date: d,
-        dateStr: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        dateStr: toDateKey(y, m, d),
         isCurrentMonth: false,
       })
     }

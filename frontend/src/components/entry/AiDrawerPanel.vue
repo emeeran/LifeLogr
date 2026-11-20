@@ -25,8 +25,6 @@ import {
 const props = defineProps<{
   getSelection: () => string
   applyText: (text: string) => void
-  hasEntry: boolean
-  entryId: number | null
 }>()
 
 

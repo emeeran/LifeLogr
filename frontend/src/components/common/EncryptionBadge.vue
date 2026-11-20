@@ -1,17 +1,26 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import {
-  encryptEntry,
-  decryptEntry,
-  encryptionStatus,
-} from '../../api/encryption'
 import { Lock, Unlock, Loader } from 'lucide-vue-next'
 import { errorMessage } from '../../utils/errorMessage'
 import { useToastStore } from '../../stores/toast'
 
+/**
+ * Lock toggle + inline passphrase prompt shared by entries and notes.
+ * The caller owns the API surface (check/encrypt/decrypt) and the wording
+ * (entity label + what encryption covers); this owns the UI and error flow.
+ */
 const toast = useToastStore()
 
-const props = defineProps<{ entryId: number; isEncrypted: boolean }>()
+const props = defineProps<{
+  isEncrypted: boolean
+  /** Noun for tooltips: "entry" or "note". */
+  entityLabel: string
+  /** Help sentence under the encrypt prompt (what stays unencrypted). */
+  scopeNote: string
+  checkStatus: () => Promise<{ is_encrypted: boolean }>
+  encrypt: (passphrase: string) => Promise<void>
+  decrypt: (passphrase: string) => Promise<void>
+}>()
 const emit = defineEmits<{ change: [encrypted: boolean] }>()
 
 const loading = ref(false)
@@ -22,7 +31,7 @@ const mode = ref<'encrypt' | 'decrypt'>('encrypt')
 // Sync encryption state from server on mount
 onMounted(async () => {
   try {
-    const status = await encryptionStatus(props.entryId)
+    const status = await props.checkStatus()
     if (status.is_encrypted !== props.isEncrypted) {
       emit('change', status.is_encrypted)
     }
@@ -48,17 +57,19 @@ async function submit() {
   loading.value = true
   try {
     if (mode.value === 'encrypt') {
-      await encryptEntry(props.entryId, passphrase.value)
+      await props.encrypt(passphrase.value)
       emit('change', true)
     } else {
-      await decryptEntry(props.entryId, passphrase.value)
+      await props.decrypt(passphrase.value)
       emit('change', false)
     }
     showPrompt.value = false
   } catch (e: unknown) {
     // Passphrase failures are the common case; the inline prompt stays open so
     // the user can retry, and the reason lands in the toast host.
-    toast.error(`Encryption failed: ${errorMessage(e)}`)
+    toast.error(
+      `${mode.value === 'decrypt' ? 'Decryption' : 'Encryption'} failed: ${errorMessage(e)}`,
+    )
   } finally {
     loading.value = false
   }
@@ -71,7 +82,7 @@ async function submit() {
       @click="isEncrypted ? startDecrypt() : startEncrypt()"
       class="p-1.5 rounded hover:bg-surface-hover transition-colors"
       :class="isEncrypted ? 'text-accent' : 'text-text-secondary'"
-      :title="isEncrypted ? 'Decrypt entry' : 'Encrypt entry'"
+      :title="isEncrypted ? `Decrypt ${entityLabel}` : `Encrypt ${entityLabel}`"
     >
       <Lock v-if="isEncrypted" :size="16" />
       <Unlock v-else :size="16" />
@@ -93,8 +104,7 @@ async function submit() {
         v-if="mode === 'encrypt'"
         class="text-[10px] leading-snug text-text-muted"
       >
-        Encrypts the entry's text and mood only — attached media stays as-is on
-        disk.
+        {{ scopeNote }}
       </p>
       <input
         v-model="passphrase"

@@ -4,6 +4,7 @@ import { useCalendar } from '../../composables/useCalendar'
 import { useEntriesStore } from '../../stores/entries'
 import { useUiStore } from '../../stores/ui'
 import { useTagsStore } from '../../stores/tags'
+import { todayIsoKey } from '../../composables/useFormat'
 import CalendarHeader from './CalendarHeader.vue'
 import CalendarCell from './CalendarCell.vue'
 import GoToDateModal from '../common/GoToDateModal.vue'
@@ -25,10 +26,7 @@ const activeTagName = computed(() => {
   return tagsStore.tags.find((t) => t.id === filterTagId.value)?.name ?? null
 })
 
-const todayStr = computed(() => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-})
+const todayStr = computed(() => todayIsoKey())
 
 const entryMap = computed(() => {
   const map: Record<string, typeof entries.calendarEntries> = {}

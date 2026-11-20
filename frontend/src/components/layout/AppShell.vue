@@ -291,8 +291,6 @@ async function onExtractText(id: number) {
               editorRef?.applyToSelection?.(t)
             }
           "
-          :has-entry="!!editorRef?.hasEntry"
-          :entry-id="editorRef?.entryId ?? null"
         />
         <AttachmentsPanel
           v-if="ui.activeDrawer === 'attachments'"

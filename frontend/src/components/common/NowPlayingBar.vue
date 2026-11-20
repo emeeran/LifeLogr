@@ -10,6 +10,7 @@
 import { computed } from 'vue'
 import { Volume2, X } from 'lucide-vue-next'
 import { useTtsStore } from '../../stores/tts'
+import { fmtTime } from '../../composables/useRecordings'
 import { useEntriesStore } from '../../stores/entries'
 
 const tts = useTtsStore()
@@ -37,10 +38,6 @@ const percent = computed(() =>
     : 0,
 )
 
-function fmt(s: number): string {
-  const total = Math.max(0, Math.floor(s))
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
-}
 </script>
 
 <template>
@@ -82,8 +79,8 @@ function fmt(s: number): string {
       </div>
 
       <span class="tabular-nums text-[10px] text-text-muted shrink-0">
-        {{ fmt(tts.currentTime) }} /
-        {{ tts.duration > 0 ? fmt(tts.duration) : '–' }}
+        {{ fmtTime(tts.currentTime) }} /
+        {{ tts.duration > 0 ? fmtTime(tts.duration) : '–' }}
       </span>
 
       <button

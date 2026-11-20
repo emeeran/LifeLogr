@@ -31,7 +31,7 @@ import { useLocalStorage } from '@vueuse/core'
 import AiDrawerPanel from '../entry/AiDrawerPanel.vue'
 import EditorToolbar from '../editor/EditorToolbar.vue'
 import EditorContextMenu from '../editor/EditorContextMenu.vue'
-import NoteEncryptionBadge from './NoteEncryptionBadge.vue'
+import EncryptionBadge from '../common/EncryptionBadge.vue'
 import SnipOverlay from './SnipOverlay.vue'
 import WebClipModal from './WebClipModal.vue'
 import { useNotesStore } from '../../stores/notes'
@@ -1349,9 +1349,13 @@ defineExpose({ isDirty })
       >
         <Trash2 :size="13" />
       </button>
-      <NoteEncryptionBadge
-        :note-id="note.id"
+      <EncryptionBadge
         :is-encrypted="note.is_encrypted"
+        entity-label="note"
+        scope-note="Encrypts the note's text only — attached images, audio, and video stay as-is on disk."
+        :check-status="() => notesApi.encryptionStatus(note.id)"
+        :encrypt="(p) => notesApi.encrypt(note.id, p)"
+        :decrypt="(p) => notesApi.decrypt(note.id, p)"
         @change="onEncryptionChange"
       />
       <button
@@ -1499,8 +1503,6 @@ defineExpose({ isDirty })
         <AiDrawerPanel
           :get-selection="core.getSelection"
           :apply-text="applyText"
-          :has-entry="true"
-          :entry-id="note.id"
           @close="showAi = false"
         />
       </div>

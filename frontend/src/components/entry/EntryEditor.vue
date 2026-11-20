@@ -26,7 +26,7 @@ import {
   Mic,
   Square,
 } from 'lucide-vue-next'
-import EncryptionBadge from './EncryptionBadge.vue'
+import EncryptionBadge from '../common/EncryptionBadge.vue'
 import ConfirmDialog from '../common/ConfirmDialog.vue'
 import { ApiError, isTauri } from '../../api/client'
 import { entriesApi } from '../../api/entries'
@@ -45,11 +45,19 @@ import type {
   EntryUpdate,
   MediaResponse,
 } from '../../types'
-import { encryptText, decryptText } from '../../api/encryption'
+import {
+  encryptText,
+  decryptText,
+  encryptEntry,
+  decryptEntry,
+  encryptionStatus,
+} from '../../api/encryption'
 import {
   isoToDDMMYYYYInput,
   maskDDMMYYYY,
   parseDDMMYYYY,
+  todayIsoKey,
+  toDateKey,
 } from '../../composables/useFormat'
 import { useTtsStore } from '../../stores/tts'
 import { useDragDrop } from '../../composables/useDragDrop'
@@ -584,8 +592,7 @@ const stats = computed(() => ({ words: countWords(body.value) }))
 // already-fetched month calendar — no extra requests) with the entry currently
 // being edited substituted by its live count, so the chip tracks typing.
 function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayIsoKey()
 }
 
 const daily = computed(() => {
@@ -688,10 +695,7 @@ async function loadEntry() {
     if (ui.newEntryDate) {
       setEntryDate(ui.newEntryDate)
     } else {
-      const d = new Date()
-      setEntryDate(
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-      )
+      setEntryDate(todayIsoKey())
     }
     // The auto-opened "new entry" editor must not blind-side an existing
     // entry for the same date: typing then autosaved a SECOND entry for
@@ -1899,8 +1903,12 @@ async function applySuggestedTag(name: string) {
         />
         <EncryptionBadge
           v-if="hasEntry"
-          :entryId="ui.editingEntryId!"
-          :isEncrypted="isEncrypted"
+          :is-encrypted="isEncrypted"
+          entity-label="entry"
+          scope-note="Encrypts the entry's text and mood only — attached media stays as-is on disk."
+          :check-status="() => encryptionStatus(ui.editingEntryId!)"
+          :encrypt="(p) => encryptEntry(ui.editingEntryId!, p)"
+          :decrypt="(p) => decryptEntry(ui.editingEntryId!, p)"
           @change="onEncryptionChange"
         />
         <button

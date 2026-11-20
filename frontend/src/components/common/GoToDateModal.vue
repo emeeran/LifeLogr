@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { Calendar, X } from 'lucide-vue-next'
 import { useModalFocus } from '../../composables/useModalFocus'
+import { toDateKey } from '../../composables/useFormat'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
@@ -46,8 +47,11 @@ const modal = useModalFocus(
 )
 
 function confirm() {
-  const d = selectedDay.value ?? 1
-  const dateStr = `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  const dateStr = toDateKey(
+    selectedYear.value,
+    selectedMonth.value,
+    selectedDay.value ?? 1,
+  )
   emit('select', dateStr)
   close()
 }

@@ -69,6 +69,17 @@ export function maskDDMMYYYY(text: string): string {
   return masked
 }
 
+/** Date parts → storage ISO key (YYYY-MM-DD), zero-padded. */
+export function toDateKey(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+/** Today's storage ISO key. */
+export function todayIsoKey(): string {
+  const d = new Date()
+  return toDateKey(d.getFullYear(), d.getMonth() + 1, d.getDate())
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`

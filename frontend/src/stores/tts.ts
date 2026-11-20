@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ttsApi } from '../api/tts'
-import { errorMessage } from '../utils/errorMessage'
 import { revokeTrackedObjectUrl } from '../utils/blobUrl'
 
 /**
@@ -41,19 +40,6 @@ function ensureAudio(): HTMLAudioElement {
   return audioEl
 }
 
-/** Map a MediaError to something a user can act on — the raw message for the
- *  common "source not supported" case is browser jargon with no next step. */
-function describeMediaError(a: HTMLAudioElement): string {
-  const e = a.error
-  if (!e) return 'Playback failed'
-  if (e.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED)
-    return 'Audio source unavailable or unsupported'
-  if (e.code === MediaError.MEDIA_ERR_NETWORK) return 'Network error during playback'
-  if (e.code === MediaError.MEDIA_ERR_DECODE) return 'Audio could not be decoded'
-  if (e.code === MediaError.MEDIA_ERR_ABORTED) return 'Playback aborted'
-  return 'Playback failed'
-}
-
 function clearObjectUrl() {
   // Idempotent + tracked — pairs with createTrackedObjectUrl in ttsApi.
   revokeTrackedObjectUrl(currentObjectUrl)
@@ -63,7 +49,6 @@ function clearObjectUrl() {
 export const useTtsStore = defineStore('tts', () => {
   const isPlaying = ref(false)
   const isLoading = ref(false)
-  const lastError = ref<string | null>(null)
   const current = ref<TtsSource | null>(null)
   // Progress/duration exposed for a future now-playing bar (no UI in v1).
   const currentTime = ref(0)
@@ -94,7 +79,6 @@ export const useTtsStore = defineStore('tts', () => {
     a.addEventListener('error', () => {
       isPlaying.value = false
       isLoading.value = false
-      lastError.value = describeMediaError(a)
     })
   }
 
@@ -119,7 +103,6 @@ export const useTtsStore = defineStore('tts', () => {
     resetStream()
     current.value = src
     isLoading.value = true
-    lastError.value = null
     try {
       const url = await resolveUrl()
       a.src = url
@@ -130,7 +113,6 @@ export const useTtsStore = defineStore('tts', () => {
       isPlaying.value = false
       isLoading.value = false
       current.value = null
-      lastError.value = errorMessage(e)
       throw e
     } finally {
       isLoading.value = false
@@ -191,9 +173,6 @@ export const useTtsStore = defineStore('tts', () => {
       (isPlaying.value || isLoading.value)
     )
   }
-  function isActiveText(text: string): boolean {
-    return isActiveTextKey(hashStr(text))
-  }
   function isActiveTextKey(k: string): boolean {
     const c = current.value
     return (
@@ -245,7 +224,6 @@ export const useTtsStore = defineStore('tts', () => {
   return {
     isPlaying,
     isLoading,
-    lastError,
     current,
     currentTime,
     duration,
@@ -255,8 +233,6 @@ export const useTtsStore = defineStore('tts', () => {
     toggleEntry,
     toggleText,
     seek,
-    isActiveEntry,
-    isActiveText,
     isPlayingEntry,
     isLoadingEntry,
     isPlayingText,
