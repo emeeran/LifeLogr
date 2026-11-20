@@ -165,3 +165,95 @@ class TestEntryRestore:
         # Restoring an already-live entry should not error.
         r = await client.post(f"/api/v1/entries/{entry['id']}/restore")
         assert r.status_code == 200
+
+
+class TestEntryMerge:
+    async def test_merge_joins_bodies_in_order(self, client: AsyncClient, db_session):
+        """Earliest entry survives; bodies concatenate chronologically."""
+        first = await _create_entry(client, date="2026-05-08", body="Morning pages")
+        second = await _create_entry(client, date="2026-05-08", body="Evening pages")
+        r = await client.post(
+            "/api/v1/entries/merge", json={"entry_ids": [second["id"], first["id"]]}
+        )
+        assert r.status_code == 200
+        merged = r.json()
+        assert merged["id"] == first["id"]
+        assert merged["body"] == "Morning pages\n\n---\n\nEvening pages"
+        # Sources move to restorable trash
+        r = await client.get(f"/api/v1/entries/{second['id']}")
+        assert r.status_code == 404
+
+    async def test_merge_unions_tags_and_falls_back_title_mood(self, client: AsyncClient):
+        tags_r = await client.post("/api/v1/tags", json={"name": "travel"})
+        tag_id = tags_r.json()["id"]
+        first = await _create_entry(
+            client, date="2026-05-08", body="A", tag_ids=[tag_id], mood="calm"
+        )
+        second = await _create_entry(
+            client, date="2026-05-08", body="B", title="Evening", mood=None
+        )
+        r = await client.post(
+            "/api/v1/entries/merge", json={"entry_ids": [first["id"], second["id"]]}
+        )
+        assert r.status_code == 200
+        merged = r.json()
+        assert merged["mood"] == "calm"
+        assert [t["name"] for t in merged["tags"]] == ["travel"]
+
+    async def test_merge_rejects_different_dates(self, client: AsyncClient):
+        a = await _create_entry(client, date="2026-05-08")
+        b = await _create_entry(client, date="2026-05-09")
+        r = await client.post(
+            "/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]}
+        )
+        assert r.status_code == 400
+
+    async def test_merge_rejects_single_entry(self, client: AsyncClient):
+        a = await _create_entry(client)
+        r = await client.post("/api/v1/entries/merge", json={"entry_ids": [a["id"]]})
+        assert r.status_code == 422  # schema min_length=2
+        r = await client.post("/api/v1/entries/merge", json={"entry_ids": [a["id"], a["id"]]})
+        assert r.status_code == 400  # deduped to one id
+
+    async def test_merge_rejects_encrypted(self, client: AsyncClient, db_session):
+        from sqlalchemy import update as sa_update
+
+        from app.models.entry import Entry as EntryModel
+
+        a = await _create_entry(client, date="2026-05-08")
+        b = await _create_entry(client, date="2026-05-08")
+        # Encrypted bodies are ciphertext server-side — concatenation would
+        # corrupt them, so the merge refuses (flag set directly: encryption
+        # itself lives behind a passphrase flow not under test here).
+        await db_session.execute(
+            sa_update(EntryModel).where(EntryModel.id == b["id"]).values(is_encrypted=True)
+        )
+        await db_session.commit()
+        r = await client.post(
+            "/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]}
+        )
+        assert r.status_code == 400
+
+    async def test_merge_repoints_media(self, client: AsyncClient, db_session):
+        from sqlalchemy import select as sa_select
+
+        from app.models.media import Media as MediaModel
+
+        a = await _create_entry(client, date="2026-05-08", body="with photo")
+        b = await _create_entry(client, date="2026-05-08", body="also with photo")
+        db_session.add(
+            MediaModel(
+                entry_id=b["id"],
+                filename="x.jpg",
+                media_type="image",
+                file_size=10,
+                storage_path="2026/05/x.jpg",
+            )
+        )
+        await db_session.commit()
+        r = await client.post(
+            "/api/v1/entries/merge", json={"entry_ids": [a["id"], b["id"]]}
+        )
+        assert r.status_code == 200
+        row = (await db_session.execute(sa_select(MediaModel))).scalars().first()
+        assert row is not None and row.entry_id == a["id"]

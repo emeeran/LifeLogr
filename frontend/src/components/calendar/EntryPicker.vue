@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { CalendarEntryResponse } from '../../types'
 import { useEntriesStore } from '../../stores/entries'
 import { useUiStore } from '../../stores/ui'
 import { useCalendar } from '../../composables/useCalendar'
 import { formatDDMMYYYY } from '../../composables/useFormat'
 import { useConfirm } from '../../composables/useConfirm'
-import { Pencil, Plus, Trash2 } from 'lucide-vue-next'
+import { Merge, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   entries: CalendarEntryResponse[]
@@ -23,6 +23,32 @@ const entriesStore = useEntriesStore()
 const ui = useUiStore()
 const cal = useCalendar()
 const deletingId = ref<number | null>(null)
+const merging = ref(false)
+const selectedIds = ref<Set<number>>(new Set())
+
+// Prune selections that no longer exist (e.g. an entry deleted from the
+// picker mid-selection) so the merge button never references stale ids.
+watch(
+  () => props.entries,
+  (entries) => {
+    const ids = new Set(entries.map((e) => e.id))
+    if (selectedIds.value.size && [...selectedIds.value].some((id) => !ids.has(id))) {
+      selectedIds.value = new Set([...selectedIds.value].filter((id) => ids.has(id)))
+    }
+  },
+)
+
+// Encrypted entries hold ciphertext server-side, so the backend refuses to
+// merge them — hide the checkbox rather than let the request fail later.
+const mergeableCount = computed(() => props.entries.filter((e) => !e.is_encrypted).length)
+const canMerge = computed(() => selectedIds.value.size >= 2)
+
+function toggleSelect(entry: CalendarEntryResponse) {
+  const next = new Set(selectedIds.value)
+  if (next.has(entry.id)) next.delete(entry.id)
+  else next.add(entry.id)
+  selectedIds.value = next
+}
 
 async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
   e.stopPropagation()
@@ -56,6 +82,35 @@ async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
     deletingId.value = null
   }
 }
+
+async function handleMerge(e: MouseEvent) {
+  e.stopPropagation()
+  if (!canMerge.value || merging.value) return
+  const ids = [...selectedIds.value]
+  const { confirm } = useConfirm()
+  if (
+    !(await confirm({
+      title: 'Merge entries',
+      message: `Combine ${ids.length} entries into one? Their texts are joined in order and media stays attached; the originals move to trash.`,
+      confirmLabel: 'Merge',
+    }))
+  )
+    return
+  merging.value = true
+  try {
+    const merged = await entriesStore.mergeEntries(ids)
+    // If a merged source was open in the editor, show the survivor instead.
+    if (ids.includes(ui.editingEntryId ?? -1)) {
+      ui.editorIsDirty = false
+      ui.startEditing(merged.id)
+    }
+    await entriesStore.fetchCalendarMonth(cal.year.value, cal.month.value)
+    selectedIds.value = new Set()
+    emit('close')
+  } finally {
+    merging.value = false
+  }
+}
 </script>
 
 <template>
@@ -74,6 +129,14 @@ async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
       class="flex items-start gap-2 w-full text-left px-2 py-1.5 rounded hover:bg-surface-hover cursor-pointer transition-colors group"
       @click="emit('openEntry', entry.id)"
     >
+      <input
+        v-if="!entry.is_encrypted && mergeableCount > 1"
+        type="checkbox"
+        class="mt-0.5 accent-[var(--color-accent)] cursor-pointer shrink-0"
+        :checked="selectedIds.has(entry.id)"
+        title="Select for merge"
+        @click.stop="toggleSelect(entry)"
+      />
       <Pencil :size="11" class="text-accent mt-0.5 shrink-0" />
       <div class="min-w-0 flex-1">
         <div class="text-xs font-medium text-text-primary truncate">
@@ -97,6 +160,19 @@ async function handleDelete(e: MouseEvent, entry: CalendarEntryResponse) {
         <Trash2 :size="11" />
       </button>
     </div>
+
+    <template v-if="canMerge">
+      <div class="border-t border-border my-1" />
+      <button
+        class="flex items-center gap-2 w-full px-2 py-1.5 rounded hover:bg-accent/10 text-accent cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        :disabled="merging || deletingId !== null"
+        title="Merge selected entries into one"
+        @click="handleMerge($event)"
+      >
+        <Merge :size="11" />
+        <span class="text-xs">Merge selected ({{ selectedIds.size }})</span>
+      </button>
+    </template>
 
     <div class="border-t border-border my-1" />
 

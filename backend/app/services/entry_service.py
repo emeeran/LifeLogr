@@ -6,13 +6,13 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import Connection, delete, func, select
+from sqlalchemy import Connection, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 from sqlalchemy.sql.expression import Select as Select
 
 from app.core.config import settings
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.models.entry import Entry
 from app.models.media import Media
 from app.models.tag import EntryTag, Tag
@@ -312,6 +312,76 @@ class EntryService:
             EnrichmentService.schedule(entry.id, entry.title, entry.body)
             WeatherService.schedule(entry.id, entry.latitude, entry.longitude, entry.entry_date)
         return entry
+
+    async def merge(self, entry_ids: list[int]) -> Entry:
+        """Merge same-day entries into one, keeping the earliest as survivor.
+
+        Bodies are concatenated chronologically and separated by a Markdown
+        rule, tags take the union of every source's tags, title/mood fall back
+        to the first non-null in that same order, and media/recordings/events
+        are re-pointed to the survivor so nothing the day collected is lost.
+        The remaining entries move to restorable trash — note that restoring
+        one will NOT bring its media back, since those rows now belong to the
+        survivor. Encrypted entries are refused: their body column is
+        ciphertext, so concatenation would corrupt them.
+        """
+        from app.models.entry_event import EntryEvent
+        from app.models.recording import VoiceRecording
+        from app.models.video_note import VideoNote
+
+        unique_ids = list(dict.fromkeys(entry_ids))
+        if len(unique_ids) < 2:
+            raise ValidationError("Merging requires at least two entries")
+        entries = [await self.get(eid) for eid in unique_ids]
+        entry_date = entries[0].entry_date
+        if any(e.entry_date != entry_date for e in entries):
+            raise ValidationError("Only entries from the same day can be merged")
+        if any(e.is_encrypted for e in entries):
+            raise ValidationError("Encrypted entries cannot be merged")
+
+        entries.sort(key=lambda e: (e.created_at, e.id))
+        survivor = entries[0]
+        sources = entries[1:]
+        source_ids = [e.id for e in sources]
+
+        survivor.body = "\n\n---\n\n".join(e.body for e in entries)
+        survivor.title = next((e.title for e in entries if e.title), survivor.title)
+        if survivor.mood is None:
+            survivor.mood = next((e.mood for e in sources if e.mood), None)
+
+        # Tags are explicit rows — union every source's tags onto the survivor.
+        desired = {a.tag_id for e in entries for a in e.tag_associations}
+        current = {a.tag_id for a in survivor.tag_associations}
+        to_add = desired - current
+        if to_add:
+            self.db.add_all([EntryTag(entry_id=survivor.id, tag_id=t) for t in to_add])
+
+        # Re-point child rows so the merged entry keeps the day's media,
+        # recordings and events (purging sources would unlink their files).
+        for model in (Media, VoiceRecording, EntryEvent, VideoNote):
+            await self.db.execute(
+                update(model).where(model.entry_id.in_(source_ids)).values(entry_id=survivor.id)
+            )
+
+        # Sources move to trash — same contract as soft_delete.
+        now = datetime.now(timezone.utc)
+        for e in sources:
+            e.is_deleted = True
+            e.deleted_at = now
+
+        await self.db.commit()
+        await self.db.refresh(survivor)
+        invalidate_stats_cache()
+        # Survivor's body changed and the sources are gone — stale vectors for
+        # either id must not survive (ensure_fresh would reload anyway, but
+        # dropping here keeps searches correct immediately).
+        for e in entries:
+            self._drop_from_semantic_cache(e.id)
+        EnrichmentService.schedule(survivor.id, survivor.title, survivor.body)
+        WeatherService.schedule(
+            survivor.id, survivor.latitude, survivor.longitude, survivor.entry_date
+        )
+        return survivor
 
     def _drop_from_semantic_cache(self, entry_id: int) -> None:
         """Best-effort: drop from the vector cache (ensure_fresh reloads on any

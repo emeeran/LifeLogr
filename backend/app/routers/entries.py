@@ -49,6 +49,7 @@ from app.schemas.entry import (
     EntryCreate,
     EntryEventBrief,
     EntryListItem,
+    EntryMergeRequest,
     EntryListResponse,
     EntryResponse,
     EntryUpdate,
@@ -972,6 +973,15 @@ async def deduplicate_entries(db: AsyncSession = Depends(get_db)) -> Any:
 
     invalidate_stats_cache()
     return {"groups_found": groups_found, "duplicates_removed": len(ids_to_delete)}
+
+
+@router.post("/merge", response_model=EntryResponse)
+async def merge_entries(data: EntryMergeRequest, db: AsyncSession = Depends(get_db)) -> Any:
+    """Merge same-day entries into one (earliest survives; the rest move to
+    trash). Media/recordings/events are re-pointed to the survivor."""
+    svc = EntryService(db)
+    merged = await svc.merge(data.entry_ids)
+    return _to_response(merged)
 
 
 @router.get("/{entry_id}", response_model=EntryResponse)

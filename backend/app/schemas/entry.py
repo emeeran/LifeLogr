@@ -74,6 +74,15 @@ class EntryUpdate(BaseModel):
     )
 
 
+class EntryMergeRequest(BaseModel):
+    """Payload for merging same-day entries (see ``POST /entries/merge``)."""
+
+    entry_ids: list[int] = Field(
+        min_length=2,
+        description="Entry IDs to merge; all must share the same entry_date",
+    )
+
+
 class ImportSkipReason(BaseModel):
     """Why one imported record was skipped (index is its 0-based list position)."""
 

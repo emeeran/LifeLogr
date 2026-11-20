@@ -83,6 +83,22 @@ export const useEntriesStore = defineStore('entries', () => {
     }
   }
 
+  async function mergeEntries(ids: number[]) {
+    error.value = null
+    try {
+      const merged = await entriesApi.merge(ids)
+      // A merged source may be the entry open in the editor — the caller
+      // opens the survivor, so drop any stale current entry.
+      if (currentEntry.value && ids.includes(currentEntry.value.id)) {
+        currentEntry.value = null
+      }
+      return merged
+    } catch (e: unknown) {
+      error.value = errorMessage(e) || 'Failed to merge entries'
+      throw e
+    }
+  }
+
   function refreshAll() {
     lastUpdated.value = Date.now()
   }
@@ -98,6 +114,7 @@ export const useEntriesStore = defineStore('entries', () => {
     createEntry,
     updateEntry,
     deleteEntry,
+    mergeEntries,
     refreshAll,
   }
 })

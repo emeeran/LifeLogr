@@ -68,6 +68,14 @@ export const entriesApi = {
     return request(`/entries/${id}`, { method: 'DELETE' })
   },
 
+  /** Merge same-day entries into one (earliest survives; rest move to trash). */
+  merge(entryIds: number[]): Promise<EntryResponse> {
+    return request('/entries/merge', {
+      method: 'POST',
+      body: JSON.stringify({ entry_ids: entryIds }),
+    })
+  },
+
   /** Soft-deleted entries (restorable trash), newest deletion first. */
   trash(offset = 0, limit = 50): Promise<TrashListResponse> {
     return request(`/entries/trash?offset=${offset}&limit=${limit}`)
